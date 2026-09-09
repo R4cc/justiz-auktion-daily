@@ -3,16 +3,17 @@ import { createReadStream } from 'node:fs';
 import { readFile, stat } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { collectAuctions, ensureDailyGame, seedArchiveIfEmpty } from './src/collector.mjs';
+import { enqueueRollingDiscovery, ensureDailyGame, processRollingTask, seedArchiveIfEmpty } from './src/collector.mjs';
 import { selectRandomSet, utcDateKey } from './src/core.mjs';
 
 const projectDir = path.dirname(fileURLToPath(import.meta.url));
 const publicDir = path.join(projectDir, 'dist');
 const dataDir = path.resolve(process.env.DATA_DIR || path.join(projectDir, 'runtime-data'));
 const port = Number(process.env.PORT || 3000);
-const refreshHours = Math.max(1, Number(process.env.REFRESH_INTERVAL_HOURS || 6));
-const collectPages = Math.max(1, Number(process.env.COLLECT_PAGES || 4));
-let refreshPromise = null;
+const discoveryHours = Math.max(1, Number(process.env.DISCOVERY_INTERVAL_HOURS || process.env.REFRESH_INTERVAL_HOURS || 6));
+const collectPages = Math.max(1, Number(process.env.COLLECT_PAGES || 12));
+const rollingIntervalMs = Math.max(30_000, Number(process.env.FETCH_INTERVAL_SECONDS || 120) * 1000);
+let rollingPromise = null;
 let lastRefresh = { status: 'starting', startedAt: null, finishedAt: null, error: null };
 
 const mimeTypes = {
@@ -87,37 +88,41 @@ async function randomPayload() {
   };
 }
 
-async function refresh() {
-  if (refreshPromise) return refreshPromise;
-  refreshPromise = (async () => {
+async function rollingFetch() {
+  if (rollingPromise) return rollingPromise;
+  rollingPromise = (async () => {
     lastRefresh = { status: 'running', startedAt: new Date().toISOString(), finishedAt: null, error: null };
     try {
-      await collectAuctions({ dataDir, pages: collectPages });
-      await ensureDailyGame({ dataDir });
-      lastRefresh = { ...lastRefresh, status: 'ok', finishedAt: new Date().toISOString() };
+      const result = await processRollingTask({ dataDir, minimumIntervalMs: rollingIntervalMs });
+      lastRefresh = { ...lastRefresh, ...result, status: result.status, finishedAt: new Date().toISOString() };
     } catch (error) {
       lastRefresh = { ...lastRefresh, status: 'error', finishedAt: new Date().toISOString(), error: error.message };
       console.error('Auction refresh failed:', error);
     } finally {
-      refreshPromise = null;
+      rollingPromise = null;
     }
   })();
-  return refreshPromise;
+  return rollingPromise;
+}
+
+async function scheduleDiscovery() {
+  if (rollingPromise) await rollingPromise;
+  return enqueueRollingDiscovery({ dataDir, pages: collectPages });
 }
 
 function scheduleUtcRollover() {
   const now = new Date();
   const next = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + 1, 0, 0, 5);
   const timer = setTimeout(async () => {
-    await refresh();
+    await ensureDailyGame({ dataDir });
     scheduleUtcRollover();
   }, next - now.getTime());
   timer.unref();
 }
 
 await seedArchiveIfEmpty({ dataDir, seedFile: path.join(projectDir, 'seed', 'auctions.json') });
-await refresh();
 await ensureDailyGame({ dataDir });
+await scheduleDiscovery();
 
 const server = createServer({ maxHeaderSize: 16 * 1024 }, async (request, response) => {
   try {
@@ -162,7 +167,9 @@ server.listen(port, '0.0.0.0', () => {
   console.log(`JUSTIZGUESSR listening on http://0.0.0.0:${port}`);
 });
 
-setInterval(refresh, refreshHours * 60 * 60 * 1000).unref();
+rollingFetch();
+setInterval(rollingFetch, rollingIntervalMs).unref();
+setInterval(() => scheduleDiscovery().catch(error => console.error('Auction discovery scheduling failed:', error)), discoveryHours * 60 * 60 * 1000).unref();
 scheduleUtcRollover();
 
 function shutdown(signal) {

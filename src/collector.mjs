@@ -5,6 +5,7 @@ import { selectDailySet, utcDateKey } from './core.mjs';
 const BASE_URL = 'https://www.justiz-auktion.de';
 const USER_AGENT = 'JUSTIZGUESSR/1.0 (+daily public auction indexer; respectful low-frequency fetches)';
 const DAILY_SELECTION_VERSION = 2;
+const ROLLING_QUEUE_VERSION = 1;
 
 function decodeEntities(value = '') {
   const named = { amp: '&', quot: '"', apos: "'", lt: '<', gt: '>', nbsp: ' ', auml: 'ä', ouml: 'ö', uuml: 'ü', Auml: 'Ä', Ouml: 'Ö', Uuml: 'Ü', szlig: 'ß', euro: '€', lowbar: '_', period: '.', comma: ',', colon: ':', sol: '/', frasl: '/', permil: '‰', NewLine: '\n' };
@@ -150,6 +151,162 @@ async function fetchText(url, fetchImpl) {
   const response = await fetchImpl(url, { headers: { 'user-agent': USER_AGENT, accept: 'text/html,application/xhtml+xml' }, redirect: 'error', signal: AbortSignal.timeout(20000) });
   if (!response.ok) throw new Error(`${url} returned HTTP ${response.status}`);
   return response.text();
+}
+
+function taskKey(task) {
+  return `${task.kind}:${task.url}`;
+}
+
+function retryDelay(error, attempts, now) {
+  if (error.retryAfterMs != null) return Math.max(60_000, error.retryAfterMs);
+  const base = error.status === 429 || error.status >= 500 ? 5 * 60_000 : 60_000;
+  return Math.min(12 * 60 * 60_000, base * (2 ** Math.min(attempts, 7))) + (now % 30_000);
+}
+
+function detailPriority(auction, now) {
+  if (!auction?.endAt) return 50;
+  const remaining = Date.parse(auction.endAt) - now;
+  if (remaining <= 0 && auction.finalPrice == null) return 95;
+  if (remaining <= 60 * 60_000) return 90;
+  if (remaining <= 6 * 60 * 60_000) return 80;
+  if (remaining <= 24 * 60 * 60_000) return 70;
+  return 50;
+}
+
+function addTasks(queue, tasks) {
+  const known = new Set(queue.tasks.map(taskKey));
+  for (const task of tasks) {
+    if (known.has(taskKey(task))) continue;
+    queue.tasks.push({ attempts: 0, notBefore: 0, priority: 50, ...task });
+    known.add(taskKey(task));
+  }
+}
+
+async function requestResource(task, fetchImpl) {
+  const image = task.kind === 'image';
+  const response = await fetchImpl(task.url, {
+    headers: { 'user-agent': USER_AGENT, accept: image ? 'image/*' : 'text/html,application/xhtml+xml' },
+    redirect: 'error',
+    signal: AbortSignal.timeout(20_000)
+  });
+  if (!response.ok) {
+    const error = new Error(`${task.url} returned HTTP ${response.status}`);
+    error.status = response.status;
+    const retryAfter = response.headers.get('retry-after');
+    if (retryAfter) {
+      const seconds = Number(retryAfter);
+      error.retryAfterMs = Number.isFinite(seconds) ? seconds * 1000 : Math.max(0, Date.parse(retryAfter) - Date.now());
+    }
+    throw error;
+  }
+  return response;
+}
+
+async function saveImageResponse(auction, response, dataDir) {
+  const contentType = (response.headers.get('content-type') || '').toLowerCase();
+  if (!contentType.startsWith('image/')) throw new Error(`Unexpected image content type: ${contentType || 'missing'}`);
+  const bytes = Buffer.from(await response.arrayBuffer());
+  if (bytes.length < 1000 || bytes.length > 12_000_000) throw new Error(`Unexpected image size: ${bytes.length}`);
+  const extension = contentType.includes('png') ? 'png' : contentType.includes('webp') ? 'webp' : 'jpg';
+  const filename = `${auction.id}.${extension}`;
+  await mkdir(path.join(dataDir, 'images'), { recursive: true });
+  await writeFile(path.join(dataDir, 'images', filename), bytes);
+  return `/auction-images/${filename}`;
+}
+
+export async function enqueueRollingDiscovery({ dataDir, pages = 12, now = Date.now() } = {}) {
+  if (!dataDir) throw new Error('dataDir is required');
+  const queuePath = path.join(dataDir, 'fetch-queue.json');
+  const queue = await readJson(queuePath, { version: ROLLING_QUEUE_VERSION, updatedAt: null, lastRequestAt: null, tasks: [] });
+  addTasks(queue, Array.from({ length: pages }, (_, page) => ({
+    kind: 'listing',
+    url: `${BASE_URL}/auction_search.php?start=${page * 10}`,
+    priority: 100,
+    notBefore: now
+  })));
+  queue.version = ROLLING_QUEUE_VERSION;
+  queue.updatedAt = new Date(now).toISOString();
+  await writeJsonAtomic(queuePath, queue);
+  return queue;
+}
+
+export async function processRollingTask({ dataDir, fetchImpl = fetch, now = Date.now(), minimumIntervalMs = 0, logger = console } = {}) {
+  if (!dataDir) throw new Error('dataDir is required');
+  const queuePath = path.join(dataDir, 'fetch-queue.json');
+  const archivePath = path.join(dataDir, 'auctions.json');
+  const queue = await readJson(queuePath, { version: ROLLING_QUEUE_VERSION, updatedAt: null, lastRequestAt: null, tasks: [] });
+  const archive = await readJson(archivePath, { updatedAt: null, auctions: [] });
+  const byId = new Map(archive.auctions.map(item => [item.id, item]));
+  const lastRequestAt = Date.parse(queue.lastRequestAt || '');
+  if (Number.isFinite(lastRequestAt) && now - lastRequestAt < minimumIntervalMs) {
+    return { status: 'waiting', pending: queue.tasks.length, lastRequestAt: queue.lastRequestAt };
+  }
+  const eligible = queue.tasks
+    .filter(task => (task.notBefore || 0) <= now)
+    .sort((a, b) => (b.priority || 0) - (a.priority || 0) || (a.notBefore || 0) - (b.notBefore || 0));
+  const task = eligible[0];
+  if (!task) return { status: 'idle', pending: queue.tasks.length, lastRequestAt: queue.lastRequestAt };
+
+  queue.tasks.splice(queue.tasks.indexOf(task), 1);
+  queue.lastRequestAt = new Date(now).toISOString();
+  queue.updatedAt = queue.lastRequestAt;
+  await writeJsonAtomic(queuePath, queue);
+
+  try {
+    const response = await requestResource(task, fetchImpl);
+    if (task.kind === 'listing') {
+      const urls = extractListingUrls(await response.text());
+      addTasks(queue, urls.flatMap(url => {
+        const id = Number(url.match(/-(\d{5,8})(?:\D|$)/)?.[1]);
+        const previous = byId.get(id);
+        if (previous?.finalPrice != null) return [];
+        return [{ kind: 'detail', url, auctionId: id || null, priority: detailPriority(previous, now), notBefore: now }];
+      }));
+    } else if (task.kind === 'detail') {
+      const item = parseAuctionPage(await response.text(), task.url);
+      const previous = byId.get(item.id);
+      if (previous?.startAt) item.startAt = previous.startAt;
+      const merged = {
+        ...previous,
+        ...item,
+        image: previous?.image || item.sourceImages?.[0] || null,
+        images: previous?.images || item.sourceImages || [],
+        firstCapturedAt: previous?.firstCapturedAt || item.capturedAt,
+        finalPrice: item.finalPrice ?? previous?.finalPrice ?? null
+      };
+      byId.set(item.id, merged);
+      if (!merged.startAt) addTasks(queue, [{ kind: 'start', url: `${BASE_URL}/auktion_drucken-${item.id}`, auctionId: item.id, priority: 45, notBefore: now }]);
+      if (!previous?.image?.startsWith('/auction-images/') && item.sourceImages?.[0]) {
+        addTasks(queue, [{ kind: 'image', url: item.sourceImages[0], auctionId: item.id, priority: 40, notBefore: now }]);
+      }
+    } else if (task.kind === 'start') {
+      const auction = byId.get(task.auctionId);
+      if (auction) byId.set(task.auctionId, { ...auction, startAt: parseAuctionStart(await response.text()) || auction.startAt });
+    } else if (task.kind === 'image') {
+      const auction = byId.get(task.auctionId);
+      if (auction) {
+        const image = await saveImageResponse(auction, response, dataDir);
+        byId.set(task.auctionId, { ...auction, image, images: [image] });
+      }
+    } else {
+      throw new Error(`Unknown rolling task kind: ${task.kind}`);
+    }
+
+    const updatedAt = new Date(now).toISOString();
+    const auctions = [...byId.values()];
+    await writeJsonAtomic(archivePath, { updatedAt, auctions });
+    queue.updatedAt = updatedAt;
+    await writeJsonAtomic(queuePath, queue);
+    logger.info(`Rolling fetch completed: ${task.kind} ${task.url} (${queue.tasks.length} pending)`);
+    return { status: 'ok', kind: task.kind, pending: queue.tasks.length, lastRequestAt: queue.lastRequestAt };
+  } catch (error) {
+    const attempts = (task.attempts || 0) + 1;
+    if (attempts <= 8) addTasks(queue, [{ ...task, attempts, notBefore: now + retryDelay(error, attempts, now), priority: Math.max(10, (task.priority || 50) - 5) }]);
+    queue.updatedAt = new Date(now).toISOString();
+    await writeJsonAtomic(queuePath, queue);
+    logger.warn(`Rolling fetch failed: ${error.message}; attempt ${attempts}`);
+    return { status: 'error', kind: task.kind, pending: queue.tasks.length, lastRequestAt: queue.lastRequestAt, error: error.message };
+  }
 }
 
 async function cacheMainImage(auction, dataDir, fetchImpl, previous) {

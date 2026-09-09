@@ -25,8 +25,9 @@ ENV NODE_ENV=production \
     NODE_OPTIONS="--disable-proto=throw --max-old-space-size=192" \
     PORT=3000 \
     DATA_DIR=/data \
-    REFRESH_INTERVAL_HOURS=6 \
-    COLLECT_PAGES=4
+    DISCOVERY_INTERVAL_HOURS=6 \
+    FETCH_INTERVAL_SECONDS=120 \
+    COLLECT_PAGES=12
 
 WORKDIR /app
 

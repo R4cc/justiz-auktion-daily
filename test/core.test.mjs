@@ -1,7 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
 import { gameNumber, scoreGuess, selectDailySet, selectRandomSet } from '../src/core.mjs';
-import { extractListingUrls, parseAuctionPage, parseAuctionStart } from '../src/collector.mjs';
+import { enqueueRollingDiscovery, extractListingUrls, parseAuctionPage, parseAuctionStart, processRollingTask } from '../src/collector.mjs';
 
 test('percentage scoring rewards close guesses smoothly', () => {
   assert.equal(scoreGuess(100, 100), 1000);
@@ -97,4 +100,73 @@ test('collector discovers and parses public auction records', () => {
     <img src="/uplimg/notebook_pic1w.jpg">
   `, 'https://www.justiz-auktion.de/Fujitsu-Notebook-213049');
   assert.equal(notebook.category, 'Elektronik');
+});
+
+test('rolling collector persists its queue and performs only one request per step', async () => {
+  const dataDir = await mkdtemp(path.join(tmpdir(), 'justizguessr-rolling-'));
+  try {
+    await writeFile(path.join(dataDir, 'auctions.json'), '{"auctions":[]}\n');
+    await enqueueRollingDiscovery({ dataDir, pages: 2, now: 1_000 });
+    const requested = [];
+    const fetchImpl = async url => {
+      requested.push(url);
+      return new Response('<a href="/Werkzeugkoffer-210635">Details</a>', { status: 200, headers: { 'content-type': 'text/html' } });
+    };
+
+    const first = await processRollingTask({ dataDir, fetchImpl, now: 2_000, logger: { info() {}, warn() {} } });
+    assert.equal(first.status, 'ok');
+    assert.equal(first.kind, 'listing');
+    assert.equal(requested.length, 1);
+
+    const queue = JSON.parse(await readFile(path.join(dataDir, 'fetch-queue.json'), 'utf8'));
+    assert.equal(queue.lastRequestAt, '1970-01-01T00:00:02.000Z');
+    assert.equal(queue.tasks.filter(task => task.kind === 'listing').length, 1);
+    assert.equal(queue.tasks.filter(task => task.kind === 'detail').length, 1);
+  } finally {
+    await rm(dataDir, { recursive: true, force: true });
+  }
+});
+
+test('rolling collector honors Retry-After without issuing a second request', async () => {
+  const dataDir = await mkdtemp(path.join(tmpdir(), 'justizguessr-backoff-'));
+  try {
+    await writeFile(path.join(dataDir, 'auctions.json'), '{"auctions":[]}\n');
+    await enqueueRollingDiscovery({ dataDir, pages: 1, now: 10_000 });
+    let requests = 0;
+    const result = await processRollingTask({
+      dataDir,
+      now: 10_000,
+      logger: { info() {}, warn() {} },
+      fetchImpl: async () => {
+        requests += 1;
+        return new Response('slow down', { status: 429, headers: { 'retry-after': '120' } });
+      }
+    });
+    assert.equal(result.status, 'error');
+    assert.equal(requests, 1);
+    const queue = JSON.parse(await readFile(path.join(dataDir, 'fetch-queue.json'), 'utf8'));
+    assert.equal(queue.tasks[0].attempts, 1);
+    assert.equal(queue.tasks[0].notBefore, 130_000);
+  } finally {
+    await rm(dataDir, { recursive: true, force: true });
+  }
+});
+
+test('rolling collector preserves the request interval across restarts', async () => {
+  const dataDir = await mkdtemp(path.join(tmpdir(), 'justizguessr-interval-'));
+  try {
+    await writeFile(path.join(dataDir, 'auctions.json'), '{"auctions":[]}\n');
+    await enqueueRollingDiscovery({ dataDir, pages: 2, now: 1_000 });
+    let requests = 0;
+    const fetchImpl = async () => {
+      requests += 1;
+      return new Response('', { status: 200 });
+    };
+    await processRollingTask({ dataDir, fetchImpl, now: 2_000, minimumIntervalMs: 120_000, logger: { info() {}, warn() {} } });
+    const waiting = await processRollingTask({ dataDir, fetchImpl, now: 100_000, minimumIntervalMs: 120_000, logger: { info() {}, warn() {} } });
+    assert.equal(waiting.status, 'waiting');
+    assert.equal(requests, 1);
+  } finally {
+    await rm(dataDir, { recursive: true, force: true });
+  }
 });

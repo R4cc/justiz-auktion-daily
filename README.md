@@ -20,14 +20,15 @@ docker run --rm \
   your-user/justizguessr:latest
 ```
 
-The `/data` volume preserves archived auctions, cached listing images, final prices, and immutable daily game sets across container upgrades. The service collects at startup, every six hours, and just after midnight UTC. A day's five auctions and their scoring prices are never changed after generation, and an auction already used by a previous daily is not selected for another one. Free-play rounds may include active or completed archived auctions and do not affect daily progress or streaks.
+The `/data` volume preserves archived auctions, cached listing images, final prices, immutable daily game sets, and the pending fetch queue across container upgrades. The service discovers listings every six hours and then processes exactly one listing page, auction page, start-date page, or image per rolling interval (two minutes by default). Requests are never run concurrently, HTTP 429/5xx responses are retried with increasing delays, and completed auctions with a stored final price are not fetched again. A day's five auctions and their scoring prices are never changed after generation, and an auction already used by a previous daily is not selected for another one. Free-play rounds may include active or completed archived auctions and do not affect daily progress or streaks.
 
 Optional environment variables:
 
 - `PORT` — HTTP port inside the container, default `3000`
 - `DATA_DIR` — persistent data directory, default `/data`
-- `REFRESH_INTERVAL_HOURS` — active-auction refresh interval, default `6`
-- `COLLECT_PAGES` — search-result pages fetched per refresh, default `4`
+- `DISCOVERY_INTERVAL_HOURS` — interval for adding listing pages to the persistent queue, default `6` (the legacy `REFRESH_INTERVAL_HOURS` name remains supported)
+- `FETCH_INTERVAL_SECONDS` — delay between individual outbound requests, default `120` and minimum `30`
+- `COLLECT_PAGES` — listing-result pages included in each discovery sweep, default `12`
 
 ## Run behind Cloudflare Tunnel
 
