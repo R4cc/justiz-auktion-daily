@@ -53,7 +53,7 @@ The application still has outbound HTTPS access so it can refresh Justiz-Auktion
 
 The `ci` workflow builds pull requests without publishing. Pushes to `main` publish `latest`, the package version, and the commit SHA. Pushes to `dev` publish `dev` and `dev-<sha>`.
 
-Configure these GitHub Actions secrets:
+Configure these GitHub Actions repository variables:
 
 - `DOCKERHUB_USERNAME`
 - `DOCKERHUB_TOKEN`
