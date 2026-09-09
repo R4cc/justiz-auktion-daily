@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="de">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#f4f1e9" />
+    <meta name="description" content="Fünf echte Justiz-Auktionen. Schätze den aktuellen Preis." />
+    <title>JUSTIZGUESSR — Das tägliche Auktionsspiel</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <div class="paper-noise" aria-hidden="true"></div>
+    <header class="site-header">
+      <button class="wordmark" type="button" data-action="home" aria-label="Zur Startseite">
+        <span class="mark">JG</span><span>JUSTIZGUESSR</span>
+      </button>
+      <div class="header-actions">
+        <span class="utc-badge"><span class="live-dot"></span>NEU UM 00:00 UTC</span>
+        <button class="icon-button" type="button" data-action="help" aria-label="Spielregeln anzeigen">?</button>
+      </div>
+    </header>
+
+    <main id="app" aria-live="polite"></main>
+
+    <dialog id="help-dialog" class="help-dialog">
+      <form method="dialog">
+        <button class="dialog-close" aria-label="Schließen">×</button>
+        <p class="eyebrow">SO FUNKTIONIERT'S</p>
+        <h2>Preisgefühl statt Fachwissen.</h2>
+        <div class="rules-grid">
+          <div><span>01</span><p>Du siehst fünf echte, öffentlich gelistete Justiz-Auktionen.</p></div>
+          <div><span>02</span><p>Schätze den aktuellen Gebotsstand. Restzeit und Zustand helfen dir.</p></div>
+          <div><span>03</span><p>Je kleiner der prozentuale Abstand, desto näher bist du an 1.000 Punkten.</p></div>
+        </div>
+        <p class="fine-print">Der offizielle Tagessatz kann auf diesem Gerät einmal abgeschlossen werden. Datenstand und Wertung sind für alle Spieler des Tages identisch.</p>
+      </form>
+    </dialog>
+
+    <div id="toast" class="toast" role="status" aria-live="polite"></div>
+    <script src="app.js" defer></script>
+  </body>
+</html>
