@@ -104,6 +104,7 @@ function scheduleUtcRollover() {
 }
 
 await seedArchiveIfEmpty({ dataDir, seedFile: path.join(projectDir, 'seed', 'auctions.json') });
+await refresh();
 await ensureDailyGame({ dataDir });
 
 const server = createServer({ maxHeaderSize: 16 * 1024 }, async (request, response) => {
@@ -143,7 +144,6 @@ server.maxHeadersCount = 50;
 
 server.listen(port, '0.0.0.0', () => {
   console.log(`JUSTIZGUESSR listening on http://0.0.0.0:${port}`);
-  refresh();
 });
 
 setInterval(refresh, refreshHours * 60 * 60 * 1000).unref();

@@ -4,9 +4,10 @@ import { selectDailySet, utcDateKey } from './core.mjs';
 
 const BASE_URL = 'https://www.justiz-auktion.de';
 const USER_AGENT = 'JUSTIZGUESSR/1.0 (+daily public auction indexer; respectful low-frequency fetches)';
+const DAILY_SELECTION_VERSION = 2;
 
 function decodeEntities(value = '') {
-  const named = { amp: '&', quot: '"', apos: "'", lt: '<', gt: '>', nbsp: ' ', auml: 'ä', ouml: 'ö', uuml: 'ü', Auml: 'Ä', Ouml: 'Ö', Uuml: 'Ü', szlig: 'ß', euro: '€', lowbar: '_', period: '.', comma: ',', colon: ':', NewLine: '\n' };
+  const named = { amp: '&', quot: '"', apos: "'", lt: '<', gt: '>', nbsp: ' ', auml: 'ä', ouml: 'ö', uuml: 'ü', Auml: 'Ä', Ouml: 'Ö', Uuml: 'Ü', szlig: 'ß', euro: '€', lowbar: '_', period: '.', comma: ',', colon: ':', sol: '/', frasl: '/', permil: '‰', NewLine: '\n' };
   return value.replace(/&(#x?[0-9a-f]+|[a-z]+);/gi, (_, entity) => {
     if (entity[0] === '#') {
       const hex = entity[1]?.toLowerCase() === 'x';
@@ -47,8 +48,7 @@ function zonedLocalToUtc(value, timeZone = 'Europe/Berlin') {
   return new Date(desired - (observed - desired)).toISOString();
 }
 
-function inferCategory(text) {
-  const value = text.toLowerCase();
+function inferCategory(title, description = '') {
   const groups = [
     ['Fahrzeuge', /\b(pkw|auto|fahrzeug|bmw|mercedes|volkswagen|vw|audi|motorrad|roller)\b/],
     ['Fahrräder', /\b(fahrrad|mountainbike|e-bike|ebike)\b/],
@@ -60,7 +60,11 @@ function inferCategory(text) {
     ['Möbel & Wohnen', /\b(möbel|schrank|tisch|stuhl|sofa|lampe|porzellan)\b/],
     ['Kosmetik', /\b(parfum|eau de toilette|kosmetik)\b/]
   ];
-  return groups.find(([, matcher]) => matcher.test(value))?.[0] || 'Sonstiges';
+  const titleValue = title.toLowerCase();
+  const titleMatch = groups.find(([, matcher]) => matcher.test(titleValue));
+  if (titleMatch) return titleMatch[0];
+  const descriptionValue = description.toLowerCase().replace(/\b\d{1,2}(?::\d{2})?\s*uhr\b/g, ' ');
+  return groups.find(([, matcher]) => matcher.test(descriptionValue))?.[0] || 'Sonstiges';
 }
 
 export function extractListingUrls(html) {
@@ -108,7 +112,7 @@ export function parseAuctionPage(html, url) {
     id,
     title,
     description,
-    category: inferCategory(`${title} ${description}`),
+    category: inferCategory(title, description),
     sourceImages: imageUrls,
     startBid: startBid ?? 0,
     currentBid: currentBid ?? 0,
@@ -233,9 +237,9 @@ export async function collectAuctions({ dataDir, fetchImpl = fetch, pages = 4, m
 export async function ensureDailyGame({ dataDir, dateKey = utcDateKey(), logger = console } = {}) {
   const dailyPath = path.join(dataDir, 'daily-games.json');
   const daily = await readJson(dailyPath, { updatedAt: null, games: {} });
-  if (daily.games[dateKey]) return daily.games[dateKey];
+  if (daily.games[dateKey]?.selectionVersion === DAILY_SELECTION_VERSION) return daily.games[dateKey];
   const archive = await readJson(path.join(dataDir, 'auctions.json'), { auctions: [] });
-  const game = selectDailySet(archive.auctions, dateKey, daily.games);
+  const game = { ...selectDailySet(archive.auctions, dateKey, daily.games), selectionVersion: DAILY_SELECTION_VERSION };
   daily.games[dateKey] = game;
   const retainedDates = Object.keys(daily.games).sort().slice(-730);
   daily.games = Object.fromEntries(retainedDates.map(key => [key, daily.games[key]]));

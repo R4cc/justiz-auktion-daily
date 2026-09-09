@@ -16,7 +16,7 @@ test('game numbers advance at midnight UTC', () => {
 });
 
 test('daily selection is deterministic, varied, and avoids recently used items', () => {
-  const auctions = Array.from({ length: 12 }, (_, index) => ({
+  const auctions = Array.from({ length: 18 }, (_, index) => ({
     id: 100000 + index,
     title: `Auction item ${index}`,
     description: 'A sufficiently detailed public auction description for selection quality.',
@@ -25,7 +25,7 @@ test('daily selection is deterministic, varied, and avoids recently used items',
     currentBid: 20 * (index + 1),
     startBid: 5,
     bidCount: index + 1,
-    endAt: '2026-10-01T12:00:00.000Z',
+    endAt: `2026-10-${String(1 + (index % 6)).padStart(2, '0')}T${String(10 + (index % 5)).padStart(2, '0')}:00:00.000Z`,
     url: `https://example.test/item-${index}`
   }));
   const previous = { '2026-09-08': { auctions: auctions.slice(0, 5) } };
@@ -35,6 +35,13 @@ test('daily selection is deterministic, varied, and avoids recently used items',
   assert.equal(new Set(first.auctions.map(item => item.id)).size, 5);
   assert.equal(first.auctions.some(item => item.id < 100005), false);
   assert.ok(new Set(first.auctions.map(item => item.category)).size >= 4);
+  assert.ok(new Set(first.auctions.map(item => item.endAt)).size >= 4);
+  const following = selectDailySet(auctions, '2026-09-10', { ...previous, '2026-09-09': first });
+  assert.equal(following.auctions.some(item => first.auctions.some(previousItem => previousItem.id === item.id)), false);
+  assert.notDeepEqual(
+    first.auctions.map(item => item.id),
+    following.auctions.map(item => item.id)
+  );
 });
 
 test('collector discovers and parses public auction records', () => {
@@ -54,6 +61,16 @@ test('collector discovers and parses public auction records', () => {
   assert.equal(item.startBid, 20);
   assert.equal(item.currentBid, 110);
   assert.equal(item.bidCount, 14);
+  assert.equal(item.category, 'Werkzeuge');
   assert.equal(item.sourceImages[0], 'https://www.justiz-auktion.de/uplimg/example_pic1w.jpg');
   assert.equal(parseAuctionStart('<td>Starttermin</td><td>27.08.2026 - 13:00</td>'), '2026-08-27T11:00:00.000Z');
+
+  const notebook = parseAuctionPage(`
+    <title>Fujitsu Notebook (#213049) | Justiz-Auktion</title>
+    <p>Auktion ID 213049</p><p>Startgebot: 3,00 €</p><p>Aktuelles Gebot: 21,00 €</p>
+    <p>Endet am: 22.09.2026 13:41:21</p><h3>Artikelbeschreibung</h3>
+    <p>Zustand: Gebraucht</p><p>Geschäftszeiten bis 16:00 Uhr. Das Gerät wird ungeprüft verkauft.</p><h3>Details</h3>
+    <img src="/uplimg/notebook_pic1w.jpg">
+  `, 'https://www.justiz-auktion.de/Fujitsu-Notebook-213049');
+  assert.equal(notebook.category, 'Elektronik');
 });

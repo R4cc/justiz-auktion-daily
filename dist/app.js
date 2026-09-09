@@ -78,9 +78,22 @@ const app = document.querySelector('#app');
 const helpDialog = document.querySelector('#help-dialog');
 const toast = document.querySelector('#toast');
 const GAME_EPOCH = Date.UTC(2026, 0, 1);
+const initialUtcDate = new Date().toISOString().slice(0, 10);
 let countdownTimer;
 let state = { view: 'start', round: 0, answers: [] };
 let dailyLoadPromise = Promise.resolve();
+
+function updateDailyReset() {
+  const now = new Date();
+  const next = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + 1);
+  const seconds = Math.max(0, Math.ceil((next - now.getTime()) / 1000));
+  const hours = Math.floor(seconds / 3600);
+  const minutes = Math.floor((seconds % 3600) / 60);
+  const remainder = seconds % 60;
+  const node = document.querySelector('[data-daily-reset]');
+  if (node) node.textContent = [hours, minutes, remainder].map(value => String(value).padStart(2, '0')).join(':');
+  if (initialUtcDate !== now.toISOString().slice(0, 10)) location.reload();
+}
 
 function utcDateKey() {
   return dailyMeta?.date || new Date().toISOString().slice(0, 10);
@@ -151,10 +164,11 @@ function scoreGuess(guess, actual) {
 }
 
 function accuracy(score) {
-  if (score >= 850) return { label: 'Ausgezeichnet', className: 'green', emoji: '🟩' };
-  if (score >= 650) return { label: 'Gut geschätzt', className: 'yellow', emoji: '🟨' };
-  if (score >= 400) return { label: 'Gar nicht schlecht', className: 'orange', emoji: '🟧' };
-  return { label: 'Weit daneben', className: 'red', emoji: '🟥' };
+  if (score === 1000) return { label: 'Perfekt!', message: 'Genau ins Schwarze getroffen.', icon: '★', className: 'green', emoji: '🟩' };
+  if (score >= 850) return { label: 'Sehr nah dran!', message: 'Dein Preisgefühl sitzt.', icon: '◎', className: 'green', emoji: '🟩' };
+  if (score >= 650) return { label: 'Gut geschätzt!', message: 'Du warst ziemlich dicht dran.', icon: '★', className: 'yellow', emoji: '🟨' };
+  if (score >= 400) return { label: 'Nicht schlecht', message: 'Die Richtung hat gestimmt.', icon: '◆', className: 'orange', emoji: '🟧' };
+  return { label: 'Daneben', message: 'Die nächste Auktion wartet schon.', icon: '↗', className: 'red', emoji: '🟥' };
 }
 
 function stats() {
@@ -232,21 +246,22 @@ function renderRound() {
         <div class="progress-track" aria-label="Spielfortschritt"><div class="progress-fill" style="width:${((state.round + (answer ? 1 : 0)) / 5) * 100}%"></div></div>
         <span class="running-score">${runningScore.toLocaleString('de-DE')} PKT</span>
       </div>
-      <div class="auction-layout">
+      <div class="auction-layout${answer ? ' auction-layout--result' : ''}">
         <div class="auction-image-wrap">
           <img class="auction-image" src="${auction.image}" alt="${auction.title}" />
           <span class="category-tag">${auction.category.toUpperCase()}</span>
           <span class="time-tag"><span class="clock-icon" aria-hidden="true"></span><span data-countdown>${timeRemaining(auction.endAt)}</span></span>
         </div>
-        <div class="auction-panel">
+        <div class="auction-panel${answer ? ' auction-panel--result' : ''}">
           <p class="auction-id">JUSTIZ-AUKTION #${auction.id}</p>
           <h1 class="auction-title">${auction.title}</h1>
-          <p class="auction-description">${auction.description}</p>
-          <div class="fact-list">
-            <div class="fact"><span>ZUSTAND</span><strong>${auction.condition}</strong></div>
-            <div class="fact"><span>ÜBERGABE</span><strong>${auction.fulfillment}</strong></div>
-          </div>
-          ${answer ? revealMarkup(auction, answer) : guessMarkup()}
+          ${answer ? revealMarkup(auction, answer) : `
+            <p class="auction-description">${auction.description}</p>
+            <div class="fact-list">
+              <div class="fact"><span>ZUSTAND</span><strong>${auction.condition}</strong></div>
+            </div>
+            ${guessMarkup()}
+          `}
         </div>
       </div>
     </section>`;
@@ -271,17 +286,34 @@ function guessMarkup() {
 
 function revealMarkup(auction, answer) {
   const level = accuracy(answer.score);
+  const difference = auction.actualBid - answer.guess;
+  const sign = difference > 0 ? '+' : difference < 0 ? '−' : '';
+  const arrow = difference > 0 ? '↗' : difference < 0 ? '↘' : '●';
+  const relationship = difference > 0 ? 'höher' : difference < 0 ? 'niedriger' : 'genau gleich';
   return `
-    <div class="reveal-panel">
-      <p class="reveal-verdict"><span class="verdict-dot ${level.className}"></span>${level.label}</p>
-      <div class="reveal-prices">
-        <div class="price-card"><span>DEIN TIPP</span><strong>${euro(answer.guess)}</strong></div>
-        <div class="price-card"><span>ECHTES GEBOT</span><strong>${euro(auction.actualBid)}</strong></div>
+    <div class="reveal-panel reveal-${level.className}">
+      <div class="result-feedback">
+        <span class="feedback-icon" aria-hidden="true">${level.icon}</span>
+        <span><strong>${level.label}</strong><small>${level.message}</small></span>
       </div>
-      <div class="reveal-metrics">
-        <div class="metric"><span>STARTGEBOT</span><strong>${euro(auction.startBid)}</strong></div>
-        <div class="metric"><span>ABWEICHUNG</span><strong>${answer.error.toFixed(1).replace('.', ',')} %</strong></div>
-        <div class="metric"><span>PUNKTE</span><strong class="round-score">${answer.score}</strong></div>
+      <div class="bid-comparison">
+        <div class="bid-value">
+          <span>DEIN TIPP</span>
+          <strong>${euro(answer.guess)}</strong>
+        </div>
+        <div class="difference-indicator ${level.className}" aria-label="Das echte Gebot ist ${relationship}; Abweichung ${answer.error.toFixed(1).replace('.', ',')} Prozent">
+          <strong>${sign}${answer.error.toFixed(1).replace('.', ',')} %</strong>
+          <span aria-hidden="true">${arrow}</span>
+        </div>
+        <div class="bid-value bid-value--actual">
+          <span>ECHTES GEBOT</span>
+          <strong>${euro(auction.actualBid)}</strong>
+        </div>
+      </div>
+      <p class="start-bid">Startgebot <strong>${euro(auction.startBid)}</strong></p>
+      <div class="round-reward">
+        <span class="reward-star" aria-hidden="true">★</span>
+        <div class="reward-copy"><span>DEINE PUNKTE</span><strong>${answer.score.toLocaleString('de-DE')} <small>PKT</small></strong></div>
       </div>
       <div class="next-row">
         <button class="primary-button" type="button" data-action="next">${state.round === 4 ? 'Ergebnis ansehen' : 'Nächste Auktion'}<span class="button-arrow">→</span></button>
@@ -299,9 +331,11 @@ function submitGuess(form) {
   }
   const actual = AUCTIONS[state.round].actualBid;
   const score = scoreGuess(guess, actual);
+  const isExact = Math.round(guess * 100) === Math.round(actual * 100);
   state.answers[state.round] = { guess, score, error: Math.abs(guess - actual) / actual * 100 };
   saveProgress();
   renderRound();
+  if (isExact) requestAnimationFrame(launchConfetti);
 }
 
 function nextRound() {
@@ -346,6 +380,7 @@ function renderResults() {
       </div>
       <div class="results-actions">
         <button class="primary-button" type="button" data-action="share">Ergebnis teilen <span class="button-arrow">↗</span></button>
+        <button class="secondary-button" type="button" data-action="copy">Text kopieren</button>
         <button class="secondary-button" type="button" data-action="home">Zur Startseite</button>
       </div>
       <p class="data-note">Gebotsstände wurden für dieses Tagesspiel festgeschrieben. Die Originalauktion kann sich danach weiter verändern.</p>
@@ -357,7 +392,7 @@ function resultRow(auction, answer, index) {
   return `
     <div class="result-row">
       <img class="result-thumb" src="${auction.image}" alt="" />
-      <div class="result-name"><strong>${index + 1}. ${auction.title}</strong><span>AUKTION #${auction.id}</span></div>
+      <a class="result-name result-auction-link" href="${auction.url}" target="_blank" rel="noreferrer"><strong>${index + 1}. ${auction.title}</strong><span>AUKTION #${auction.id} ÖFFNEN ↗</span></a>
       <div class="result-cell"><strong>${euro(answer.guess)}</strong><span>DEIN TIPP</span></div>
       <div class="result-cell"><strong>${euro(auction.actualBid)}</strong><span>GEBOT</span></div>
       <div class="result-cell"><strong>${answer.error.toFixed(1).replace('.', ',')} %</strong><span>ABWEICHUNG</span></div>
@@ -387,6 +422,47 @@ async function shareResult() {
   catch { showToast('Teilen ist in diesem Browser nicht verfügbar.'); }
 }
 
+async function copyResult() {
+  const text = shareText();
+  try {
+    await navigator.clipboard.writeText(text);
+    showToast('Ergebnistext kopiert — spoilerfrei.');
+  } catch {
+    const field = document.createElement('textarea');
+    field.value = text;
+    field.setAttribute('readonly', '');
+    field.style.position = 'fixed';
+    field.style.opacity = '0';
+    document.body.append(field);
+    field.select();
+    const copied = document.execCommand('copy');
+    field.remove();
+    showToast(copied ? 'Ergebnistext kopiert — spoilerfrei.' : 'Kopieren ist in diesem Browser nicht verfügbar.');
+  }
+}
+
+function launchConfetti() {
+  if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  document.querySelector('.confetti-layer')?.remove();
+  const layer = document.createElement('div');
+  layer.className = 'confetti-layer';
+  layer.setAttribute('aria-hidden', 'true');
+  const colors = ['#e53935', '#ffcd38', '#1f9d65', '#14336b', '#f08a24', '#ffffff'];
+  for (let index = 0; index < 90; index += 1) {
+    const piece = document.createElement('i');
+    piece.style.setProperty('--x', `${Math.random() * 100}vw`);
+    piece.style.setProperty('--drift', `${(Math.random() - 0.5) * 240}px`);
+    piece.style.setProperty('--delay', `${Math.random() * 0.65}s`);
+    piece.style.setProperty('--duration', `${2.5 + Math.random() * 1.8}s`);
+    piece.style.setProperty('--spin', `${360 + Math.random() * 1080}deg`);
+    piece.style.setProperty('--color', colors[index % colors.length]);
+    piece.style.setProperty('--size', `${6 + Math.random() * 8}px`);
+    layer.append(piece);
+  }
+  document.body.append(layer);
+  setTimeout(() => layer.remove(), 5000);
+}
+
 function showToast(message) {
   toast.textContent = message;
   toast.classList.add('show');
@@ -405,12 +481,15 @@ document.addEventListener('click', event => {
   if (action === 'play') dailyLoadPromise.finally(startGame);
   if (action === 'next') nextRound();
   if (action === 'share') shareResult();
+  if (action === 'copy') copyResult();
   if (action === 'home') renderStart();
   if (action === 'help') helpDialog.showModal();
 });
 
 renderStart();
 dailyLoadPromise = loadDailyGame();
+updateDailyReset();
+setInterval(updateDailyReset, 1000);
 
 function registerWebMcpTools() {
   const context = document.modelContext;

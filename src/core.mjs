@@ -21,12 +21,21 @@ function deterministicJitter(dateKey, id) {
   return bytes.readUInt32BE(0) / 0xffffffff;
 }
 
+function deterministicOrder(dateKey, id) {
+  const bytes = createHash('sha256').update(`order:${dateKey}:${id}`).digest();
+  return bytes.readUInt32BE(0) / 0xffffffff;
+}
+
 function priceBand(price) {
   if (price < 50) return 'under-50';
   if (price < 250) return 'under-250';
   if (price < 1000) return 'under-1000';
   if (price < 5000) return 'under-5000';
   return 'over-5000';
+}
+
+function endSlot(endAt) {
+  return endAt ? endAt.slice(0, 13) : 'unknown';
 }
 
 function qualityScore(auction, now) {
@@ -44,6 +53,9 @@ export function selectDailySet(auctions, dateKey, previousSets = {}, count = 5) 
   const now = Date.parse(`${dateKey}T00:00:00Z`);
   const recentDates = Object.keys(previousSets).sort().slice(-30);
   const recentlyUsed = new Set(recentDates.flatMap(key => previousSets[key]?.auctions?.map(item => item.id) || []));
+  const recentCategoryCounts = recentDates.slice(-7)
+    .flatMap(key => previousSets[key]?.auctions || [])
+    .reduce((counts, item) => counts.set(item.category, (counts.get(item.category) || 0) + 1), new Map());
   const candidates = auctions
     .filter(auction => auction?.id && auction.title && auction.image)
     .filter(auction => Number.isFinite(auction.currentBid) && auction.currentBid > 0)
@@ -53,14 +65,18 @@ export function selectDailySet(auctions, dateKey, previousSets = {}, count = 5) 
   const selected = [];
   const categories = new Set();
   const priceBands = new Set();
-  const remaining = [...candidates];
+  const endSlots = new Set();
+  const unusedCandidates = candidates.filter(auction => !recentlyUsed.has(auction.id));
+  const remaining = [...(unusedCandidates.length >= count ? unusedCandidates : candidates)];
 
   while (selected.length < count && remaining.length) {
     remaining.sort((a, b) => {
       const score = item => item._quality
         + (recentlyUsed.has(item.id) ? 0 : 120)
-        + (categories.has(item.category) ? 0 : 38)
+        + (categories.has(item.category) ? -100 : 60)
+        - (recentCategoryCounts.get(item.category) || 0) * 12
         + (priceBands.has(priceBand(item.currentBid)) ? 0 : 20)
+        + (endSlots.has(endSlot(item.endAt)) ? -260 : 35)
         + item._jitter * 12;
       return score(b) - score(a);
     });
@@ -68,6 +84,7 @@ export function selectDailySet(auctions, dateKey, previousSets = {}, count = 5) 
     selected.push(choice);
     categories.add(choice.category || 'Sonstiges');
     priceBands.add(priceBand(choice.currentBid));
+    endSlots.add(endSlot(choice.endAt));
   }
 
   if (selected.length < count) {
@@ -80,11 +97,13 @@ export function selectDailySet(auctions, dateKey, previousSets = {}, count = 5) 
 
   if (selected.length < count) throw new Error(`Only ${selected.length} eligible auctions are available; ${count} required`);
 
+  const ordered = selected.sort((a, b) => deterministicOrder(dateKey, a.id) - deterministicOrder(dateKey, b.id));
+
   return {
     date: dateKey,
     gameNumber: gameNumber(dateKey),
     generatedAt: new Date().toISOString(),
-    auctions: selected.map(({ _quality, _jitter, ...auction }) => ({
+    auctions: ordered.map(({ _quality, _jitter, ...auction }) => ({
       id: auction.id,
       title: auction.title,
       description: auction.description,
