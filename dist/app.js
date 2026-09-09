@@ -311,7 +311,7 @@ function renderRound() {
       node.closest('.time-tag')?.classList.toggle('time-tag--ended', !auction.endAt || Date.parse(auction.endAt) <= Date.now());
     }
   }, 30000);
-  if (!answer) setTimeout(() => document.querySelector('#price-input')?.focus(), 50);
+  setTimeout(() => document.querySelector(answer ? '[data-action="next"]' : '#price-input')?.focus(), 50);
 }
 
 function guessMarkup(ended = false) {
@@ -532,6 +532,14 @@ document.addEventListener('click', event => {
   if (action === 'copy') copyResult();
   if (action === 'home') renderStart();
   if (action === 'help') helpDialog.showModal();
+});
+
+document.addEventListener('keydown', event => {
+  if (event.key !== 'Enter' || event.repeat || event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
+  if (state.view !== 'game' || !state.answers[state.round]) return;
+  if (event.target.closest('a, button, input, textarea, select')) return;
+  event.preventDefault();
+  nextRound();
 });
 
 renderStart();
