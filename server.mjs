@@ -60,6 +60,22 @@ const discoveryHours =
     )
   );
 
+const discoveryIntervalMs =
+  discoveryHours *
+  60 *
+  60 *
+  1000;
+
+const discoveryCheckIntervalMs =
+  Math.max(
+    30_000,
+    Number(
+      process.env
+        .DISCOVERY_CHECK_INTERVAL_MS ||
+      60_000
+    )
+  );
+
 const collectPages =
   Math.max(
     1,
@@ -111,34 +127,51 @@ const fetchIdlePollMs =
 
 let rollingPromise = null;
 let rollingTimer = null;
+let discoveryTimer = null;
 let shuttingDown = false;
 
 let lastRefresh = {
-  status: 'starting',
-  startedAt: null,
-  finishedAt: null,
-  error: null
+  status:
+    'starting',
+
+  startedAt:
+    null,
+
+  finishedAt:
+    null,
+
+  error:
+    null
 };
 
 const mimeTypes = {
   '.css':
     'text/css; charset=utf-8',
+
   '.html':
     'text/html; charset=utf-8',
+
   '.ico':
     'image/x-icon',
+
   '.jpg':
     'image/jpeg',
+
   '.jpeg':
     'image/jpeg',
+
   '.js':
     'text/javascript; charset=utf-8',
+
   '.json':
     'application/json; charset=utf-8',
+
   '.png':
     'image/png',
+
   '.svg':
     'image/svg+xml',
+
   '.webp':
     'image/webp'
 };
@@ -153,15 +186,19 @@ function json(
     {
       'content-type':
         'application/json; charset=utf-8',
+
       'cache-control':
         'no-store',
+
       'x-content-type-options':
         'nosniff'
     }
   );
 
   response.end(
-    JSON.stringify(body)
+    JSON.stringify(
+      body
+    )
   );
 }
 
@@ -175,18 +212,26 @@ function text(
     {
       'content-type':
         'text/plain; charset=utf-8',
+
       'content-length':
-        Buffer.byteLength(body),
+        Buffer.byteLength(
+          body
+        ),
+
       'cache-control':
         'no-store',
+
       'x-content-type-options':
         'nosniff',
+
       'referrer-policy':
         'no-referrer'
     }
   );
 
-  response.end(body);
+  response.end(
+    body
+  );
 }
 
 async function readDataJson(
@@ -215,31 +260,81 @@ async function readDataJson(
   }
 }
 
+async function readFetchQueue() {
+  return readDataJson(
+    'fetch-queue.json',
+    {
+      version:
+        null,
+
+      updatedAt:
+        null,
+
+      lastRequestAt:
+        null,
+
+      lastDiscoveryAt:
+        null,
+
+      tasks:
+        []
+    }
+  );
+}
+
+function latestPersistedActivity(
+  queue,
+  archive
+) {
+  const values = [
+    queue.lastDiscoveryAt,
+    queue.updatedAt,
+    queue.lastRequestAt,
+    archive.updatedAt
+  ]
+    .map(
+      value =>
+        Date.parse(
+          value ||
+          ''
+        )
+    )
+    .filter(
+      Number.isFinite
+    );
+
+  return values.length
+    ? Math.max(
+        ...values
+      )
+    : null;
+}
+
 async function publicStats() {
   const [
     archive,
     queue,
     daily
-  ] = await Promise.all([
-    readDataJson(
-      'auctions.json',
-      {
-        auctions: []
-      }
-    ),
-    readDataJson(
-      'fetch-queue.json',
-      {
-        tasks: []
-      }
-    ),
-    readDataJson(
-      'daily-games.json',
-      {
-        games: {}
-      }
-    )
-  ]);
+  ] =
+    await Promise.all([
+      readDataJson(
+        'auctions.json',
+        {
+          auctions:
+            []
+        }
+      ),
+
+      readFetchQueue(),
+
+      readDataJson(
+        'daily-games.json',
+        {
+          games:
+            {}
+        }
+      )
+    ]);
 
   return formatPublicStats({
     archive,
@@ -281,9 +376,13 @@ async function sendFile(
 
   try {
     const details =
-      await stat(filename);
+      await stat(
+        filename
+      );
 
-    if (!details.isFile()) {
+    if (
+      !details.isFile()
+    ) {
       return false;
     }
 
@@ -297,16 +396,22 @@ async function sendFile(
             ).toLowerCase()
           ] ||
           'application/octet-stream',
+
         'content-length':
           details.size,
+
         'cache-control':
           cacheControl,
+
         'x-content-type-options':
           'nosniff',
+
         'referrer-policy':
           'strict-origin-when-cross-origin',
+
         'permissions-policy':
           'camera=(), microphone=(), geolocation=(), payment=()',
+
         'content-security-policy':
           "default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; script-src 'self'; connect-src 'self'; base-uri 'self'; frame-ancestors 'none'"
       }
@@ -328,7 +433,9 @@ async function sendFile(
               error
             )
         )
-        .pipe(response);
+        .pipe(
+          response
+        );
     }
 
     return true;
@@ -353,14 +460,18 @@ async function dailyPayload() {
   return {
     date:
       game.date,
+
     gameNumber:
       game.gameNumber,
+
     generatedAt:
       game.generatedAt,
+
     auctions:
       game.auctions.map(
         auction => ({
           ...auction,
+
           actualBid:
             auction.correctPrice
         })
@@ -388,10 +499,12 @@ async function randomPayload() {
 
   return {
     ...game,
+
     auctions:
       game.auctions.map(
         auction => ({
           ...auction,
+
           actualBid:
             auction.correctPrice
         })
@@ -400,7 +513,9 @@ async function randomPayload() {
 }
 
 async function rollingFetch() {
-  if (rollingPromise) {
+  if (
+    rollingPromise
+  ) {
     return rollingPromise;
   }
 
@@ -409,11 +524,14 @@ async function rollingFetch() {
       lastRefresh = {
         status:
           'running',
+
         startedAt:
           new Date()
             .toISOString(),
+
         finishedAt:
           null,
+
         error:
           null
       };
@@ -422,10 +540,13 @@ async function rollingFetch() {
         const result =
           await processRollingTask({
             dataDir,
+
             minimumIntervalMs:
               fetchMinIntervalMs,
+
             initialIntervalMs:
               fetchInitialIntervalMs,
+
             maximumIntervalMs:
               fetchMaxIntervalMs
           });
@@ -433,8 +554,10 @@ async function rollingFetch() {
         lastRefresh = {
           ...lastRefresh,
           ...result,
+
           status:
             result.status,
+
           finishedAt:
             new Date()
               .toISOString()
@@ -444,11 +567,14 @@ async function rollingFetch() {
       } catch (error) {
         lastRefresh = {
           ...lastRefresh,
+
           status:
             'error',
+
           finishedAt:
             new Date()
               .toISOString(),
+
           error:
             error.message
         };
@@ -461,8 +587,10 @@ async function rollingFetch() {
         return {
           status:
             'error',
+
           error:
             error.message,
+
           waitMs:
             fetchMaxIntervalMs
         };
@@ -478,11 +606,15 @@ async function rollingFetch() {
 function scheduleNextRollingFetch(
   delayMs = 0
 ) {
-  if (shuttingDown) {
+  if (
+    shuttingDown
+  ) {
     return;
   }
 
-  if (rollingTimer) {
+  if (
+    rollingTimer
+  ) {
     clearTimeout(
       rollingTimer
     );
@@ -491,7 +623,8 @@ function scheduleNextRollingFetch(
   rollingTimer =
     setTimeout(
       async () => {
-        rollingTimer = null;
+        rollingTimer =
+          null;
 
         const result =
           await rollingFetch();
@@ -529,23 +662,173 @@ function scheduleNextRollingFetch(
   rollingTimer.unref();
 }
 
-async function scheduleDiscovery() {
-  if (rollingPromise) {
+async function maybeScheduleDiscovery({
+  force = false,
+  wakeFetcher = true
+} = {}) {
+  /*
+   * Avoid modifying the persisted
+   * queue while one worker is
+   * currently processing it.
+   */
+  if (
+    rollingPromise
+  ) {
     await rollingPromise;
   }
 
-  const queue =
+  const [
+    queue,
+    archive
+  ] =
+    await Promise.all([
+      readFetchQueue(),
+
+      readDataJson(
+        'auctions.json',
+        {
+          updatedAt:
+            null,
+
+          auctions:
+            []
+        }
+      )
+    ]);
+
+  /*
+   * Most important restart behavior:
+   *
+   * if there is persisted work, resume
+   * that exact queue. Do NOT add a new
+   * listing scan because the process
+   * restarted.
+   */
+  if (
+    queue.tasks?.length >
+    0
+  ) {
+    return {
+      scheduled:
+        false,
+
+      reason:
+        'pending_queue',
+
+      pending:
+        queue.tasks.length
+    };
+  }
+
+  const now =
+    Date.now();
+
+  const lastActivity =
+    latestPersistedActivity(
+      queue,
+      archive
+    );
+
+  /*
+   * version === null means no persisted
+   * fetch queue exists at all. That's a
+   * genuine first run.
+   *
+   * For an older persisted queue without
+   * lastDiscoveryAt, updatedAt /
+   * lastRequestAt / archive.updatedAt
+   * are used as migration fallbacks.
+   */
+  const firstRun =
+    queue.version ==
+    null;
+
+  const due =
+    force ||
+    firstRun ||
+    lastActivity == null ||
+    now -
+      lastActivity >=
+      discoveryIntervalMs;
+
+  if (!due) {
+    return {
+      scheduled:
+        false,
+
+      reason:
+        'not_due',
+
+      nextDiscoveryAt:
+        new Date(
+          lastActivity +
+          discoveryIntervalMs
+        ).toISOString()
+    };
+  }
+
+  const scheduledQueue =
     await enqueueRollingDiscovery({
       dataDir,
       pages:
-        collectPages
+        collectPages,
+      now
     });
 
-  scheduleNextRollingFetch(
-    0
-  );
+  if (
+    wakeFetcher &&
+    scheduledQueue.tasks
+      ?.length > 0
+  ) {
+    scheduleNextRollingFetch(
+      0
+    );
+  }
 
-  return queue;
+  return {
+    scheduled:
+      true,
+
+    pending:
+      scheduledQueue.tasks
+        ?.length ||
+      0,
+
+    lastDiscoveryAt:
+      scheduledQueue
+        .lastDiscoveryAt ||
+      null
+  };
+}
+
+function scheduleDiscoveryChecks() {
+  if (
+    discoveryTimer
+  ) {
+    clearInterval(
+      discoveryTimer
+    );
+  }
+
+  discoveryTimer =
+    setInterval(
+      () => {
+        maybeScheduleDiscovery({
+          wakeFetcher:
+            true
+        })
+          .catch(
+            error =>
+              console.error(
+                'Auction discovery scheduling failed:',
+                error
+              )
+          );
+      },
+      discoveryCheckIntervalMs
+    );
+
+  discoveryTimer.unref();
 }
 
 function scheduleUtcRollover() {
@@ -565,11 +848,13 @@ function scheduleUtcRollover() {
   const timer =
     setTimeout(
       async () => {
-        await ensureDailyGame({
-          dataDir
-        });
-
-        scheduleUtcRollover();
+        try {
+          await ensureDailyGame({
+            dataDir
+          });
+        } finally {
+          scheduleUtcRollover();
+        }
       },
       next -
       now.getTime()
@@ -580,6 +865,7 @@ function scheduleUtcRollover() {
 
 await seedArchiveIfEmpty({
   dataDir,
+
   seedFile:
     path.join(
       projectDir,
@@ -592,7 +878,21 @@ await ensureDailyGame({
   dataDir
 });
 
-await scheduleDiscovery();
+/*
+ * Startup no longer blindly triggers
+ * discovery.
+ *
+ * This will:
+ *
+ * - resume an existing queue
+ * - schedule discovery on first run
+ * - schedule discovery if actually due
+ * - otherwise leave persisted data alone
+ */
+await maybeScheduleDiscovery({
+  wakeFetcher:
+    false
+});
 
 const server =
   createServer(
@@ -608,10 +908,7 @@ const server =
         const url =
           new URL(
             request.url,
-            `http://${
-              request.headers.host ||
-              'localhost'
-            }`
+            `http://${request.headers.host || 'localhost'}`
           );
 
         if (
@@ -620,23 +917,51 @@ const server =
           url.pathname ===
             '/healthz'
         ) {
+          const queue =
+            await readFetchQueue();
+
           json(
             response,
             200,
             {
               status:
                 'ok',
+
               date:
                 utcDateKey(),
+
               refresh:
                 lastRefresh,
+
+              discovery: {
+                intervalHours:
+                  discoveryHours,
+
+                lastDiscoveryAt:
+                  queue
+                    .lastDiscoveryAt ||
+                  null,
+
+                pending:
+                  queue.tasks
+                    ?.length ||
+                  0
+              },
+
               fetch: {
                 minIntervalMs:
                   fetchMinIntervalMs,
+
                 initialIntervalMs:
                   fetchInitialIntervalMs,
+
                 maxIntervalMs:
-                  fetchMaxIntervalMs
+                  fetchMaxIntervalMs,
+
+                currentIntervalMs:
+                  queue.throttle
+                    ?.intervalMs ??
+                  null
               }
             }
           );
@@ -692,9 +1017,10 @@ const server =
         if (
           request.method ===
             'GET' &&
-          url.pathname.startsWith(
-            '/auction-images/'
-          )
+          url.pathname
+            .startsWith(
+              '/auction-images/'
+            )
         ) {
           if (
             await sendFile(
@@ -750,7 +1076,8 @@ const server =
           ).toLowerCase();
 
         const cacheControl =
-          url.pathname === '/' ||
+          url.pathname ===
+            '/' ||
           extension ===
             '.html' ||
           extension ===
@@ -831,35 +1158,50 @@ server.listen(
       `${fetchMinIntervalMs}ms minimum, ` +
       `${fetchMaxIntervalMs}ms maximum`
     );
+
+    console.log(
+      `Auction discovery interval: ` +
+      `${discoveryHours}h ` +
+      `(persisted across restarts)`
+    );
   }
 );
 
-scheduleNextRollingFetch(0);
+/*
+ * If persisted tasks exist, these
+ * continue immediately.
+ *
+ * If the queue is empty, the worker
+ * simply idles until discovery becomes
+ * due.
+ */
+scheduleNextRollingFetch(
+  0
+);
 
-setInterval(
-  () =>
-    scheduleDiscovery()
-      .catch(
-        error =>
-          console.error(
-            'Auction discovery scheduling failed:',
-            error
-          )
-      ),
-  discoveryHours *
-    60 *
-    60 *
-    1000
-).unref();
+scheduleDiscoveryChecks();
 
 scheduleUtcRollover();
 
-function shutdown(signal) {
-  shuttingDown = true;
+function shutdown(
+  signal
+) {
+  shuttingDown =
+    true;
 
-  if (rollingTimer) {
+  if (
+    rollingTimer
+  ) {
     clearTimeout(
       rollingTimer
+    );
+  }
+
+  if (
+    discoveryTimer
+  ) {
+    clearInterval(
+      discoveryTimer
     );
   }
 
@@ -884,11 +1226,15 @@ function shutdown(signal) {
 process.on(
   'SIGTERM',
   () =>
-    shutdown('SIGTERM')
+    shutdown(
+      'SIGTERM'
+    )
 );
 
 process.on(
   'SIGINT',
   () =>
-    shutdown('SIGINT')
+    shutdown(
+      'SIGINT'
+    )
 );

@@ -5,7 +5,7 @@ import { selectDailySet, utcDateKey } from './core.mjs';
 const BASE_URL = 'https://www.justiz-auktion.de';
 const USER_AGENT = 'JUSTIZGUESSR/1.0 (+daily public auction indexer; respectful adaptive fetches)';
 const DAILY_SELECTION_VERSION = 2;
-const ROLLING_QUEUE_VERSION = 2;
+const ROLLING_QUEUE_VERSION = 3;
 
 const LEGACY_LISTING_PAGE_SIZE = 10;
 const LISTING_PAGE_SIZE = 50;
@@ -14,6 +14,18 @@ const DEFAULT_MIN_INTERVAL_MS = 250;
 const DEFAULT_INITIAL_INTERVAL_MS = 750;
 const DEFAULT_MAX_INTERVAL_MS = 120_000;
 const IDLE_POLL_MS = 30_000;
+
+function emptyQueue() {
+  return {
+    version: ROLLING_QUEUE_VERSION,
+    updatedAt: null,
+    lastRequestAt: null,
+    lastDiscoveryAt: null,
+    listingSession: {},
+    throttle: null,
+    tasks: []
+  };
+}
 
 function decodeEntities(value = '') {
   const named = {
@@ -194,11 +206,11 @@ function inferCategory(
     ]
   ];
 
-  const titleValue = title.toLowerCase();
-
   const titleMatch = groups.find(
     ([, matcher]) =>
-      matcher.test(titleValue)
+      matcher.test(
+        title.toLowerCase()
+      )
   );
 
   if (titleMatch) {
@@ -214,7 +226,9 @@ function inferCategory(
 
   return groups.find(
     ([, matcher]) =>
-      matcher.test(descriptionValue)
+      matcher.test(
+        descriptionValue
+      )
   )?.[0] || 'Sonstiges';
 }
 
@@ -224,8 +238,14 @@ export function extractListingUrls(html) {
   const pattern =
     /href=["']([^"']*?-(\d{5,8})(?:[?#][^"']*)?)["']/gi;
 
-  for (const match of html.matchAll(pattern)) {
-    const raw = decodeEntities(match[1]);
+  for (
+    const match of
+      html.matchAll(pattern)
+  ) {
+    const raw =
+      decodeEntities(
+        match[1]
+      );
 
     if (
       /auktion_(?:drucken|gebote)/i.test(raw) ||
@@ -235,13 +255,19 @@ export function extractListingUrls(html) {
     }
 
     try {
-      const url = new URL(
-        raw,
-        BASE_URL
-      );
+      const url =
+        new URL(
+          raw,
+          BASE_URL
+        );
 
-      if (url.origin === BASE_URL) {
-        urls.add(url.href);
+      if (
+        url.origin ===
+        BASE_URL
+      ) {
+        urls.add(
+          url.href
+        );
       }
     } catch {}
   }
@@ -253,7 +279,8 @@ export function parseAuctionPage(
   html,
   url
 ) {
-  const text = cleanText(html);
+  const text =
+    cleanText(html);
 
   const id = Number(
     text.match(
@@ -283,33 +310,38 @@ export function parseAuctionPage(
       ''
     );
 
-  const title = cleanText(
-    heading ||
-    titleFallback ||
-    `Auktion #${id}`
-  );
+  const title =
+    cleanText(
+      heading ||
+      titleFallback ||
+      `Auktion #${id}`
+    );
 
-  const startBid = parseMoney(
+  const startBid =
+    parseMoney(
+      text.match(
+        /Startgebot:\s*([\d.,]+)\s*€/i
+      )?.[1]
+    );
+
+  const currentBid =
+    parseMoney(
+      text.match(
+        /Aktuelles Gebot:\s*([\d.,]+)\s*€/i
+      )?.[1]
+    );
+
+  const bidCount =
+    Number(
+      text.match(
+        /Anzahl Gebote\s*(\d+)/i
+      )?.[1] || 0
+    );
+
+  const endText =
     text.match(
-      /Startgebot:\s*([\d.,]+)\s*€/i
-    )?.[1]
-  );
-
-  const currentBid = parseMoney(
-    text.match(
-      /Aktuelles Gebot:\s*([\d.,]+)\s*€/i
-    )?.[1]
-  );
-
-  const bidCount = Number(
-    text.match(
-      /Anzahl Gebote\s*(\d+)/i
-    )?.[1] || 0
-  );
-
-  const endText = text.match(
-    /Endet am:\s*(\d{2}\.\d{2}\.\d{4}\s+\d{2}:\d{2}(?::\d{2})?)/i
-  )?.[1];
+      /Endet am:\s*(\d{2}\.\d{2}\.\d{4}\s+\d{2}:\d{2}(?::\d{2})?)/i
+    )?.[1];
 
   const condition =
     text.match(
@@ -353,9 +385,12 @@ export function parseAuctionPage(
 
   for (
     const match of
-      decodedHtml.matchAll(imagePattern)
+      decodedHtml.matchAll(
+        imagePattern
+      )
   ) {
-    const raw = match[1];
+    const raw =
+      match[1];
 
     if (
       /\/tn\//i.test(raw) ||
@@ -372,11 +407,17 @@ export function parseAuctionPage(
         ).href;
 
       if (
-        new URL(absolute).origin ===
+        new URL(
+          absolute
+        ).origin ===
           BASE_URL &&
-        !imageUrls.includes(absolute)
+        !imageUrls.includes(
+          absolute
+        )
       ) {
-        imageUrls.push(absolute);
+        imageUrls.push(
+          absolute
+        );
       }
     } catch {}
   }
@@ -385,38 +426,53 @@ export function parseAuctionPage(
     id,
     title,
     description,
-    category: inferCategory(
-      title,
-      description
-    ),
-    sourceImages: imageUrls,
-    startBid: startBid ?? 0,
-    currentBid: currentBid ?? 0,
+    category:
+      inferCategory(
+        title,
+        description
+      ),
+    sourceImages:
+      imageUrls,
+    startBid:
+      startBid ?? 0,
+    currentBid:
+      currentBid ?? 0,
     finalPrice:
       endText &&
       Date.parse(
-        zonedLocalToUtc(endText)
+        zonedLocalToUtc(
+          endText
+        )
       ) <= Date.now()
         ? currentBid
         : null,
     bidCount,
-    startAt: null,
-    endAt: zonedLocalToUtc(endText),
+    startAt:
+      null,
+    endAt:
+      zonedLocalToUtc(
+        endText
+      ),
     condition,
     fulfillment,
     location,
     url,
     capturedAt:
-      new Date().toISOString()
+      new Date()
+        .toISOString()
   };
 }
 
-export function parseAuctionStart(html) {
-  const text = cleanText(html);
+export function parseAuctionStart(
+  html
+) {
+  const text =
+    cleanText(html);
 
-  const value = text.match(
-    /Starttermin\s*(\d{2}\.\d{2}\.\d{4})\s*-\s*(\d{2}:\d{2}(?::\d{2})?)/i
-  );
+  const value =
+    text.match(
+      /Starttermin\s*(\d{2}\.\d{2}\.\d{4})\s*-\s*(\d{2}:\d{2}(?::\d{2})?)/i
+    );
 
   return value
     ? zonedLocalToUtc(
@@ -437,7 +493,10 @@ async function readJson(
       )
     );
   } catch (error) {
-    if (error.code === 'ENOENT') {
+    if (
+      error.code ===
+      'ENOENT'
+    ) {
       return fallback;
     }
 
@@ -450,7 +509,9 @@ async function writeJsonAtomic(
   value
 ) {
   await mkdir(
-    path.dirname(filename),
+    path.dirname(
+      filename
+    ),
     {
       recursive: true
     }
@@ -478,11 +539,13 @@ function createHttpError(
   url,
   response
 ) {
-  const error = new Error(
-    `${url} returned HTTP ${response.status}`
-  );
+  const error =
+    new Error(
+      `${url} returned HTTP ${response.status}`
+    );
 
-  error.status = response.status;
+  error.status =
+    response.status;
 
   const retryAfter =
     response.headers.get(
@@ -491,14 +554,20 @@ function createHttpError(
 
   if (retryAfter) {
     const seconds =
-      Number(retryAfter);
+      Number(
+        retryAfter
+      );
 
     error.retryAfterMs =
-      Number.isFinite(seconds)
+      Number.isFinite(
+        seconds
+      )
         ? seconds * 1000
         : Math.max(
             0,
-            Date.parse(retryAfter) -
+            Date.parse(
+              retryAfter
+            ) -
               Date.now()
           );
   }
@@ -520,7 +589,8 @@ async function fetchText(
           accept:
             'text/html,application/xhtml+xml'
         },
-        redirect: 'error',
+        redirect:
+          'error',
         signal:
           AbortSignal.timeout(
             20_000
@@ -550,18 +620,14 @@ function parseHtmlAttributes(
     const match of
       source.matchAll(pattern)
   ) {
-    const name =
-      match[1].toLowerCase();
-
-    const value =
-      decodeEntities(
-        match[2] ??
-        match[3] ??
-        match[4] ??
-        ''
-      );
-
-    attributes[name] = value;
+    attributes[
+      match[1].toLowerCase()
+    ] = decodeEntities(
+      match[2] ??
+      match[3] ??
+      match[4] ??
+      ''
+    );
   }
 
   return attributes;
@@ -575,7 +641,9 @@ function optionValue(
     cleanText(body);
 }
 
-function selectedValue(selectBody) {
+function selectedValue(
+  selectBody
+) {
   const options = [
     ...selectBody.matchAll(
       /<option\b([^>]*)>([\s\S]*?)<\/option>/gi
@@ -588,10 +656,11 @@ function selectedValue(selectBody) {
 
     return {
       attributes,
-      value: optionValue(
-        attributes,
-        match[2]
-      )
+      value:
+        optionValue(
+          attributes,
+          match[2]
+        )
     };
   });
 
@@ -609,7 +678,8 @@ function selectedValue(selectBody) {
 function extractPageSizePreference(
   html,
   currentUrl,
-  pageSize = LISTING_PAGE_SIZE
+  pageSize =
+    LISTING_PAGE_SIZE
 ) {
   for (
     const formMatch of
@@ -631,24 +701,29 @@ function extractPageSizePreference(
       )
     ];
 
-    let pageSizeField = null;
+    let pageSizeField =
+      null;
 
     for (
-      const selectMatch of selects
+      const selectMatch of
+        selects
     ) {
       const attributes =
         parseHtmlAttributes(
           selectMatch[1]
         );
 
-      if (!attributes.name) {
+      if (
+        !attributes.name
+      ) {
         continue;
       }
 
       const values = [
-        ...selectMatch[2].matchAll(
-          /<option\b([^>]*)>([\s\S]*?)<\/option>/gi
-        )
+        ...selectMatch[2]
+          .matchAll(
+            /<option\b([^>]*)>([\s\S]*?)<\/option>/gi
+          )
       ].map(
         optionMatch =>
           optionValue(
@@ -661,7 +736,9 @@ function extractPageSizePreference(
 
       if (
         values.includes(
-          String(pageSize)
+          String(
+            pageSize
+          )
         ) &&
         values.includes(
           String(
@@ -671,6 +748,7 @@ function extractPageSizePreference(
       ) {
         pageSizeField =
           attributes.name;
+
         break;
       }
     }
@@ -732,12 +810,14 @@ function extractPageSizePreference(
 
       params.append(
         name,
-        attributes.value ?? ''
+        attributes.value ??
+        ''
       );
     }
 
     for (
-      const selectMatch of selects
+      const selectMatch of
+        selects
     ) {
       const attributes =
         parseHtmlAttributes(
@@ -782,14 +862,17 @@ function extractPageSizePreference(
       ) {
         params.append(
           attributes.name,
-          attributes.value ?? ''
+          attributes.value ??
+          ''
         );
       }
     }
 
     params.set(
       pageSizeField,
-      String(pageSize)
+      String(
+        pageSize
+      )
     );
 
     return {
@@ -799,11 +882,13 @@ function extractPageSizePreference(
           currentUrl,
           currentUrl
         ).href,
+
       method:
         (
           formAttributes.method ||
           'GET'
         ).toUpperCase(),
+
       params:
         [...params.entries()]
     };
@@ -812,8 +897,12 @@ function extractPageSizePreference(
   return null;
 }
 
-function splitSetCookieHeader(value) {
-  if (!value) return [];
+function splitSetCookieHeader(
+  value
+) {
+  if (!value) {
+    return [];
+  }
 
   return value.split(
     /,(?=\s*[^;,=\s]+=[^;,]+)/g
@@ -834,7 +923,10 @@ function updateCookieJar(
           )
         );
 
-  for (const value of values) {
+  for (
+    const value of
+      values
+  ) {
     const [
       pair,
       ...attributes
@@ -843,18 +935,25 @@ function updateCookieJar(
     const separator =
       pair.indexOf('=');
 
-    if (separator < 1) {
+    if (
+      separator < 1
+    ) {
       continue;
     }
 
     const name =
       pair
-        .slice(0, separator)
+        .slice(
+          0,
+          separator
+        )
         .trim();
 
     const cookieValue =
       pair
-        .slice(separator + 1)
+        .slice(
+          separator + 1
+        )
         .trim();
 
     const expired =
@@ -866,10 +965,13 @@ function updateCookieJar(
       );
 
     if (expired) {
-      delete cookieJar[name];
+      delete cookieJar[
+        name
+      ];
     } else {
-      cookieJar[name] =
-        cookieValue;
+      cookieJar[
+        name
+      ] = cookieValue;
     }
   }
 }
@@ -893,7 +995,8 @@ async function fetchWithCookieJar(
   fetchImpl,
   cookieJar
 ) {
-  let requestUrl = url;
+  let requestUrl =
+    url;
 
   let method =
     (
@@ -901,7 +1004,8 @@ async function fetchWithCookieJar(
       'GET'
     ).toUpperCase();
 
-  let body = options.body;
+  let body =
+    options.body;
 
   for (
     let redirectCount = 0;
@@ -918,7 +1022,8 @@ async function fetchWithCookieJar(
       );
 
     if (cookies) {
-      headers.cookie = cookies;
+      headers.cookie =
+        cookies;
     }
 
     const response =
@@ -929,7 +1034,8 @@ async function fetchWithCookieJar(
           method,
           body,
           headers,
-          redirect: 'manual'
+          redirect:
+            'manual'
         }
       );
 
@@ -970,15 +1076,20 @@ async function fetchWithCookieJar(
     if (
       response.status === 303 ||
       (
-        (
-          response.status === 301 ||
-          response.status === 302
+        [
+          301,
+          302
+        ].includes(
+          response.status
         ) &&
         method === 'POST'
       )
     ) {
-      method = 'GET';
-      body = undefined;
+      method =
+        'GET';
+
+      body =
+        undefined;
     }
   }
 
@@ -1013,7 +1124,8 @@ async function submitPageSizePreference(
   let body;
 
   if (
-    preference.method === 'GET'
+    preference.method ===
+    'GET'
   ) {
     for (
       const [name, value]
@@ -1038,7 +1150,9 @@ async function submitPageSizePreference(
     body =
       params.toString();
 
-    headers['content-type'] =
+    headers[
+      'content-type'
+    ] =
       'application/x-www-form-urlencoded';
   }
 
@@ -1179,7 +1293,9 @@ async function fetchListingPage({
     }
   }
 
-  if (session.preference) {
+  if (
+    session.preference
+  ) {
     const result =
       await submitPageSizePreference(
         session.preference,
@@ -1226,7 +1342,9 @@ async function fetchListingPage({
       session.cookies
     );
 
-  if (!initialResponse.ok) {
+  if (
+    !initialResponse.ok
+  ) {
     throw createHttpError(
       baseUrl,
       initialResponse
@@ -1265,7 +1383,9 @@ async function fetchListingPage({
       requestedPageSize
     );
 
-  if (session.preference) {
+  if (
+    session.preference
+  ) {
     const result =
       await submitPageSizePreference(
         session.preference,
@@ -1324,7 +1444,9 @@ function clamp(
   );
 }
 
-function isRateLimitError(error) {
+function isRateLimitError(
+  error
+) {
   return (
     error?.status === 429 ||
     error?.status === 503 ||
@@ -1334,16 +1456,22 @@ function isRateLimitError(error) {
   );
 }
 
-function isTransientError(error) {
+function isTransientError(
+  error
+) {
   return (
-    isRateLimitError(error) ||
+    isRateLimitError(
+      error
+    ) ||
     error?.status === 408 ||
     error?.status === 425 ||
     error?.status === 502 ||
     error?.status === 504 ||
     error?.status >= 500 ||
-    error?.name === 'TimeoutError' ||
-    error?.name === 'AbortError'
+    error?.name ===
+      'TimeoutError' ||
+    error?.name ===
+      'AbortError'
   );
 }
 
@@ -1371,19 +1499,22 @@ function retryDelay(
     );
 
   const base =
-    isRateLimitError(error)
+    isRateLimitError(
+      error
+    )
       ? 15_000
-      : isTransientError(error)
+      : isTransientError(
+            error
+          )
         ? 5_000
         : 3_000;
-
-  const jitter =
-    now % 1_000;
 
   return Math.min(
     10 * 60_000,
     base * exponent
-  ) + jitter;
+  ) + (
+    now % 1_000
+  );
 }
 
 function normalizeThrottle(
@@ -1426,7 +1557,8 @@ function normalizeThrottle(
 
   const existing =
     queue.throttle &&
-    typeof queue.throttle === 'object'
+    typeof queue.throttle ===
+      'object'
       ? queue.throttle
       : {};
 
@@ -1439,6 +1571,7 @@ function normalizeThrottle(
         minimum,
         maximum
       ),
+
     globalNotBefore:
       Math.max(
         0,
@@ -1446,6 +1579,7 @@ function normalizeThrottle(
           existing.globalNotBefore
         ) || 0
       ),
+
     successStreak:
       Math.max(
         0,
@@ -1468,7 +1602,8 @@ function speedUpThrottle(
   const throttle =
     queue.throttle;
 
-  throttle.successStreak += 1;
+  throttle.successStreak +=
+    1;
 
   if (
     throttle.successStreak >= 5
@@ -1482,7 +1617,8 @@ function speedUpThrottle(
         )
       );
 
-    throttle.successStreak = 0;
+    throttle.successStreak =
+      0;
   }
 }
 
@@ -1497,10 +1633,13 @@ function slowDownThrottle(
   const throttle =
     queue.throttle;
 
-  throttle.successStreak = 0;
+  throttle.successStreak =
+    0;
 
   if (
-    isRateLimitError(error)
+    isRateLimitError(
+      error
+    )
   ) {
     throttle.intervalMs =
       clamp(
@@ -1525,7 +1664,9 @@ function slowDownThrottle(
   }
 
   if (
-    isTransientError(error)
+    isTransientError(
+      error
+    )
   ) {
     throttle.intervalMs =
       clamp(
@@ -1542,30 +1683,41 @@ function slowDownThrottle(
   }
 }
 
-function nextAllowedRequestAt(queue) {
+function nextAllowedRequestAt(
+  queue
+) {
   const lastRequestAt =
     Date.parse(
-      queue.lastRequestAt || ''
+      queue.lastRequestAt ||
+      ''
     );
 
   const intervalReadyAt =
-    Number.isFinite(lastRequestAt)
+    Number.isFinite(
+      lastRequestAt
+    )
       ? lastRequestAt +
         (
           queue.throttle
-            ?.intervalMs || 0
+            ?.intervalMs ||
+          0
         )
       : 0;
 
   return Math.max(
     intervalReadyAt,
     queue.throttle
-      ?.globalNotBefore || 0
+      ?.globalNotBefore ||
+    0
   );
 }
 
-function nextTaskReadyAt(queue) {
-  if (!queue.tasks.length) {
+function nextTaskReadyAt(
+  queue
+) {
+  if (
+    !queue.tasks.length
+  ) {
     return null;
   }
 
@@ -1593,11 +1745,13 @@ function detailPriority(
   const remaining =
     Date.parse(
       auction.endAt
-    ) - now;
+    ) -
+    now;
 
   if (
     remaining <= 0 &&
-    auction.finalPrice == null
+    auction.finalPrice ==
+      null
   ) {
     return 95;
   }
@@ -1632,10 +1786,15 @@ function addTasks(
 ) {
   const known =
     new Set(
-      queue.tasks.map(taskKey)
+      queue.tasks.map(
+        taskKey
+      )
     );
 
-  for (const task of tasks) {
+  for (
+    const task of
+      tasks
+  ) {
     if (
       known.has(
         taskKey(task)
@@ -1727,7 +1886,8 @@ async function saveImageResponse(
 
   if (
     bytes.length < 1000 ||
-    bytes.length > 12_000_000
+    bytes.length >
+      12_000_000
   ) {
     throw new Error(
       `Unexpected image size: ${bytes.length}`
@@ -1735,7 +1895,9 @@ async function saveImageResponse(
   }
 
   const extension =
-    contentType.includes('png')
+    contentType.includes(
+      'png'
+    )
       ? 'png'
       : contentType.includes(
             'webp'
@@ -1771,7 +1933,8 @@ async function saveImageResponse(
 export async function enqueueRollingDiscovery({
   dataDir,
   pages = 12,
-  now = Date.now()
+  now = Date.now(),
+  force = false
 } = {}) {
   if (!dataDir) {
     throw new Error(
@@ -1788,23 +1951,39 @@ export async function enqueueRollingDiscovery({
   const queue =
     await readJson(
       queuePath,
-      {
-        version:
-          ROLLING_QUEUE_VERSION,
-        updatedAt:
-          null,
-        lastRequestAt:
-          null,
-        listingSession:
-          {},
-        throttle:
-          null,
-        tasks:
-          []
-      }
+      emptyQueue()
     );
 
+  queue.tasks ||= [];
   queue.listingSession ||= {};
+
+  /*
+   * On restart an existing persisted
+   * queue is resumed exactly as-is.
+   *
+   * A restart itself must not create
+   * another discovery pass.
+   */
+  if (
+    !force &&
+    queue.tasks.length > 0
+  ) {
+    return queue;
+  }
+
+  /*
+   * Never duplicate an existing
+   * listing chain.
+   */
+  if (
+    queue.tasks.some(
+      task =>
+        task.kind ===
+        'listing'
+    )
+  ) {
+    return queue;
+  }
 
   const listingTarget =
     Math.max(
@@ -1813,58 +1992,51 @@ export async function enqueueRollingDiscovery({
       LEGACY_LISTING_PAGE_SIZE
     );
 
-  const optimizedListingPending =
-    queue.tasks.some(
-      task =>
-        task.kind ===
-          'listing' &&
-        Number.isFinite(
-          task.listingTarget
-        )
-    );
-
   if (
-    !optimizedListingPending &&
-    listingTarget > 0
+    listingTarget <= 0
   ) {
-    queue.listingSession = {};
-
-    queue.tasks =
-      queue.tasks.filter(
-        task =>
-          task.kind !==
-          'listing'
-      );
-
-    addTasks(
-      queue,
-      [
-        {
-          kind:
-            'listing',
-          url:
-            `${BASE_URL}/auction_search.php?start=0`,
-          listingStart:
-            0,
-          listingTarget,
-          requestedPageSize:
-            LISTING_PAGE_SIZE,
-          priority:
-            100,
-          notBefore:
-            now
-        }
-      ]
-    );
+    return queue;
   }
+
+  queue.listingSession = {};
+
+  addTasks(
+    queue,
+    [
+      {
+        kind:
+          'listing',
+
+        url:
+          `${BASE_URL}/auction_search.php?start=0`,
+
+        listingStart:
+          0,
+
+        listingTarget,
+
+        requestedPageSize:
+          LISTING_PAGE_SIZE,
+
+        priority:
+          100,
+
+        notBefore:
+          now
+      }
+    ]
+  );
+
+  queue.lastDiscoveryAt =
+    new Date(
+      now
+    ).toISOString();
 
   queue.version =
     ROLLING_QUEUE_VERSION;
 
   queue.updatedAt =
-    new Date(
-      now
-    ).toISOString();
+    queue.lastDiscoveryAt;
 
   await writeJsonAtomic(
     queuePath,
@@ -1907,49 +2079,50 @@ export async function processRollingTask({
   const queue =
     await readJson(
       queuePath,
-      {
-        version:
-          ROLLING_QUEUE_VERSION,
-        updatedAt:
-          null,
-        lastRequestAt:
-          null,
-        listingSession:
-          {},
-        throttle:
-          null,
-        tasks:
-          []
-      }
+      emptyQueue()
     );
+
+  queue.tasks ||= [];
+  queue.listingSession ||= {};
 
   const {
     minimum,
     maximum
-  } = normalizeThrottle(
-    queue,
-    {
-      minimumIntervalMs,
-      initialIntervalMs,
-      maximumIntervalMs
-    }
-  );
-
-  queue.listingSession ||= {};
+  } =
+    normalizeThrottle(
+      queue,
+      {
+        minimumIntervalMs,
+        initialIntervalMs,
+        maximumIntervalMs
+      }
+    );
 
   const allowedAt =
-    nextAllowedRequestAt(queue);
+    nextAllowedRequestAt(
+      queue
+    );
 
-  if (allowedAt > now) {
+  if (
+    allowedAt > now
+  ) {
     return {
       status:
         'waiting',
+
       pending:
         queue.tasks.length,
+
       lastRequestAt:
         queue.lastRequestAt,
+
+      lastDiscoveryAt:
+        queue.lastDiscoveryAt ??
+        null,
+
       adaptiveIntervalMs:
         queue.throttle.intervalMs,
+
       waitMs:
         allowedAt - now
     };
@@ -1989,25 +2162,36 @@ export async function processRollingTask({
 
   if (!task) {
     const taskReadyAt =
-      nextTaskReadyAt(queue);
+      nextTaskReadyAt(
+        queue
+      );
 
     return {
       status:
         taskReadyAt == null
           ? 'idle'
           : 'waiting',
+
       pending:
         queue.tasks.length,
+
       lastRequestAt:
         queue.lastRequestAt,
+
+      lastDiscoveryAt:
+        queue.lastDiscoveryAt ??
+        null,
+
       adaptiveIntervalMs:
         queue.throttle.intervalMs,
+
       waitMs:
         taskReadyAt == null
           ? IDLE_POLL_MS
           : Math.max(
               1,
-              taskReadyAt - now
+              taskReadyAt -
+              now
             )
     };
   }
@@ -2034,7 +2218,9 @@ export async function processRollingTask({
     );
 
   queue.tasks.splice(
-    queue.tasks.indexOf(task),
+    queue.tasks.indexOf(
+      task
+    ),
     1
   );
 
@@ -2061,7 +2247,8 @@ export async function processRollingTask({
       false;
 
     if (
-      task.kind === 'listing'
+      task.kind ===
+      'listing'
     ) {
       const start =
         Number.isFinite(
@@ -2071,9 +2258,12 @@ export async function processRollingTask({
           : Number(
               new URL(
                 task.url
-              ).searchParams.get(
-                'start'
-              ) || 0
+              )
+                .searchParams
+                .get(
+                  'start'
+                ) ||
+              0
             );
 
       const listingTarget =
@@ -2107,41 +2297,53 @@ export async function processRollingTask({
 
       addTasks(
         queue,
-        urls.flatMap(url => {
-          const id =
-            Number(
-              url.match(
-                /-(\d{5,8})(?:\D|$)/
-              )?.[1]
-            );
+        urls.flatMap(
+          url => {
+            const id =
+              Number(
+                url.match(
+                  /-(\d{5,8})(?:\D|$)/
+                )?.[1]
+              );
 
-          const previous =
-            byId.get(id);
+            const previous =
+              byId.get(id);
 
-          if (
-            previous
-              ?.finalPrice != null
-          ) {
-            return [];
-          }
-
-          return [
-            {
-              kind:
-                'detail',
-              url,
-              auctionId:
-                id || null,
-              priority:
-                detailPriority(
-                  previous,
-                  now
-                ),
-              notBefore:
-                now
+            /*
+             * Finished auctions are
+             * permanent archive data
+             * and never fetched again.
+             */
+            if (
+              previous
+                ?.finalPrice !=
+              null
+            ) {
+              return [];
             }
-          ];
-        })
+
+            return [
+              {
+                kind:
+                  'detail',
+
+                url,
+
+                auctionId:
+                  id || null,
+
+                priority:
+                  detailPriority(
+                    previous,
+                    now
+                  ),
+
+                notBefore:
+                  now
+              }
+            ];
+          }
+        )
       );
 
       const nextStart =
@@ -2158,14 +2360,20 @@ export async function processRollingTask({
             {
               kind:
                 'listing',
+
               url:
                 `${BASE_URL}/auction_search.php?start=${nextStart}`,
+
               listingStart:
                 nextStart,
+
               listingTarget,
+
               requestedPageSize,
+
               priority:
                 100,
+
               notBefore:
                 now
             }
@@ -2181,7 +2389,8 @@ export async function processRollingTask({
     }
 
     if (
-      task.kind === 'detail'
+      task.kind ===
+      'detail'
     ) {
       const item =
         parseAuctionPage(
@@ -2204,18 +2413,23 @@ export async function processRollingTask({
       const merged = {
         ...previous,
         ...item,
+
         image:
           previous?.image ||
-          item.sourceImages?.[0] ||
+          item
+            .sourceImages?.[0] ||
           null,
+
         images:
           previous?.images ||
           item.sourceImages ||
           [],
+
         firstCapturedAt:
           previous
             ?.firstCapturedAt ||
           item.capturedAt,
+
         finalPrice:
           item.finalPrice ??
           previous
@@ -2231,19 +2445,25 @@ export async function processRollingTask({
       archiveChanged =
         true;
 
-      if (!merged.startAt) {
+      if (
+        !merged.startAt
+      ) {
         addTasks(
           queue,
           [
             {
               kind:
                 'start',
+
               url:
                 `${BASE_URL}/auktion_drucken-${item.id}`,
+
               auctionId:
                 item.id,
+
               priority:
                 45,
+
               notBefore:
                 now
             }
@@ -2252,10 +2472,12 @@ export async function processRollingTask({
       }
 
       if (
-        !previous?.image?.startsWith(
-          '/auction-images/'
-        ) &&
-        item.sourceImages?.[0]
+        !previous?.image
+          ?.startsWith(
+            '/auction-images/'
+          ) &&
+        item
+          .sourceImages?.[0]
       ) {
         addTasks(
           queue,
@@ -2263,12 +2485,17 @@ export async function processRollingTask({
             {
               kind:
                 'image',
+
               url:
-                item.sourceImages[0],
+                item
+                  .sourceImages[0],
+
               auctionId:
                 item.id,
+
               priority:
                 40,
+
               notBefore:
                 now
             }
@@ -2276,7 +2503,8 @@ export async function processRollingTask({
         );
       }
     } else if (
-      task.kind === 'start'
+      task.kind ===
+      'start'
     ) {
       const auction =
         byId.get(
@@ -2288,6 +2516,7 @@ export async function processRollingTask({
           task.auctionId,
           {
             ...auction,
+
             startAt:
               parseAuctionStart(
                 await response.text()
@@ -2300,7 +2529,8 @@ export async function processRollingTask({
           true;
       }
     } else if (
-      task.kind === 'image'
+      task.kind ===
+      'image'
     ) {
       const auction =
         byId.get(
@@ -2330,7 +2560,8 @@ export async function processRollingTask({
           true;
       }
     } else if (
-      task.kind !== 'listing'
+      task.kind !==
+      'listing'
     ) {
       throw new Error(
         `Unknown rolling task kind: ${task.kind}`
@@ -2342,7 +2573,9 @@ export async function processRollingTask({
         now
       ).toISOString();
 
-    if (archiveChanged) {
+    if (
+      archiveChanged
+    ) {
       await writeJsonAtomic(
         archivePath,
         {
@@ -2355,10 +2588,12 @@ export async function processRollingTask({
 
     if (
       queue.throttle
-        .globalNotBefore <= now
+        .globalNotBefore <=
+      now
     ) {
       queue.throttle
-        .globalNotBefore = 0;
+        .globalNotBefore =
+        0;
     }
 
     speedUpThrottle(
@@ -2378,7 +2613,8 @@ export async function processRollingTask({
     );
 
     const resultSuffix =
-      listingResultCount == null
+      listingResultCount ==
+      null
         ? ''
         : `; ${listingResultCount} results`;
 
@@ -2391,14 +2627,23 @@ export async function processRollingTask({
     return {
       status:
         'ok',
+
       kind:
         task.kind,
+
       pending:
         queue.tasks.length,
+
       lastRequestAt:
         queue.lastRequestAt,
+
+      lastDiscoveryAt:
+        queue.lastDiscoveryAt ??
+        null,
+
       adaptiveIntervalMs:
         queue.throttle.intervalMs,
+
       waitMs:
         queue.throttle.intervalMs
     };
@@ -2424,9 +2669,13 @@ export async function processRollingTask({
         [
           {
             ...task,
+
             attempts,
+
             notBefore:
-              now + retryMs,
+              now +
+              retryMs,
+
             priority:
               Math.max(
                 10,
@@ -2474,7 +2723,8 @@ export async function processRollingTask({
       Math.max(
         queue.throttle
           .intervalMs,
-        globalWaitMs || 0
+        globalWaitMs ||
+        0
       );
 
     logger.warn(
@@ -2491,15 +2741,25 @@ export async function processRollingTask({
     return {
       status:
         'error',
+
       kind:
         task.kind,
+
       pending:
         queue.tasks.length,
+
       lastRequestAt:
         queue.lastRequestAt,
+
+      lastDiscoveryAt:
+        queue.lastDiscoveryAt ??
+        null,
+
       adaptiveIntervalMs:
         queue.throttle.intervalMs,
+
       waitMs,
+
       error:
         error.message
     };
@@ -2513,14 +2773,17 @@ async function cacheMainImage(
   previous
 ) {
   if (
-    previous?.image?.startsWith(
-      '/auction-images/'
-    )
+    previous?.image
+      ?.startsWith(
+        '/auction-images/'
+      )
   ) {
     return {
       ...auction,
+
       image:
         previous.image,
+
       images:
         previous.images ||
         [previous.image]
@@ -2528,7 +2791,8 @@ async function cacheMainImage(
   }
 
   if (
-    !auction.sourceImages?.[0]
+    !auction
+      .sourceImages?.[0]
   ) {
     return auction;
   }
@@ -2536,7 +2800,8 @@ async function cacheMainImage(
   try {
     const response =
       await fetchImpl(
-        auction.sourceImages[0],
+        auction
+          .sourceImages[0],
         {
           headers: {
             'user-agent':
@@ -2578,7 +2843,8 @@ async function cacheMainImage(
 
     if (
       bytes.length < 1000 ||
-      bytes.length > 12_000_000
+      bytes.length >
+        12_000_000
     ) {
       return auction;
     }
@@ -2589,7 +2855,9 @@ async function cacheMainImage(
       ) || '';
 
     const extension =
-      contentType.includes('png')
+      contentType.includes(
+        'png'
+      )
         ? 'png'
         : contentType.includes(
               'webp'
@@ -2621,8 +2889,10 @@ async function cacheMainImage(
 
     return {
       ...auction,
+
       image:
         `/auction-images/${filename}`,
+
       images: [
         `/auction-images/${filename}`
       ]
@@ -2675,7 +2945,8 @@ export async function collectAuctions({
   const listingUrls =
     new Set();
 
-  const listingSession = {};
+  const listingSession =
+    {};
 
   const listingTarget =
     Math.max(
@@ -2684,8 +2955,11 @@ export async function collectAuctions({
       LEGACY_LISTING_PAGE_SIZE
     );
 
-  let listingStart = 0;
-  let listingPage = 1;
+  let listingStart =
+    0;
+
+  let listingPage =
+    1;
 
   while (
     listingStart <
@@ -2707,7 +2981,9 @@ export async function collectAuctions({
         result.html
       ).forEach(
         url =>
-          listingUrls.add(url)
+          listingUrls.add(
+            url
+          )
       );
 
       listingStart +=
@@ -2725,7 +3001,8 @@ export async function collectAuctions({
           : LEGACY_LISTING_PAGE_SIZE;
     }
 
-    listingPage += 1;
+    listingPage +=
+      1;
   }
 
   const incoming = [];
@@ -2809,7 +3086,8 @@ export async function collectAuctions({
   }
 
   for (
-    const item of incoming
+    const item of
+      incoming
   ) {
     const previous =
       byId.get(
@@ -2829,22 +3107,26 @@ export async function collectAuctions({
       {
         ...previous,
         ...withImage,
+
         image:
           withImage.image ||
           previous?.image ||
           withImage
             .sourceImages?.[0] ||
           null,
+
         images:
           withImage.images ||
           previous?.images ||
           withImage
             .sourceImages ||
           [],
+
         firstCapturedAt:
           previous
             ?.firstCapturedAt ||
           item.capturedAt,
+
         finalPrice:
           withImage.finalPrice ??
           previous
@@ -2855,30 +3137,36 @@ export async function collectAuctions({
   }
 
   const updatedAt =
-    new Date().toISOString();
+    new Date()
+      .toISOString();
 
   const auctions =
     [...byId.values()]
-      .map(item => {
-        if (
-          item.finalPrice == null &&
-          item.endAt &&
-          Date.parse(
-            item.endAt
-          ) <= Date.now() &&
-          item.currentBid > 0
-        ) {
-          return {
-            ...item,
-            finalPrice:
-              item.currentBid,
-            finalizedAt:
-              updatedAt
-          };
-        }
+      .map(
+        item => {
+          if (
+            item.finalPrice ==
+              null &&
+            item.endAt &&
+            Date.parse(
+              item.endAt
+            ) <= Date.now() &&
+            item.currentBid > 0
+          ) {
+            return {
+              ...item,
 
-        return item;
-      });
+              finalPrice:
+                item.currentBid,
+
+              finalizedAt:
+                updatedAt
+            };
+          }
+
+          return item;
+        }
+      );
 
   const archive = {
     updatedAt,
@@ -2938,7 +3226,8 @@ export async function ensureDailyGame({
         'auctions.json'
       ),
       {
-        auctions: []
+        auctions:
+          []
       }
     );
 
@@ -2948,6 +3237,7 @@ export async function ensureDailyGame({
       dateKey,
       daily.games
     ),
+
     selectionVersion:
       DAILY_SELECTION_VERSION
   };
@@ -2968,13 +3258,16 @@ export async function ensureDailyGame({
       retainedDates.map(
         key => [
           key,
-          daily.games[key]
+          daily.games[
+            key
+          ]
         ]
       )
     );
 
   daily.updatedAt =
-    new Date().toISOString();
+    new Date()
+      .toISOString();
 
   await writeJsonAtomic(
     dailyPath,
@@ -3005,7 +3298,8 @@ export async function seedArchiveIfEmpty({
     );
 
   if (
-    current?.auctions?.length >= 5
+    current?.auctions
+      ?.length >= 5
   ) {
     return current;
   }
