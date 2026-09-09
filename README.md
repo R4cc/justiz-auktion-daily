@@ -2,6 +2,8 @@
 
 A daily price-guessing game based on public listings from [justiz-auktion.de](https://www.justiz-auktion.de/).
 
+The application serves the game and its JSON API from one lightweight Node process. No account is required; player progress and streaks stay in the browser, while auction history and immutable daily sets are stored in the container's `/data` volume.
+
 ## Run with Docker
 
 ```bash
@@ -63,3 +65,5 @@ npm ci
 npm test
 npm start
 ```
+
+The game is then available at `http://localhost:3000`. Container health can be checked at `GET /healthz`, and the current frozen daily set is served from `GET /api/daily`.
