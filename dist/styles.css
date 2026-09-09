@@ -67,7 +67,7 @@ button { color: inherit; }
   cursor: pointer;
 }
 
-.brand-logo { width: 42px; height: 42px; object-fit: contain; display: block; }
+.brand-logo { width: 34px; height: 34px; object-fit: contain; display: block; flex: 0 0 34px; }
 
 .header-actions { display: flex; align-items: center; gap: 18px; }
 .daily-reset { display: flex; align-items: baseline; gap: 8px; font: 500 .66rem/1 "DM Mono", monospace; letter-spacing: .05em; color: var(--muted); }

@@ -151,7 +151,7 @@ async function startRandomGame() {
     showToast('Die Zufallsrunde konnte gerade nicht geladen werden.');
     if (button) {
       button.disabled = false;
-      button.textContent = 'Zufallsrunde spielen';
+      button.textContent = 'Freies Spiel starten';
     }
   }
 }
@@ -250,7 +250,7 @@ function renderStart() {
         <p class="hero-copy"><strong>5 echte Justiz-Auktionen.</strong></p>
         <div class="start-actions">
           <button class="primary-button" type="button" data-action="play">${buttonText}<span class="button-arrow">→</span></button>
-          <button class="secondary-button random-button" type="button" data-action="random">Zufallsrunde spielen <span aria-hidden="true">↻</span></button>
+          <button class="secondary-button random-button" type="button" data-action="random">Freies Spiel starten <span aria-hidden="true">↻</span></button>
         </div>
       </div>
       <aside class="start-side" aria-label="Tagesstatistik">

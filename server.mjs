@@ -148,7 +148,11 @@ const server = createServer({ maxHeaderSize: 16 * 1024 }, async (request, respon
       json(response, 405, { error: 'method_not_allowed' });
       return;
     }
-    const served = await sendFile(request, response, publicDir, url.pathname, url.pathname === '/' ? 'no-cache' : 'public, max-age=3600');
+    const extension = path.extname(url.pathname).toLowerCase();
+    const cacheControl = url.pathname === '/' || extension === '.html' || extension === '.css' || extension === '.js'
+      ? 'no-cache'
+      : 'public, max-age=3600';
+    const served = await sendFile(request, response, publicDir, url.pathname, cacheControl);
     if (!served) json(response, 404, { error: 'not_found' });
   } catch (error) {
     console.error(error);
