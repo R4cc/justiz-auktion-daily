@@ -71,8 +71,10 @@ const FALLBACK_AUCTIONS = [
   }
 ];
 
-let AUCTIONS = FALLBACK_AUCTIONS;
+let DAILY_AUCTIONS = FALLBACK_AUCTIONS;
+let AUCTIONS = DAILY_AUCTIONS;
 let dailyMeta = null;
+let gameMode = 'daily';
 
 const app = document.querySelector('#app');
 const helpDialog = document.querySelector('#help-dialog');
@@ -111,16 +113,46 @@ async function loadDailyGame() {
     if (!response.ok) return;
     const payload = await response.json();
     if (!Array.isArray(payload.auctions) || payload.auctions.length !== 5) return;
+    DAILY_AUCTIONS = payload.auctions.map(item => ({
+      ...item,
+      image: item.image || item.images?.[0] || 'assets/tv.jpg',
+      actualBid: Number(item.actualBid ?? item.correctPrice),
+      startBid: Number(item.startBid || 0)
+    }));
+    if (gameMode === 'daily') AUCTIONS = DAILY_AUCTIONS;
+    dailyMeta = { date: payload.date, gameNumber: payload.gameNumber, generatedAt: payload.generatedAt };
+    if (state.view === 'start') renderStart();
+  } catch {
+    // The bundled seed keeps the game playable during a temporary collector outage.
+  }
+}
+
+async function startRandomGame() {
+  const button = document.querySelector('[data-action="random"]');
+  if (button) {
+    button.disabled = true;
+    button.textContent = 'Zufallsrunde wird geladen …';
+  }
+  try {
+    const response = await fetch('/api/random', { headers: { accept: 'application/json' } });
+    if (!response.ok) throw new Error('random_game_unavailable');
+    const payload = await response.json();
+    if (!Array.isArray(payload.auctions) || payload.auctions.length !== 5) throw new Error('invalid_random_game');
+    gameMode = 'random';
     AUCTIONS = payload.auctions.map(item => ({
       ...item,
       image: item.image || item.images?.[0] || 'assets/tv.jpg',
       actualBid: Number(item.actualBid ?? item.correctPrice),
       startBid: Number(item.startBid || 0)
     }));
-    dailyMeta = { date: payload.date, gameNumber: payload.gameNumber, generatedAt: payload.generatedAt };
-    if (state.view === 'start') renderStart();
+    state = { view: 'game', round: 0, answers: [] };
+    renderRound();
   } catch {
-    // The bundled seed keeps the game playable during a temporary collector outage.
+    showToast('Die Zufallsrunde konnte gerade nicht geladen werden.');
+    if (button) {
+      button.disabled = false;
+      button.textContent = 'Zufallsrunde spielen';
+    }
   }
 }
 
@@ -139,6 +171,7 @@ function getTodayRecord() {
 }
 
 function saveProgress() {
+  if (gameMode !== 'daily') return;
   localStorage.setItem(todayStorageKey(), JSON.stringify({ ...state, date: utcDateKey(), game: gameNumber() }));
 }
 
@@ -168,7 +201,7 @@ function accuracy(score) {
   if (score >= 850) return { label: 'Sehr nah dran!', message: 'Dein Preisgefühl sitzt.', icon: '◎', className: 'green', emoji: '🟩' };
   if (score >= 650) return { label: 'Gut geschätzt!', message: 'Du warst ziemlich dicht dran.', icon: '★', className: 'yellow', emoji: '🟨' };
   if (score >= 400) return { label: 'Nicht schlecht', message: 'Die Richtung hat gestimmt.', icon: '◆', className: 'orange', emoji: '🟧' };
-  return { label: 'Daneben', message: 'Die nächste Auktion wartet schon.', icon: '↗', className: 'red', emoji: '🟥' };
+  return { label: 'Daneben', message: '', icon: '↗', className: 'red', emoji: '🟥' };
 }
 
 function stats() {
@@ -190,6 +223,8 @@ function stats() {
 }
 
 function startGame() {
+  gameMode = 'daily';
+  AUCTIONS = DAILY_AUCTIONS;
   const saved = getTodayRecord();
   if (saved?.view === 'results') {
     state = saved;
@@ -212,8 +247,11 @@ function renderStart() {
       <div class="start-main">
         <p class="eyebrow game-number">TAGESAUKTION · #${gameNumber()}</p>
         <h1 class="hero-title">JUSTIZ<br>GUESSR<span>.</span></h1>
-        <p class="hero-copy"><strong>5 echte Justiz-Auktionen.</strong><br>Was sind sie gerade wert?</p>
-        <button class="primary-button" type="button" data-action="play">${buttonText}<span class="button-arrow">→</span></button>
+        <p class="hero-copy"><strong>5 echte Justiz-Auktionen.</strong></p>
+        <div class="start-actions">
+          <button class="primary-button" type="button" data-action="play">${buttonText}<span class="button-arrow">→</span></button>
+          <button class="secondary-button random-button" type="button" data-action="random">Zufallsrunde spielen <span aria-hidden="true">↻</span></button>
+        </div>
       </div>
       <aside class="start-side" aria-label="Tagesstatistik">
         <div class="ticket">
@@ -228,7 +266,6 @@ function renderStart() {
         </div>
         <div class="score-explainer">
           <div class="indicator-key"><span>🟩 EXAKT</span><span>🟨 NAH DRAN</span><span>🟧 FAIR</span><span>🟥 DANEBEN</span></div>
-          <p>Einmal pro Tag. Je kleiner dein prozentualer Abstand zum echten Gebot, desto mehr Punkte bekommst du.</p>
         </div>
       </aside>
     </section>`;
@@ -238,11 +275,12 @@ function renderRound() {
   clearInterval(countdownTimer);
   const auction = AUCTIONS[state.round];
   const answer = state.answers[state.round];
+  const ended = !auction.endAt || Date.parse(auction.endAt) <= Date.now();
   const runningScore = state.answers.reduce((sum, item) => sum + item.score, 0);
   app.innerHTML = `
     <section class="game-shell">
       <div class="game-topline">
-        <span class="round-count">${state.round + 1} / 5</span>
+        <span class="round-count">${state.round + 1} / 5<small>${gameMode === 'random' ? 'FREIES SPIEL' : 'DAILY'}</small></span>
         <div class="progress-track" aria-label="Spielfortschritt"><div class="progress-fill" style="width:${((state.round + (answer ? 1 : 0)) / 5) * 100}%"></div></div>
         <span class="running-score">${runningScore.toLocaleString('de-DE')} PKT</span>
       </div>
@@ -250,7 +288,7 @@ function renderRound() {
         <div class="auction-image-wrap">
           <img class="auction-image" src="${auction.image}" alt="${auction.title}" />
           <span class="category-tag">${auction.category.toUpperCase()}</span>
-          <span class="time-tag"><span class="clock-icon" aria-hidden="true"></span><span data-countdown>${timeRemaining(auction.endAt)}</span></span>
+          <span class="time-tag${ended ? ' time-tag--ended' : ''}"><span class="clock-icon" aria-hidden="true"></span><span data-countdown>${timeRemaining(auction.endAt)}</span></span>
         </div>
         <div class="auction-panel${answer ? ' auction-panel--result' : ''}">
           <p class="auction-id">JUSTIZ-AUKTION #${auction.id}</p>
@@ -260,27 +298,29 @@ function renderRound() {
             <div class="fact-list">
               <div class="fact"><span>ZUSTAND</span><strong>${auction.condition}</strong></div>
             </div>
-            ${guessMarkup()}
+            ${guessMarkup(ended)}
           `}
         </div>
       </div>
     </section>`;
   countdownTimer = setInterval(() => {
     const node = document.querySelector('[data-countdown]');
-    if (node) node.textContent = timeRemaining(auction.endAt);
+    if (node) {
+      node.textContent = timeRemaining(auction.endAt);
+      node.closest('.time-tag')?.classList.toggle('time-tag--ended', !auction.endAt || Date.parse(auction.endAt) <= Date.now());
+    }
   }, 30000);
   if (!answer) setTimeout(() => document.querySelector('#price-input')?.focus(), 50);
 }
 
-function guessMarkup() {
+function guessMarkup(ended = false) {
   return `
     <form class="guess-form" id="guess-form">
-      <label for="price-input">Was ist das aktuelle Gebot?</label>
+      <label for="price-input">${ended ? 'Was war das Endgebot?' : 'Was ist das aktuelle Gebot?'}</label>
       <div class="guess-control">
-        <div class="input-wrap"><span class="currency">€</span><input id="price-input" class="price-input" inputmode="decimal" autocomplete="off" placeholder="0" aria-describedby="guess-hint" /></div>
+        <div class="input-wrap"><span class="currency">€</span><input id="price-input" class="price-input" inputmode="decimal" autocomplete="off" placeholder="0" /></div>
         <button class="submit-guess" type="submit">Tipp abgeben</button>
       </div>
-      <p class="guess-hint" id="guess-hint">Ein Tipp, keine zweite Chance. Punkt oder Komma ist okay.</p>
     </form>`;
 }
 
@@ -294,7 +334,7 @@ function revealMarkup(auction, answer) {
     <div class="reveal-panel reveal-${level.className}">
       <div class="result-feedback">
         <span class="feedback-icon" aria-hidden="true">${level.icon}</span>
-        <span><strong>${level.label}</strong><small>${level.message}</small></span>
+        <span><strong>${level.label}</strong>${level.message ? `<small>${level.message}</small>` : ''}</span>
       </div>
       <div class="bid-comparison">
         <div class="bid-value">
@@ -352,9 +392,11 @@ function finishGame() {
   state.view = 'results';
   saveProgress();
   const total = state.answers.reduce((sum, item) => sum + item.score, 0);
-  const history = getHistory().filter(item => item.date !== utcDateKey());
-  history.push({ date: utcDateKey(), game: gameNumber(), total });
-  localStorage.setItem('justizguessr:history', JSON.stringify(history.slice(-400)));
+  if (gameMode === 'daily') {
+    const history = getHistory().filter(item => item.date !== utcDateKey());
+    history.push({ date: utcDateKey(), game: gameNumber(), total });
+    localStorage.setItem('justizguessr:history', JSON.stringify(history.slice(-400)));
+  }
   renderResults();
 }
 
@@ -364,26 +406,30 @@ function renderResults() {
   const averageError = state.answers.reduce((sum, item) => sum + item.error, 0) / state.answers.length;
   const bestIndex = state.answers.reduce((best, item, index, items) => item.score > items[best].score ? index : best, 0);
   const playerStats = stats();
+  const completedAuctions = AUCTIONS.filter(auction => !auction.endAt || Date.parse(auction.endAt) <= Date.now()).length;
   app.innerHTML = `
     <section class="results-screen">
       <div class="results-header">
-        <div><p class="eyebrow">TAGESAUKTION #${gameNumber()} · GESCHAFFT</p><h1>DEIN<br>ERGEBNIS<span style="color:var(--red)">.</span></h1></div>
+        <div><p class="eyebrow">${gameMode === 'random' ? 'FREIES SPIEL' : `TAGESAUKTION #${gameNumber()}`} · GESCHAFFT</p><h1>DEIN<br>ERGEBNIS<span style="color:var(--red)">.</span></h1></div>
         <div class="results-score"><strong>${total.toLocaleString('de-DE')} / 5.000</strong><span>GESAMTPUNKTE</span></div>
       </div>
       <div class="result-stats">
         <div class="result-stat"><span>BESTE RUNDE</span><strong>${state.answers[bestIndex].score} Pkt</strong></div>
         <div class="result-stat"><span>Ø ABWEICHUNG</span><strong>${averageError.toFixed(1).replace('.', ',')} %</strong></div>
-        <div class="result-stat"><span>AKTUELLER STREAK</span><strong>${playerStats.streak ? `🔥 ${playerStats.streak} Tag${playerStats.streak === 1 ? '' : 'e'}` : '—'}</strong></div>
+        ${gameMode === 'random'
+          ? `<div class="result-stat"><span>BEENDETE AUKTIONEN</span><strong>${completedAuctions} / 5</strong></div>`
+          : `<div class="result-stat"><span>AKTUELLER STREAK</span><strong>${playerStats.streak ? `🔥 ${playerStats.streak} Tag${playerStats.streak === 1 ? '' : 'e'}` : '—'}</strong></div>`}
       </div>
       <div class="results-list">
         ${AUCTIONS.map((auction, index) => resultRow(auction, state.answers[index], index)).join('')}
       </div>
       <div class="results-actions">
-        <button class="primary-button" type="button" data-action="share">Ergebnis teilen <span class="button-arrow">↗</span></button>
+        ${gameMode === 'random' ? '<button class="primary-button" type="button" data-action="random">Neue Zufallsrunde <span class="button-arrow">↻</span></button>' : ''}
+        <button class="${gameMode === 'random' ? 'secondary' : 'primary'}-button" type="button" data-action="share">Ergebnis teilen <span class="button-arrow">↗</span></button>
         <button class="secondary-button" type="button" data-action="copy">Text kopieren</button>
         <button class="secondary-button" type="button" data-action="home">Zur Startseite</button>
       </div>
-      <p class="data-note">Gebotsstände wurden für dieses Tagesspiel festgeschrieben. Die Originalauktion kann sich danach weiter verändern.</p>
+      <p class="data-note">${gameMode === 'random' ? 'Diese Runde stammt aus dem dauerhaft gespeicherten Auktionsarchiv. Beendete Auktionen werden mit ihrem letzten erfassten Endgebot gespielt.' : 'Gebotsstände wurden für dieses Tagesspiel festgeschrieben. Die Originalauktion kann sich danach weiter verändern.'}</p>
     </section>`;
 }
 
@@ -404,12 +450,12 @@ function shareText() {
   const total = state.answers.reduce((sum, item) => sum + item.score, 0);
   const streak = stats().streak;
   return [
-    `JUSTIZGUESSR #${gameNumber()}`,
+    gameMode === 'random' ? 'JUSTIZGUESSR · FREIES SPIEL' : `JUSTIZGUESSR #${gameNumber()}`,
     '',
     ...state.answers.map(item => `${accuracy(item.score).emoji} ${item.score}`),
     '',
     `${total.toLocaleString('de-DE')} / 5.000`,
-    streak ? `🔥 ${streak} Tag${streak === 1 ? '' : 'e'} Streak` : ''
+    gameMode === 'daily' && streak ? `🔥 ${streak} Tag${streak === 1 ? '' : 'e'} Streak` : ''
   ].filter((line, index, all) => line || all[index - 1] !== '').join('\n');
 }
 
@@ -479,6 +525,7 @@ document.addEventListener('submit', event => {
 document.addEventListener('click', event => {
   const action = event.target.closest('[data-action]')?.dataset.action;
   if (action === 'play') dailyLoadPromise.finally(startGame);
+  if (action === 'random') startRandomGame();
   if (action === 'next') nextRound();
   if (action === 'share') shareResult();
   if (action === 'copy') copyResult();
@@ -524,6 +571,18 @@ function registerWebMcpTools() {
       await dailyLoadPromise;
       startGame();
       return { gameNumber: gameNumber(), view: state.view, currentRound: state.round + 1 };
+    }
+  });
+
+  register({
+    name: 'start_random_game',
+    title: 'Zufallsrunde öffnen',
+    description: 'Startet ein freies Spiel mit fünf zufälligen Auktionen aus dem gespeicherten Archiv.',
+    inputSchema: { type: 'object', properties: {}, additionalProperties: false },
+    annotations: { readOnlyHint: false, untrustedContentHint: false },
+    async execute() {
+      await startRandomGame();
+      return { mode: gameMode, view: state.view, currentRound: state.round + 1 };
     }
   });
 }

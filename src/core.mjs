@@ -49,10 +49,32 @@ function qualityScore(auction, now) {
   return score;
 }
 
+function playableAuction(auction, correctPrice = auction.finalPrice ?? auction.currentBid) {
+  return {
+    id: auction.id,
+    title: auction.title,
+    description: auction.description,
+    category: auction.category || 'Sonstiges',
+    image: auction.image,
+    images: auction.images || [auction.image],
+    condition: auction.condition || 'Keine Angabe',
+    fulfillment: auction.fulfillment || 'Siehe Auktion',
+    startBid: auction.startBid,
+    correctPrice,
+    bidCount: auction.bidCount || 0,
+    startAt: auction.startAt || null,
+    endAt: auction.endAt || null,
+    location: auction.location || null,
+    sourceCapturedAt: auction.capturedAt || null,
+    url: auction.url
+  };
+}
+
 export function selectDailySet(auctions, dateKey, previousSets = {}, count = 5) {
   const now = Date.parse(`${dateKey}T00:00:00Z`);
-  const recentDates = Object.keys(previousSets).sort().slice(-30);
-  const recentlyUsed = new Set(recentDates.flatMap(key => previousSets[key]?.auctions?.map(item => item.id) || []));
+  const historicalDates = Object.keys(previousSets).sort();
+  const recentDates = historicalDates.slice(-30);
+  const previouslyUsed = new Set(historicalDates.flatMap(key => previousSets[key]?.auctions?.map(item => item.id) || []));
   const recentCategoryCounts = recentDates.slice(-7)
     .flatMap(key => previousSets[key]?.auctions || [])
     .reduce((counts, item) => counts.set(item.category, (counts.get(item.category) || 0) + 1), new Map());
@@ -60,19 +82,18 @@ export function selectDailySet(auctions, dateKey, previousSets = {}, count = 5) 
     .filter(auction => auction?.id && auction.title && auction.image)
     .filter(auction => Number.isFinite(auction.currentBid) && auction.currentBid > 0)
     .filter(auction => !auction.endAt || Date.parse(auction.endAt) > now)
+    .filter(auction => !previouslyUsed.has(auction.id))
     .map(auction => ({ ...auction, _quality: qualityScore(auction, now), _jitter: deterministicJitter(dateKey, auction.id) }));
 
   const selected = [];
   const categories = new Set();
   const priceBands = new Set();
   const endSlots = new Set();
-  const unusedCandidates = candidates.filter(auction => !recentlyUsed.has(auction.id));
-  const remaining = [...(unusedCandidates.length >= count ? unusedCandidates : candidates)];
+  const remaining = [...candidates];
 
   while (selected.length < count && remaining.length) {
     remaining.sort((a, b) => {
       const score = item => item._quality
-        + (recentlyUsed.has(item.id) ? 0 : 120)
         + (categories.has(item.category) ? -100 : 60)
         - (recentCategoryCounts.get(item.category) || 0) * 12
         + (priceBands.has(priceBand(item.currentBid)) ? 0 : 20)
@@ -90,7 +111,8 @@ export function selectDailySet(auctions, dateKey, previousSets = {}, count = 5) 
   if (selected.length < count) {
     const alreadySelected = new Set(selected.map(item => item.id));
     const archived = auctions
-      .filter(item => item?.id && item.title && item.image && item.currentBid > 0 && !alreadySelected.has(item.id))
+      .filter(item => item?.id && item.title && item.image && (item.finalPrice ?? item.currentBid) > 0)
+      .filter(item => !alreadySelected.has(item.id) && !previouslyUsed.has(item.id))
       .sort((a, b) => deterministicJitter(dateKey, b.id) - deterministicJitter(dateKey, a.id));
     selected.push(...archived.slice(0, count - selected.length));
   }
@@ -103,23 +125,27 @@ export function selectDailySet(auctions, dateKey, previousSets = {}, count = 5) 
     date: dateKey,
     gameNumber: gameNumber(dateKey),
     generatedAt: new Date().toISOString(),
-    auctions: ordered.map(({ _quality, _jitter, ...auction }) => ({
-      id: auction.id,
-      title: auction.title,
-      description: auction.description,
-      category: auction.category || 'Sonstiges',
-      image: auction.image,
-      images: auction.images || [auction.image],
-      condition: auction.condition || 'Keine Angabe',
-      fulfillment: auction.fulfillment || 'Siehe Auktion',
-      startBid: auction.startBid,
-      correctPrice: auction.currentBid,
-      bidCount: auction.bidCount || 0,
-      startAt: auction.startAt || null,
-      endAt: auction.endAt || null,
-      location: auction.location || null,
-      sourceCapturedAt: auction.capturedAt || null,
-      url: auction.url
-    }))
+    auctions: ordered.map(({ _quality, _jitter, ...auction }) => playableAuction(
+      auction,
+      auction.endAt && Date.parse(auction.endAt) <= now ? auction.finalPrice ?? auction.currentBid : auction.currentBid
+    ))
+  };
+}
+
+export function selectRandomSet(auctions, count = 5, random = Math.random) {
+  const unique = [...new Map(auctions.map(auction => [auction?.id, auction])).values()]
+    .filter(auction => auction?.id && auction.title && auction.image)
+    .filter(auction => Number.isFinite(auction.finalPrice ?? auction.currentBid) && (auction.finalPrice ?? auction.currentBid) > 0);
+  if (unique.length < count) throw new Error(`Only ${unique.length} playable auctions are available; ${count} required`);
+
+  for (let index = unique.length - 1; index > 0; index -= 1) {
+    const target = Math.floor(random() * (index + 1));
+    [unique[index], unique[target]] = [unique[target], unique[index]];
+  }
+
+  return {
+    mode: 'random',
+    generatedAt: new Date().toISOString(),
+    auctions: unique.slice(0, count).map(auction => playableAuction(auction))
   };
 }

@@ -1,6 +1,6 @@
 # JUSTIZGUESSR
 
-A daily price-guessing game based on public listings from [justiz-auktion.de](https://www.justiz-auktion.de/).
+A daily price-guessing game based on public listings from [justiz-auktion.de](https://www.justiz-auktion.de/), plus replayable random rounds drawn from the saved auction archive.
 
 The application serves the game and its JSON API from one lightweight Node process. No account is required; player progress and streaks stay in the browser, while auction history and immutable daily sets are stored in the container's `/data` volume.
 
@@ -20,7 +20,7 @@ docker run --rm \
   your-user/justizguessr:latest
 ```
 
-The `/data` volume preserves archived auctions, cached listing images, final prices, and immutable daily game sets across container upgrades. The service collects at startup, every six hours, and just after midnight UTC. A day's five auctions and their scoring prices are never changed after generation.
+The `/data` volume preserves archived auctions, cached listing images, final prices, and immutable daily game sets across container upgrades. The service collects at startup, every six hours, and just after midnight UTC. A day's five auctions and their scoring prices are never changed after generation, and an auction already used by a previous daily is not selected for another one. Free-play rounds may include active or completed archived auctions and do not affect daily progress or streaks.
 
 Optional environment variables:
 
@@ -66,4 +66,4 @@ npm test
 npm start
 ```
 
-The game is then available at `http://localhost:3000`. Container health can be checked at `GET /healthz`, and the current frozen daily set is served from `GET /api/daily`.
+The game is then available at `http://localhost:3000`. Container health can be checked at `GET /healthz`, the current frozen daily set is served from `GET /api/daily`, and a fresh five-auction free-play set is served from `GET /api/random`.

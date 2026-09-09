@@ -1,10 +1,10 @@
 import { createServer } from 'node:http';
 import { createReadStream } from 'node:fs';
-import { stat } from 'node:fs/promises';
+import { readFile, stat } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { collectAuctions, ensureDailyGame, seedArchiveIfEmpty } from './src/collector.mjs';
-import { utcDateKey } from './src/core.mjs';
+import { selectRandomSet, utcDateKey } from './src/core.mjs';
 
 const projectDir = path.dirname(fileURLToPath(import.meta.url));
 const publicDir = path.join(projectDir, 'dist');
@@ -75,6 +75,18 @@ async function dailyPayload() {
   };
 }
 
+async function randomPayload() {
+  const archive = JSON.parse(await readFile(path.join(dataDir, 'auctions.json'), 'utf8'));
+  const game = selectRandomSet(archive.auctions || []);
+  return {
+    ...game,
+    auctions: game.auctions.map(auction => ({
+      ...auction,
+      actualBid: auction.correctPrice
+    }))
+  };
+}
+
 async function refresh() {
   if (refreshPromise) return refreshPromise;
   refreshPromise = (async () => {
@@ -116,6 +128,10 @@ const server = createServer({ maxHeaderSize: 16 * 1024 }, async (request, respon
     }
     if (request.method === 'GET' && url.pathname === '/api/daily') {
       json(response, 200, await dailyPayload());
+      return;
+    }
+    if (request.method === 'GET' && url.pathname === '/api/random') {
+      json(response, 200, await randomPayload());
       return;
     }
     if (request.method === 'GET' && url.pathname.startsWith('/auction-images/')) {

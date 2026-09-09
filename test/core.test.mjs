@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { gameNumber, scoreGuess, selectDailySet } from '../src/core.mjs';
+import { gameNumber, scoreGuess, selectDailySet, selectRandomSet } from '../src/core.mjs';
 import { extractListingUrls, parseAuctionPage, parseAuctionStart } from '../src/collector.mjs';
 
 test('percentage scoring rewards close guesses smoothly', () => {
@@ -28,12 +28,16 @@ test('daily selection is deterministic, varied, and avoids recently used items',
     endAt: `2026-10-${String(1 + (index % 6)).padStart(2, '0')}T${String(10 + (index % 5)).padStart(2, '0')}:00:00.000Z`,
     url: `https://example.test/item-${index}`
   }));
-  const previous = { '2026-09-08': { auctions: auctions.slice(0, 5) } };
+  const previous = {
+    '2026-01-01': { auctions: [auctions[17]] },
+    '2026-09-08': { auctions: auctions.slice(0, 5) }
+  };
   const first = selectDailySet(auctions, '2026-09-09', previous);
   const second = selectDailySet(auctions, '2026-09-09', previous);
   assert.deepEqual(first.auctions.map(item => item.id), second.auctions.map(item => item.id));
   assert.equal(new Set(first.auctions.map(item => item.id)).size, 5);
   assert.equal(first.auctions.some(item => item.id < 100005), false);
+  assert.equal(first.auctions.some(item => item.id === 100017), false);
   assert.ok(new Set(first.auctions.map(item => item.category)).size >= 4);
   assert.ok(new Set(first.auctions.map(item => item.endAt)).size >= 4);
   const following = selectDailySet(auctions, '2026-09-10', { ...previous, '2026-09-09': first });
@@ -42,6 +46,26 @@ test('daily selection is deterministic, varied, and avoids recently used items',
     first.auctions.map(item => item.id),
     following.auctions.map(item => item.id)
   );
+});
+
+test('random selection includes archived auctions without duplicates', () => {
+  const auctions = Array.from({ length: 7 }, (_, index) => ({
+    id: 200000 + index,
+    title: `Archived auction ${index}`,
+    description: 'A saved auction that remains playable after its original listing ended.',
+    category: 'Archive',
+    image: `/images/archive-${index}.jpg`,
+    currentBid: 10 + index,
+    finalPrice: 50 + index,
+    startBid: 5,
+    endAt: '2025-01-01T12:00:00.000Z',
+    url: `https://example.test/archive-${index}`
+  }));
+  const game = selectRandomSet([...auctions, auctions[0]], 5, () => 0);
+  assert.equal(game.mode, 'random');
+  assert.equal(game.auctions.length, 5);
+  assert.equal(new Set(game.auctions.map(item => item.id)).size, 5);
+  assert.ok(game.auctions.every(item => item.correctPrice === 50 + (item.id - 200000)));
 });
 
 test('collector discovers and parses public auction records', () => {

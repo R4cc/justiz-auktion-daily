@@ -67,18 +67,7 @@ button { color: inherit; }
   cursor: pointer;
 }
 
-.mark {
-  display: grid;
-  place-items: center;
-  width: 32px;
-  height: 32px;
-  color: white;
-  background: var(--navy);
-  border-radius: 6px 6px 2px 6px;
-  font-size: .72rem;
-  letter-spacing: -.06em;
-  box-shadow: 5px 5px 0 var(--red);
-}
+.brand-logo { width: 42px; height: 42px; object-fit: contain; display: block; }
 
 .header-actions { display: flex; align-items: center; gap: 18px; }
 .daily-reset { display: flex; align-items: baseline; gap: 8px; font: 500 .66rem/1 "DM Mono", monospace; letter-spacing: .05em; color: var(--muted); }
@@ -121,9 +110,13 @@ button { color: inherit; }
 .primary-button { margin-top: 34px; background: var(--ink); color: white; box-shadow: 0 8px 0 var(--red); }
 .primary-button:hover { transform: translateY(-2px); box-shadow: 0 10px 0 var(--red); }
 .primary-button:active { transform: translateY(4px); box-shadow: 0 4px 0 var(--red); }
+.primary-button:disabled, .secondary-button:disabled { opacity: .58; cursor: wait; transform: none; }
 .button-arrow { font-size: 1.4rem; }
 .secondary-button { border: 1px solid var(--line); background: white; }
 .secondary-button:hover { background: #fafafa; transform: translateY(-1px); }
+.start-actions { display: flex; align-items: stretch; flex-wrap: wrap; gap: 13px; margin-top: 34px; }
+.start-actions .primary-button { margin: 0; }
+.random-button { min-width: 220px; }
 
 .start-side { align-self: stretch; display: flex; flex-direction: column; justify-content: center; }
 .ticket { background: white; border: 1px solid var(--line); border-radius: var(--radius); box-shadow: var(--shadow); overflow: hidden; transform: rotate(1deg); }
@@ -136,13 +129,13 @@ button { color: inherit; }
 .ticket-stat span { display: block; font: .7rem "DM Mono", monospace; color: var(--muted); letter-spacing: .05em; margin-bottom: 6px; }
 .ticket-stat strong { font-size: 1.45rem; letter-spacing: -.04em; }
 .score-explainer { margin: 30px 4px 0; display: grid; gap: 12px; }
-.score-explainer p { margin: 0; color: var(--muted); font-size: .9rem; line-height: 1.55; }
 .indicator-key { display: flex; flex-wrap: wrap; gap: 7px; }
 .indicator-key span { background: rgba(255,255,255,.64); border: 1px solid var(--line); border-radius: 99px; padding: 6px 9px; font: .68rem "DM Mono", monospace; }
 
 .game-shell { padding: 32px 0 70px; }
 .game-topline { display: grid; grid-template-columns: 120px 1fr 120px; align-items: center; gap: 20px; margin-bottom: 24px; }
 .round-count { font: 600 .8rem "DM Mono", monospace; letter-spacing: .06em; }
+.round-count small { display: block; margin-top: 4px; color: var(--muted); font-size: .6rem; letter-spacing: .08em; }
 .running-score { justify-self: end; min-width: 112px; padding: 9px 11px; text-align: center; background: rgba(255,255,255,.72); border: 1px solid var(--line); border-radius: 99px; font: 700 .79rem "DM Mono", monospace; letter-spacing: .035em; box-shadow: 0 5px 18px rgba(16,26,43,.06); }
 .progress-track { height: 4px; background: rgba(16,26,43,.12); overflow: hidden; }
 .progress-fill { height: 100%; background: var(--red); transition: width .4s ease; }
@@ -153,6 +146,7 @@ button { color: inherit; }
 .auction-image { width: 100%; height: 100%; object-fit: contain; display: block; }
 .category-tag { position: absolute; top: 18px; left: 18px; background: rgba(16,26,43,.9); color: white; border-radius: 7px; padding: 9px 11px; font: .72rem "DM Mono", monospace; letter-spacing: .05em; }
 .time-tag { position: absolute; left: 18px; bottom: 18px; display: inline-flex; align-items: center; gap: 10px; background: var(--signal); color: #111; border-radius: 9px; padding: 11px 14px; font: 500 .82rem "DM Mono", monospace; box-shadow: 0 4px 16px rgba(16,26,43,.14); }
+.time-tag--ended { color: white; background: rgba(16,26,43,.9); }
 .clock-icon { width: 17px; height: 17px; border: 2px solid currentColor; border-radius: 50%; position: relative; }
 .clock-icon::before { content: ""; position: absolute; width: 1px; height: 5px; background: currentColor; left: 6px; top: 2px; }
 .clock-icon::after { content: ""; position: absolute; width: 4px; height: 1px; background: currentColor; left: 6px; top: 7px; transform: rotate(25deg); transform-origin: left; }
@@ -177,7 +171,6 @@ button { color: inherit; }
 .currency { font-size: 1.7rem; font-weight: 700; color: var(--muted); margin-right: 10px; }
 .price-input { width: 100%; min-width: 0; height: 64px; border: 0; outline: 0; font-size: 1.85rem; font-weight: 700; letter-spacing: -.04em; color: var(--ink); background: transparent; }
 .submit-guess { border: 0; border-left: 2px solid var(--ink); background: var(--ink); color: white; padding: 0 21px; font-weight: 800; cursor: pointer; }
-.guess-hint { margin: 10px 0 0; color: var(--muted); font-size: .75rem; }
 
 .reveal-panel { display: flex; flex-direction: column; margin-top: 22px; animation: reveal-enter .45s cubic-bezier(.2,.8,.2,1) both; }
 .result-feedback { display: flex; align-items: center; gap: 14px; padding: 14px 16px; border: 1px solid color-mix(in srgb, var(--feedback-color) 34%, transparent); border-radius: 13px; color: var(--feedback-ink); background: linear-gradient(105deg, color-mix(in srgb, var(--feedback-color) 25%, white), color-mix(in srgb, var(--feedback-color) 7%, white)); }
@@ -289,6 +282,8 @@ button { color: inherit; }
   .hero-title { font-size: clamp(3.4rem, 18vw, 5.6rem); }
   .hero-copy { font-size: 1.05rem; }
   .primary-button { width: 100%; }
+  .start-actions { flex-direction: column; }
+  .start-actions .secondary-button { width: 100%; }
   .ticket-number { font-size: 2.5rem; }
   .game-shell { padding-top: 18px; }
   .game-topline { grid-template-columns: auto 1fr auto; gap: 10px; margin-bottom: 14px; }
