@@ -1,0 +1,8 @@
+.git
+.github
+.openai
+node_modules
+runtime-data
+*.tar.gz
+test
+README.md

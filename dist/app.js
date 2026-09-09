@@ -1,4 +1,4 @@
-const AUCTIONS = [
+const FALLBACK_AUCTIONS = [
   {
     id: 210631,
     title: '1 Akku der Marke „HILTI“',
@@ -71,20 +71,44 @@ const AUCTIONS = [
   }
 ];
 
+let AUCTIONS = FALLBACK_AUCTIONS;
+let dailyMeta = null;
+
 const app = document.querySelector('#app');
 const helpDialog = document.querySelector('#help-dialog');
 const toast = document.querySelector('#toast');
 const GAME_EPOCH = Date.UTC(2026, 0, 1);
 let countdownTimer;
 let state = { view: 'start', round: 0, answers: [] };
+let dailyLoadPromise = Promise.resolve();
 
 function utcDateKey() {
-  return new Date().toISOString().slice(0, 10);
+  return dailyMeta?.date || new Date().toISOString().slice(0, 10);
 }
 
 function gameNumber() {
+  if (dailyMeta?.gameNumber) return dailyMeta.gameNumber;
   const utcToday = new Date(`${utcDateKey()}T00:00:00Z`).getTime();
   return Math.floor((utcToday - GAME_EPOCH) / 86400000) + 1;
+}
+
+async function loadDailyGame() {
+  try {
+    const response = await fetch('/api/daily', { headers: { accept: 'application/json' } });
+    if (!response.ok) return;
+    const payload = await response.json();
+    if (!Array.isArray(payload.auctions) || payload.auctions.length !== 5) return;
+    AUCTIONS = payload.auctions.map(item => ({
+      ...item,
+      image: item.image || item.images?.[0] || 'assets/tv.jpg',
+      actualBid: Number(item.actualBid ?? item.correctPrice),
+      startBid: Number(item.startBid || 0)
+    }));
+    dailyMeta = { date: payload.date, gameNumber: payload.gameNumber, generatedAt: payload.generatedAt };
+    if (state.view === 'start') renderStart();
+  } catch {
+    // The bundled seed keeps the game playable during a temporary collector outage.
+  }
 }
 
 function todayStorageKey() {
@@ -378,7 +402,7 @@ document.addEventListener('submit', event => {
 
 document.addEventListener('click', event => {
   const action = event.target.closest('[data-action]')?.dataset.action;
-  if (action === 'play') startGame();
+  if (action === 'play') dailyLoadPromise.finally(startGame);
   if (action === 'next') nextRound();
   if (action === 'share') shareResult();
   if (action === 'home') renderStart();
@@ -386,6 +410,7 @@ document.addEventListener('click', event => {
 });
 
 renderStart();
+dailyLoadPromise = loadDailyGame();
 
 function registerWebMcpTools() {
   const context = document.modelContext;
@@ -416,7 +441,8 @@ function registerWebMcpTools() {
     description: 'Startet das heutige Spiel, setzt es fort oder öffnet ein bereits abgeschlossenes Ergebnis.',
     inputSchema: { type: 'object', properties: {}, additionalProperties: false },
     annotations: { readOnlyHint: false, untrustedContentHint: false },
-    execute() {
+    async execute() {
+      await dailyLoadPromise;
       startGame();
       return { gameNumber: gameNumber(), view: state.view, currentRound: state.round + 1 };
     }

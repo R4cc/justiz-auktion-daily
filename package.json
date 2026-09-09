@@ -1,0 +1,16 @@
+{
+  "name": "justizguessr",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "A daily price guessing game powered by public Justiz-Auktion listings.",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "start": "node server.mjs",
+    "collect": "node scripts/collect-now.mjs",
+    "test": "node --test",
+    "typecheck": "node scripts/check.mjs"
+  }
+}
