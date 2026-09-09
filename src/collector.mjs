@@ -6,7 +6,6 @@ const BASE_URL = 'https://www.justiz-auktion.de';
 const USER_AGENT = 'JUSTIZGUESSR/1.0 (+daily public auction indexer; respectful low-frequency fetches)';
 const DAILY_SELECTION_VERSION = 2;
 const ROLLING_QUEUE_VERSION = 1;
-
 const LEGACY_LISTING_PAGE_SIZE = 10;
 const LISTING_PAGE_SIZE = 50;
 
@@ -39,7 +38,6 @@ function decodeEntities(value = '') {
   return value.replace(/&(#x?[0-9a-f]+|[a-z]+);/gi, (_, entity) => {
     if (entity[0] === '#') {
       const hex = entity[1]?.toLowerCase() === 'x';
-
       return String.fromCodePoint(
         Number.parseInt(entity.slice(hex ? 2 : 1), hex ? 16 : 10)
       );
@@ -175,11 +173,9 @@ function inferCategory(title, description = '') {
     .toLowerCase()
     .replace(/\b\d{1,2}(?::\d{2})?\s*uhr\b/g, ' ');
 
-  return (
-    groups.find(([, matcher]) =>
-      matcher.test(descriptionValue)
-    )?.[0] || 'Sonstiges'
-  );
+  return groups.find(([, matcher]) =>
+    matcher.test(descriptionValue)
+  )?.[0] || 'Sonstiges';
 }
 
 export function extractListingUrls(html) {
@@ -262,9 +258,7 @@ export function parseAuctionPage(html, url) {
     'Siehe Auktion';
 
   const location =
-    text
-      .match(/Artikelstandort:\s*([^\n]+)/i)?.[1]
-      ?.trim() ||
+    text.match(/Artikelstandort:\s*([^\n]+)/i)?.[1]?.trim() ||
     null;
 
   const descriptionHtml =
@@ -361,8 +355,7 @@ async function writeJsonAtomic(filename, value) {
     { recursive: true }
   );
 
-  const temporary =
-    `${filename}.${process.pid}.tmp`;
+  const temporary = `${filename}.${process.pid}.tmp`;
 
   await writeFile(
     temporary,
@@ -375,33 +368,47 @@ async function writeJsonAtomic(filename, value) {
   );
 }
 
+function createHttpError(url, response) {
+  const error = new Error(
+    `${url} returned HTTP ${response.status}`
+  );
+
+  error.status = response.status;
+
+  const retryAfter =
+    response.headers.get('retry-after');
+
+  if (retryAfter) {
+    const seconds = Number(retryAfter);
+
+    error.retryAfterMs =
+      Number.isFinite(seconds)
+        ? seconds * 1000
+        : Math.max(
+            0,
+            Date.parse(retryAfter) - Date.now()
+          );
+  }
+
+  return error;
+}
+
 async function fetchText(url, fetchImpl) {
   const response = await fetchImpl(url, {
     headers: {
       'user-agent': USER_AGENT,
-      accept:
-        'text/html,application/xhtml+xml'
+      accept: 'text/html,application/xhtml+xml'
     },
     redirect: 'error',
     signal: AbortSignal.timeout(20000)
   });
 
   if (!response.ok) {
-    throw new Error(
-      `${url} returned HTTP ${response.status}`
-    );
+    throw createHttpError(url, response);
   }
 
   return response.text();
 }
-
-/*
- * The Justiz-Auktion site stores the selected
- * "Treffer pro Seite" value in the search form/session.
- *
- * These helpers detect the relevant form automatically
- * instead of relying on an undocumented parameter name.
- */
 
 function parseHtmlAttributes(source = '') {
   const attributes = {};
@@ -410,8 +417,7 @@ function parseHtmlAttributes(source = '') {
     /([^\s=/>]+)(?:\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'=<>`]+)))?/g;
 
   for (const match of source.matchAll(pattern)) {
-    const name =
-      match[1].toLowerCase();
+    const name = match[1].toLowerCase();
 
     const value = decodeEntities(
       match[2] ??
@@ -427,10 +433,7 @@ function parseHtmlAttributes(source = '') {
 }
 
 function optionValue(attributes, body) {
-  return (
-    attributes.value ??
-    cleanText(body)
-  );
+  return attributes.value ?? cleanText(body);
 }
 
 function selectedValue(selectBody) {
@@ -476,8 +479,7 @@ function extractPageSizePreference(
     const formAttributes =
       parseHtmlAttributes(formMatch[1]);
 
-    const formBody =
-      formMatch[2];
+    const formBody = formMatch[2];
 
     const selects = [
       ...formBody.matchAll(
@@ -489,9 +491,7 @@ function extractPageSizePreference(
 
     for (const selectMatch of selects) {
       const attributes =
-        parseHtmlAttributes(
-          selectMatch[1]
-        );
+        parseHtmlAttributes(selectMatch[1]);
 
       if (!attributes.name) {
         continue;
@@ -503,26 +503,18 @@ function extractPageSizePreference(
         )
       ].map(optionMatch =>
         optionValue(
-          parseHtmlAttributes(
-            optionMatch[1]
-          ),
+          parseHtmlAttributes(optionMatch[1]),
           optionMatch[2]
         )
       );
 
       if (
+        values.includes(String(pageSize)) &&
         values.includes(
-          String(pageSize)
-        ) &&
-        values.includes(
-          String(
-            LEGACY_LISTING_PAGE_SIZE
-          )
+          String(LEGACY_LISTING_PAGE_SIZE)
         )
       ) {
-        pageSizeField =
-          attributes.name;
-
+        pageSizeField = attributes.name;
         break;
       }
     }
@@ -540,43 +532,25 @@ function extractPageSizePreference(
       )
     ) {
       const attributes =
-        parseHtmlAttributes(
-          inputMatch[1]
-        );
+        parseHtmlAttributes(inputMatch[1]);
 
-      const name =
-        attributes.name;
+      const name = attributes.name;
 
       const type =
-        (
-          attributes.type ||
-          'text'
-        ).toLowerCase();
+        (attributes.type || 'text')
+          .toLowerCase();
 
       if (
         !name ||
-        Object.hasOwn(
-          attributes,
-          'disabled'
-        ) ||
-        [
-          'file',
-          'reset',
-          'button'
-        ].includes(type)
+        Object.hasOwn(attributes, 'disabled') ||
+        ['file', 'reset', 'button'].includes(type)
       ) {
         continue;
       }
 
       if (
-        [
-          'checkbox',
-          'radio'
-        ].includes(type) &&
-        !Object.hasOwn(
-          attributes,
-          'checked'
-        )
+        ['checkbox', 'radio'].includes(type) &&
+        !Object.hasOwn(attributes, 'checked')
       ) {
         continue;
       }
@@ -587,29 +561,20 @@ function extractPageSizePreference(
       );
     }
 
-    for (
-      const selectMatch of selects
-    ) {
+    for (const selectMatch of selects) {
       const attributes =
-        parseHtmlAttributes(
-          selectMatch[1]
-        );
+        parseHtmlAttributes(selectMatch[1]);
 
       if (
         !attributes.name ||
-        Object.hasOwn(
-          attributes,
-          'disabled'
-        )
+        Object.hasOwn(attributes, 'disabled')
       ) {
         continue;
       }
 
       params.set(
         attributes.name,
-        selectedValue(
-          selectMatch[2]
-        )
+        selectedValue(selectMatch[2])
       );
     }
 
@@ -619,16 +584,11 @@ function extractPageSizePreference(
       )
     ) {
       const attributes =
-        parseHtmlAttributes(
-          buttonMatch[1]
-        );
+        parseHtmlAttributes(buttonMatch[1]);
 
       if (
         attributes.name &&
-        !Object.hasOwn(
-          attributes,
-          'disabled'
-        )
+        !Object.hasOwn(attributes, 'disabled')
       ) {
         params.append(
           attributes.name,
@@ -644,19 +604,15 @@ function extractPageSizePreference(
 
     return {
       action: new URL(
-        formAttributes.action ||
-        currentUrl,
+        formAttributes.action || currentUrl,
         currentUrl
       ).href,
 
-      method: (
-        formAttributes.method ||
-        'GET'
-      ).toUpperCase(),
+      method:
+        (formAttributes.method || 'GET')
+          .toUpperCase(),
 
-      params: [
-        ...params.entries()
-      ]
+      params: [...params.entries()]
     };
   }
 
@@ -669,27 +625,21 @@ function splitSetCookieHeader(value) {
   }
 
   return value.split(
-    /,(?=\s*[^;,=\s]+=[^;,]+)/
+    /,(?=\s*[^;,=\s]+=[^;,]+)/g
   );
 }
 
-function updateCookieJar(
-  cookieJar,
-  headers
-) {
+function updateCookieJar(cookieJar, headers) {
   const values =
-    typeof headers.getSetCookie ===
-    'function'
+    typeof headers.getSetCookie === 'function'
       ? headers.getSetCookie()
       : splitSetCookieHeader(
           headers.get('set-cookie')
         );
 
   for (const value of values) {
-    const [
-      pair,
-      ...attributes
-    ] = value.split(';');
+    const [pair, ...attributes] =
+      value.split(';');
 
     const separator =
       pair.indexOf('=');
@@ -718,8 +668,7 @@ function updateCookieJar(
     if (expired) {
       delete cookieJar[name];
     } else {
-      cookieJar[name] =
-        cookieValue;
+      cookieJar[name] = cookieValue;
     }
   }
 }
@@ -740,11 +689,9 @@ async function fetchWithCookieJar(
   cookieJar
 ) {
   let requestUrl = url;
-
-  let method = (
-    options.method ||
-    'GET'
-  ).toUpperCase();
+  let method =
+    (options.method || 'GET')
+      .toUpperCase();
 
   let body = options.body;
 
@@ -794,18 +741,17 @@ async function fetchWithCookieJar(
     }
 
     const location =
-      response.headers.get(
-        'location'
-      );
+      response.headers.get('location');
 
     if (!location) {
       return response;
     }
 
-    requestUrl = new URL(
-      location,
-      requestUrl
-    ).href;
+    requestUrl =
+      new URL(
+        location,
+        requestUrl
+      ).href;
 
     if (
       response.status === 303 ||
@@ -849,12 +795,9 @@ async function submitPageSizePreference(
 
   let body;
 
-  if (
-    preference.method === 'GET'
-  ) {
+  if (preference.method === 'GET') {
     for (
-      const [name, value]
-      of params
+      const [name, value] of params
     ) {
       url.searchParams.set(
         name,
@@ -872,8 +815,7 @@ async function submitPageSizePreference(
       String(start)
     );
 
-    body =
-      params.toString();
+    body = params.toString();
 
     headers['content-type'] =
       'application/x-www-form-urlencoded';
@@ -883,22 +825,20 @@ async function submitPageSizePreference(
     await fetchWithCookieJar(
       url.href,
       {
-        method:
-          preference.method,
+        method: preference.method,
         body,
         headers,
         signal:
-          AbortSignal.timeout(
-            20_000
-          )
+          AbortSignal.timeout(20_000)
       },
       fetchImpl,
       cookieJar
     );
 
   if (!response.ok) {
-    throw new Error(
-      `${url.href} returned HTTP ${response.status}`
+    throw createHttpError(
+      url.href,
+      response
     );
   }
 
@@ -913,48 +853,38 @@ async function fetchListingPage({
   start,
   fetchImpl,
   session,
-  requestedPageSize =
-    LISTING_PAGE_SIZE
+  requestedPageSize = LISTING_PAGE_SIZE
 }) {
   const baseUrl =
     `${BASE_URL}/auction_search.php?start=${start}`;
 
   session.cookies ||= {};
 
-  /*
-   * If the site previously rejected
-   * the 50-result preference, simply
-   * continue in legacy 10-result mode.
-   */
   if (
-    requestedPageSize <=
-      LEGACY_LISTING_PAGE_SIZE ||
-    session.pageSizeSupported ===
-      false
+    requestedPageSize <= LEGACY_LISTING_PAGE_SIZE ||
+    session.pageSizeSupported === false
   ) {
     const response =
       await fetchWithCookieJar(
         baseUrl,
         {
           headers: {
-            'user-agent':
-              USER_AGENT,
+            'user-agent': USER_AGENT,
             accept:
               'text/html,application/xhtml+xml'
           },
 
           signal:
-            AbortSignal.timeout(
-              20_000
-            )
+            AbortSignal.timeout(20_000)
         },
         fetchImpl,
         session.cookies
       );
 
     if (!response.ok) {
-      throw new Error(
-        `${baseUrl} returned HTTP ${response.status}`
+      throw createHttpError(
+        baseUrl,
+        response
       );
     }
 
@@ -970,53 +900,37 @@ async function fetchListingPage({
     };
   }
 
-  /*
-   * POST-based settings are usually
-   * persisted in the session cookie.
-   *
-   * Once enabled, request the next
-   * page normally using start=50,
-   * start=100, etc.
-   */
   if (
-    session.pageSizeSupported ===
-      true &&
-    session.preference?.method ===
-      'POST'
+    session.pageSizeSupported === true &&
+    session.preference?.method === 'POST'
   ) {
     const response =
       await fetchWithCookieJar(
         baseUrl,
         {
           headers: {
-            'user-agent':
-              USER_AGENT,
+            'user-agent': USER_AGENT,
             accept:
               'text/html,application/xhtml+xml'
           },
 
           signal:
-            AbortSignal.timeout(
-              20_000
-            )
+            AbortSignal.timeout(20_000)
         },
         fetchImpl,
         session.cookies
       );
 
     if (!response.ok) {
-      throw new Error(
-        `${baseUrl} returned HTTP ${response.status}`
+      throw createHttpError(
+        baseUrl,
+        response
       );
     }
 
     const html =
       await response.text();
 
-    /*
-     * More than 10 auction URLs means
-     * the 50-result preference is active.
-     */
     if (
       extractListingUrls(html).length >
       LEGACY_LISTING_PAGE_SIZE
@@ -1031,10 +945,6 @@ async function fetchListingPage({
     }
   }
 
-  /*
-   * If we already know the search form,
-   * submit it directly for this page.
-   */
   if (session.preference) {
     const result =
       await submitPageSizePreference(
@@ -1045,54 +955,42 @@ async function fetchListingPage({
       );
 
     if (
-      extractListingUrls(
-        result.html
-      ).length >
+      extractListingUrls(result.html).length >
       LEGACY_LISTING_PAGE_SIZE
     ) {
-      session.pageSizeSupported =
-        true;
+      session.pageSizeSupported = true;
 
       return {
         ...result,
-
         effectivePageSize:
           requestedPageSize,
-
         requestUrl:
           result.url
       };
     }
   }
 
-  /*
-   * First fetch the normal page so we
-   * can discover the search form and
-   * page-size field.
-   */
   const initialResponse =
     await fetchWithCookieJar(
       baseUrl,
       {
         headers: {
-          'user-agent':
-            USER_AGENT,
+          'user-agent': USER_AGENT,
           accept:
             'text/html,application/xhtml+xml'
         },
 
         signal:
-          AbortSignal.timeout(
-            20_000
-          )
+          AbortSignal.timeout(20_000)
       },
       fetchImpl,
       session.cookies
     );
 
   if (!initialResponse.ok) {
-    throw new Error(
-      `${baseUrl} returned HTTP ${initialResponse.status}`
+    throw createHttpError(
+      baseUrl,
+      initialResponse
     );
   }
 
@@ -1100,38 +998,24 @@ async function fetchListingPage({
     await initialResponse.text();
 
   const initialUrls =
-    extractListingUrls(
-      initialHtml
-    );
+    extractListingUrls(initialHtml);
 
-  /*
-   * It may already be configured for 50
-   * results due to an existing session.
-   */
   if (
     initialUrls.length >
     LEGACY_LISTING_PAGE_SIZE
   ) {
-    session.pageSizeSupported =
-      true;
+    session.pageSizeSupported = true;
 
     return {
       html:
         initialHtml,
-
       effectivePageSize:
         requestedPageSize,
-
       requestUrl:
         baseUrl
     };
   }
 
-  /*
-   * Locate the select containing
-   * 5 / 10 / 20 / 50 and resubmit
-   * the form with 50 selected.
-   */
   session.preference =
     extractPageSizePreference(
       initialHtml,
@@ -1149,33 +1033,22 @@ async function fetchListingPage({
       );
 
     if (
-      extractListingUrls(
-        result.html
-      ).length >
+      extractListingUrls(result.html).length >
       LEGACY_LISTING_PAGE_SIZE
     ) {
-      session.pageSizeSupported =
-        true;
+      session.pageSizeSupported = true;
 
       return {
         ...result,
-
         effectivePageSize:
           requestedPageSize,
-
         requestUrl:
           result.url
       };
     }
   }
 
-  /*
-   * Safe fallback:
-   * if setting 50 did not work,
-   * don't skip start=10/20/etc.
-   */
-  session.pageSizeSupported =
-    false;
+  session.pageSizeSupported = false;
 
   return {
     html:
@@ -1198,9 +1071,7 @@ function retryDelay(
   attempts,
   now
 ) {
-  if (
-    error.retryAfterMs != null
-  ) {
+  if (error.retryAfterMs != null) {
     return Math.max(
       60_000,
       error.retryAfterMs
@@ -1238,9 +1109,7 @@ function detailPriority(
   }
 
   const remaining =
-    Date.parse(
-      auction.endAt
-    ) -
+    Date.parse(auction.endAt) -
     now;
 
   if (
@@ -1280,9 +1149,7 @@ function addTasks(
 ) {
   const known =
     new Set(
-      queue.tasks.map(
-        taskKey
-      )
+      queue.tasks.map(taskKey)
     );
 
   for (const task of tasks) {
@@ -1327,46 +1194,19 @@ async function requestResource(
             : 'text/html,application/xhtml+xml'
         },
 
-        redirect: 'error',
+        redirect:
+          'error',
 
         signal:
-          AbortSignal.timeout(
-            20_000
-          )
+          AbortSignal.timeout(20_000)
       }
     );
 
   if (!response.ok) {
-    const error =
-      new Error(
-        `${task.url} returned HTTP ${response.status}`
-      );
-
-    error.status =
-      response.status;
-
-    const retryAfter =
-      response.headers.get(
-        'retry-after'
-      );
-
-    if (retryAfter) {
-      const seconds =
-        Number(retryAfter);
-
-      error.retryAfterMs =
-        Number.isFinite(seconds)
-          ? seconds * 1000
-          : Math.max(
-              0,
-              Date.parse(
-                retryAfter
-              ) -
-                Date.now()
-            );
-    }
-
-    throw error;
+    throw createHttpError(
+      task.url,
+      response
+    );
   }
 
   return response;
@@ -1385,14 +1225,11 @@ async function saveImageResponse(
     ).toLowerCase();
 
   if (
-    !contentType.startsWith(
-      'image/'
-    )
+    !contentType.startsWith('image/')
   ) {
     throw new Error(
       `Unexpected image content type: ${
-        contentType ||
-        'missing'
+        contentType || 'missing'
       }`
     );
   }
@@ -1414,9 +1251,7 @@ async function saveImageResponse(
   const extension =
     contentType.includes('png')
       ? 'png'
-      : contentType.includes(
-            'webp'
-          )
+      : contentType.includes('webp')
         ? 'webp'
         : 'jpg';
 
@@ -1442,9 +1277,7 @@ async function saveImageResponse(
     bytes
   );
 
-  return (
-    `/auction-images/${filename}`
-  );
+  return `/auction-images/${filename}`;
 }
 
 export async function enqueueRollingDiscovery({
@@ -1470,33 +1303,15 @@ export async function enqueueRollingDiscovery({
       {
         version:
           ROLLING_QUEUE_VERSION,
-
         updatedAt: null,
         lastRequestAt: null,
-
         listingSession: {},
-
         tasks: []
       }
     );
 
   queue.listingSession ||= {};
 
-  /*
-   * Existing callers specify the amount
-   * in terms of old 10-result pages.
-   *
-   * pages=12 therefore still means:
-   * fetch roughly the first 120 auctions.
-   *
-   * With 50-result pages, that becomes:
-   *
-   * start=0
-   * start=50
-   * start=100
-   *
-   * instead of twelve listing requests.
-   */
   const listingTarget =
     Math.max(
       0,
@@ -1507,8 +1322,7 @@ export async function enqueueRollingDiscovery({
   const optimizedListingPending =
     queue.tasks.some(
       task =>
-        task.kind ===
-          'listing' &&
+        task.kind === 'listing' &&
         Number.isFinite(
           task.listingTarget
         )
@@ -1518,25 +1332,12 @@ export async function enqueueRollingDiscovery({
     !optimizedListingPending &&
     listingTarget > 0
   ) {
-    /*
-     * Retry discovering the 50-result
-     * preference at the beginning of
-     * every new listing scan.
-     */
     queue.listingSession = {};
 
-    /*
-     * Remove old-style queued listing
-     * requests such as start=10,
-     * start=20, etc.
-     *
-     * Detail/start/image tasks remain.
-     */
     queue.tasks =
       queue.tasks.filter(
         task =>
-          task.kind !==
-          'listing'
+          task.kind !== 'listing'
       );
 
     addTasks(
@@ -1571,9 +1372,7 @@ export async function enqueueRollingDiscovery({
     ROLLING_QUEUE_VERSION;
 
   queue.updatedAt =
-    new Date(
-      now
-    ).toISOString();
+    new Date(now).toISOString();
 
   await writeJsonAtomic(
     queuePath,
@@ -1614,12 +1413,9 @@ export async function processRollingTask({
       {
         version:
           ROLLING_QUEUE_VERSION,
-
         updatedAt: null,
         lastRequestAt: null,
-
         listingSession: {},
-
         tasks: []
       }
     );
@@ -1647,16 +1443,12 @@ export async function processRollingTask({
 
   const lastRequestAt =
     Date.parse(
-      queue.lastRequestAt ||
-      ''
+      queue.lastRequestAt || ''
     );
 
   if (
-    Number.isFinite(
-      lastRequestAt
-    ) &&
-    now -
-      lastRequestAt <
+    Number.isFinite(lastRequestAt) &&
+    now - lastRequestAt <
       minimumIntervalMs
   ) {
     return {
@@ -1675,29 +1467,14 @@ export async function processRollingTask({
     queue.tasks
       .filter(
         task =>
-          (
-            task.notBefore ||
-            0
-          ) <= now
+          (task.notBefore || 0) <= now
       )
       .sort(
         (a, b) =>
-          (
-            b.priority ||
-            0
-          ) -
-            (
-              a.priority ||
-              0
-            ) ||
-          (
-            a.notBefore ||
-            0
-          ) -
-            (
-              b.notBefore ||
-              0
-            )
+          (b.priority || 0) -
+            (a.priority || 0) ||
+          (a.notBefore || 0) -
+            (b.notBefore || 0)
       );
 
   const task =
@@ -1722,9 +1499,7 @@ export async function processRollingTask({
   );
 
   queue.lastRequestAt =
-    new Date(
-      now
-    ).toISOString();
+    new Date(now).toISOString();
 
   queue.updatedAt =
     queue.lastRequestAt;
@@ -1741,8 +1516,7 @@ export async function processRollingTask({
       null;
 
     if (
-      task.kind ===
-      'listing'
+      task.kind === 'listing'
     ) {
       queue.listingSession ||= {};
 
@@ -1802,8 +1576,7 @@ export async function processRollingTask({
             byId.get(id);
 
           if (
-            previous?.finalPrice !=
-            null
+            previous?.finalPrice != null
           ) {
             return [];
           }
@@ -1831,16 +1604,6 @@ export async function processRollingTask({
         })
       );
 
-      /*
-       * Critical change:
-       *
-       * When the site accepted 50 results,
-       * the next listing is start+50.
-       *
-       * If it rejected the preference,
-       * effectivePageSize is 10 and we
-       * safely continue start+10 instead.
-       */
       const nextStart =
         start +
         result.effectivePageSize;
@@ -1884,8 +1647,7 @@ export async function processRollingTask({
     }
 
     if (
-      task.kind ===
-      'detail'
+      task.kind === 'detail'
     ) {
       const item =
         parseAuctionPage(
@@ -1985,8 +1747,7 @@ export async function processRollingTask({
         );
       }
     } else if (
-      task.kind ===
-      'start'
+      task.kind === 'start'
     ) {
       const auction =
         byId.get(
@@ -2008,8 +1769,7 @@ export async function processRollingTask({
         );
       }
     } else if (
-      task.kind ===
-      'image'
+      task.kind === 'image'
     ) {
       const auction =
         byId.get(
@@ -2034,8 +1794,7 @@ export async function processRollingTask({
         );
       }
     } else if (
-      task.kind !==
-      'listing'
+      task.kind !== 'listing'
     ) {
       throw new Error(
         `Unknown rolling task kind: ${task.kind}`
@@ -2043,9 +1802,7 @@ export async function processRollingTask({
     }
 
     const updatedAt =
-      new Date(
-        now
-      ).toISOString();
+      new Date(now).toISOString();
 
     const auctions = [
       ...byId.values()
@@ -2068,8 +1825,7 @@ export async function processRollingTask({
     );
 
     const resultSuffix =
-      listingResultCount ==
-      null
+      listingResultCount == null
         ? ''
         : `; ${listingResultCount} results`;
 
@@ -2078,8 +1834,12 @@ export async function processRollingTask({
     );
 
     return {
-      status: 'ok',
-      kind: task.kind,
+      status:
+        'ok',
+
+      kind:
+        task.kind,
+
       pending:
         queue.tasks.length,
 
@@ -2088,14 +1848,9 @@ export async function processRollingTask({
     };
   } catch (error) {
     const attempts =
-      (
-        task.attempts ||
-        0
-      ) + 1;
+      (task.attempts || 0) + 1;
 
-    if (
-      attempts <= 8
-    ) {
+    if (attempts <= 8) {
       addTasks(
         queue,
         [
@@ -2115,10 +1870,7 @@ export async function processRollingTask({
             priority:
               Math.max(
                 10,
-                (
-                  task.priority ||
-                  50
-                ) - 5
+                (task.priority || 50) - 5
               )
           }
         ]
@@ -2126,9 +1878,7 @@ export async function processRollingTask({
     }
 
     queue.updatedAt =
-      new Date(
-        now
-      ).toISOString();
+      new Date(now).toISOString();
 
     await writeJsonAtomic(
       queuePath,
@@ -2171,10 +1921,8 @@ async function cacheMainImage(
   ) {
     return {
       ...auction,
-
       image:
         previous.image,
-
       images:
         previous.images ||
         [previous.image]
@@ -2195,7 +1943,6 @@ async function cacheMainImage(
           headers: {
             'user-agent':
               USER_AGENT,
-
             accept:
               'image/*'
           },
@@ -2235,8 +1982,7 @@ async function cacheMainImage(
 
     if (
       bytes.length < 1000 ||
-      bytes.length >
-        12_000_000
+      bytes.length > 12_000_000
     ) {
       return auction;
     }
@@ -2247,13 +1993,9 @@ async function cacheMainImage(
       ) || '';
 
     const extension =
-      contentType.includes(
-        'png'
-      )
+      contentType.includes('png')
         ? 'png'
-        : contentType.includes(
-              'webp'
-            )
+        : contentType.includes('webp')
           ? 'webp'
           : 'jpg';
 
@@ -2337,16 +2079,6 @@ export async function collectAuctions({
 
   const listingSession = {};
 
-  /*
-   * Preserve the existing meaning of
-   * "pages".
-   *
-   * pages=4 used to mean 40 auction
-   * listing slots.
-   *
-   * Now one 50-result request is enough
-   * to cover that same range.
-   */
   const listingTarget =
     Math.max(
       0,
@@ -2366,12 +2098,9 @@ export async function collectAuctions({
         await fetchListingPage({
           start:
             listingStart,
-
           fetchImpl,
-
           session:
             listingSession,
-
           requestedPageSize:
             LISTING_PAGE_SIZE
         });
@@ -2382,10 +2111,6 @@ export async function collectAuctions({
         listingUrls.add(url)
       );
 
-      /*
-       * Normally +50.
-       * Fallback mode uses +10.
-       */
       listingStart +=
         result.effectivePageSize;
     } catch (error) {
@@ -2438,9 +2163,7 @@ export async function collectAuctions({
                 );
 
               const previous =
-                byId.get(
-                  item.id
-                );
+                byId.get(item.id);
 
               if (
                 previous?.startAt
@@ -2671,8 +2394,7 @@ export async function seedArchiveIfEmpty({
     );
 
   if (
-    current?.auctions?.length >=
-    5
+    current?.auctions?.length >= 5
   ) {
     return current;
   }
