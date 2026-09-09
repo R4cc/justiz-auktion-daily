@@ -140,24 +140,25 @@ button { color: inherit; }
 .progress-track { height: 4px; background: rgba(16,26,43,.12); overflow: hidden; }
 .progress-fill { height: 100%; background: var(--red); transition: width .4s ease; }
 
-.auction-layout { display: grid; grid-template-columns: minmax(0, 1.26fr) minmax(340px, .74fr); min-height: 650px; background: white; border: 1px solid var(--line); border-radius: 20px; box-shadow: var(--shadow); overflow: hidden; }
+.auction-layout { display: grid; grid-template-columns: minmax(0, 1.26fr) minmax(340px, .74fr); height: clamp(600px, calc(100vh - 180px), 720px); background: white; border: 1px solid var(--line); border-radius: 20px; box-shadow: var(--shadow); overflow: hidden; }
 .auction-layout--result { grid-template-columns: minmax(0, 1.15fr) minmax(420px, .85fr); }
-.auction-image-wrap { position: relative; min-height: 540px; background: #e9e9e7; overflow: hidden; }
-.auction-image { width: 100%; height: 100%; object-fit: contain; display: block; }
-.category-tag { position: absolute; top: 18px; left: 18px; background: rgba(16,26,43,.9); color: white; border-radius: 7px; padding: 9px 11px; font: .72rem "DM Mono", monospace; letter-spacing: .05em; }
-.time-tag { position: absolute; left: 18px; bottom: 18px; display: inline-flex; align-items: center; gap: 10px; background: var(--signal); color: #111; border-radius: 9px; padding: 11px 14px; font: 500 .82rem "DM Mono", monospace; box-shadow: 0 4px 16px rgba(16,26,43,.14); }
+.auction-image-wrap { position: relative; min-width: 0; min-height: 0; background: #ebeae6; overflow: hidden; isolation: isolate; }
+.auction-image-backdrop { position: absolute; z-index: 0; inset: -24px; width: calc(100% + 48px); height: calc(100% + 48px); object-fit: cover; filter: blur(22px) saturate(.75); opacity: .22; transform: scale(1.06); }
+.auction-image { position: relative; z-index: 1; width: 100%; height: 100%; object-fit: contain; display: block; }
+.category-tag { position: absolute; z-index: 2; top: 18px; left: 18px; background: rgba(16,26,43,.9); color: white; border-radius: 7px; padding: 9px 11px; font: .72rem "DM Mono", monospace; letter-spacing: .05em; }
+.time-tag { position: absolute; z-index: 2; left: 18px; bottom: 18px; display: inline-flex; align-items: center; gap: 10px; background: var(--signal); color: #111; border-radius: 9px; padding: 11px 14px; font: 500 .82rem "DM Mono", monospace; box-shadow: 0 4px 16px rgba(16,26,43,.14); }
 .time-tag--ended { color: white; background: rgba(16,26,43,.9); }
 .clock-icon { width: 17px; height: 17px; border: 2px solid currentColor; border-radius: 50%; position: relative; }
 .clock-icon::before { content: ""; position: absolute; width: 1px; height: 5px; background: currentColor; left: 6px; top: 2px; }
 .clock-icon::after { content: ""; position: absolute; width: 4px; height: 1px; background: currentColor; left: 6px; top: 7px; transform: rotate(25deg); transform-origin: left; }
 
-.auction-panel { padding: clamp(30px, 4vw, 54px); display: flex; flex-direction: column; }
+.auction-panel { min-width: 0; min-height: 0; padding: clamp(30px, 4vw, 54px); display: flex; flex-direction: column; overflow: hidden; }
 .auction-panel--result { padding: clamp(27px, 3.2vw, 44px); }
 .auction-panel--result .auction-id { margin-bottom: 11px; }
 .auction-panel--result .auction-title { font-size: clamp(1.75rem, 2.7vw, 2.55rem); }
 .auction-id { margin: 0 0 16px; color: var(--muted); font: .72rem "DM Mono", monospace; letter-spacing: .04em; }
-.auction-title { margin: 0; font-size: clamp(1.8rem, 3vw, 2.8rem); line-height: 1.08; letter-spacing: -.055em; }
-.auction-description { margin: 20px 0 24px; color: #536071; font-size: .97rem; line-height: 1.65; }
+.auction-title { margin: 0; font-size: clamp(1.8rem, 3vw, 2.8rem); line-height: 1.08; letter-spacing: -.055em; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3; overflow: hidden; }
+.auction-description { position: relative; margin: 20px 0 24px; color: #536071; font-size: .97rem; line-height: 1.65; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 8; overflow: hidden; overflow-wrap: anywhere; }
 .fact-list { display: grid; grid-template-columns: 1fr; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); margin: 0 0 26px; }
 .fact { padding: 16px 0; }
 .fact + .fact { border-left: 1px solid var(--line); padding-left: 18px; }
@@ -264,9 +265,9 @@ button { color: inherit; }
 @media (max-width: 860px) {
   .start-screen { grid-template-columns: 1fr; gap: 46px; padding-top: 48px; }
   .start-side { max-width: 520px; width: 100%; }
-  .auction-layout { grid-template-columns: 1fr; }
+  .auction-layout { grid-template-columns: 1fr; height: auto; }
   .auction-image-wrap { min-height: 380px; max-height: 52vh; }
-  .auction-panel { min-height: 520px; }
+  .auction-panel { min-height: 520px; overflow: visible; }
   .auction-panel--result { min-height: auto; }
   .results-header { grid-template-columns: 1fr; }
   .results-score { text-align: left; }

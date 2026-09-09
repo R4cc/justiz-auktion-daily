@@ -286,6 +286,7 @@ function renderRound() {
       </div>
       <div class="auction-layout${answer ? ' auction-layout--result' : ''}">
         <div class="auction-image-wrap">
+          <img class="auction-image-backdrop" src="${auction.image}" alt="" aria-hidden="true" />
           <img class="auction-image" src="${auction.image}" alt="${auction.title}" />
           <span class="category-tag">${auction.category.toUpperCase()}</span>
           <span class="time-tag${ended ? ' time-tag--ended' : ''}"><span class="clock-icon" aria-hidden="true"></span><span data-countdown>${timeRemaining(auction.endAt)}</span></span>
