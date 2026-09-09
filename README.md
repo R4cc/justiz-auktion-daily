@@ -67,4 +67,4 @@ npm test
 npm start
 ```
 
-The game is then available at `http://localhost:3000`. Container health can be checked at `GET /healthz`, the current frozen daily set is served from `GET /api/daily`, and a fresh five-auction free-play set is served from `GET /api/random`.
+The game is then available at `http://localhost:3000`. Container health can be checked at `GET /healthz`, while `GET /stats` returns non-sensitive collector and queue totals as plain text. The current frozen daily set is served from `GET /api/daily`, and a fresh five-auction free-play set is served from `GET /api/random`.

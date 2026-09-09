@@ -5,6 +5,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { enqueueRollingDiscovery, ensureDailyGame, processRollingTask, seedArchiveIfEmpty } from './src/collector.mjs';
 import { selectRandomSet, utcDateKey } from './src/core.mjs';
+import { formatPublicStats } from './src/public-stats.mjs';
 
 const projectDir = path.dirname(fileURLToPath(import.meta.url));
 const publicDir = path.join(projectDir, 'dist');
@@ -36,6 +37,31 @@ function json(response, statusCode, body) {
     'x-content-type-options': 'nosniff'
   });
   response.end(JSON.stringify(body));
+}
+
+function text(response, statusCode, body) {
+  response.writeHead(statusCode, {
+    'content-type': 'text/plain; charset=utf-8',
+    'content-length': Buffer.byteLength(body),
+    'cache-control': 'no-store',
+    'x-content-type-options': 'nosniff',
+    'referrer-policy': 'no-referrer'
+  });
+  response.end(body);
+}
+
+async function readDataJson(filename, fallback) {
+  try { return JSON.parse(await readFile(path.join(dataDir, filename), 'utf8')); }
+  catch (error) { if (error.code === 'ENOENT') return fallback; throw error; }
+}
+
+async function publicStats() {
+  const [archive, queue, daily] = await Promise.all([
+    readDataJson('auctions.json', { auctions: [] }),
+    readDataJson('fetch-queue.json', { tasks: [] }),
+    readDataJson('daily-games.json', { games: {} })
+  ]);
+  return formatPublicStats({ archive, queue, daily, fetchState: lastRefresh });
 }
 
 async function sendFile(request, response, root, requestPath, cacheControl) {
@@ -129,6 +155,10 @@ const server = createServer({ maxHeaderSize: 16 * 1024 }, async (request, respon
     const url = new URL(request.url, `http://${request.headers.host || 'localhost'}`);
     if (request.method === 'GET' && url.pathname === '/healthz') {
       json(response, 200, { status: 'ok', date: utcDateKey(), refresh: lastRefresh });
+      return;
+    }
+    if (request.method === 'GET' && url.pathname === '/stats') {
+      text(response, 200, await publicStats());
       return;
     }
     if (request.method === 'GET' && url.pathname === '/api/daily') {

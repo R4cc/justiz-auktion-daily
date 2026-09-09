@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { gameNumber, scoreGuess, selectDailySet, selectRandomSet } from '../src/core.mjs';
 import { enqueueRollingDiscovery, extractListingUrls, parseAuctionPage, parseAuctionStart, processRollingTask } from '../src/collector.mjs';
+import { formatPublicStats } from '../src/public-stats.mjs';
 
 test('percentage scoring rewards close guesses smoothly', () => {
   assert.equal(scoreGuess(100, 100), 1000);
@@ -169,4 +170,24 @@ test('rolling collector preserves the request interval across restarts', async (
   } finally {
     await rm(dataDir, { recursive: true, force: true });
   }
+});
+
+test('public stats expose aggregates without auction details or internal errors', () => {
+  const output = formatPublicStats({
+    now: Date.parse('2026-09-09T12:00:00Z'),
+    archive: {
+      updatedAt: '2026-09-09T11:00:00Z',
+      auctions: [
+        { title: 'Private-looking title', url: 'https://example.test/secret', endAt: '2026-09-10T12:00:00Z', image: '/auction-images/1.jpg' },
+        { endAt: '2026-09-08T12:00:00Z', finalPrice: 42 }
+      ]
+    },
+    queue: { lastRequestAt: '2026-09-09T11:59:00Z', tasks: [{ kind: 'detail', url: 'https://example.test/hidden', attempts: 1, notBefore: 0 }] },
+    daily: { games: { '2026-09-09': {} } },
+    fetchState: { status: 'error', error: 'credential=/data/secret' }
+  });
+  assert.match(output, /auctions_fetched: 2/);
+  assert.match(output, /queue_pending: 1/);
+  assert.match(output, /fetch_status: error/);
+  assert.doesNotMatch(output, /Private-looking|example\.test|credential|\/data/);
 });
