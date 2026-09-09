@@ -7,13 +7,44 @@ const USER_AGENT = 'JUSTIZGUESSR/1.0 (+daily public auction indexer; respectful 
 const DAILY_SELECTION_VERSION = 2;
 const ROLLING_QUEUE_VERSION = 1;
 
+const LEGACY_LISTING_PAGE_SIZE = 10;
+const LISTING_PAGE_SIZE = 50;
+
 function decodeEntities(value = '') {
-  const named = { amp: '&', quot: '"', apos: "'", lt: '<', gt: '>', nbsp: ' ', auml: 'ä', ouml: 'ö', uuml: 'ü', Auml: 'Ä', Ouml: 'Ö', Uuml: 'Ü', szlig: 'ß', euro: '€', lowbar: '_', period: '.', comma: ',', colon: ':', sol: '/', frasl: '/', permil: '‰', NewLine: '\n' };
+  const named = {
+    amp: '&',
+    quot: '"',
+    apos: "'",
+    lt: '<',
+    gt: '>',
+    nbsp: ' ',
+    auml: 'ä',
+    ouml: 'ö',
+    uuml: 'ü',
+    Auml: 'Ä',
+    Ouml: 'Ö',
+    Uuml: 'Ü',
+    szlig: 'ß',
+    euro: '€',
+    lowbar: '_',
+    period: '.',
+    comma: ',',
+    colon: ':',
+    sol: '/',
+    frasl: '/',
+    permil: '‰',
+    NewLine: '\n'
+  };
+
   return value.replace(/&(#x?[0-9a-f]+|[a-z]+);/gi, (_, entity) => {
     if (entity[0] === '#') {
       const hex = entity[1]?.toLowerCase() === 'x';
-      return String.fromCodePoint(Number.parseInt(entity.slice(hex ? 2 : 1), hex ? 16 : 10));
+
+      return String.fromCodePoint(
+        Number.parseInt(entity.slice(hex ? 2 : 1), hex ? 16 : 10)
+      );
     }
+
     return named[entity] ?? named[entity.toLowerCase()] ?? `&${entity};`;
   });
 }
@@ -32,83 +63,248 @@ function cleanText(value = '') {
 
 function parseMoney(value) {
   if (!value) return null;
-  const normalized = value.replace(/\./g, '').replace(',', '.').replace(/[^\d.-]/g, '');
+
+  const normalized = value
+    .replace(/\./g, '')
+    .replace(',', '.')
+    .replace(/[^\d.-]/g, '');
+
   const amount = Number(normalized);
+
   return Number.isFinite(amount) ? amount : null;
 }
 
 function zonedLocalToUtc(value, timeZone = 'Europe/Berlin') {
-  const match = value?.match(/(\d{2})\.(\d{2})\.(\d{4})\s+(\d{2}):(\d{2})(?::(\d{2}))?/);
+  const match = value?.match(
+    /(\d{2})\.(\d{2})\.(\d{4})\s+(\d{2}):(\d{2})(?::(\d{2}))?/
+  );
+
   if (!match) return null;
+
   const [, day, month, year, hour, minute, second = '00'] = match;
-  const desired = Date.UTC(+year, +month - 1, +day, +hour, +minute, +second);
+
+  const desired = Date.UTC(
+    +year,
+    +month - 1,
+    +day,
+    +hour,
+    +minute,
+    +second
+  );
+
   const parts = new Intl.DateTimeFormat('en-CA', {
-    timeZone, year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit', hourCycle: 'h23'
-  }).formatToParts(new Date(desired)).reduce((all, part) => ({ ...all, [part.type]: part.value }), {});
-  const observed = Date.UTC(+parts.year, +parts.month - 1, +parts.day, +parts.hour, +parts.minute, +parts.second);
+    timeZone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hourCycle: 'h23'
+  })
+    .formatToParts(new Date(desired))
+    .reduce(
+      (all, part) => ({
+        ...all,
+        [part.type]: part.value
+      }),
+      {}
+    );
+
+  const observed = Date.UTC(
+    +parts.year,
+    +parts.month - 1,
+    +parts.day,
+    +parts.hour,
+    +parts.minute,
+    +parts.second
+  );
+
   return new Date(desired - (observed - desired)).toISOString();
 }
 
 function inferCategory(title, description = '') {
   const groups = [
-    ['Fahrzeuge', /\b(pkw|auto|fahrzeug|bmw|mercedes|volkswagen|vw|audi|motorrad|roller)\b/],
-    ['Fahrräder', /\b(fahrrad|mountainbike|e-bike|ebike)\b/],
-    ['Schmuck & Uhren', /\b(ring|kette|armreif|armband|schmuck|gold|silber|uhr|rolex)\b/],
-    ['Elektronik', /\b(notebook|laptop|computer|monitor|fernseher|smartphone|iphone|tablet|kamera|konsole)\b/],
-    ['Werkzeuge', /\b(werkzeug|bohr|makita|hilti|bosch|säge|schleifer|maschine)\b/],
-    ['Mode', /\b(sneaker|schuhe|jacke|shirt|kleidung|jeans|tasche)\b/],
-    ['Sammlerstücke', /\b(münze|sammlung|figur|lego|modell|antiqu|briefmarke)\b/],
-    ['Möbel & Wohnen', /\b(möbel|schrank|tisch|stuhl|sofa|lampe|porzellan)\b/],
-    ['Kosmetik', /\b(parfum|eau de toilette|kosmetik)\b/]
+    [
+      'Fahrzeuge',
+      /\b(pkw|auto|fahrzeug|bmw|mercedes|volkswagen|vw|audi|motorrad|roller)\b/
+    ],
+    [
+      'Fahrräder',
+      /\b(fahrrad|mountainbike|e-bike|ebike)\b/
+    ],
+    [
+      'Schmuck & Uhren',
+      /\b(ring|kette|armreif|armband|schmuck|gold|silber|uhr|rolex)\b/
+    ],
+    [
+      'Elektronik',
+      /\b(notebook|laptop|computer|monitor|fernseher|smartphone|iphone|tablet|kamera|konsole)\b/
+    ],
+    [
+      'Werkzeuge',
+      /\b(werkzeug|bohr|makita|hilti|bosch|säge|schleifer|maschine)\b/
+    ],
+    [
+      'Mode',
+      /\b(sneaker|schuhe|jacke|shirt|kleidung|jeans|tasche)\b/
+    ],
+    [
+      'Sammlerstücke',
+      /\b(münze|sammlung|figur|lego|modell|antiqu|briefmarke)\b/
+    ],
+    [
+      'Möbel & Wohnen',
+      /\b(möbel|schrank|tisch|stuhl|sofa|lampe|porzellan)\b/
+    ],
+    [
+      'Kosmetik',
+      /\b(parfum|eau de toilette|kosmetik)\b/
+    ]
   ];
+
   const titleValue = title.toLowerCase();
-  const titleMatch = groups.find(([, matcher]) => matcher.test(titleValue));
+
+  const titleMatch = groups.find(([, matcher]) =>
+    matcher.test(titleValue)
+  );
+
   if (titleMatch) return titleMatch[0];
-  const descriptionValue = description.toLowerCase().replace(/\b\d{1,2}(?::\d{2})?\s*uhr\b/g, ' ');
-  return groups.find(([, matcher]) => matcher.test(descriptionValue))?.[0] || 'Sonstiges';
+
+  const descriptionValue = description
+    .toLowerCase()
+    .replace(/\b\d{1,2}(?::\d{2})?\s*uhr\b/g, ' ');
+
+  return (
+    groups.find(([, matcher]) =>
+      matcher.test(descriptionValue)
+    )?.[0] || 'Sonstiges'
+  );
 }
 
 export function extractListingUrls(html) {
   const urls = new Set();
-  const pattern = /href=["']([^"']*?-(\d{5,8})(?:[?#][^"']*)?)["']/gi;
+
+  const pattern =
+    /href=["']([^"']*?-(\d{5,8})(?:[?#][^"']*)?)["']/gi;
+
   for (const match of html.matchAll(pattern)) {
     const raw = decodeEntities(match[1]);
-    if (/auktion_(?:drucken|gebote)/i.test(raw) || /uplimg/i.test(raw)) continue;
+
+    if (
+      /auktion_(?:drucken|gebote)/i.test(raw) ||
+      /uplimg/i.test(raw)
+    ) {
+      continue;
+    }
+
     try {
       const url = new URL(raw, BASE_URL);
-      if (url.origin === BASE_URL) urls.add(url.href);
+
+      if (url.origin === BASE_URL) {
+        urls.add(url.href);
+      }
     } catch {}
   }
+
   return [...urls];
 }
 
 export function parseAuctionPage(html, url) {
   const text = cleanText(html);
-  const id = Number(text.match(/Auktion ID\s*(\d+)/i)?.[1] || url.match(/-(\d{5,8})(?:\D|$)/)?.[1]);
-  if (!id) throw new Error(`Could not find auction ID for ${url}`);
-  const heading = html.match(/<h2\b[^>]*class=["'][^"']*auktionstitel[^"']*["'][^>]*>([\s\S]*?)<\/h2>/i)?.[1];
-  const titleFallback = html.match(/<title\b[^>]*>([\s\S]*?)<\/title>/i)?.[1]?.replace(/\s*\(#\d+\).*$/s, '');
-  const title = cleanText(heading || titleFallback || `Auktion #${id}`);
-  const startBid = parseMoney(text.match(/Startgebot:\s*([\d.,]+)\s*€/i)?.[1]);
-  const currentBid = parseMoney(text.match(/Aktuelles Gebot:\s*([\d.,]+)\s*€/i)?.[1]);
-  const bidCount = Number(text.match(/Anzahl Gebote\s*(\d+)/i)?.[1] || 0);
-  const endText = text.match(/Endet am:\s*(\d{2}\.\d{2}\.\d{4}\s+\d{2}:\d{2}(?::\d{2})?)/i)?.[1];
-  const condition = text.match(/Zustand:\s*([^\n]+)/i)?.[1]?.trim() || 'Keine Angabe';
-  const fulfillment = text.match(/Versand:\s*([^\n]+)/i)?.[1]?.trim() || text.match(/Versandart:\s*([^\n]+)/i)?.[1]?.trim() || 'Siehe Auktion';
-  const location = text.match(/Artikelstandort:\s*([^\n]+)/i)?.[1]?.trim() || null;
-  const descriptionHtml = html.match(/Artikelbeschreibung[\s\S]*?<\/h3>([\s\S]*?)(?:<h3\b[^>]*>|<div\b[^>]*class=["'][^"']*details)/i)?.[1] || '';
-  const description = cleanText(descriptionHtml).slice(0, 1800) || `${condition}. Weitere Angaben auf der Originalauktion.`;
+
+  const id = Number(
+    text.match(/Auktion ID\s*(\d+)/i)?.[1] ||
+      url.match(/-(\d{5,8})(?:\D|$)/)?.[1]
+  );
+
+  if (!id) {
+    throw new Error(`Could not find auction ID for ${url}`);
+  }
+
+  const heading = html.match(
+    /<h2\b[^>]*class=["'][^"']*auktionstitel[^"']*["'][^>]*>([\s\S]*?)<\/h2>/i
+  )?.[1];
+
+  const titleFallback = html
+    .match(/<title\b[^>]*>([\s\S]*?)<\/title>/i)?.[1]
+    ?.replace(/\s*\(#\d+\).*$/s, '');
+
+  const title = cleanText(
+    heading ||
+      titleFallback ||
+      `Auktion #${id}`
+  );
+
+  const startBid = parseMoney(
+    text.match(/Startgebot:\s*([\d.,]+)\s*€/i)?.[1]
+  );
+
+  const currentBid = parseMoney(
+    text.match(/Aktuelles Gebot:\s*([\d.,]+)\s*€/i)?.[1]
+  );
+
+  const bidCount = Number(
+    text.match(/Anzahl Gebote\s*(\d+)/i)?.[1] || 0
+  );
+
+  const endText = text.match(
+    /Endet am:\s*(\d{2}\.\d{2}\.\d{4}\s+\d{2}:\d{2}(?::\d{2})?)/i
+  )?.[1];
+
+  const condition =
+    text.match(/Zustand:\s*([^\n]+)/i)?.[1]?.trim() ||
+    'Keine Angabe';
+
+  const fulfillment =
+    text.match(/Versand:\s*([^\n]+)/i)?.[1]?.trim() ||
+    text.match(/Versandart:\s*([^\n]+)/i)?.[1]?.trim() ||
+    'Siehe Auktion';
+
+  const location =
+    text
+      .match(/Artikelstandort:\s*([^\n]+)/i)?.[1]
+      ?.trim() ||
+    null;
+
+  const descriptionHtml =
+    html.match(
+      /Artikelbeschreibung[\s\S]*?<\/h3>([\s\S]*?)(?:<h3\b[^>]*>|<div\b[^>]*class=["'][^"']*details)/i
+    )?.[1] || '';
+
+  const description =
+    cleanText(descriptionHtml).slice(0, 1800) ||
+    `${condition}. Weitere Angaben auf der Originalauktion.`;
+
   const imageUrls = [];
-  const imagePattern = /(?:src|href)=["']([^"']*uplimg\/[^"']+?\.(?:jpe?g|png|webp))(?:\?[^"']*)?["']/gi;
+
+  const imagePattern =
+    /(?:src|href)=["']([^"']*uplimg\/[^"']+?\.(?:jpe?g|png|webp))(?:\?[^"']*)?["']/gi;
+
   const decodedHtml = decodeEntities(html);
+
   for (const match of decodedHtml.matchAll(imagePattern)) {
     const raw = match[1];
-    if (/\/tn\//i.test(raw) || /tn\d+_/i.test(raw)) continue;
+
+    if (
+      /\/tn\//i.test(raw) ||
+      /tn\d+_/i.test(raw)
+    ) {
+      continue;
+    }
+
     try {
       const absolute = new URL(raw, BASE_URL).href;
-      if (new URL(absolute).origin === BASE_URL && !imageUrls.includes(absolute)) imageUrls.push(absolute);
+
+      if (
+        new URL(absolute).origin === BASE_URL &&
+        !imageUrls.includes(absolute)
+      ) {
+        imageUrls.push(absolute);
+      }
     } catch {}
   }
+
   return {
     id,
     title,
@@ -117,7 +313,11 @@ export function parseAuctionPage(html, url) {
     sourceImages: imageUrls,
     startBid: startBid ?? 0,
     currentBid: currentBid ?? 0,
-    finalPrice: endText && Date.parse(zonedLocalToUtc(endText)) <= Date.now() ? currentBid : null,
+    finalPrice:
+      endText &&
+      Date.parse(zonedLocalToUtc(endText)) <= Date.now()
+        ? currentBid
+        : null,
     bidCount,
     startAt: null,
     endAt: zonedLocalToUtc(endText),
@@ -131,286 +331,2364 @@ export function parseAuctionPage(html, url) {
 
 export function parseAuctionStart(html) {
   const text = cleanText(html);
-  const value = text.match(/Starttermin\s*(\d{2}\.\d{2}\.\d{4})\s*-\s*(\d{2}:\d{2}(?::\d{2})?)/i);
-  return value ? zonedLocalToUtc(`${value[1]} ${value[2]}`) : null;
+
+  const value = text.match(
+    /Starttermin\s*(\d{2}\.\d{2}\.\d{4})\s*-\s*(\d{2}:\d{2}(?::\d{2})?)/i
+  );
+
+  return value
+    ? zonedLocalToUtc(`${value[1]} ${value[2]}`)
+    : null;
 }
 
 async function readJson(filename, fallback) {
-  try { return JSON.parse(await readFile(filename, 'utf8')); }
-  catch (error) { if (error.code === 'ENOENT') return fallback; throw error; }
+  try {
+    return JSON.parse(
+      await readFile(filename, 'utf8')
+    );
+  } catch (error) {
+    if (error.code === 'ENOENT') {
+      return fallback;
+    }
+
+    throw error;
+  }
 }
 
 async function writeJsonAtomic(filename, value) {
-  await mkdir(path.dirname(filename), { recursive: true });
-  const temporary = `${filename}.${process.pid}.tmp`;
-  await writeFile(temporary, `${JSON.stringify(value, null, 2)}\n`);
-  await rename(temporary, filename);
+  await mkdir(
+    path.dirname(filename),
+    { recursive: true }
+  );
+
+  const temporary =
+    `${filename}.${process.pid}.tmp`;
+
+  await writeFile(
+    temporary,
+    `${JSON.stringify(value, null, 2)}\n`
+  );
+
+  await rename(
+    temporary,
+    filename
+  );
 }
 
 async function fetchText(url, fetchImpl) {
-  const response = await fetchImpl(url, { headers: { 'user-agent': USER_AGENT, accept: 'text/html,application/xhtml+xml' }, redirect: 'error', signal: AbortSignal.timeout(20000) });
-  if (!response.ok) throw new Error(`${url} returned HTTP ${response.status}`);
+  const response = await fetchImpl(url, {
+    headers: {
+      'user-agent': USER_AGENT,
+      accept:
+        'text/html,application/xhtml+xml'
+    },
+    redirect: 'error',
+    signal: AbortSignal.timeout(20000)
+  });
+
+  if (!response.ok) {
+    throw new Error(
+      `${url} returned HTTP ${response.status}`
+    );
+  }
+
   return response.text();
+}
+
+/*
+ * The Justiz-Auktion site stores the selected
+ * "Treffer pro Seite" value in the search form/session.
+ *
+ * These helpers detect the relevant form automatically
+ * instead of relying on an undocumented parameter name.
+ */
+
+function parseHtmlAttributes(source = '') {
+  const attributes = {};
+
+  const pattern =
+    /([^\s=/>]+)(?:\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'=<>`]+)))?/g;
+
+  for (const match of source.matchAll(pattern)) {
+    const name =
+      match[1].toLowerCase();
+
+    const value = decodeEntities(
+      match[2] ??
+      match[3] ??
+      match[4] ??
+      ''
+    );
+
+    attributes[name] = value;
+  }
+
+  return attributes;
+}
+
+function optionValue(attributes, body) {
+  return (
+    attributes.value ??
+    cleanText(body)
+  );
+}
+
+function selectedValue(selectBody) {
+  const options = [
+    ...selectBody.matchAll(
+      /<option\b([^>]*)>([\s\S]*?)<\/option>/gi
+    )
+  ].map(match => {
+    const attributes =
+      parseHtmlAttributes(match[1]);
+
+    return {
+      attributes,
+      value: optionValue(
+        attributes,
+        match[2]
+      )
+    };
+  });
+
+  return (
+    options.find(option =>
+      Object.hasOwn(
+        option.attributes,
+        'selected'
+      )
+    )?.value ??
+    options[0]?.value ??
+    ''
+  );
+}
+
+function extractPageSizePreference(
+  html,
+  currentUrl,
+  pageSize = LISTING_PAGE_SIZE
+) {
+  for (
+    const formMatch of html.matchAll(
+      /<form\b([^>]*)>([\s\S]*?)<\/form>/gi
+    )
+  ) {
+    const formAttributes =
+      parseHtmlAttributes(formMatch[1]);
+
+    const formBody =
+      formMatch[2];
+
+    const selects = [
+      ...formBody.matchAll(
+        /<select\b([^>]*)>([\s\S]*?)<\/select>/gi
+      )
+    ];
+
+    let pageSizeField = null;
+
+    for (const selectMatch of selects) {
+      const attributes =
+        parseHtmlAttributes(
+          selectMatch[1]
+        );
+
+      if (!attributes.name) {
+        continue;
+      }
+
+      const values = [
+        ...selectMatch[2].matchAll(
+          /<option\b([^>]*)>([\s\S]*?)<\/option>/gi
+        )
+      ].map(optionMatch =>
+        optionValue(
+          parseHtmlAttributes(
+            optionMatch[1]
+          ),
+          optionMatch[2]
+        )
+      );
+
+      if (
+        values.includes(
+          String(pageSize)
+        ) &&
+        values.includes(
+          String(
+            LEGACY_LISTING_PAGE_SIZE
+          )
+        )
+      ) {
+        pageSizeField =
+          attributes.name;
+
+        break;
+      }
+    }
+
+    if (!pageSizeField) {
+      continue;
+    }
+
+    const params =
+      new URLSearchParams();
+
+    for (
+      const inputMatch of formBody.matchAll(
+        /<input\b([^>]*)>/gi
+      )
+    ) {
+      const attributes =
+        parseHtmlAttributes(
+          inputMatch[1]
+        );
+
+      const name =
+        attributes.name;
+
+      const type =
+        (
+          attributes.type ||
+          'text'
+        ).toLowerCase();
+
+      if (
+        !name ||
+        Object.hasOwn(
+          attributes,
+          'disabled'
+        ) ||
+        [
+          'file',
+          'reset',
+          'button'
+        ].includes(type)
+      ) {
+        continue;
+      }
+
+      if (
+        [
+          'checkbox',
+          'radio'
+        ].includes(type) &&
+        !Object.hasOwn(
+          attributes,
+          'checked'
+        )
+      ) {
+        continue;
+      }
+
+      params.append(
+        name,
+        attributes.value ?? ''
+      );
+    }
+
+    for (
+      const selectMatch of selects
+    ) {
+      const attributes =
+        parseHtmlAttributes(
+          selectMatch[1]
+        );
+
+      if (
+        !attributes.name ||
+        Object.hasOwn(
+          attributes,
+          'disabled'
+        )
+      ) {
+        continue;
+      }
+
+      params.set(
+        attributes.name,
+        selectedValue(
+          selectMatch[2]
+        )
+      );
+    }
+
+    for (
+      const buttonMatch of formBody.matchAll(
+        /<button\b([^>]*)>[\s\S]*?<\/button>/gi
+      )
+    ) {
+      const attributes =
+        parseHtmlAttributes(
+          buttonMatch[1]
+        );
+
+      if (
+        attributes.name &&
+        !Object.hasOwn(
+          attributes,
+          'disabled'
+        )
+      ) {
+        params.append(
+          attributes.name,
+          attributes.value ?? ''
+        );
+      }
+    }
+
+    params.set(
+      pageSizeField,
+      String(pageSize)
+    );
+
+    return {
+      action: new URL(
+        formAttributes.action ||
+        currentUrl,
+        currentUrl
+      ).href,
+
+      method: (
+        formAttributes.method ||
+        'GET'
+      ).toUpperCase(),
+
+      params: [
+        ...params.entries()
+      ]
+    };
+  }
+
+  return null;
+}
+
+function splitSetCookieHeader(value) {
+  if (!value) {
+    return [];
+  }
+
+  return value.split(
+    /,(?=\s*[^;,=\s]+=[^;,]+)/
+  );
+}
+
+function updateCookieJar(
+  cookieJar,
+  headers
+) {
+  const values =
+    typeof headers.getSetCookie ===
+    'function'
+      ? headers.getSetCookie()
+      : splitSetCookieHeader(
+          headers.get('set-cookie')
+        );
+
+  for (const value of values) {
+    const [
+      pair,
+      ...attributes
+    ] = value.split(';');
+
+    const separator =
+      pair.indexOf('=');
+
+    if (separator < 1) {
+      continue;
+    }
+
+    const name =
+      pair
+        .slice(0, separator)
+        .trim();
+
+    const cookieValue =
+      pair
+        .slice(separator + 1)
+        .trim();
+
+    const expired =
+      attributes.some(attribute =>
+        /^\s*max-age\s*=\s*0\s*$/i.test(
+          attribute
+        )
+      );
+
+    if (expired) {
+      delete cookieJar[name];
+    } else {
+      cookieJar[name] =
+        cookieValue;
+    }
+  }
+}
+
+function serializeCookies(cookieJar) {
+  return Object.entries(cookieJar)
+    .map(
+      ([name, value]) =>
+        `${name}=${value}`
+    )
+    .join('; ');
+}
+
+async function fetchWithCookieJar(
+  url,
+  options,
+  fetchImpl,
+  cookieJar
+) {
+  let requestUrl = url;
+
+  let method = (
+    options.method ||
+    'GET'
+  ).toUpperCase();
+
+  let body = options.body;
+
+  for (
+    let redirectCount = 0;
+    redirectCount <= 5;
+    redirectCount += 1
+  ) {
+    const headers = {
+      ...(options.headers || {})
+    };
+
+    const cookies =
+      serializeCookies(cookieJar);
+
+    if (cookies) {
+      headers.cookie = cookies;
+    }
+
+    const response =
+      await fetchImpl(
+        requestUrl,
+        {
+          ...options,
+          method,
+          body,
+          headers,
+          redirect: 'manual'
+        }
+      );
+
+    updateCookieJar(
+      cookieJar,
+      response.headers
+    );
+
+    if (
+      ![
+        301,
+        302,
+        303,
+        307,
+        308
+      ].includes(response.status)
+    ) {
+      return response;
+    }
+
+    const location =
+      response.headers.get(
+        'location'
+      );
+
+    if (!location) {
+      return response;
+    }
+
+    requestUrl = new URL(
+      location,
+      requestUrl
+    ).href;
+
+    if (
+      response.status === 303 ||
+      (
+        (
+          response.status === 301 ||
+          response.status === 302
+        ) &&
+        method === 'POST'
+      )
+    ) {
+      method = 'GET';
+      body = undefined;
+    }
+  }
+
+  throw new Error(
+    `Too many redirects while fetching ${url}`
+  );
+}
+
+async function submitPageSizePreference(
+  preference,
+  start,
+  fetchImpl,
+  cookieJar
+) {
+  const params =
+    new URLSearchParams(
+      preference.params
+    );
+
+  const headers = {
+    'user-agent': USER_AGENT,
+    accept:
+      'text/html,application/xhtml+xml'
+  };
+
+  const url =
+    new URL(preference.action);
+
+  let body;
+
+  if (
+    preference.method === 'GET'
+  ) {
+    for (
+      const [name, value]
+      of params
+    ) {
+      url.searchParams.set(
+        name,
+        value
+      );
+    }
+
+    url.searchParams.set(
+      'start',
+      String(start)
+    );
+  } else {
+    url.searchParams.set(
+      'start',
+      String(start)
+    );
+
+    body =
+      params.toString();
+
+    headers['content-type'] =
+      'application/x-www-form-urlencoded';
+  }
+
+  const response =
+    await fetchWithCookieJar(
+      url.href,
+      {
+        method:
+          preference.method,
+        body,
+        headers,
+        signal:
+          AbortSignal.timeout(
+            20_000
+          )
+      },
+      fetchImpl,
+      cookieJar
+    );
+
+  if (!response.ok) {
+    throw new Error(
+      `${url.href} returned HTTP ${response.status}`
+    );
+  }
+
+  return {
+    html:
+      await response.text(),
+    url: url.href
+  };
+}
+
+async function fetchListingPage({
+  start,
+  fetchImpl,
+  session,
+  requestedPageSize =
+    LISTING_PAGE_SIZE
+}) {
+  const baseUrl =
+    `${BASE_URL}/auction_search.php?start=${start}`;
+
+  session.cookies ||= {};
+
+  /*
+   * If the site previously rejected
+   * the 50-result preference, simply
+   * continue in legacy 10-result mode.
+   */
+  if (
+    requestedPageSize <=
+      LEGACY_LISTING_PAGE_SIZE ||
+    session.pageSizeSupported ===
+      false
+  ) {
+    const response =
+      await fetchWithCookieJar(
+        baseUrl,
+        {
+          headers: {
+            'user-agent':
+              USER_AGENT,
+            accept:
+              'text/html,application/xhtml+xml'
+          },
+
+          signal:
+            AbortSignal.timeout(
+              20_000
+            )
+        },
+        fetchImpl,
+        session.cookies
+      );
+
+    if (!response.ok) {
+      throw new Error(
+        `${baseUrl} returned HTTP ${response.status}`
+      );
+    }
+
+    return {
+      html:
+        await response.text(),
+
+      effectivePageSize:
+        LEGACY_LISTING_PAGE_SIZE,
+
+      requestUrl:
+        baseUrl
+    };
+  }
+
+  /*
+   * POST-based settings are usually
+   * persisted in the session cookie.
+   *
+   * Once enabled, request the next
+   * page normally using start=50,
+   * start=100, etc.
+   */
+  if (
+    session.pageSizeSupported ===
+      true &&
+    session.preference?.method ===
+      'POST'
+  ) {
+    const response =
+      await fetchWithCookieJar(
+        baseUrl,
+        {
+          headers: {
+            'user-agent':
+              USER_AGENT,
+            accept:
+              'text/html,application/xhtml+xml'
+          },
+
+          signal:
+            AbortSignal.timeout(
+              20_000
+            )
+        },
+        fetchImpl,
+        session.cookies
+      );
+
+    if (!response.ok) {
+      throw new Error(
+        `${baseUrl} returned HTTP ${response.status}`
+      );
+    }
+
+    const html =
+      await response.text();
+
+    /*
+     * More than 10 auction URLs means
+     * the 50-result preference is active.
+     */
+    if (
+      extractListingUrls(html).length >
+      LEGACY_LISTING_PAGE_SIZE
+    ) {
+      return {
+        html,
+        effectivePageSize:
+          requestedPageSize,
+        requestUrl:
+          baseUrl
+      };
+    }
+  }
+
+  /*
+   * If we already know the search form,
+   * submit it directly for this page.
+   */
+  if (session.preference) {
+    const result =
+      await submitPageSizePreference(
+        session.preference,
+        start,
+        fetchImpl,
+        session.cookies
+      );
+
+    if (
+      extractListingUrls(
+        result.html
+      ).length >
+      LEGACY_LISTING_PAGE_SIZE
+    ) {
+      session.pageSizeSupported =
+        true;
+
+      return {
+        ...result,
+
+        effectivePageSize:
+          requestedPageSize,
+
+        requestUrl:
+          result.url
+      };
+    }
+  }
+
+  /*
+   * First fetch the normal page so we
+   * can discover the search form and
+   * page-size field.
+   */
+  const initialResponse =
+    await fetchWithCookieJar(
+      baseUrl,
+      {
+        headers: {
+          'user-agent':
+            USER_AGENT,
+          accept:
+            'text/html,application/xhtml+xml'
+        },
+
+        signal:
+          AbortSignal.timeout(
+            20_000
+          )
+      },
+      fetchImpl,
+      session.cookies
+    );
+
+  if (!initialResponse.ok) {
+    throw new Error(
+      `${baseUrl} returned HTTP ${initialResponse.status}`
+    );
+  }
+
+  const initialHtml =
+    await initialResponse.text();
+
+  const initialUrls =
+    extractListingUrls(
+      initialHtml
+    );
+
+  /*
+   * It may already be configured for 50
+   * results due to an existing session.
+   */
+  if (
+    initialUrls.length >
+    LEGACY_LISTING_PAGE_SIZE
+  ) {
+    session.pageSizeSupported =
+      true;
+
+    return {
+      html:
+        initialHtml,
+
+      effectivePageSize:
+        requestedPageSize,
+
+      requestUrl:
+        baseUrl
+    };
+  }
+
+  /*
+   * Locate the select containing
+   * 5 / 10 / 20 / 50 and resubmit
+   * the form with 50 selected.
+   */
+  session.preference =
+    extractPageSizePreference(
+      initialHtml,
+      baseUrl,
+      requestedPageSize
+    );
+
+  if (session.preference) {
+    const result =
+      await submitPageSizePreference(
+        session.preference,
+        start,
+        fetchImpl,
+        session.cookies
+      );
+
+    if (
+      extractListingUrls(
+        result.html
+      ).length >
+      LEGACY_LISTING_PAGE_SIZE
+    ) {
+      session.pageSizeSupported =
+        true;
+
+      return {
+        ...result,
+
+        effectivePageSize:
+          requestedPageSize,
+
+        requestUrl:
+          result.url
+      };
+    }
+  }
+
+  /*
+   * Safe fallback:
+   * if setting 50 did not work,
+   * don't skip start=10/20/etc.
+   */
+  session.pageSizeSupported =
+    false;
+
+  return {
+    html:
+      initialHtml,
+
+    effectivePageSize:
+      LEGACY_LISTING_PAGE_SIZE,
+
+    requestUrl:
+      baseUrl
+  };
 }
 
 function taskKey(task) {
   return `${task.kind}:${task.url}`;
 }
 
-function retryDelay(error, attempts, now) {
-  if (error.retryAfterMs != null) return Math.max(60_000, error.retryAfterMs);
-  const base = error.status === 429 || error.status >= 500 ? 5 * 60_000 : 60_000;
-  return Math.min(12 * 60 * 60_000, base * (2 ** Math.min(attempts, 7))) + (now % 30_000);
+function retryDelay(
+  error,
+  attempts,
+  now
+) {
+  if (
+    error.retryAfterMs != null
+  ) {
+    return Math.max(
+      60_000,
+      error.retryAfterMs
+    );
+  }
+
+  const base =
+    error.status === 429 ||
+    error.status >= 500
+      ? 5 * 60_000
+      : 60_000;
+
+  return (
+    Math.min(
+      12 * 60 * 60_000,
+      base *
+        (
+          2 **
+          Math.min(
+            attempts,
+            7
+          )
+        )
+    ) +
+    (now % 30_000)
+  );
 }
 
-function detailPriority(auction, now) {
-  if (!auction?.endAt) return 50;
-  const remaining = Date.parse(auction.endAt) - now;
-  if (remaining <= 0 && auction.finalPrice == null) return 95;
-  if (remaining <= 60 * 60_000) return 90;
-  if (remaining <= 6 * 60 * 60_000) return 80;
-  if (remaining <= 24 * 60 * 60_000) return 70;
+function detailPriority(
+  auction,
+  now
+) {
+  if (!auction?.endAt) {
+    return 50;
+  }
+
+  const remaining =
+    Date.parse(
+      auction.endAt
+    ) -
+    now;
+
+  if (
+    remaining <= 0 &&
+    auction.finalPrice == null
+  ) {
+    return 95;
+  }
+
+  if (
+    remaining <=
+    60 * 60_000
+  ) {
+    return 90;
+  }
+
+  if (
+    remaining <=
+    6 * 60 * 60_000
+  ) {
+    return 80;
+  }
+
+  if (
+    remaining <=
+    24 * 60 * 60_000
+  ) {
+    return 70;
+  }
+
   return 50;
 }
 
-function addTasks(queue, tasks) {
-  const known = new Set(queue.tasks.map(taskKey));
+function addTasks(
+  queue,
+  tasks
+) {
+  const known =
+    new Set(
+      queue.tasks.map(
+        taskKey
+      )
+    );
+
   for (const task of tasks) {
-    if (known.has(taskKey(task))) continue;
-    queue.tasks.push({ attempts: 0, notBefore: 0, priority: 50, ...task });
-    known.add(taskKey(task));
+    if (
+      known.has(
+        taskKey(task)
+      )
+    ) {
+      continue;
+    }
+
+    queue.tasks.push({
+      attempts: 0,
+      notBefore: 0,
+      priority: 50,
+      ...task
+    });
+
+    known.add(
+      taskKey(task)
+    );
   }
 }
 
-async function requestResource(task, fetchImpl) {
-  const image = task.kind === 'image';
-  const response = await fetchImpl(task.url, {
-    headers: { 'user-agent': USER_AGENT, accept: image ? 'image/*' : 'text/html,application/xhtml+xml' },
-    redirect: 'error',
-    signal: AbortSignal.timeout(20_000)
-  });
+async function requestResource(
+  task,
+  fetchImpl
+) {
+  const image =
+    task.kind === 'image';
+
+  const response =
+    await fetchImpl(
+      task.url,
+      {
+        headers: {
+          'user-agent':
+            USER_AGENT,
+
+          accept: image
+            ? 'image/*'
+            : 'text/html,application/xhtml+xml'
+        },
+
+        redirect: 'error',
+
+        signal:
+          AbortSignal.timeout(
+            20_000
+          )
+      }
+    );
+
   if (!response.ok) {
-    const error = new Error(`${task.url} returned HTTP ${response.status}`);
-    error.status = response.status;
-    const retryAfter = response.headers.get('retry-after');
+    const error =
+      new Error(
+        `${task.url} returned HTTP ${response.status}`
+      );
+
+    error.status =
+      response.status;
+
+    const retryAfter =
+      response.headers.get(
+        'retry-after'
+      );
+
     if (retryAfter) {
-      const seconds = Number(retryAfter);
-      error.retryAfterMs = Number.isFinite(seconds) ? seconds * 1000 : Math.max(0, Date.parse(retryAfter) - Date.now());
+      const seconds =
+        Number(retryAfter);
+
+      error.retryAfterMs =
+        Number.isFinite(seconds)
+          ? seconds * 1000
+          : Math.max(
+              0,
+              Date.parse(
+                retryAfter
+              ) -
+                Date.now()
+            );
     }
+
     throw error;
   }
+
   return response;
 }
 
-async function saveImageResponse(auction, response, dataDir) {
-  const contentType = (response.headers.get('content-type') || '').toLowerCase();
-  if (!contentType.startsWith('image/')) throw new Error(`Unexpected image content type: ${contentType || 'missing'}`);
-  const bytes = Buffer.from(await response.arrayBuffer());
-  if (bytes.length < 1000 || bytes.length > 12_000_000) throw new Error(`Unexpected image size: ${bytes.length}`);
-  const extension = contentType.includes('png') ? 'png' : contentType.includes('webp') ? 'webp' : 'jpg';
-  const filename = `${auction.id}.${extension}`;
-  await mkdir(path.join(dataDir, 'images'), { recursive: true });
-  await writeFile(path.join(dataDir, 'images', filename), bytes);
-  return `/auction-images/${filename}`;
+async function saveImageResponse(
+  auction,
+  response,
+  dataDir
+) {
+  const contentType =
+    (
+      response.headers.get(
+        'content-type'
+      ) || ''
+    ).toLowerCase();
+
+  if (
+    !contentType.startsWith(
+      'image/'
+    )
+  ) {
+    throw new Error(
+      `Unexpected image content type: ${
+        contentType ||
+        'missing'
+      }`
+    );
+  }
+
+  const bytes =
+    Buffer.from(
+      await response.arrayBuffer()
+    );
+
+  if (
+    bytes.length < 1000 ||
+    bytes.length > 12_000_000
+  ) {
+    throw new Error(
+      `Unexpected image size: ${bytes.length}`
+    );
+  }
+
+  const extension =
+    contentType.includes('png')
+      ? 'png'
+      : contentType.includes(
+            'webp'
+          )
+        ? 'webp'
+        : 'jpg';
+
+  const filename =
+    `${auction.id}.${extension}`;
+
+  await mkdir(
+    path.join(
+      dataDir,
+      'images'
+    ),
+    {
+      recursive: true
+    }
+  );
+
+  await writeFile(
+    path.join(
+      dataDir,
+      'images',
+      filename
+    ),
+    bytes
+  );
+
+  return (
+    `/auction-images/${filename}`
+  );
 }
 
-export async function enqueueRollingDiscovery({ dataDir, pages = 12, now = Date.now() } = {}) {
-  if (!dataDir) throw new Error('dataDir is required');
-  const queuePath = path.join(dataDir, 'fetch-queue.json');
-  const queue = await readJson(queuePath, { version: ROLLING_QUEUE_VERSION, updatedAt: null, lastRequestAt: null, tasks: [] });
-  addTasks(queue, Array.from({ length: pages }, (_, page) => ({
-    kind: 'listing',
-    url: `${BASE_URL}/auction_search.php?start=${page * 10}`,
-    priority: 100,
-    notBefore: now
-  })));
-  queue.version = ROLLING_QUEUE_VERSION;
-  queue.updatedAt = new Date(now).toISOString();
-  await writeJsonAtomic(queuePath, queue);
+export async function enqueueRollingDiscovery({
+  dataDir,
+  pages = 12,
+  now = Date.now()
+} = {}) {
+  if (!dataDir) {
+    throw new Error(
+      'dataDir is required'
+    );
+  }
+
+  const queuePath =
+    path.join(
+      dataDir,
+      'fetch-queue.json'
+    );
+
+  const queue =
+    await readJson(
+      queuePath,
+      {
+        version:
+          ROLLING_QUEUE_VERSION,
+
+        updatedAt: null,
+        lastRequestAt: null,
+
+        listingSession: {},
+
+        tasks: []
+      }
+    );
+
+  queue.listingSession ||= {};
+
+  /*
+   * Existing callers specify the amount
+   * in terms of old 10-result pages.
+   *
+   * pages=12 therefore still means:
+   * fetch roughly the first 120 auctions.
+   *
+   * With 50-result pages, that becomes:
+   *
+   * start=0
+   * start=50
+   * start=100
+   *
+   * instead of twelve listing requests.
+   */
+  const listingTarget =
+    Math.max(
+      0,
+      pages *
+        LEGACY_LISTING_PAGE_SIZE
+    );
+
+  const optimizedListingPending =
+    queue.tasks.some(
+      task =>
+        task.kind ===
+          'listing' &&
+        Number.isFinite(
+          task.listingTarget
+        )
+    );
+
+  if (
+    !optimizedListingPending &&
+    listingTarget > 0
+  ) {
+    /*
+     * Retry discovering the 50-result
+     * preference at the beginning of
+     * every new listing scan.
+     */
+    queue.listingSession = {};
+
+    /*
+     * Remove old-style queued listing
+     * requests such as start=10,
+     * start=20, etc.
+     *
+     * Detail/start/image tasks remain.
+     */
+    queue.tasks =
+      queue.tasks.filter(
+        task =>
+          task.kind !==
+          'listing'
+      );
+
+    addTasks(
+      queue,
+      [
+        {
+          kind:
+            'listing',
+
+          url:
+            `${BASE_URL}/auction_search.php?start=0`,
+
+          listingStart:
+            0,
+
+          listingTarget,
+
+          requestedPageSize:
+            LISTING_PAGE_SIZE,
+
+          priority:
+            100,
+
+          notBefore:
+            now
+        }
+      ]
+    );
+  }
+
+  queue.version =
+    ROLLING_QUEUE_VERSION;
+
+  queue.updatedAt =
+    new Date(
+      now
+    ).toISOString();
+
+  await writeJsonAtomic(
+    queuePath,
+    queue
+  );
+
   return queue;
 }
 
-export async function processRollingTask({ dataDir, fetchImpl = fetch, now = Date.now(), minimumIntervalMs = 0, logger = console } = {}) {
-  if (!dataDir) throw new Error('dataDir is required');
-  const queuePath = path.join(dataDir, 'fetch-queue.json');
-  const archivePath = path.join(dataDir, 'auctions.json');
-  const queue = await readJson(queuePath, { version: ROLLING_QUEUE_VERSION, updatedAt: null, lastRequestAt: null, tasks: [] });
-  const archive = await readJson(archivePath, { updatedAt: null, auctions: [] });
-  const byId = new Map(archive.auctions.map(item => [item.id, item]));
-  const lastRequestAt = Date.parse(queue.lastRequestAt || '');
-  if (Number.isFinite(lastRequestAt) && now - lastRequestAt < minimumIntervalMs) {
-    return { status: 'waiting', pending: queue.tasks.length, lastRequestAt: queue.lastRequestAt };
+export async function processRollingTask({
+  dataDir,
+  fetchImpl = fetch,
+  now = Date.now(),
+  minimumIntervalMs = 0,
+  logger = console
+} = {}) {
+  if (!dataDir) {
+    throw new Error(
+      'dataDir is required'
+    );
   }
-  const eligible = queue.tasks
-    .filter(task => (task.notBefore || 0) <= now)
-    .sort((a, b) => (b.priority || 0) - (a.priority || 0) || (a.notBefore || 0) - (b.notBefore || 0));
-  const task = eligible[0];
-  if (!task) return { status: 'idle', pending: queue.tasks.length, lastRequestAt: queue.lastRequestAt };
 
-  queue.tasks.splice(queue.tasks.indexOf(task), 1);
-  queue.lastRequestAt = new Date(now).toISOString();
-  queue.updatedAt = queue.lastRequestAt;
-  await writeJsonAtomic(queuePath, queue);
+  const queuePath =
+    path.join(
+      dataDir,
+      'fetch-queue.json'
+    );
+
+  const archivePath =
+    path.join(
+      dataDir,
+      'auctions.json'
+    );
+
+  const queue =
+    await readJson(
+      queuePath,
+      {
+        version:
+          ROLLING_QUEUE_VERSION,
+
+        updatedAt: null,
+        lastRequestAt: null,
+
+        listingSession: {},
+
+        tasks: []
+      }
+    );
+
+  queue.listingSession ||= {};
+
+  const archive =
+    await readJson(
+      archivePath,
+      {
+        updatedAt: null,
+        auctions: []
+      }
+    );
+
+  const byId =
+    new Map(
+      archive.auctions.map(
+        item => [
+          item.id,
+          item
+        ]
+      )
+    );
+
+  const lastRequestAt =
+    Date.parse(
+      queue.lastRequestAt ||
+      ''
+    );
+
+  if (
+    Number.isFinite(
+      lastRequestAt
+    ) &&
+    now -
+      lastRequestAt <
+      minimumIntervalMs
+  ) {
+    return {
+      status:
+        'waiting',
+
+      pending:
+        queue.tasks.length,
+
+      lastRequestAt:
+        queue.lastRequestAt
+    };
+  }
+
+  const eligible =
+    queue.tasks
+      .filter(
+        task =>
+          (
+            task.notBefore ||
+            0
+          ) <= now
+      )
+      .sort(
+        (a, b) =>
+          (
+            b.priority ||
+            0
+          ) -
+            (
+              a.priority ||
+              0
+            ) ||
+          (
+            a.notBefore ||
+            0
+          ) -
+            (
+              b.notBefore ||
+              0
+            )
+      );
+
+  const task =
+    eligible[0];
+
+  if (!task) {
+    return {
+      status:
+        'idle',
+
+      pending:
+        queue.tasks.length,
+
+      lastRequestAt:
+        queue.lastRequestAt
+    };
+  }
+
+  queue.tasks.splice(
+    queue.tasks.indexOf(task),
+    1
+  );
+
+  queue.lastRequestAt =
+    new Date(
+      now
+    ).toISOString();
+
+  queue.updatedAt =
+    queue.lastRequestAt;
+
+  await writeJsonAtomic(
+    queuePath,
+    queue
+  );
 
   try {
-    const response = await requestResource(task, fetchImpl);
-    if (task.kind === 'listing') {
-      const urls = extractListingUrls(await response.text());
-      addTasks(queue, urls.flatMap(url => {
-        const id = Number(url.match(/-(\d{5,8})(?:\D|$)/)?.[1]);
-        const previous = byId.get(id);
-        if (previous?.finalPrice != null) return [];
-        return [{ kind: 'detail', url, auctionId: id || null, priority: detailPriority(previous, now), notBefore: now }];
-      }));
-    } else if (task.kind === 'detail') {
-      const item = parseAuctionPage(await response.text(), task.url);
-      const previous = byId.get(item.id);
-      if (previous?.startAt) item.startAt = previous.startAt;
+    let response;
+
+    let listingResultCount =
+      null;
+
+    if (
+      task.kind ===
+      'listing'
+    ) {
+      queue.listingSession ||= {};
+
+      const start =
+        Number.isFinite(
+          task.listingStart
+        )
+          ? task.listingStart
+          : Number(
+              new URL(
+                task.url
+              ).searchParams.get(
+                'start'
+              ) || 0
+            );
+
+      const listingTarget =
+        Number.isFinite(
+          task.listingTarget
+        )
+          ? task.listingTarget
+          : start +
+            LEGACY_LISTING_PAGE_SIZE;
+
+      const requestedPageSize =
+        task.requestedPageSize ||
+        LISTING_PAGE_SIZE;
+
+      const result =
+        await fetchListingPage({
+          start,
+          fetchImpl,
+          session:
+            queue.listingSession,
+          requestedPageSize
+        });
+
+      const urls =
+        extractListingUrls(
+          result.html
+        );
+
+      listingResultCount =
+        urls.length;
+
+      addTasks(
+        queue,
+        urls.flatMap(url => {
+          const id =
+            Number(
+              url.match(
+                /-(\d{5,8})(?:\D|$)/
+              )?.[1]
+            );
+
+          const previous =
+            byId.get(id);
+
+          if (
+            previous?.finalPrice !=
+            null
+          ) {
+            return [];
+          }
+
+          return [
+            {
+              kind:
+                'detail',
+
+              url,
+
+              auctionId:
+                id || null,
+
+              priority:
+                detailPriority(
+                  previous,
+                  now
+                ),
+
+              notBefore:
+                now
+            }
+          ];
+        })
+      );
+
+      /*
+       * Critical change:
+       *
+       * When the site accepted 50 results,
+       * the next listing is start+50.
+       *
+       * If it rejected the preference,
+       * effectivePageSize is 10 and we
+       * safely continue start+10 instead.
+       */
+      const nextStart =
+        start +
+        result.effectivePageSize;
+
+      if (
+        nextStart <
+        listingTarget
+      ) {
+        addTasks(
+          queue,
+          [
+            {
+              kind:
+                'listing',
+
+              url:
+                `${BASE_URL}/auction_search.php?start=${nextStart}`,
+
+              listingStart:
+                nextStart,
+
+              listingTarget,
+
+              requestedPageSize,
+
+              priority:
+                100,
+
+              notBefore:
+                now
+            }
+          ]
+        );
+      }
+    } else {
+      response =
+        await requestResource(
+          task,
+          fetchImpl
+        );
+    }
+
+    if (
+      task.kind ===
+      'detail'
+    ) {
+      const item =
+        parseAuctionPage(
+          await response.text(),
+          task.url
+        );
+
+      const previous =
+        byId.get(item.id);
+
+      if (
+        previous?.startAt
+      ) {
+        item.startAt =
+          previous.startAt;
+      }
+
       const merged = {
         ...previous,
         ...item,
-        image: previous?.image || item.sourceImages?.[0] || null,
-        images: previous?.images || item.sourceImages || [],
-        firstCapturedAt: previous?.firstCapturedAt || item.capturedAt,
-        finalPrice: item.finalPrice ?? previous?.finalPrice ?? null
+
+        image:
+          previous?.image ||
+          item.sourceImages?.[0] ||
+          null,
+
+        images:
+          previous?.images ||
+          item.sourceImages ||
+          [],
+
+        firstCapturedAt:
+          previous?.firstCapturedAt ||
+          item.capturedAt,
+
+        finalPrice:
+          item.finalPrice ??
+          previous?.finalPrice ??
+          null
       };
-      byId.set(item.id, merged);
-      if (!merged.startAt) addTasks(queue, [{ kind: 'start', url: `${BASE_URL}/auktion_drucken-${item.id}`, auctionId: item.id, priority: 45, notBefore: now }]);
-      if (!previous?.image?.startsWith('/auction-images/') && item.sourceImages?.[0]) {
-        addTasks(queue, [{ kind: 'image', url: item.sourceImages[0], auctionId: item.id, priority: 40, notBefore: now }]);
+
+      byId.set(
+        item.id,
+        merged
+      );
+
+      if (!merged.startAt) {
+        addTasks(
+          queue,
+          [
+            {
+              kind:
+                'start',
+
+              url:
+                `${BASE_URL}/auktion_drucken-${item.id}`,
+
+              auctionId:
+                item.id,
+
+              priority:
+                45,
+
+              notBefore:
+                now
+            }
+          ]
+        );
       }
-    } else if (task.kind === 'start') {
-      const auction = byId.get(task.auctionId);
-      if (auction) byId.set(task.auctionId, { ...auction, startAt: parseAuctionStart(await response.text()) || auction.startAt });
-    } else if (task.kind === 'image') {
-      const auction = byId.get(task.auctionId);
+
+      if (
+        !previous?.image?.startsWith(
+          '/auction-images/'
+        ) &&
+        item.sourceImages?.[0]
+      ) {
+        addTasks(
+          queue,
+          [
+            {
+              kind:
+                'image',
+
+              url:
+                item.sourceImages[0],
+
+              auctionId:
+                item.id,
+
+              priority:
+                40,
+
+              notBefore:
+                now
+            }
+          ]
+        );
+      }
+    } else if (
+      task.kind ===
+      'start'
+    ) {
+      const auction =
+        byId.get(
+          task.auctionId
+        );
+
       if (auction) {
-        const image = await saveImageResponse(auction, response, dataDir);
-        byId.set(task.auctionId, { ...auction, image, images: [image] });
+        byId.set(
+          task.auctionId,
+          {
+            ...auction,
+
+            startAt:
+              parseAuctionStart(
+                await response.text()
+              ) ||
+              auction.startAt
+          }
+        );
       }
-    } else {
-      throw new Error(`Unknown rolling task kind: ${task.kind}`);
+    } else if (
+      task.kind ===
+      'image'
+    ) {
+      const auction =
+        byId.get(
+          task.auctionId
+        );
+
+      if (auction) {
+        const image =
+          await saveImageResponse(
+            auction,
+            response,
+            dataDir
+          );
+
+        byId.set(
+          task.auctionId,
+          {
+            ...auction,
+            image,
+            images: [image]
+          }
+        );
+      }
+    } else if (
+      task.kind !==
+      'listing'
+    ) {
+      throw new Error(
+        `Unknown rolling task kind: ${task.kind}`
+      );
     }
 
-    const updatedAt = new Date(now).toISOString();
-    const auctions = [...byId.values()];
-    await writeJsonAtomic(archivePath, { updatedAt, auctions });
-    queue.updatedAt = updatedAt;
-    await writeJsonAtomic(queuePath, queue);
-    logger.info(`Rolling fetch completed: ${task.kind} ${task.url} (${queue.tasks.length} pending)`);
-    return { status: 'ok', kind: task.kind, pending: queue.tasks.length, lastRequestAt: queue.lastRequestAt };
+    const updatedAt =
+      new Date(
+        now
+      ).toISOString();
+
+    const auctions = [
+      ...byId.values()
+    ];
+
+    await writeJsonAtomic(
+      archivePath,
+      {
+        updatedAt,
+        auctions
+      }
+    );
+
+    queue.updatedAt =
+      updatedAt;
+
+    await writeJsonAtomic(
+      queuePath,
+      queue
+    );
+
+    const resultSuffix =
+      listingResultCount ==
+      null
+        ? ''
+        : `; ${listingResultCount} results`;
+
+    logger.info(
+      `Rolling fetch completed: ${task.kind} ${task.url} (${queue.tasks.length} pending${resultSuffix})`
+    );
+
+    return {
+      status: 'ok',
+      kind: task.kind,
+      pending:
+        queue.tasks.length,
+
+      lastRequestAt:
+        queue.lastRequestAt
+    };
   } catch (error) {
-    const attempts = (task.attempts || 0) + 1;
-    if (attempts <= 8) addTasks(queue, [{ ...task, attempts, notBefore: now + retryDelay(error, attempts, now), priority: Math.max(10, (task.priority || 50) - 5) }]);
-    queue.updatedAt = new Date(now).toISOString();
-    await writeJsonAtomic(queuePath, queue);
-    logger.warn(`Rolling fetch failed: ${error.message}; attempt ${attempts}`);
-    return { status: 'error', kind: task.kind, pending: queue.tasks.length, lastRequestAt: queue.lastRequestAt, error: error.message };
+    const attempts =
+      (
+        task.attempts ||
+        0
+      ) + 1;
+
+    if (
+      attempts <= 8
+    ) {
+      addTasks(
+        queue,
+        [
+          {
+            ...task,
+
+            attempts,
+
+            notBefore:
+              now +
+              retryDelay(
+                error,
+                attempts,
+                now
+              ),
+
+            priority:
+              Math.max(
+                10,
+                (
+                  task.priority ||
+                  50
+                ) - 5
+              )
+          }
+        ]
+      );
+    }
+
+    queue.updatedAt =
+      new Date(
+        now
+      ).toISOString();
+
+    await writeJsonAtomic(
+      queuePath,
+      queue
+    );
+
+    logger.warn(
+      `Rolling fetch failed: ${error.message}; attempt ${attempts}`
+    );
+
+    return {
+      status:
+        'error',
+
+      kind:
+        task.kind,
+
+      pending:
+        queue.tasks.length,
+
+      lastRequestAt:
+        queue.lastRequestAt,
+
+      error:
+        error.message
+    };
   }
 }
 
-async function cacheMainImage(auction, dataDir, fetchImpl, previous) {
-  if (previous?.image?.startsWith('/auction-images/')) {
-    return { ...auction, image: previous.image, images: previous.images || [previous.image] };
+async function cacheMainImage(
+  auction,
+  dataDir,
+  fetchImpl,
+  previous
+) {
+  if (
+    previous?.image?.startsWith(
+      '/auction-images/'
+    )
+  ) {
+    return {
+      ...auction,
+
+      image:
+        previous.image,
+
+      images:
+        previous.images ||
+        [previous.image]
+    };
   }
-  if (!auction.sourceImages?.[0]) return auction;
+
+  if (
+    !auction.sourceImages?.[0]
+  ) {
+    return auction;
+  }
+
   try {
-    const response = await fetchImpl(auction.sourceImages[0], { headers: { 'user-agent': USER_AGENT, accept: 'image/*' }, redirect: 'error', signal: AbortSignal.timeout(20000) });
-    if (!response.ok) return auction;
-    if (!(response.headers.get('content-type') || '').toLowerCase().startsWith('image/')) return auction;
-    const bytes = Buffer.from(await response.arrayBuffer());
-    if (bytes.length < 1000 || bytes.length > 12_000_000) return auction;
-    const contentType = response.headers.get('content-type') || '';
-    const extension = contentType.includes('png') ? 'png' : contentType.includes('webp') ? 'webp' : 'jpg';
-    const filename = `${auction.id}.${extension}`;
-    await mkdir(path.join(dataDir, 'images'), { recursive: true });
-    await writeFile(path.join(dataDir, 'images', filename), bytes);
-    return { ...auction, image: `/auction-images/${filename}`, images: [`/auction-images/${filename}`] };
+    const response =
+      await fetchImpl(
+        auction.sourceImages[0],
+        {
+          headers: {
+            'user-agent':
+              USER_AGENT,
+
+            accept:
+              'image/*'
+          },
+
+          redirect:
+            'error',
+
+          signal:
+            AbortSignal.timeout(
+              20000
+            )
+        }
+      );
+
+    if (!response.ok) {
+      return auction;
+    }
+
+    if (
+      !(
+        response.headers.get(
+          'content-type'
+        ) || ''
+      )
+        .toLowerCase()
+        .startsWith(
+          'image/'
+        )
+    ) {
+      return auction;
+    }
+
+    const bytes =
+      Buffer.from(
+        await response.arrayBuffer()
+      );
+
+    if (
+      bytes.length < 1000 ||
+      bytes.length >
+        12_000_000
+    ) {
+      return auction;
+    }
+
+    const contentType =
+      response.headers.get(
+        'content-type'
+      ) || '';
+
+    const extension =
+      contentType.includes(
+        'png'
+      )
+        ? 'png'
+        : contentType.includes(
+              'webp'
+            )
+          ? 'webp'
+          : 'jpg';
+
+    const filename =
+      `${auction.id}.${extension}`;
+
+    await mkdir(
+      path.join(
+        dataDir,
+        'images'
+      ),
+      {
+        recursive: true
+      }
+    );
+
+    await writeFile(
+      path.join(
+        dataDir,
+        'images',
+        filename
+      ),
+      bytes
+    );
+
+    return {
+      ...auction,
+
+      image:
+        `/auction-images/${filename}`,
+
+      images: [
+        `/auction-images/${filename}`
+      ]
+    };
   } catch {
     return auction;
   }
 }
 
-export async function collectAuctions({ dataDir, fetchImpl = fetch, pages = 4, maxDetails = 48, logger = console } = {}) {
-  if (!dataDir) throw new Error('dataDir is required');
-  const archivePath = path.join(dataDir, 'auctions.json');
-  const existing = await readJson(archivePath, { updatedAt: null, auctions: [] });
-  const byId = new Map(existing.auctions.map(item => [item.id, item]));
-  const listingUrls = new Set();
-  for (let page = 0; page < pages; page += 1) {
+export async function collectAuctions({
+  dataDir,
+  fetchImpl = fetch,
+  pages = 4,
+  maxDetails = 48,
+  logger = console
+} = {}) {
+  if (!dataDir) {
+    throw new Error(
+      'dataDir is required'
+    );
+  }
+
+  const archivePath =
+    path.join(
+      dataDir,
+      'auctions.json'
+    );
+
+  const existing =
+    await readJson(
+      archivePath,
+      {
+        updatedAt: null,
+        auctions: []
+      }
+    );
+
+  const byId =
+    new Map(
+      existing.auctions.map(
+        item => [
+          item.id,
+          item
+        ]
+      )
+    );
+
+  const listingUrls =
+    new Set();
+
+  const listingSession = {};
+
+  /*
+   * Preserve the existing meaning of
+   * "pages".
+   *
+   * pages=4 used to mean 40 auction
+   * listing slots.
+   *
+   * Now one 50-result request is enough
+   * to cover that same range.
+   */
+  const listingTarget =
+    Math.max(
+      0,
+      pages *
+        LEGACY_LISTING_PAGE_SIZE
+    );
+
+  let listingStart = 0;
+  let listingPage = 1;
+
+  while (
+    listingStart <
+    listingTarget
+  ) {
     try {
-      const html = await fetchText(`${BASE_URL}/auction_search.php?start=${page * 10}`, fetchImpl);
-      extractListingUrls(html).forEach(url => listingUrls.add(url));
+      const result =
+        await fetchListingPage({
+          start:
+            listingStart,
+
+          fetchImpl,
+
+          session:
+            listingSession,
+
+          requestedPageSize:
+            LISTING_PAGE_SIZE
+        });
+
+      extractListingUrls(
+        result.html
+      ).forEach(url =>
+        listingUrls.add(url)
+      );
+
+      /*
+       * Normally +50.
+       * Fallback mode uses +10.
+       */
+      listingStart +=
+        result.effectivePageSize;
     } catch (error) {
-      logger.warn(`Listing page ${page + 1} failed: ${error.message}`);
+      logger.warn(
+        `Listing page ${listingPage} failed: ${error.message}`
+      );
+
+      listingStart +=
+        listingSession
+          .pageSizeSupported === true
+          ? LISTING_PAGE_SIZE
+          : LEGACY_LISTING_PAGE_SIZE;
     }
+
+    listingPage += 1;
   }
 
   const incoming = [];
-  const detailUrls = [...listingUrls].slice(0, maxDetails);
-  for (let index = 0; index < detailUrls.length; index += 5) {
-    const batch = detailUrls.slice(index, index + 5);
-    const records = await Promise.all(batch.map(async url => {
-      try {
-        const item = parseAuctionPage(await fetchText(url, fetchImpl), url);
-        const previous = byId.get(item.id);
-        if (previous?.startAt) item.startAt = previous.startAt;
-        else {
-          try { item.startAt = parseAuctionStart(await fetchText(`${BASE_URL}/auktion_drucken-${item.id}`, fetchImpl)); }
-          catch (error) { logger.warn(`Start date fetch failed for ${item.id}: ${error.message}`); }
-        }
-        return item;
-      }
-      catch (error) { logger.warn(`Auction fetch failed for ${url}: ${error.message}`); return null; }
-    }));
-    incoming.push(...records.filter(Boolean));
+
+  const detailUrls = [
+    ...listingUrls
+  ].slice(
+    0,
+    maxDetails
+  );
+
+  for (
+    let index = 0;
+    index < detailUrls.length;
+    index += 5
+  ) {
+    const batch =
+      detailUrls.slice(
+        index,
+        index + 5
+      );
+
+    const records =
+      await Promise.all(
+        batch.map(
+          async url => {
+            try {
+              const item =
+                parseAuctionPage(
+                  await fetchText(
+                    url,
+                    fetchImpl
+                  ),
+                  url
+                );
+
+              const previous =
+                byId.get(
+                  item.id
+                );
+
+              if (
+                previous?.startAt
+              ) {
+                item.startAt =
+                  previous.startAt;
+              } else {
+                try {
+                  item.startAt =
+                    parseAuctionStart(
+                      await fetchText(
+                        `${BASE_URL}/auktion_drucken-${item.id}`,
+                        fetchImpl
+                      )
+                    );
+                } catch (error) {
+                  logger.warn(
+                    `Start date fetch failed for ${item.id}: ${error.message}`
+                  );
+                }
+              }
+
+              return item;
+            } catch (error) {
+              logger.warn(
+                `Auction fetch failed for ${url}: ${error.message}`
+              );
+
+              return null;
+            }
+          }
+        )
+      );
+
+    incoming.push(
+      ...records.filter(Boolean)
+    );
   }
 
-  for (const item of incoming) {
-    const previous = byId.get(item.id);
-    const withImage = await cacheMainImage(item, dataDir, fetchImpl, previous);
-    byId.set(item.id, {
-      ...previous,
-      ...withImage,
-      image: withImage.image || previous?.image || withImage.sourceImages?.[0] || null,
-      images: withImage.images || previous?.images || withImage.sourceImages || [],
-      firstCapturedAt: previous?.firstCapturedAt || item.capturedAt,
-      finalPrice: withImage.finalPrice ?? previous?.finalPrice ?? null
-    });
+  for (
+    const item of incoming
+  ) {
+    const previous =
+      byId.get(item.id);
+
+    const withImage =
+      await cacheMainImage(
+        item,
+        dataDir,
+        fetchImpl,
+        previous
+      );
+
+    byId.set(
+      item.id,
+      {
+        ...previous,
+        ...withImage,
+
+        image:
+          withImage.image ||
+          previous?.image ||
+          withImage.sourceImages?.[0] ||
+          null,
+
+        images:
+          withImage.images ||
+          previous?.images ||
+          withImage.sourceImages ||
+          [],
+
+        firstCapturedAt:
+          previous?.firstCapturedAt ||
+          item.capturedAt,
+
+        finalPrice:
+          withImage.finalPrice ??
+          previous?.finalPrice ??
+          null
+      }
+    );
   }
-  const updatedAt = new Date().toISOString();
-  const auctions = [...byId.values()].map(item => {
-    if (item.finalPrice == null && item.endAt && Date.parse(item.endAt) <= Date.now() && item.currentBid > 0) {
-      return { ...item, finalPrice: item.currentBid, finalizedAt: updatedAt };
+
+  const updatedAt =
+    new Date().toISOString();
+
+  const auctions = [
+    ...byId.values()
+  ].map(item => {
+    if (
+      item.finalPrice == null &&
+      item.endAt &&
+      Date.parse(item.endAt) <=
+        Date.now() &&
+      item.currentBid > 0
+    ) {
+      return {
+        ...item,
+        finalPrice:
+          item.currentBid,
+        finalizedAt:
+          updatedAt
+      };
     }
+
     return item;
   });
-  const archive = { updatedAt, auctions };
-  await writeJsonAtomic(archivePath, archive);
-  logger.info(`Collected ${incoming.length} auctions; archive contains ${archive.auctions.length}`);
+
+  const archive = {
+    updatedAt,
+    auctions
+  };
+
+  await writeJsonAtomic(
+    archivePath,
+    archive
+  );
+
+  logger.info(
+    `Collected ${incoming.length} auctions; archive contains ${archive.auctions.length}`
+  );
+
   return archive;
 }
 
-export async function ensureDailyGame({ dataDir, dateKey = utcDateKey(), logger = console } = {}) {
-  const dailyPath = path.join(dataDir, 'daily-games.json');
-  const daily = await readJson(dailyPath, { updatedAt: null, games: {} });
-  if (daily.games[dateKey]?.selectionVersion === DAILY_SELECTION_VERSION) return daily.games[dateKey];
-  const archive = await readJson(path.join(dataDir, 'auctions.json'), { auctions: [] });
-  const game = { ...selectDailySet(archive.auctions, dateKey, daily.games), selectionVersion: DAILY_SELECTION_VERSION };
-  daily.games[dateKey] = game;
-  const retainedDates = Object.keys(daily.games).sort().slice(-730);
-  daily.games = Object.fromEntries(retainedDates.map(key => [key, daily.games[key]]));
-  daily.updatedAt = new Date().toISOString();
-  await writeJsonAtomic(dailyPath, daily);
-  logger.info(`Generated game #${game.gameNumber} for ${dateKey}`);
+export async function ensureDailyGame({
+  dataDir,
+  dateKey = utcDateKey(),
+  logger = console
+} = {}) {
+  const dailyPath =
+    path.join(
+      dataDir,
+      'daily-games.json'
+    );
+
+  const daily =
+    await readJson(
+      dailyPath,
+      {
+        updatedAt: null,
+        games: {}
+      }
+    );
+
+  if (
+    daily.games[dateKey]
+      ?.selectionVersion ===
+    DAILY_SELECTION_VERSION
+  ) {
+    return daily.games[
+      dateKey
+    ];
+  }
+
+  const archive =
+    await readJson(
+      path.join(
+        dataDir,
+        'auctions.json'
+      ),
+      {
+        auctions: []
+      }
+    );
+
+  const game = {
+    ...selectDailySet(
+      archive.auctions,
+      dateKey,
+      daily.games
+    ),
+
+    selectionVersion:
+      DAILY_SELECTION_VERSION
+  };
+
+  daily.games[
+    dateKey
+  ] = game;
+
+  const retainedDates =
+    Object.keys(
+      daily.games
+    )
+      .sort()
+      .slice(-730);
+
+  daily.games =
+    Object.fromEntries(
+      retainedDates.map(
+        key => [
+          key,
+          daily.games[key]
+        ]
+      )
+    );
+
+  daily.updatedAt =
+    new Date().toISOString();
+
+  await writeJsonAtomic(
+    dailyPath,
+    daily
+  );
+
+  logger.info(
+    `Generated game #${game.gameNumber} for ${dateKey}`
+  );
+
   return game;
 }
 
-export async function seedArchiveIfEmpty({ dataDir, seedFile }) {
-  const archivePath = path.join(dataDir, 'auctions.json');
-  const current = await readJson(archivePath, null);
-  if (current?.auctions?.length >= 5) return current;
-  const seed = JSON.parse(await readFile(seedFile, 'utf8'));
-  await writeJsonAtomic(archivePath, seed);
+export async function seedArchiveIfEmpty({
+  dataDir,
+  seedFile
+}) {
+  const archivePath =
+    path.join(
+      dataDir,
+      'auctions.json'
+    );
+
+  const current =
+    await readJson(
+      archivePath,
+      null
+    );
+
+  if (
+    current?.auctions?.length >=
+    5
+  ) {
+    return current;
+  }
+
+  const seed =
+    JSON.parse(
+      await readFile(
+        seedFile,
+        'utf8'
+      )
+    );
+
+  await writeJsonAtomic(
+    archivePath,
+    seed
+  );
+
   return seed;
 }
