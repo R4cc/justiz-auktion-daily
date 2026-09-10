@@ -26,8 +26,11 @@ ENV NODE_ENV=production \
     PORT=3000 \
     DATA_DIR=/data \
     DISCOVERY_INTERVAL_HOURS=6 \
-    FETCH_INTERVAL_SECONDS=120 \
-    COLLECT_PAGES=12
+    COLLECT_MAX_PAGES=250 \
+    FETCH_MIN_INTERVAL_MS=250 \
+    FETCH_INITIAL_INTERVAL_MS=750 \
+    FETCH_MAX_INTERVAL_MS=120000 \
+    FETCH_IDLE_POLL_MS=30000
 
 WORKDIR /app
 
@@ -38,11 +41,14 @@ COPY --from=build --chown=65532:65532 /app/dist /app/dist
 COPY --from=build --chown=65532:65532 /data-seed /data
 
 USER 65532:65532
+
 VOLUME ["/data"]
+
 EXPOSE 3000
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
   CMD ["/nodejs/bin/node", "-e", "fetch('http://127.0.0.1:3000/healthz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
 
 ENTRYPOINT ["/nodejs/bin/node"]
+
 CMD ["server.mjs"]

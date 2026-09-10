@@ -1,10 +1,24 @@
-import { createServer } from 'node:http';
-import { createReadStream } from 'node:fs';
-import { readFile, stat } from 'node:fs/promises';
-import path from 'node:path';
-import { fileURLToPath } from 'node:url';
+import {
+  createServer
+} from 'node:http';
 
 import {
+  createReadStream
+} from 'node:fs';
+
+import {
+  readFile,
+  stat
+} from 'node:fs/promises';
+
+import path from 'node:path';
+
+import {
+  fileURLToPath
+} from 'node:url';
+
+import {
+  ROLLING_QUEUE_VERSION,
   enqueueRollingDiscovery,
   ensureDailyGame,
   processRollingTask,
@@ -76,12 +90,13 @@ const discoveryCheckIntervalMs =
     )
   );
 
-const collectPages =
+const discoveryMaxPages =
   Math.max(
     1,
     Number(
-      process.env.COLLECT_PAGES ||
-      12
+      process.env
+        .COLLECT_MAX_PAGES ||
+      250
     )
   );
 
@@ -229,9 +244,7 @@ function text(
     }
   );
 
-  response.end(
-    body
-  );
+  response.end(body);
 }
 
 async function readDataJson(
@@ -276,38 +289,19 @@ async function readFetchQueue() {
       lastDiscoveryAt:
         null,
 
+      needsFullDiscovery:
+        false,
+
+      discovery:
+        null,
+
+      throttle:
+        null,
+
       tasks:
         []
     }
   );
-}
-
-function latestPersistedActivity(
-  queue,
-  archive
-) {
-  const values = [
-    queue.lastDiscoveryAt,
-    queue.updatedAt,
-    queue.lastRequestAt,
-    archive.updatedAt
-  ]
-    .map(
-      value =>
-        Date.parse(
-          value ||
-          ''
-        )
-    )
-    .filter(
-      Number.isFinite
-    );
-
-  return values.length
-    ? Math.max(
-        ...values
-      )
-    : null;
 }
 
 async function publicStats() {
@@ -340,6 +334,7 @@ async function publicStats() {
     archive,
     queue,
     daily,
+
     fetchState:
       lastRefresh
   });
@@ -662,15 +657,51 @@ function scheduleNextRollingFetch(
   rollingTimer.unref();
 }
 
+function discoveryReferenceTime(
+  queue,
+  archive
+) {
+  const primary =
+    Date.parse(
+      queue.lastDiscoveryAt ||
+      ''
+    );
+
+  if (
+    Number.isFinite(
+      primary
+    )
+  ) {
+    return primary;
+  }
+
+  const fallbacks = [
+    queue.updatedAt,
+    queue.lastRequestAt,
+    archive.updatedAt
+  ]
+    .map(
+      value =>
+        Date.parse(
+          value ||
+          ''
+        )
+    )
+    .filter(
+      Number.isFinite
+    );
+
+  return fallbacks.length
+    ? Math.max(
+        ...fallbacks
+      )
+    : null;
+}
+
 async function maybeScheduleDiscovery({
   force = false,
   wakeFetcher = true
 } = {}) {
-  /*
-   * Avoid modifying the persisted
-   * queue while one worker is
-   * currently processing it.
-   */
   if (
     rollingPromise
   ) {
@@ -696,14 +727,6 @@ async function maybeScheduleDiscovery({
       )
     ]);
 
-  /*
-   * Most important restart behavior:
-   *
-   * if there is persisted work, resume
-   * that exact queue. Do NOT add a new
-   * listing scan because the process
-   * restarted.
-   */
   if (
     queue.tasks?.length >
     0
@@ -723,32 +746,24 @@ async function maybeScheduleDiscovery({
   const now =
     Date.now();
 
-  const lastActivity =
-    latestPersistedActivity(
+  const reference =
+    discoveryReferenceTime(
       queue,
       archive
     );
 
-  /*
-   * version === null means no persisted
-   * fetch queue exists at all. That's a
-   * genuine first run.
-   *
-   * For an older persisted queue without
-   * lastDiscoveryAt, updatedAt /
-   * lastRequestAt / archive.updatedAt
-   * are used as migration fallbacks.
-   */
-  const firstRun =
-    queue.version ==
-    null;
+  const requiresMigrationScan =
+    queue.version !==
+      ROLLING_QUEUE_VERSION ||
+    queue.needsFullDiscovery ===
+      true;
 
   const due =
     force ||
-    firstRun ||
-    lastActivity == null ||
+    requiresMigrationScan ||
+    reference == null ||
     now -
-      lastActivity >=
+      reference >=
       discoveryIntervalMs;
 
   if (!due) {
@@ -761,7 +776,7 @@ async function maybeScheduleDiscovery({
 
       nextDiscoveryAt:
         new Date(
-          lastActivity +
+          reference +
           discoveryIntervalMs
         ).toISOString()
     };
@@ -770,9 +785,12 @@ async function maybeScheduleDiscovery({
   const scheduledQueue =
     await enqueueRollingDiscovery({
       dataDir,
-      pages:
-        collectPages,
-      now
+
+      maxPages:
+        discoveryMaxPages,
+
+      now,
+      force
     });
 
   if (
@@ -818,11 +836,12 @@ function scheduleDiscoveryChecks() {
             true
         })
           .catch(
-            error =>
+            error => {
               console.error(
                 'Auction discovery scheduling failed:',
                 error
-              )
+              );
+            }
           );
       },
       discoveryCheckIntervalMs
@@ -839,7 +858,8 @@ function scheduleUtcRollover() {
     Date.UTC(
       now.getUTCFullYear(),
       now.getUTCMonth(),
-      now.getUTCDate() + 1,
+      now.getUTCDate() +
+        1,
       0,
       0,
       5
@@ -878,17 +898,6 @@ await ensureDailyGame({
   dataDir
 });
 
-/*
- * Startup no longer blindly triggers
- * discovery.
- *
- * This will:
- *
- * - resume an existing queue
- * - schedule discovery on first run
- * - schedule discovery if actually due
- * - otherwise leave persisted data alone
- */
 await maybeScheduleDiscovery({
   wakeFetcher:
     false
@@ -937,6 +946,9 @@ const server =
                 intervalHours:
                   discoveryHours,
 
+                maxPages:
+                  discoveryMaxPages,
+
                 lastDiscoveryAt:
                   queue
                     .lastDiscoveryAt ||
@@ -945,7 +957,28 @@ const server =
                 pending:
                   queue.tasks
                     ?.length ||
-                  0
+                  0,
+
+                pagesFetched:
+                  queue.discovery
+                    ?.pagesFetched ||
+                  0,
+
+                listingsSeen:
+                  queue.discovery
+                    ?.listingsSeen ||
+                  0,
+
+                complete:
+                  Boolean(
+                    queue.discovery
+                      ?.complete
+                  ),
+
+                completedAt:
+                  queue.discovery
+                    ?.completedAt ||
+                  null
               },
 
               fetch: {
@@ -1153,28 +1186,17 @@ server.listen(
     );
 
     console.log(
-      `Adaptive auction fetcher: ` +
-      `${fetchInitialIntervalMs}ms initial, ` +
-      `${fetchMinIntervalMs}ms minimum, ` +
-      `${fetchMaxIntervalMs}ms maximum`
+      `Adaptive auction fetcher: ${fetchInitialIntervalMs}ms initial, ` +
+      `${fetchMinIntervalMs}ms minimum, ${fetchMaxIntervalMs}ms maximum`
     );
 
     console.log(
-      `Auction discovery interval: ` +
-      `${discoveryHours}h ` +
-      `(persisted across restarts)`
+      `Auction discovery: every ${discoveryHours}h, up to ${discoveryMaxPages} listing pages, ` +
+      'stopping automatically at the end'
     );
   }
 );
 
-/*
- * If persisted tasks exist, these
- * continue immediately.
- *
- * If the queue is empty, the worker
- * simply idles until discovery becomes
- * due.
- */
 scheduleNextRollingFetch(
   0
 );
@@ -1212,7 +1234,9 @@ function shutdown(
   server.close(
     error =>
       process.exit(
-        error ? 1 : 0
+        error
+          ? 1
+          : 0
       )
   );
 

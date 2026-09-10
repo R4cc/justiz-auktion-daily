@@ -1,33 +1,106 @@
-import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
+import {
+  mkdir,
+  readFile,
+  rename,
+  writeFile
+} from 'node:fs/promises';
+
 import path from 'node:path';
-import { selectDailySet, utcDateKey } from './core.mjs';
 
-const BASE_URL = 'https://www.justiz-auktion.de';
-const USER_AGENT = 'JUSTIZGUESSR/1.0 (+daily public auction indexer; respectful adaptive fetches)';
-const DAILY_SELECTION_VERSION = 2;
-const ROLLING_QUEUE_VERSION = 3;
+import {
+  selectDailySet,
+  utcDateKey
+} from './core.mjs';
 
-const LEGACY_LISTING_PAGE_SIZE = 10;
-const LISTING_PAGE_SIZE = 50;
+const BASE_URL =
+  'https://www.justiz-auktion.de';
 
-const DEFAULT_MIN_INTERVAL_MS = 250;
-const DEFAULT_INITIAL_INTERVAL_MS = 750;
-const DEFAULT_MAX_INTERVAL_MS = 120_000;
-const IDLE_POLL_MS = 30_000;
+const USER_AGENT =
+  'JUSTIZGUESSR/1.0 (+daily public auction indexer; respectful adaptive fetches)';
+
+const DAILY_SELECTION_VERSION =
+  3;
+
+export const ROLLING_QUEUE_VERSION =
+  4;
+
+const LEGACY_LISTING_PAGE_SIZE =
+  10;
+
+const LISTING_PAGE_SIZE =
+  50;
+
+const DEFAULT_MAX_LISTING_PAGES =
+  250;
+
+const DEFAULT_MIN_INTERVAL_MS =
+  250;
+
+const DEFAULT_INITIAL_INTERVAL_MS =
+  750;
+
+const DEFAULT_MAX_INTERVAL_MS =
+  120_000;
+
+const IDLE_POLL_MS =
+  30_000;
 
 function emptyQueue() {
   return {
-    version: ROLLING_QUEUE_VERSION,
-    updatedAt: null,
-    lastRequestAt: null,
-    lastDiscoveryAt: null,
-    listingSession: {},
-    throttle: null,
-    tasks: []
+    version:
+      ROLLING_QUEUE_VERSION,
+
+    updatedAt:
+      null,
+
+    lastRequestAt:
+      null,
+
+    lastDiscoveryAt:
+      null,
+
+    needsFullDiscovery:
+      false,
+
+    listingSession:
+      {},
+
+    discovery:
+      null,
+
+    throttle:
+      null,
+
+    tasks:
+      []
   };
 }
 
-function decodeEntities(value = '') {
+function normalizeQueue(
+  queue
+) {
+  queue.tasks ||= [];
+  queue.listingSession ||= {};
+
+  if (
+    queue.version !==
+    ROLLING_QUEUE_VERSION
+  ) {
+    queue.needsFullDiscovery =
+      true;
+  }
+
+  queue.needsFullDiscovery =
+    Boolean(
+      queue.needsFullDiscovery
+    );
+
+  return queue;
+}
+
+function decodeEntities(
+  value = ''
+) {
   const named = {
     amp: '&',
     quot: '"',
@@ -53,60 +126,129 @@ function decodeEntities(value = '') {
     NewLine: '\n'
   };
 
-  return value.replace(/&(#x?[0-9a-f]+|[a-z]+);/gi, (_, entity) => {
-    if (entity[0] === '#') {
-      const hex = entity[1]?.toLowerCase() === 'x';
+  return value.replace(
+    /&(#x?[0-9a-f]+|[a-z]+);/gi,
+    (
+      _,
+      entity
+    ) => {
+      if (
+        entity[0] === '#'
+      ) {
+        const hex =
+          entity[1]
+            ?.toLowerCase() ===
+          'x';
 
-      return String.fromCodePoint(
-        Number.parseInt(
-          entity.slice(hex ? 2 : 1),
-          hex ? 16 : 10
-        )
-      );
+        return String.fromCodePoint(
+          Number.parseInt(
+            entity.slice(
+              hex
+                ? 2
+                : 1
+            ),
+            hex
+              ? 16
+              : 10
+          )
+        );
+      }
+
+      return named[
+        entity
+      ] ??
+        named[
+          entity.toLowerCase()
+        ] ??
+        `&${entity};`;
     }
-
-    return named[entity] ??
-      named[entity.toLowerCase()] ??
-      `&${entity};`;
-  });
+  );
 }
 
-function cleanText(value = '') {
-  return decodeEntities(value)
-    .replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, ' ')
-    .replace(/<style\b[^>]*>[\s\S]*?<\/style>/gi, ' ')
-    .replace(/<br\s*\/?>|<\/(?:p|div|h\d|li|tr)>/gi, '\n')
-    .replace(/<[^>]+>/g, ' ')
-    .replace(/[ \t]+/g, ' ')
-    .replace(/\n\s+/g, '\n')
-    .replace(/\n{3,}/g, '\n\n')
+function cleanText(
+  value = ''
+) {
+  return decodeEntities(
+    value
+  )
+    .replace(
+      /<script\b[^>]*>[\s\S]*?<\/script>/gi,
+      ' '
+    )
+    .replace(
+      /<style\b[^>]*>[\s\S]*?<\/style>/gi,
+      ' '
+    )
+    .replace(
+      /<br\s*\/?>|<\/(?:p|div|h\d|li|tr)>/gi,
+      '\n'
+    )
+    .replace(
+      /<[^>]+>/g,
+      ' '
+    )
+    .replace(
+      /[ \t]+/g,
+      ' '
+    )
+    .replace(
+      /\n\s+/g,
+      '\n'
+    )
+    .replace(
+      /\n{3,}/g,
+      '\n\n'
+    )
     .trim();
 }
 
-function parseMoney(value) {
-  if (!value) return null;
+function parseMoney(
+  value
+) {
+  if (!value) {
+    return null;
+  }
 
-  const normalized = value
-    .replace(/\./g, '')
-    .replace(',', '.')
-    .replace(/[^\d.-]/g, '');
+  const normalized =
+    value
+      .replace(
+        /\./g,
+        ''
+      )
+      .replace(
+        ',',
+        '.'
+      )
+      .replace(
+        /[^\d.-]/g,
+        ''
+      );
 
-  const amount = Number(normalized);
+  const amount =
+    Number(
+      normalized
+    );
 
-  return Number.isFinite(amount)
+  return Number.isFinite(
+    amount
+  )
     ? amount
     : null;
 }
 
 function zonedLocalToUtc(
   value,
-  timeZone = 'Europe/Berlin'
+  timeZone =
+    'Europe/Berlin'
 ) {
-  const match = value?.match(
-    /(\d{2})\.(\d{2})\.(\d{4})\s+(\d{2}):(\d{2})(?::(\d{2}))?/
-  );
+  const match =
+    value?.match(
+      /(\d{2})\.(\d{2})\.(\d{4})\s+(\d{2}):(\d{2})(?::(\d{2}))?/
+    );
 
-  if (!match) return null;
+  if (!match) {
+    return null;
+  }
 
   const [
     ,
@@ -118,48 +260,71 @@ function zonedLocalToUtc(
     second = '00'
   ] = match;
 
-  const desired = Date.UTC(
-    +year,
-    +month - 1,
-    +day,
-    +hour,
-    +minute,
-    +second
-  );
-
-  const parts = new Intl.DateTimeFormat(
-    'en-CA',
-    {
-      timeZone,
-      year: 'numeric',
-      month: '2-digit',
-      day: '2-digit',
-      hour: '2-digit',
-      minute: '2-digit',
-      second: '2-digit',
-      hourCycle: 'h23'
-    }
-  )
-    .formatToParts(new Date(desired))
-    .reduce(
-      (all, part) => ({
-        ...all,
-        [part.type]: part.value
-      }),
-      {}
+  const desired =
+    Date.UTC(
+      +year,
+      +month - 1,
+      +day,
+      +hour,
+      +minute,
+      +second
     );
 
-  const observed = Date.UTC(
-    +parts.year,
-    +parts.month - 1,
-    +parts.day,
-    +parts.hour,
-    +parts.minute,
-    +parts.second
-  );
+  const parts =
+    new Intl.DateTimeFormat(
+      'en-CA',
+      {
+        timeZone,
+        year:
+          'numeric',
+        month:
+          '2-digit',
+        day:
+          '2-digit',
+        hour:
+          '2-digit',
+        minute:
+          '2-digit',
+        second:
+          '2-digit',
+        hourCycle:
+          'h23'
+      }
+    )
+      .formatToParts(
+        new Date(
+          desired
+        )
+      )
+      .reduce(
+        (
+          all,
+          part
+        ) => ({
+          ...all,
+          [part.type]:
+            part.value
+        }),
+        {}
+      );
+
+  const observed =
+    Date.UTC(
+      +parts.year,
+      +parts.month -
+        1,
+      +parts.day,
+      +parts.hour,
+      +parts.minute,
+      +parts.second
+    );
 
   return new Date(
-    desired - (observed - desired)
+    desired -
+    (
+      observed -
+      desired
+    )
   ).toISOString();
 }
 
@@ -206,41 +371,60 @@ function inferCategory(
     ]
   ];
 
-  const titleMatch = groups.find(
-    ([, matcher]) =>
-      matcher.test(
-        title.toLowerCase()
-      )
-  );
+  const titleValue =
+    title.toLowerCase();
 
-  if (titleMatch) {
-    return titleMatch[0];
-  }
-
-  const descriptionValue = description
-    .toLowerCase()
-    .replace(
-      /\b\d{1,2}(?::\d{2})?\s*uhr\b/g,
-      ' '
+  const titleMatch =
+    groups.find(
+      ([
+        ,
+        matcher
+      ]) =>
+        matcher.test(
+          titleValue
+        )
     );
 
+  if (titleMatch) {
+    return titleMatch[
+      0
+    ];
+  }
+
+  const descriptionValue =
+    description
+      .toLowerCase()
+      .replace(
+        /\b\d{1,2}(?::\d{2})?\s*uhr\b/g,
+        ' '
+      );
+
   return groups.find(
-    ([, matcher]) =>
+    ([
+      ,
+      matcher
+    ]) =>
       matcher.test(
         descriptionValue
       )
-  )?.[0] || 'Sonstiges';
+  )?.[0] ||
+    'Sonstiges';
 }
 
-export function extractListingUrls(html) {
-  const urls = new Set();
+export function extractListingUrls(
+  html
+) {
+  const urls =
+    new Set();
 
   const pattern =
     /href=["']([^"']*?-(\d{5,8})(?:[?#][^"']*)?)["']/gi;
 
   for (
     const match of
-      html.matchAll(pattern)
+      html.matchAll(
+        pattern
+      )
   ) {
     const raw =
       decodeEntities(
@@ -248,8 +432,10 @@ export function extractListingUrls(html) {
       );
 
     if (
-      /auktion_(?:drucken|gebote)/i.test(raw) ||
-      /uplimg/i.test(raw)
+      /auktion_(?:drucken|gebote)/i
+        .test(raw) ||
+      /uplimg/i
+        .test(raw)
     ) {
       continue;
     }
@@ -272,7 +458,9 @@ export function extractListingUrls(html) {
     } catch {}
   }
 
-  return [...urls];
+  return [
+    ...urls
+  ];
 }
 
 export function parseAuctionPage(
@@ -282,14 +470,15 @@ export function parseAuctionPage(
   const text =
     cleanText(html);
 
-  const id = Number(
-    text.match(
-      /Auktion ID\s*(\d+)/i
-    )?.[1] ||
-    url.match(
-      /-(\d{5,8})(?:\D|$)/
-    )?.[1]
-  );
+  const id =
+    Number(
+      text.match(
+        /Auktion ID\s*(\d+)/i
+      )?.[1] ||
+      url.match(
+        /-(\d{5,8})(?:\D|$)/
+      )?.[1]
+    );
 
   if (!id) {
     throw new Error(
@@ -297,18 +486,19 @@ export function parseAuctionPage(
     );
   }
 
-  const heading = html.match(
-    /<h2\b[^>]*class=["'][^"']*auktionstitel[^"']*["'][^>]*>([\s\S]*?)<\/h2>/i
-  )?.[1];
+  const heading =
+    html.match(
+      /<h2\b[^>]*class=["'][^"']*auktionstitel[^"']*["'][^>]*>([\s\S]*?)<\/h2>/i
+    )?.[1];
 
-  const titleFallback = html
-    .match(
+  const titleFallback =
+    html.match(
       /<title\b[^>]*>([\s\S]*?)<\/title>/i
     )?.[1]
-    ?.replace(
-      /\s*\(#\d+\).*$/s,
-      ''
-    );
+      ?.replace(
+        /\s*\(#\d+\).*$/s,
+        ''
+      );
 
   const title =
     cleanText(
@@ -335,7 +525,8 @@ export function parseAuctionPage(
     Number(
       text.match(
         /Anzahl Gebote\s*(\d+)/i
-      )?.[1] || 0
+      )?.[1] ||
+      0
     );
 
   const endText =
@@ -346,33 +537,41 @@ export function parseAuctionPage(
   const condition =
     text.match(
       /Zustand:\s*([^\n]+)/i
-    )?.[1]?.trim() ||
+    )?.[1]
+      ?.trim() ||
     'Keine Angabe';
 
   const fulfillment =
     text.match(
       /Versand:\s*([^\n]+)/i
-    )?.[1]?.trim() ||
+    )?.[1]
+      ?.trim() ||
     text.match(
       /Versandart:\s*([^\n]+)/i
-    )?.[1]?.trim() ||
+    )?.[1]
+      ?.trim() ||
     'Siehe Auktion';
 
   const location =
     text.match(
       /Artikelstandort:\s*([^\n]+)/i
-    )?.[1]?.trim() ||
+    )?.[1]
+      ?.trim() ||
     null;
 
   const descriptionHtml =
     html.match(
       /Artikelbeschreibung[\s\S]*?<\/h3>([\s\S]*?)(?:<h3\b[^>]*>|<div\b[^>]*class=["'][^"']*details)/i
-    )?.[1] || '';
+    )?.[1] ||
+    '';
 
   const description =
     cleanText(
       descriptionHtml
-    ).slice(0, 1800) ||
+    ).slice(
+      0,
+      1800
+    ) ||
     `${condition}. Weitere Angaben auf der Originalauktion.`;
 
   const imageUrls = [];
@@ -381,7 +580,9 @@ export function parseAuctionPage(
     /(?:src|href)=["']([^"']*uplimg\/[^"']+?\.(?:jpe?g|png|webp))(?:\?[^"']*)?["']/gi;
 
   const decodedHtml =
-    decodeEntities(html);
+    decodeEntities(
+      html
+    );
 
   for (
     const match of
@@ -393,8 +594,10 @@ export function parseAuctionPage(
       match[1];
 
     if (
-      /\/tn\//i.test(raw) ||
-      /tn\d+_/i.test(raw)
+      /\/tn\//i
+        .test(raw) ||
+      /tn\d+_/i
+        .test(raw)
     ) {
       continue;
     }
@@ -426,17 +629,24 @@ export function parseAuctionPage(
     id,
     title,
     description,
+
     category:
       inferCategory(
         title,
         description
       ),
+
     sourceImages:
       imageUrls,
+
     startBid:
-      startBid ?? 0,
+      startBid ??
+      0,
+
     currentBid:
-      currentBid ?? 0,
+      currentBid ??
+      0,
+
     finalPrice:
       endText &&
       Date.parse(
@@ -446,17 +656,22 @@ export function parseAuctionPage(
       ) <= Date.now()
         ? currentBid
         : null,
+
     bidCount,
+
     startAt:
       null,
+
     endAt:
       zonedLocalToUtc(
         endText
       ),
+
     condition,
     fulfillment,
     location,
     url,
+
     capturedAt:
       new Date()
         .toISOString()
@@ -513,7 +728,8 @@ async function writeJsonAtomic(
       filename
     ),
     {
-      recursive: true
+      recursive:
+        true
     }
   );
 
@@ -562,13 +778,14 @@ function createHttpError(
       Number.isFinite(
         seconds
       )
-        ? seconds * 1000
+        ? seconds *
+          1000
         : Math.max(
             0,
             Date.parse(
               retryAfter
             ) -
-              Date.now()
+            Date.now()
           );
   }
 
@@ -586,11 +803,14 @@ async function fetchText(
         headers: {
           'user-agent':
             USER_AGENT,
+
           accept:
             'text/html,application/xhtml+xml'
         },
+
         redirect:
           'error',
+
         signal:
           AbortSignal.timeout(
             20_000
@@ -618,16 +838,20 @@ function parseHtmlAttributes(
 
   for (
     const match of
-      source.matchAll(pattern)
+      source.matchAll(
+        pattern
+      )
   ) {
     attributes[
-      match[1].toLowerCase()
-    ] = decodeEntities(
-      match[2] ??
-      match[3] ??
-      match[4] ??
-      ''
-    );
+      match[1]
+        .toLowerCase()
+    ] =
+      decodeEntities(
+        match[2] ??
+        match[3] ??
+        match[4] ??
+        ''
+      );
   }
 
   return attributes;
@@ -638,31 +862,37 @@ function optionValue(
   body
 ) {
   return attributes.value ??
-    cleanText(body);
+    cleanText(
+      body
+    );
 }
 
 function selectedValue(
   selectBody
 ) {
-  const options = [
-    ...selectBody.matchAll(
-      /<option\b([^>]*)>([\s\S]*?)<\/option>/gi
-    )
-  ].map(match => {
-    const attributes =
-      parseHtmlAttributes(
-        match[1]
-      );
+  const options =
+    [
+      ...selectBody.matchAll(
+        /<option\b([^>]*)>([\s\S]*?)<\/option>/gi
+      )
+    ].map(
+      match => {
+        const attributes =
+          parseHtmlAttributes(
+            match[1]
+          );
 
-    return {
-      attributes,
-      value:
-        optionValue(
+        return {
           attributes,
-          match[2]
-        )
-    };
-  });
+
+          value:
+            optionValue(
+              attributes,
+              match[2]
+            )
+        };
+      }
+    );
 
   return options.find(
     option =>
@@ -695,11 +925,12 @@ function extractPageSizePreference(
     const formBody =
       formMatch[2];
 
-    const selects = [
-      ...formBody.matchAll(
-        /<select\b([^>]*)>([\s\S]*?)<\/select>/gi
-      )
-    ];
+    const selects =
+      [
+        ...formBody.matchAll(
+          /<select\b([^>]*)>([\s\S]*?)<\/select>/gi
+        )
+      ];
 
     let pageSizeField =
       null;
@@ -719,20 +950,21 @@ function extractPageSizePreference(
         continue;
       }
 
-      const values = [
-        ...selectMatch[2]
-          .matchAll(
-            /<option\b([^>]*)>([\s\S]*?)<\/option>/gi
-          )
-      ].map(
-        optionMatch =>
-          optionValue(
-            parseHtmlAttributes(
-              optionMatch[1]
-            ),
-            optionMatch[2]
-          )
-      );
+      const values =
+        [
+          ...selectMatch[2]
+            .matchAll(
+              /<option\b([^>]*)>([\s\S]*?)<\/option>/gi
+            )
+        ].map(
+          optionMatch =>
+            optionValue(
+              parseHtmlAttributes(
+                optionMatch[1]
+              ),
+              optionMatch[2]
+            )
+        );
 
       if (
         values.includes(
@@ -799,7 +1031,9 @@ function extractPageSizePreference(
         [
           'checkbox',
           'radio'
-        ].includes(type) &&
+        ].includes(
+          type
+        ) &&
         !Object.hasOwn(
           attributes,
           'checked'
@@ -890,7 +1124,9 @@ function extractPageSizePreference(
         ).toUpperCase(),
 
       params:
-        [...params.entries()]
+        [
+          ...params.entries()
+        ]
     };
   }
 
@@ -914,8 +1150,9 @@ function updateCookieJar(
   headers
 ) {
   const values =
-    typeof headers.getSetCookie ===
-      'function'
+    typeof headers
+      .getSetCookie ===
+    'function'
       ? headers.getSetCookie()
       : splitSetCookieHeader(
           headers.get(
@@ -924,16 +1161,20 @@ function updateCookieJar(
         );
 
   for (
-    const value of
-      values
+    const value of values
   ) {
     const [
       pair,
       ...attributes
-    ] = value.split(';');
+    ] =
+      value.split(
+        ';'
+      );
 
     const separator =
-      pair.indexOf('=');
+      pair.indexOf(
+        '='
+      );
 
     if (
       separator < 1
@@ -959,9 +1200,10 @@ function updateCookieJar(
     const expired =
       attributes.some(
         attribute =>
-          /^\s*max-age\s*=\s*0\s*$/i.test(
-            attribute
-          )
+          /^\s*max-age\s*=\s*0\s*$/i
+            .test(
+              attribute
+            )
       );
 
     if (expired) {
@@ -971,7 +1213,8 @@ function updateCookieJar(
     } else {
       cookieJar[
         name
-      ] = cookieValue;
+      ] =
+        cookieValue;
     }
   }
 }
@@ -983,7 +1226,10 @@ function serializeCookies(
     cookieJar
   )
     .map(
-      ([name, value]) =>
+      ([
+        name,
+        value
+      ]) =>
         `${name}=${value}`
     )
     .join('; ');
@@ -1013,7 +1259,10 @@ async function fetchWithCookieJar(
     redirectCount += 1
   ) {
     const headers = {
-      ...(options.headers || {})
+      ...(
+        options.headers ||
+        {}
+      )
     };
 
     const cookies =
@@ -1034,6 +1283,7 @@ async function fetchWithCookieJar(
           method,
           body,
           headers,
+
           redirect:
             'manual'
         }
@@ -1074,7 +1324,8 @@ async function fetchWithCookieJar(
       ).href;
 
     if (
-      response.status === 303 ||
+      response.status ===
+        303 ||
       (
         [
           301,
@@ -1082,7 +1333,8 @@ async function fetchWithCookieJar(
         ].includes(
           response.status
         ) &&
-        method === 'POST'
+        method ===
+          'POST'
       )
     ) {
       method =
@@ -1112,6 +1364,7 @@ async function submitPageSizePreference(
   const headers = {
     'user-agent':
       USER_AGENT,
+
     accept:
       'text/html,application/xhtml+xml'
   };
@@ -1128,8 +1381,10 @@ async function submitPageSizePreference(
     'GET'
   ) {
     for (
-      const [name, value]
-      of params
+      const [
+        name,
+        value
+      ] of params
     ) {
       url.searchParams.set(
         name,
@@ -1162,8 +1417,10 @@ async function submitPageSizePreference(
       {
         method:
           preference.method,
+
         body,
         headers,
+
         signal:
           AbortSignal.timeout(
             20_000
@@ -1183,6 +1440,7 @@ async function submitPageSizePreference(
   return {
     html:
       await response.text(),
+
     url:
       url.href
   };
@@ -1213,9 +1471,11 @@ async function fetchListingPage({
           headers: {
             'user-agent':
               USER_AGENT,
+
             accept:
               'text/html,application/xhtml+xml'
           },
+
           signal:
             AbortSignal.timeout(
               20_000
@@ -1235,8 +1495,10 @@ async function fetchListingPage({
     return {
       html:
         await response.text(),
+
       effectivePageSize:
         LEGACY_LISTING_PAGE_SIZE,
+
       requestUrl:
         baseUrl
     };
@@ -1245,7 +1507,8 @@ async function fetchListingPage({
   if (
     session.pageSizeSupported ===
       true &&
-    session.preference?.method ===
+    session.preference
+      ?.method ===
       'POST'
   ) {
     const response =
@@ -1255,9 +1518,11 @@ async function fetchListingPage({
           headers: {
             'user-agent':
               USER_AGENT,
+
             accept:
               'text/html,application/xhtml+xml'
           },
+
           signal:
             AbortSignal.timeout(
               20_000
@@ -1285,8 +1550,10 @@ async function fetchListingPage({
     ) {
       return {
         html,
+
         effectivePageSize:
           requestedPageSize,
+
         requestUrl:
           baseUrl
       };
@@ -1315,8 +1582,10 @@ async function fetchListingPage({
 
       return {
         ...result,
+
         effectivePageSize:
           requestedPageSize,
+
         requestUrl:
           result.url
       };
@@ -1330,9 +1599,11 @@ async function fetchListingPage({
         headers: {
           'user-agent':
             USER_AGENT,
+
           accept:
             'text/html,application/xhtml+xml'
         },
+
         signal:
           AbortSignal.timeout(
             20_000
@@ -1369,8 +1640,10 @@ async function fetchListingPage({
     return {
       html:
         initialHtml,
+
       effectivePageSize:
         requestedPageSize,
+
       requestUrl:
         baseUrl
     };
@@ -1405,8 +1678,10 @@ async function fetchListingPage({
 
       return {
         ...result,
+
         effectivePageSize:
           requestedPageSize,
+
         requestUrl:
           result.url
       };
@@ -1419,8 +1694,10 @@ async function fetchListingPage({
   return {
     html:
       initialHtml,
+
     effectivePageSize:
       LEGACY_LISTING_PAGE_SIZE,
+
     requestUrl:
       baseUrl
   };
@@ -1428,6 +1705,65 @@ async function fetchListingPage({
 
 function taskKey(task) {
   return `${task.kind}:${task.url}`;
+}
+
+function addTasks(
+  queue,
+  tasks
+) {
+  const known =
+    new Set(
+      queue.tasks.map(
+        taskKey
+      )
+    );
+
+  for (
+    const task of tasks
+  ) {
+    const key =
+      taskKey(task);
+
+    if (
+      known.has(key)
+    ) {
+      continue;
+    }
+
+    queue.tasks.push({
+      attempts: 0,
+      notBefore: 0,
+      priority: 50,
+      ...task
+    });
+
+    known.add(key);
+  }
+}
+
+function removeTask(
+  queue,
+  task
+) {
+  const key =
+    taskKey(task);
+
+  const index =
+    queue.tasks.findIndex(
+      candidate =>
+        taskKey(
+          candidate
+        ) === key
+    );
+
+  if (
+    index >= 0
+  ) {
+    queue.tasks.splice(
+      index,
+      1
+    );
+  }
 }
 
 function clamp(
@@ -1447,32 +1783,37 @@ function clamp(
 function isRateLimitError(
   error
 ) {
-  return (
-    error?.status === 429 ||
-    error?.status === 503 ||
-    /rate.?limit|too many requests/i.test(
-      error?.message || ''
-    )
-  );
+  return error?.status ===
+      429 ||
+    error?.status ===
+      503 ||
+    /rate.?limit|too many requests/i
+      .test(
+        error?.message ||
+        ''
+      );
 }
 
 function isTransientError(
   error
 ) {
-  return (
-    isRateLimitError(
-      error
+  return isRateLimitError(
+    error
+  ) ||
+    [
+      408,
+      425,
+      502,
+      504
+    ].includes(
+      error?.status
     ) ||
-    error?.status === 408 ||
-    error?.status === 425 ||
-    error?.status === 502 ||
-    error?.status === 504 ||
-    error?.status >= 500 ||
+    error?.status >=
+      500 ||
     error?.name ===
       'TimeoutError' ||
     error?.name ===
-      'AbortError'
-  );
+      'AbortError';
 }
 
 function retryDelay(
@@ -1481,7 +1822,8 @@ function retryDelay(
   now
 ) {
   if (
-    error.retryAfterMs != null
+    error.retryAfterMs !=
+    null
   ) {
     return Math.max(
       1_000,
@@ -1490,7 +1832,8 @@ function retryDelay(
   }
 
   const exponent =
-    2 ** Math.min(
+    2 **
+    Math.min(
       Math.max(
         attempts - 1,
         0
@@ -1512,9 +1855,10 @@ function retryDelay(
   return Math.min(
     10 * 60_000,
     base * exponent
-  ) + (
-    now % 1_000
-  );
+  ) +
+    (
+      now % 1_000
+    );
 }
 
 function normalizeThrottle(
@@ -1522,8 +1866,10 @@ function normalizeThrottle(
   {
     minimumIntervalMs =
       DEFAULT_MIN_INTERVAL_MS,
+
     initialIntervalMs =
       DEFAULT_INITIAL_INTERVAL_MS,
+
     maximumIntervalMs =
       DEFAULT_MAX_INTERVAL_MS
   } = {}
@@ -1533,7 +1879,8 @@ function normalizeThrottle(
       0,
       Number(
         minimumIntervalMs
-      ) || 0
+      ) ||
+      0
     );
 
   const maximum =
@@ -1567,7 +1914,8 @@ function normalizeThrottle(
       clamp(
         Number(
           existing.intervalMs
-        ) || initial,
+        ) ||
+        initial,
         minimum,
         maximum
       ),
@@ -1577,7 +1925,8 @@ function normalizeThrottle(
         0,
         Number(
           existing.globalNotBefore
-        ) || 0
+        ) ||
+        0
       ),
 
     successStreak:
@@ -1585,7 +1934,8 @@ function normalizeThrottle(
         0,
         Number(
           existing.successStreak
-        ) || 0
+        ) ||
+        0
       )
   };
 
@@ -1606,7 +1956,8 @@ function speedUpThrottle(
     1;
 
   if (
-    throttle.successStreak >= 5
+    throttle.successStreak >=
+    5
   ) {
     throttle.intervalMs =
       Math.max(
@@ -1657,7 +2008,8 @@ function slowDownThrottle(
     throttle.globalNotBefore =
       Math.max(
         throttle.globalNotBefore,
-        now + retryMs
+        now +
+        retryMs
       );
 
     return;
@@ -1728,7 +2080,8 @@ function nextTaskReadyAt(
           0,
           Number(
             task.notBefore
-          ) || 0
+          ) ||
+          0
         )
     )
   );
@@ -1780,40 +2133,195 @@ function detailPriority(
   return 50;
 }
 
-function addTasks(
-  queue,
-  tasks
+function refreshIntervalFor(
+  auction,
+  now
 ) {
-  const known =
-    new Set(
-      queue.tasks.map(
-        taskKey
-      )
+  const endAt =
+    Date.parse(
+      auction?.endAt ||
+      ''
     );
 
+  if (
+    !Number.isFinite(
+      endAt
+    )
+  ) {
+    return 6 *
+      60 *
+      60_000;
+  }
+
+  const remaining =
+    endAt -
+    now;
+
+  if (
+    remaining <= 0
+  ) {
+    return 0;
+  }
+
+  if (
+    remaining <=
+    60 * 60_000
+  ) {
+    return 5 *
+      60_000;
+  }
+
+  if (
+    remaining <=
+    6 * 60 * 60_000
+  ) {
+    return 15 *
+      60_000;
+  }
+
+  if (
+    remaining <=
+    24 * 60 * 60_000
+  ) {
+    return 60 *
+      60_000;
+  }
+
+  return 6 *
+    60 *
+    60_000;
+}
+
+function shouldRefreshAuction(
+  auction,
+  now
+) {
+  if (!auction) {
+    return true;
+  }
+
+  if (
+    auction.finalPrice !=
+    null
+  ) {
+    return false;
+  }
+
+  const endAt =
+    Date.parse(
+      auction.endAt ||
+      ''
+    );
+
+  if (
+    Number.isFinite(
+      endAt
+    ) &&
+    endAt <= now
+  ) {
+    return true;
+  }
+
+  const capturedAt =
+    Date.parse(
+      auction.capturedAt ||
+      auction.firstCapturedAt ||
+      ''
+    );
+
+  if (
+    !Number.isFinite(
+      capturedAt
+    )
+  ) {
+    return true;
+  }
+
+  return now -
+    capturedAt >=
+    refreshIntervalFor(
+      auction,
+      now
+    );
+}
+
+function listingHasNextLink(
+  html,
+  nextStart
+) {
+  const decoded =
+    decodeEntities(
+      html
+    );
+
+  const escaped =
+    String(
+      nextStart
+    ).replace(
+      /[.*+?^${}()|[\]\\]/g,
+      '\\$&'
+    );
+
+  return new RegExp(
+    `(?:[?&]|&amp;)start=${escaped}(?:[&"'<>\\s]|$)`,
+    'i'
+  ).test(
+    decoded
+  );
+}
+
+function auctionIdFromUrl(
+  url
+) {
+  return Number(
+    url.match(
+      /-(\d{5,8})(?:\D|$)/
+    )?.[1]
+  ) ||
+    null;
+}
+
+function reusableImage(
+  byId,
+  item
+) {
+  const source =
+    item.sourceImages?.[0];
+
+  if (!source) {
+    return null;
+  }
+
   for (
-    const task of
-      tasks
+    const candidate of
+      byId.values()
   ) {
     if (
-      known.has(
-        taskKey(task)
-      )
+      candidate.id ===
+      item.id
     ) {
       continue;
     }
 
-    queue.tasks.push({
-      attempts: 0,
-      notBefore: 0,
-      priority: 50,
-      ...task
-    });
+    if (
+      candidate
+        .sourceImages?.[0] !==
+      source
+    ) {
+      continue;
+    }
 
-    known.add(
-      taskKey(task)
-    );
+    if (
+      candidate.image
+        ?.startsWith(
+          '/auction-images/'
+        )
+    ) {
+      return candidate.image;
+    }
   }
+
+  return null;
 }
 
 async function requestResource(
@@ -1821,7 +2329,8 @@ async function requestResource(
   fetchImpl
 ) {
   const image =
-    task.kind === 'image';
+    task.kind ===
+    'image';
 
   const response =
     await fetchImpl(
@@ -1830,13 +2339,16 @@ async function requestResource(
         headers: {
           'user-agent':
             USER_AGENT,
+
           accept:
             image
               ? 'image/*'
               : 'text/html,application/xhtml+xml'
         },
+
         redirect:
           'error',
+
         signal:
           AbortSignal.timeout(
             20_000
@@ -1863,7 +2375,8 @@ async function saveImageResponse(
     (
       response.headers.get(
         'content-type'
-      ) || ''
+      ) ||
+      ''
     ).toLowerCase();
 
   if (
@@ -1872,10 +2385,7 @@ async function saveImageResponse(
     )
   ) {
     throw new Error(
-      `Unexpected image content type: ${
-        contentType ||
-        'missing'
-      }`
+      `Unexpected image content type: ${contentType || 'missing'}`
     );
   }
 
@@ -1914,7 +2424,8 @@ async function saveImageResponse(
       'images'
     ),
     {
-      recursive: true
+      recursive:
+        true
     }
   );
 
@@ -1932,7 +2443,9 @@ async function saveImageResponse(
 
 export async function enqueueRollingDiscovery({
   dataDir,
-  pages = 12,
+  pages,
+  maxPages =
+    DEFAULT_MAX_LISTING_PAGES,
   now = Date.now(),
   force = false
 } = {}) {
@@ -1949,32 +2462,21 @@ export async function enqueueRollingDiscovery({
     );
 
   const queue =
-    await readJson(
-      queuePath,
-      emptyQueue()
+    normalizeQueue(
+      await readJson(
+        queuePath,
+        emptyQueue()
+      )
     );
 
-  queue.tasks ||= [];
-  queue.listingSession ||= {};
-
-  /*
-   * On restart an existing persisted
-   * queue is resumed exactly as-is.
-   *
-   * A restart itself must not create
-   * another discovery pass.
-   */
   if (
     !force &&
-    queue.tasks.length > 0
+    queue.tasks.length >
+      0
   ) {
     return queue;
   }
 
-  /*
-   * Never duplicate an existing
-   * listing chain.
-   */
   if (
     queue.tasks.some(
       task =>
@@ -1985,20 +2487,55 @@ export async function enqueueRollingDiscovery({
     return queue;
   }
 
-  const listingTarget =
+  const exactPages =
+    Number.isFinite(
+      pages
+    )
+      ? Math.max(
+          1,
+          Number(pages)
+        )
+      : null;
+
+  const pageLimit =
+    exactPages ??
     Math.max(
-      0,
-      pages *
-      LEGACY_LISTING_PAGE_SIZE
+      1,
+      Number(
+        maxPages
+      ) ||
+      DEFAULT_MAX_LISTING_PAGES
     );
 
-  if (
-    listingTarget <= 0
-  ) {
-    return queue;
-  }
+  queue.listingSession =
+    {};
 
-  queue.listingSession = {};
+  queue.discovery = {
+    startedAt:
+      new Date(now)
+        .toISOString(),
+
+    completedAt:
+      null,
+
+    pagesFetched:
+      0,
+
+    listingsSeen:
+      0,
+
+    complete:
+      false,
+
+    maxPages:
+      pageLimit,
+
+    seenAuctionIds:
+      []
+  };
+
+  queue.needsFullDiscovery =
+    false;
 
   addTasks(
     queue,
@@ -2013,7 +2550,15 @@ export async function enqueueRollingDiscovery({
         listingStart:
           0,
 
-        listingTarget,
+        listingPage:
+          0,
+
+        maxPages:
+          pageLimit,
+
+        stopOnShortPage:
+          exactPages ==
+          null,
 
         requestedPageSize:
           LISTING_PAGE_SIZE,
@@ -2077,13 +2622,12 @@ export async function processRollingTask({
     );
 
   const queue =
-    await readJson(
-      queuePath,
-      emptyQueue()
+    normalizeQueue(
+      await readJson(
+        queuePath,
+        emptyQueue()
+      )
     );
-
-  queue.tasks ||= [];
-  queue.listingSession ||= {};
 
   const {
     minimum,
@@ -2121,10 +2665,12 @@ export async function processRollingTask({
         null,
 
       adaptiveIntervalMs:
-        queue.throttle.intervalMs,
+        queue.throttle
+          .intervalMs,
 
       waitMs:
-        allowedAt - now
+        allowedAt -
+        now
     };
   }
 
@@ -2168,7 +2714,8 @@ export async function processRollingTask({
 
     return {
       status:
-        taskReadyAt == null
+        taskReadyAt ==
+        null
           ? 'idle'
           : 'waiting',
 
@@ -2183,10 +2730,12 @@ export async function processRollingTask({
         null,
 
       adaptiveIntervalMs:
-        queue.throttle.intervalMs,
+        queue.throttle
+          .intervalMs,
 
       waitMs:
-        taskReadyAt == null
+        taskReadyAt ==
+        null
           ? IDLE_POLL_MS
           : Math.max(
               1,
@@ -2202,6 +2751,7 @@ export async function processRollingTask({
       {
         updatedAt:
           null,
+
         auctions:
           []
       }
@@ -2209,20 +2759,16 @@ export async function processRollingTask({
 
   const byId =
     new Map(
-      archive.auctions.map(
+      (
+        archive.auctions ||
+        []
+      ).map(
         item => [
           item.id,
           item
         ]
       )
     );
-
-  queue.tasks.splice(
-    queue.tasks.indexOf(
-      task
-    ),
-    1
-  );
 
   queue.lastRequestAt =
     new Date(
@@ -2231,6 +2777,9 @@ export async function processRollingTask({
 
   queue.updatedAt =
     queue.lastRequestAt;
+
+  queue.version =
+    ROLLING_QUEUE_VERSION;
 
   await writeJsonAtomic(
     queuePath,
@@ -2266,14 +2815,6 @@ export async function processRollingTask({
               0
             );
 
-      const listingTarget =
-        Number.isFinite(
-          task.listingTarget
-        )
-          ? task.listingTarget
-          : start +
-            LEGACY_LISTING_PAGE_SIZE;
-
       const requestedPageSize =
         task.requestedPageSize ||
         LISTING_PAGE_SIZE;
@@ -2282,8 +2823,10 @@ export async function processRollingTask({
         await fetchListingPage({
           start,
           fetchImpl,
+
           session:
             queue.listingSession,
+
           requestedPageSize
         });
 
@@ -2295,29 +2838,112 @@ export async function processRollingTask({
       listingResultCount =
         urls.length;
 
+      const discovery =
+        queue.discovery ||
+        {
+          startedAt:
+            queue.lastDiscoveryAt ||
+            new Date(
+              now
+            ).toISOString(),
+
+          completedAt:
+            null,
+
+          pagesFetched:
+            0,
+
+          listingsSeen:
+            0,
+
+          complete:
+            false,
+
+          maxPages:
+            task.maxPages ||
+            DEFAULT_MAX_LISTING_PAGES,
+
+          seenAuctionIds:
+            []
+        };
+
+      const seenIds =
+        new Set(
+          discovery.seenAuctionIds ||
+          []
+        );
+
+      const newUrls = [];
+
+      for (
+        const url of urls
+      ) {
+        const id =
+          auctionIdFromUrl(
+            url
+          );
+
+        if (
+          id &&
+          seenIds.has(id)
+        ) {
+          continue;
+        }
+
+        if (id) {
+          seenIds.add(
+            id
+          );
+        }
+
+        newUrls.push(
+          url
+        );
+      }
+
+      discovery.pagesFetched =
+        Number(
+          discovery.pagesFetched ||
+          0
+        ) + 1;
+
+      discovery.listingsSeen =
+        seenIds.size ||
+        Number(
+          discovery.listingsSeen ||
+          0
+        ) +
+        newUrls.length;
+
+      discovery.seenAuctionIds =
+        [
+          ...seenIds
+        ];
+
+      queue.discovery =
+        discovery;
+
       addTasks(
         queue,
-        urls.flatMap(
+        newUrls.flatMap(
           url => {
             const id =
-              Number(
-                url.match(
-                  /-(\d{5,8})(?:\D|$)/
-                )?.[1]
+              auctionIdFromUrl(
+                url
               );
 
             const previous =
-              byId.get(id);
+              id
+                ? byId.get(
+                    id
+                  )
+                : null;
 
-            /*
-             * Finished auctions are
-             * permanent archive data
-             * and never fetched again.
-             */
             if (
-              previous
-                ?.finalPrice !=
-              null
+              !shouldRefreshAuction(
+                previous,
+                now
+              )
             ) {
               return [];
             }
@@ -2330,7 +2956,7 @@ export async function processRollingTask({
                 url,
 
                 auctionId:
-                  id || null,
+                  id,
 
                 priority:
                   detailPriority(
@@ -2350,10 +2976,55 @@ export async function processRollingTask({
         start +
         result.effectivePageSize;
 
+      const pageIndex =
+        Number.isFinite(
+          task.listingPage
+        )
+          ? task.listingPage
+          : 0;
+
+      const nextPage =
+        pageIndex + 1;
+
+      let hasMore;
+
       if (
-        nextStart <
-        listingTarget
+        Number.isFinite(
+          task.listingTarget
+        )
       ) {
+        hasMore =
+          nextStart <
+          task.listingTarget;
+      } else {
+        const pageLimit =
+          Math.max(
+            1,
+            Number(
+              task.maxPages
+            ) ||
+            DEFAULT_MAX_LISTING_PAGES
+          );
+
+        const shortPage =
+          urls.length <
+          result.effectivePageSize;
+
+        hasMore =
+          urls.length > 0 &&
+          nextPage <
+            pageLimit &&
+          (
+            !task.stopOnShortPage ||
+            !shortPage ||
+            listingHasNextLink(
+              result.html,
+              nextStart
+            )
+          );
+      }
+
+      if (hasMore) {
         addTasks(
           queue,
           [
@@ -2367,7 +3038,17 @@ export async function processRollingTask({
               listingStart:
                 nextStart,
 
-              listingTarget,
+              listingPage:
+                nextPage,
+
+              maxPages:
+                task.maxPages,
+
+              stopOnShortPage:
+                task.stopOnShortPage,
+
+              listingTarget:
+                task.listingTarget,
 
               requestedPageSize,
 
@@ -2379,6 +3060,19 @@ export async function processRollingTask({
             }
           ]
         );
+      } else if (
+        queue.discovery
+      ) {
+        queue.discovery.complete =
+          true;
+
+        queue.discovery.completedAt =
+          new Date(
+            now
+          ).toISOString();
+
+        queue.discovery.seenAuctionIds =
+          [];
       }
     } else {
       response =
@@ -2410,20 +3104,33 @@ export async function processRollingTask({
           previous.startAt;
       }
 
+      const sharedImage =
+        reusableImage(
+          byId,
+          item
+        );
+
       const merged = {
         ...previous,
         ...item,
 
         image:
           previous?.image ||
-          item
-            .sourceImages?.[0] ||
+          sharedImage ||
+          item.sourceImages
+            ?.[0] ||
           null,
 
         images:
           previous?.images ||
-          item.sourceImages ||
-          [],
+          (
+            sharedImage
+              ? [
+                  sharedImage
+                ]
+              : item.sourceImages ||
+                []
+          ),
 
         firstCapturedAt:
           previous
@@ -2472,12 +3179,12 @@ export async function processRollingTask({
       }
 
       if (
-        !previous?.image
+        !merged.image
           ?.startsWith(
             '/auction-images/'
           ) &&
-        item
-          .sourceImages?.[0]
+        item.sourceImages
+          ?.[0]
       ) {
         addTasks(
           queue,
@@ -2487,8 +3194,9 @@ export async function processRollingTask({
                 'image',
 
               url:
-                item
-                  .sourceImages[0],
+                item.sourceImages[
+                  0
+                ],
 
               auctionId:
                 item.id,
@@ -2549,7 +3257,9 @@ export async function processRollingTask({
           task.auctionId,
           {
             ...auction,
+
             image,
+
             images: [
               image
             ]
@@ -2568,6 +3278,11 @@ export async function processRollingTask({
       );
     }
 
+    removeTask(
+      queue,
+      task
+    );
+
     const updatedAt =
       new Date(
         now
@@ -2580,8 +3295,11 @@ export async function processRollingTask({
         archivePath,
         {
           updatedAt,
+
           auctions:
-            [...byId.values()]
+            [
+              ...byId.values()
+            ]
         }
       );
     }
@@ -2612,6 +3330,13 @@ export async function processRollingTask({
       queue
     );
 
+    const pageSuffix =
+      task.kind ===
+        'listing' &&
+      queue.discovery
+        ? `; page ${queue.discovery.pagesFetched}; ${queue.discovery.listingsSeen} unique listings seen`
+        : '';
+
     const resultSuffix =
       listingResultCount ==
       null
@@ -2620,8 +3345,7 @@ export async function processRollingTask({
 
     logger.info(
       `Rolling fetch completed: ${task.kind} ${task.url} ` +
-      `(${queue.tasks.length} pending${resultSuffix}; ` +
-      `pace ${queue.throttle.intervalMs}ms)`
+      `(${queue.tasks.length} pending${resultSuffix}${pageSuffix}; pace ${queue.throttle.intervalMs}ms)`
     );
 
     return {
@@ -2642,10 +3366,12 @@ export async function processRollingTask({
         null,
 
       adaptiveIntervalMs:
-        queue.throttle.intervalMs,
+        queue.throttle
+          .intervalMs,
 
       waitMs:
-        queue.throttle.intervalMs
+        queue.throttle
+          .intervalMs
     };
   } catch (error) {
     const attempts =
@@ -2661,7 +3387,43 @@ export async function processRollingTask({
         now
       );
 
-    if (
+    const persisted =
+      queue.tasks.find(
+        candidate =>
+          taskKey(
+            candidate
+          ) ===
+          taskKey(
+            task
+          )
+      );
+
+    if (persisted) {
+      if (
+        attempts <= 8
+      ) {
+        persisted.attempts =
+          attempts;
+
+        persisted.notBefore =
+          now +
+          retryMs;
+
+        persisted.priority =
+          Math.max(
+            10,
+            (
+              task.priority ||
+              50
+            ) - 5
+          );
+      } else {
+        removeTask(
+          queue,
+          task
+        );
+      }
+    } else if (
       attempts <= 8
     ) {
       addTasks(
@@ -2728,9 +3490,7 @@ export async function processRollingTask({
       );
 
     logger.warn(
-      `Rolling fetch failed: ${error.message}; ` +
-      `attempt ${attempts}; ` +
-      `pace ${queue.throttle.intervalMs}ms` +
+      `Rolling fetch failed: ${error.message}; attempt ${attempts}; pace ${queue.throttle.intervalMs}ms` +
       (
         globalWaitMs
           ? `; cooldown ${globalWaitMs}ms`
@@ -2756,7 +3516,8 @@ export async function processRollingTask({
         null,
 
       adaptiveIntervalMs:
-        queue.throttle.intervalMs,
+        queue.throttle
+          .intervalMs,
 
       waitMs,
 
@@ -2786,13 +3547,15 @@ async function cacheMainImage(
 
       images:
         previous.images ||
-        [previous.image]
+        [
+          previous.image
+        ]
     };
   }
 
   if (
-    !auction
-      .sourceImages?.[0]
+    !auction.sourceImages
+      ?.[0]
   ) {
     return auction;
   }
@@ -2800,17 +3563,21 @@ async function cacheMainImage(
   try {
     const response =
       await fetchImpl(
-        auction
-          .sourceImages[0],
+        auction.sourceImages[
+          0
+        ],
         {
           headers: {
             'user-agent':
               USER_AGENT,
+
             accept:
               'image/*'
           },
+
           redirect:
             'error',
+
           signal:
             AbortSignal.timeout(
               20_000
@@ -2822,16 +3589,18 @@ async function cacheMainImage(
       return auction;
     }
 
-    if (
-      !(
+    const contentType =
+      (
         response.headers.get(
           'content-type'
-        ) || ''
+        ) ||
+        ''
+      ).toLowerCase();
+
+    if (
+      !contentType.startsWith(
+        'image/'
       )
-        .toLowerCase()
-        .startsWith(
-          'image/'
-        )
     ) {
       return auction;
     }
@@ -2848,11 +3617,6 @@ async function cacheMainImage(
     ) {
       return auction;
     }
-
-    const contentType =
-      response.headers.get(
-        'content-type'
-      ) || '';
 
     const extension =
       contentType.includes(
@@ -2874,7 +3638,8 @@ async function cacheMainImage(
         'images'
       ),
       {
-        recursive: true
+        recursive:
+          true
       }
     );
 
@@ -2905,8 +3670,11 @@ async function cacheMainImage(
 export async function collectAuctions({
   dataDir,
   fetchImpl = fetch,
-  pages = 4,
-  maxDetails = 48,
+  pages,
+  maxPages =
+    DEFAULT_MAX_LISTING_PAGES,
+  maxDetails =
+    Number.POSITIVE_INFINITY,
   logger = console
 } = {}) {
   if (!dataDir) {
@@ -2927,6 +3695,7 @@ export async function collectAuctions({
       {
         updatedAt:
           null,
+
         auctions:
           []
       }
@@ -2934,7 +3703,10 @@ export async function collectAuctions({
 
   const byId =
     new Map(
-      existing.auctions.map(
+      (
+        existing.auctions ||
+        []
+      ).map(
         item => [
           item.id,
           item
@@ -2948,49 +3720,90 @@ export async function collectAuctions({
   const listingSession =
     {};
 
-  const listingTarget =
+  const exactPages =
+    Number.isFinite(
+      pages
+    )
+      ? Math.max(
+          1,
+          Number(pages)
+        )
+      : null;
+
+  const pageLimit =
+    exactPages ??
     Math.max(
-      0,
-      pages *
-      LEGACY_LISTING_PAGE_SIZE
+      1,
+      Number(
+        maxPages
+      ) ||
+      DEFAULT_MAX_LISTING_PAGES
     );
 
   let listingStart =
     0;
 
-  let listingPage =
-    1;
-
-  while (
-    listingStart <
-    listingTarget
+  for (
+    let page = 0;
+    page <
+      pageLimit;
+    page += 1
   ) {
     try {
       const result =
         await fetchListingPage({
           start:
             listingStart,
+
           fetchImpl,
+
           session:
             listingSession,
+
           requestedPageSize:
             LISTING_PAGE_SIZE
         });
 
-      extractListingUrls(
-        result.html
-      ).forEach(
+      const urls =
+        extractListingUrls(
+          result.html
+        );
+
+      urls.forEach(
         url =>
           listingUrls.add(
             url
           )
       );
 
-      listingStart +=
+      const nextStart =
+        listingStart +
         result.effectivePageSize;
+
+      if (
+        exactPages ==
+          null &&
+        urls.length <
+          result.effectivePageSize &&
+        !listingHasNextLink(
+          result.html,
+          nextStart
+        )
+      ) {
+        break;
+      }
+
+      if (
+        !urls.length
+      ) {
+        break;
+      }
+
+      listingStart =
+        nextStart;
     } catch (error) {
       logger.warn(
-        `Listing page ${listingPage} failed: ${error.message}`
+        `Listing page ${page + 1} failed: ${error.message}`
       );
 
       listingStart +=
@@ -3000,18 +3813,32 @@ export async function collectAuctions({
           ? LISTING_PAGE_SIZE
           : LEGACY_LISTING_PAGE_SIZE;
     }
-
-    listingPage +=
-      1;
   }
 
   const incoming = [];
 
   const detailUrls =
-    [...listingUrls]
+    [
+      ...listingUrls
+    ]
+      .filter(
+        url =>
+          shouldRefreshAuction(
+            byId.get(
+              auctionIdFromUrl(
+                url
+              )
+            ),
+            Date.now()
+          )
+      )
       .slice(
         0,
-        maxDetails
+        Number.isFinite(
+          maxDetails
+        )
+          ? maxDetails
+          : undefined
       );
 
   for (
@@ -3086,21 +3913,37 @@ export async function collectAuctions({
   }
 
   for (
-    const item of
-      incoming
+    const item of incoming
   ) {
     const previous =
       byId.get(
         item.id
       );
 
-    const withImage =
-      await cacheMainImage(
-        item,
-        dataDir,
-        fetchImpl,
-        previous
+    const sharedImage =
+      reusableImage(
+        byId,
+        item
       );
+
+    const withImage =
+      sharedImage
+        ? {
+            ...item,
+
+            image:
+              sharedImage,
+
+            images: [
+              sharedImage
+            ]
+          }
+        : await cacheMainImage(
+            item,
+            dataDir,
+            fetchImpl,
+            previous
+          );
 
     byId.set(
       item.id,
@@ -3141,32 +3984,34 @@ export async function collectAuctions({
       .toISOString();
 
   const auctions =
-    [...byId.values()]
-      .map(
-        item => {
-          if (
-            item.finalPrice ==
-              null &&
-            item.endAt &&
-            Date.parse(
-              item.endAt
-            ) <= Date.now() &&
-            item.currentBid > 0
-          ) {
-            return {
-              ...item,
+    [
+      ...byId.values()
+    ].map(
+      item => {
+        if (
+          item.finalPrice ==
+            null &&
+          item.endAt &&
+          Date.parse(
+            item.endAt
+          ) <= Date.now() &&
+          item.currentBid >
+            0
+        ) {
+          return {
+            ...item,
 
-              finalPrice:
-                item.currentBid,
+            finalPrice:
+              item.currentBid,
 
-              finalizedAt:
-                updatedAt
-            };
-          }
-
-          return item;
+            finalizedAt:
+              updatedAt
+          };
         }
-      );
+
+        return item;
+      }
+    );
 
   const archive = {
     updatedAt,
@@ -3179,8 +4024,7 @@ export async function collectAuctions({
   );
 
   logger.info(
-    `Collected ${incoming.length} auctions; ` +
-    `archive contains ${archive.auctions.length}`
+    `Collected ${incoming.length} auctions; archive contains ${archive.auctions.length}`
   );
 
   return archive;
@@ -3203,6 +4047,7 @@ export async function ensureDailyGame({
       {
         updatedAt:
           null,
+
         games:
           {}
       }
@@ -3244,7 +4089,8 @@ export async function ensureDailyGame({
 
   daily.games[
     dateKey
-  ] = game;
+  ] =
+    game;
 
   const retainedDates =
     Object.keys(
