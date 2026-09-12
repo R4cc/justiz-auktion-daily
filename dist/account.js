@@ -256,12 +256,12 @@ async function pullCase(visit) {
   reel.innerHTML = cards.map(item => tierCard(item.rarity)).join('');
   const pause = ms => new Promise(resolve => setTimeout(resolve, ms));
   if (matchMedia('(prefers-reduced-motion: reduce)').matches) {
-    // Preserve the reveal pacing without rapid horizontal travel or flashing.
+    // Keep the centered, low-motion reveal brisk without horizontal travel or flashing.
     reel.classList.add('case-reel-reduced');
     for (let step = 0; step < 8; step++) {
       if (visit !== accountVisit || !reel.isConnected) return;
       reel.innerHTML = tierCard(cards[step * 4].rarity);
-      await pause(650);
+      await pause(325);
     }
     reel.innerHTML = tierCard(result.item.rarity);
   } else {

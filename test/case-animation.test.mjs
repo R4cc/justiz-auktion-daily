@@ -54,13 +54,13 @@ for (const reduced of [false, true]) {
       assert.equal(run.revealed, 0);
       await run.tick();
     }
-    assert.equal(run.elapsed, 5200);
+    assert.equal(run.elapsed, reduced ? 2600 : 5200);
     assert.equal(run.revealed, 0);
     assert.match(run.status.innerHTML, /legendary/);
     assert.ok(run.frames.every(frame => !/SECRET|<img|secret.jpg|decoy.jpg/.test(frame)));
     if (reduced) assert.equal(run.reel.children.length, 1);
     await run.tick(); await done;
-    assert.equal(run.elapsed, 5950);
+    assert.equal(run.elapsed, reduced ? 3350 : 5950);
     assert.equal(run.revealed, 1);
     assert.equal(run.context.accountResult.title, 'SECRET WINNER');
     assert.equal(run.context.caseOpening, null);

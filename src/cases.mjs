@@ -7,23 +7,23 @@ export const RARITIES = [
   { id: 'common', name: 'Gewöhnlich' }, { id: 'uncommon', name: 'Ungewöhnlich' },
   { id: 'rare', name: 'Selten' }, { id: 'epic', name: 'Episch' }, { id: 'legendary', name: 'Legendär' }
 ];
-// Integer tickets keep the refund chance exactly 50%, with a 94.25% expected return.
 export const CASE_WEIGHTS = [5000, 3500, 1200, 290, 10];
-export const SALE_MULTIPLIERS = [.1, 1, 2.5, 7.5, 25];
+export const CASE_RETURN_TARGET = .9425;
 export const CASES = [
-  { id: 'fundkiste', name: 'Seized Goods Case', category: 'mixed', badge: 'JG', baseCost: 100, referenceValue: 100 },
-  { id: 'schatzkiste', name: 'Contraband Case', category: 'premium', badge: 'JG+', baseCost: 250, referenceValue: 500 },
-  { id: 'cars', name: 'Car Case', nameDe: 'Auto-Kiste', category: 'cars', badge: 'CAR', baseCost: 500, referenceValue: 5000 },
-  { id: 'wine', name: 'Wine Case', nameDe: 'Wein-Kiste', category: 'wine', badge: 'VIN', baseCost: 150, referenceValue: 80 },
-  { id: 'electronics', name: 'Electronics Case', nameDe: 'Elektronik-Kiste', category: 'electronics', badge: 'ELEC', baseCost: 200, referenceValue: 200 },
-  { id: 'tools', name: 'Tool Case', nameDe: 'Werkzeug-Kiste', category: 'tools', badge: 'TOOL', baseCost: 150, referenceValue: 100 },
-  { id: 'jewellery', name: 'Jewellery Case', nameDe: 'Schmuck-Kiste', category: 'jewellery', badge: 'GEM', baseCost: 350, referenceValue: 500 },
-  { id: 'collectibles', name: 'Collector Case', nameDe: 'Sammler-Kiste', category: 'collectibles', badge: 'RARE', baseCost: 200, referenceValue: 100 }
+  { id: 'fundkiste', name: 'Seized Goods Case', category: 'mixed', badge: 'JG' },
+  { id: 'schatzkiste', name: 'Contraband Case', category: 'premium', badge: 'JG+' },
+  { id: 'cars', name: 'Car Case', nameDe: 'Auto-Kiste', category: 'cars', badge: 'CAR' },
+  { id: 'wine', name: 'Wine Case', nameDe: 'Wein-Kiste', category: 'wine', badge: 'VIN' },
+  { id: 'electronics', name: 'Electronics Case', nameDe: 'Elektronik-Kiste', category: 'electronics', badge: 'ELEC' },
+  { id: 'tools', name: 'Tool Case', nameDe: 'Werkzeug-Kiste', category: 'tools', badge: 'TOOL' },
+  { id: 'jewellery', name: 'Jewellery Case', nameDe: 'Schmuck-Kiste', category: 'jewellery', badge: 'GEM' },
+  { id: 'collectibles', name: 'Collector Case', nameDe: 'Sammler-Kiste', category: 'collectibles', badge: 'RARE' }
 ];
 const hash = value => createHash('sha256').update(JSON.stringify(value)).digest('hex');
-const CONFIG = hash({ version: 1, cases: CASES, rarities: RARITIES, weights: CASE_WEIGHTS, sales: SALE_MULTIPLIERS });
+const CONFIG = hash({ version: 2, cases: CASES, rarities: RARITIES, weights: CASE_WEIGHTS, returnTarget: CASE_RETURN_TARGET });
 const DAY_MS = 86400000;
 export const rotationDate = (now = Date.now()) => new Date(now).toISOString().slice(0, 10);
+export const tokenValue = price => Math.max(1, Math.round(price));
 
 // Retained for callers that need the original archive-wide rarity heuristic.
 export function itemRarity(price, familySize) {
@@ -79,13 +79,15 @@ function edition(definition, families, dayIndex) {
       }
     });
   }
-  const prices = (selected.length ? selected : stock).map(item => item.price).sort((a, b) => a - b);
-  const median = prices.length ? (prices[Math.floor((prices.length - 1) / 2)] + prices[Math.floor(prices.length / 2)]) / 2 : definition.referenceValue;
-  const marketFactor = Math.max(.75, Math.min(1.5, 1 + Math.log2((median + 1) / (definition.referenceValue + 1)) * .12));
-  const offerFactor = [.9, 1, 1.1, 1.05, .95][(dayIndex + parseInt(hash(definition.id).slice(0, 8), 16)) % 5];
-  const cost = Math.max(50, Math.round(definition.baseCost * marketFactor * offerFactor / 10) * 10);
-  const items = selected.map(item => ({ ...item, sellValue: Math.round(cost * SALE_MULTIPLIERS[RARITIES.findIndex(r => r.id === item.rarity)]) }));
+  const items = selected.map(item => ({ ...item, sellValue: tokenValue(item.price) }));
   const available = items.length >= 5;
+  const totalWeight = CASE_WEIGHTS.reduce((sum, weight) => sum + weight, 0);
+  const expectedValue = available ? RARITIES.reduce((sum, rarity, tier) => {
+    const pool = items.filter(item => item.rarity === rarity.id);
+    const average = pool.reduce((value, item) => value + item.sellValue, 0) / pool.length;
+    return sum + average * CASE_WEIGHTS[tier] / totalWeight;
+  }, 0) : 0;
+  const cost = available ? Math.max(1, Math.round(expectedValue / CASE_RETURN_TARGET)) : 0;
   return { id: definition.id, name: definition.name, nameDe: definition.nameDe || definition.name,
     category: definition.category, badge: definition.badge, cost, available, items,
     weights: CASE_WEIGHTS.map(weight => available ? weight : 0) };

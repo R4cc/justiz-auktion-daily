@@ -1,7 +1,7 @@
 import { randomBytes, randomUUID, createHash, scrypt, timingSafeEqual } from 'node:crypto';
 import { promisify } from 'node:util';
 import { withDatabase, transaction } from './database.mjs';
-import { drawItem } from './cases.mjs';
+import { drawItem, tokenValue } from './cases.mjs';
 import { scoreGuess } from './core.mjs';
 
 const derive = promisify(scrypt);
@@ -13,6 +13,7 @@ export class AccountError extends Error {
   constructor(code, status = 400) { super(code); this.status = status; }
 }
 const fail = (code, status) => { throw new AccountError(code, status); };
+const currentItemValue = item => ({ ...item, sellValue: tokenValue(item.price) });
 
 function credentials(username, password) {
   if (typeof username !== 'string' || !/^[a-zA-Z0-9_-]{3,32}$/.test(username)) fail('invalid_username');
@@ -257,7 +258,7 @@ export class Accounts {
   }
   inventory(user) {
     return this.db(db => db.prepare('SELECT id, item, created_at FROM inventory WHERE user_id = ? AND sold_at IS NULL ORDER BY created_at DESC, id')
-      .all(user.id).map(row => ({ ...JSON.parse(row.item), id: row.id, createdAt: row.created_at })));
+      .all(user.id).map(row => ({ ...currentItemValue(JSON.parse(row.item)), id: row.id, createdAt: row.created_at })));
   }
   openCase(user, catalog, caseId, requestId, revision = catalog.revision) {
     if (typeof requestId !== 'string' || !/^[a-zA-Z0-9-]{16,80}$/.test(requestId)) fail('invalid_request');
@@ -265,7 +266,7 @@ export class Accounts {
       const previous = db.prepare('SELECT case_id, item FROM case_openings WHERE user_id = ? AND request_id = ?').get(user.id, requestId);
       if (previous) {
         if (previous.case_id !== caseId) fail('request_conflict', 409);
-        return JSON.parse(previous.item);
+        return currentItemValue(JSON.parse(previous.item));
       }
       if (revision !== catalog.revision) fail('catalog_changed', 409);
       const box = catalog.cases.find(box => box.id === caseId);
@@ -283,7 +284,7 @@ export class Accounts {
     return this.atomic(db => {
       const row = db.prepare('SELECT * FROM inventory WHERE id = ? AND user_id = ?').get(String(id), user.id);
       if (!row) fail('item_not_found', 404);
-      const item = JSON.parse(row.item);
+      const item = currentItemValue(JSON.parse(row.item));
       if (row.sold_at === null) {
         db.prepare('UPDATE inventory SET sold_at = ? WHERE id = ?').run(this.now(), row.id);
         db.prepare('UPDATE users SET tokens = tokens + ? WHERE id = ?').run(item.sellValue, user.id);

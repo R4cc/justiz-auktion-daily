@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdtemp, rm } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { caseCatalog, loadCaseCatalog, drawItem, publicCaseCatalog, RARITIES } from '../src/cases.mjs';
+import { CASE_RETURN_TARGET, caseCatalog, loadCaseCatalog, drawItem, publicCaseCatalog, RARITIES, tokenValue } from '../src/cases.mjs';
 import { Accounts } from '../src/accounts.mjs';
 import { closeDataStore, upsertAuctions } from '../src/database.mjs';
 
@@ -38,34 +38,29 @@ test('each themed case uses only its own category and excludes vehicle accessori
   }
 });
 
-test('all rotations keep exactly half of draws refundable and a non-linear payout curve with rare jackpots', () => {
+test('sale values follow auction euros and case prices preserve the target return', () => {
+  assert.equal(tokenValue(130), 130);
+  assert.equal(tokenValue(60), 60);
   for (let offset = 0; offset < 7; offset++) {
     const catalog = caseCatalog(stock, day + offset * 86400000);
     for (const box of catalog.cases) {
       assert.ok(box.available);
       const total = box.weights.reduce((sum, n) => sum + n, 0);
-      let refundable = 0, expected = 0;
-      const values = RARITIES.map((rarity, tier) => {
+      let expected = 0;
+      RARITIES.forEach((rarity, tier) => {
         const pool = box.items.filter(item => item.rarity === rarity.id);
         assert.ok(pool.length);
-        assert.ok(pool.every(item => item.sellValue === pool[0].sellValue && Number.isSafeInteger(item.sellValue)));
-        const value = pool[0].sellValue;
-        if (value >= box.cost) refundable += box.weights[tier];
-        expected += value * box.weights[tier] / total;
-        return value;
+        assert.ok(pool.every(item => item.sellValue === Math.max(1, Math.round(item.price)) && Number.isSafeInteger(item.sellValue)));
+        expected += pool.reduce((sum, item) => sum + item.sellValue, 0) / pool.length * box.weights[tier] / total;
       });
-      assert.equal(refundable / total, .5);
       assert.equal(box.weights[4] / total, .001);
-      assert.ok(Math.abs(expected / box.cost - .9425) < 1e-10);
-      assert.equal(values[4], 25 * box.cost);
-      const increments = values.slice(1).map((value, i) => value - values[i]);
-      assert.ok(increments.every((value, i) => !i || value > increments[i - 1]));
+      assert.equal(box.cost, Math.max(1, Math.round(expected / CASE_RETURN_TARGET)));
     }
   }
   // Exercise actual draw boundaries rather than just inspecting configured weights.
   const catalog = caseCatalog(stock, day);
   for (const box of catalog.cases) {
-    let refunds = 0, jackpots = 0;
+    let jackpots = 0;
     for (let ticket = 0; ticket < 10000; ticket++) {
       let calls = 0;
       const item = drawItem(catalog, box, limit => {
@@ -74,10 +69,10 @@ test('all rotations keep exactly half of draws refundable and a non-linear payou
         return result;
       });
       assert.ok(box.items.includes(item));
-      if (item.sellValue >= box.cost) refunds++;
+      assert.equal(item.sellValue, Math.max(1, Math.round(item.price)));
       if (item.rarity === 'legendary') jackpots++;
     }
-    assert.equal(refunds, 5000); assert.equal(jackpots, 10);
+    assert.equal(jackpots, 10);
   }
 });
 
@@ -131,8 +126,10 @@ test('daily editions survive archive updates and restarts; stale purchases fail 
   assert.throws(() => service.openCase(user, next, 'fundkiste', 'edition-purchase-0002', first.revision), /catalog_changed/);
   assert.equal(service.profile(user).tokens, balance);
   assert.deepEqual(service.openCase(user, next, 'fundkiste', 'edition-purchase-0001', first.revision), item);
+  const stored = service.db(db => db.prepare('SELECT item FROM inventory WHERE id = ?').get(item.id));
+  service.db(db => db.prepare('UPDATE inventory SET item = ? WHERE id = ?').run(JSON.stringify({ ...JSON.parse(stored.item), sellValue: 999999 }), item.id));
   const kept = service.inventory(user)[0];
-  assert.equal(kept.sellValue, item.sellValue); assert.equal(kept.price, item.price);
+  assert.equal(kept.sellValue, Math.max(1, Math.round(item.price))); assert.equal(kept.price, item.price);
   service.sell(user, item.id); service.sell(user, item.id);
   assert.equal(service.profile(user).tokens, balance + item.sellValue);
   service.db(db => db.prepare('UPDATE users SET tokens = 0 WHERE id = ?').run(user.id));
