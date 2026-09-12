@@ -5,7 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { createServer } from 'node:http';
 import { Accounts, STARTING_TOKENS } from '../src/accounts.mjs';
-import { CASES, caseCatalog, publicCaseCatalog, itemRarity, drawItem } from '../src/cases.mjs';
+import { caseCatalog, publicCaseCatalog, itemRarity, drawItem } from '../src/cases.mjs';
 import { closeDataStore, upsertAuctions } from '../src/database.mjs';
 import { createAccountApi } from '../src/account-api.mjs';
 
@@ -62,7 +62,7 @@ test('account and friend euro values count retained copies, exclude sold items a
   assert.deepEqual(service.friends(friend).friends[0].daily, { status: 'in_progress', completedRounds: 1, score: null });
   for (let i = 1; i < 5; i++) service.answer(admin, daily.id, i, lots[i].actualBid);
   assert.equal(service.friends(friend).friends[0].daily.score, 5000);
-  const catalog = caseCatalog([{ ...lots[0], currentBid: 123.45 }]);
+  const catalog = caseCatalog(lots.slice(0, 5).map(item => ({ ...item, currentBid: 123.45 })));
   const item = service.openCase(admin, catalog, 'fundkiste', 'value-request-0001');
   assert.equal(service.profile(admin).accountValueEur, 123.45);
   nextDay();
@@ -167,46 +167,46 @@ test('case debits, item ownership, idempotent openings and sales remain atomic a
   const { service, dir, admin, register } = await fixture(t);
   const other = await register('other');
   const catalog = caseCatalog(lots);
+  const cost = catalog.cases[0].cost;
   const daily = service.startGame(admin, 'daily', () => lots.slice(0, 5));
   for (let i = 0; i < 5; i++) service.answer(admin, daily.id, i, 10);
   assert.throws(() => service.openCase(admin, catalog, 'fundkiste', 'test-request-00001', 'stale'), /catalog_changed/);
   assert.equal(service.profile(admin).tokens, STARTING_TOKENS + 100);
   const item = service.openCase(admin, catalog, 'fundkiste', 'test-request-00001');
-  assert.equal(service.profile(admin).tokens, STARTING_TOKENS);
+  assert.equal(service.profile(admin).tokens, STARTING_TOKENS + 100 - cost);
   assert.deepEqual(service.openCase(admin, catalog, 'fundkiste', 'test-request-00001'), item);
   assert.throws(() => service.openCase(admin, catalog, 'schatzkiste', 'test-request-00001'), /request_conflict/);
   assert.equal(service.inventory(admin).length, 1);
   assert.equal(service.inventory(other).length, 0);
   assert.throws(() => service.sell(other, item.id), { status: 404 });
   service.sell(admin, item.id); service.sell(admin, item.id);
-  assert.equal(service.profile(admin).tokens, STARTING_TOKENS + item.sellValue);
+  assert.equal(service.profile(admin).tokens, STARTING_TOKENS + 100 - cost + item.sellValue);
   assert.equal(service.inventory(admin).length, 0);
   closeDataStore(dir);
   const reopened = new Accounts(dir);
-  assert.equal(reopened.profile(admin).tokens, STARTING_TOKENS + item.sellValue);
+  assert.equal(reopened.profile(admin).tokens, STARTING_TOKENS + 100 - cost + item.sellValue);
   assert.equal(reopened.inventory(admin).length, 0);
   assert.deepEqual(reopened.openCase(admin, catalog, 'fundkiste', 'test-request-00001'), item);
 });
 
-test('rarity reflects price and uniqueness; catalog collapses families and normalizes unavailable odds', () => {
+test('rarity reflects price and uniqueness; case contents collapse duplicate families and require all rarity tiers', () => {
   assert.equal(itemRarity(1, 1).id, 'common');
   assert.equal(itemRarity(100000, 1).id, 'legendary');
   assert.notEqual(itemRarity(100, 1).id, itemRarity(100, 25).id);
   const catalog = caseCatalog([...lots, { ...lots[0], id: 999 }]);
-  assert.equal(catalog.items.length, lots.length);
-  assert.equal(catalog.items.find(item => item.auctionId === 1).familySize, 2);
-  for (const box of catalog.cases) {
-    assert.ok(Math.abs(box.odds.reduce((sum, rarity) => sum + rarity.chance, 0) - 100) < 1e-9);
+  const allItems = catalog.cases.flatMap(box => box.items);
+  assert.ok(allItems.some(item => item.familySize === 2));
+  for (const box of catalog.cases.filter(box => box.available)) {
+    assert.equal(new Set(box.items.map(item => item.title)).size, box.items.length);
     const total = box.weights.reduce((sum, value) => sum + value, 0);
     for (let roll = 0; roll < total; roll++) {
       let calls = 0;
       const item = drawItem(catalog, box, () => calls++ ? 0 : roll);
-      assert.ok(catalog.items.includes(item));
+      assert.ok(box.items.includes(item));
     }
   }
-  const onlyCommon = caseCatalog([lots[0]]);
-  assert.equal(onlyCommon.cases[0].odds[0].chance, 100);
-  assert.ok(caseCatalog([]).cases.every(box => box.odds.every(rarity => rarity.chance === 0)));
+  assert.ok(caseCatalog([lots[0]]).cases.every(box => !box.available));
+  assert.ok(caseCatalog([]).cases.every(box => box.weights.every(weight => weight === 0)));
 });
 
 test('bulk grants credit only existing accounts, survive restart and never double-credit retries or later signups', async t => {
@@ -246,19 +246,11 @@ test('bulk grants reject regular users and invalid amounts without changing bala
   assert.equal(service.adminOverview(admin).grants.length, 0);
 });
 
-test('case payouts rise non-linearly, legendary pulls stay exceptional and half of full-catalog pulls can fund the same case', () => {
-  assert.deepEqual(CASES.map(box => box.weights), [[5000, 3000, 1400, 550, 50], [3500, 1500, 3000, 1950, 50]]);
-  assert.deepEqual(caseCatalog(lots).rarities.map(rarity => rarity.sell), [10, 100, 250, 750, 2500]);
-  for (const box of CASES) {
-    const total = box.weights.reduce((sum, n) => sum + n, 0);
-    const reusable = box.weights.reduce((sum, weight, index) => sum + (caseCatalog(lots).rarities[index].sell >= box.cost ? weight : 0), 0);
-    assert.equal(reusable / total, .5);
-    assert.equal(box.weights[4] / total, .005);
-  }
+test('public case editions expose their prices and contents without draw probabilities', () => {
   const catalog = publicCaseCatalog(caseCatalog(lots));
-  assert.deepEqual(catalog.cases.map(box => box.name), ['Seized Goods Case', 'Contraband Case']);
-  assert.deepEqual(catalog.cases.map(box => box.id), ['fundkiste', 'schatzkiste']);
-  assert.ok(catalog.cases.every(box => box.available));
+  assert.deepEqual(catalog.cases.slice(0, 2).map(box => box.name), ['Seized Goods Case', 'Contraband Case']);
+  assert.deepEqual(catalog.cases.slice(0, 2).map(box => box.id), ['fundkiste', 'schatzkiste']);
+  assert.ok(catalog.cases.some(box => box.available));
   assert.doesNotMatch(JSON.stringify(catalog), /"(?:odds|weights|chance)":/);
   assert.ok(publicCaseCatalog(caseCatalog([])).cases.every(box => !box.available));
 });

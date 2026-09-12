@@ -1,6 +1,14 @@
 let account = null, accountCatalog = null, accountItems = [], accountCodes = [], freshCodes = [];
 let accountFriends = { friends: [], date: '' }, accountAdmin = { playerCount: 0, grants: [] };
 let accountBusy = false, accountDailyRun = null, accountResult = null;
+let caseOpening = null;
+const caseReveal = document.createElement('dialog');
+caseReveal.className = 'case-reveal';
+caseReveal.setAttribute('aria-labelledby', 'case-reveal-title');
+document.body.append(caseReveal);
+caseReveal.addEventListener('close', () => {
+  if (currentAccountPage === '/shop') accountContent.querySelector('[data-account="pull"]')?.focus({ preventScroll: true });
+});
 let accountSelectedCase = 'fundkiste', accountInventoryPage = 0, accountFilter = 'all';
 let currentAccountPage = null, accountVisit = 0, pageLoaded = false;
 const accountPaths = ['/shop', '/inventory', '/profile', '/login', '/register', '/admin'];
@@ -59,12 +67,14 @@ const accountReady = accountApi('me').then(result => {
   if (typeof renderStart === 'function' && state.view === 'start' && location.pathname === '/') renderStart();
 }).catch(() => {});
 function showGamePage() {
+  caseReveal.close();
   currentAccountPage = null; accountVisit++; pageLoaded = false;
   accountPage.hidden = true; document.querySelector('#app').hidden = false;
   if (location.pathname !== '/') history.pushState({}, '', '/');
   updateNavigation();
 }
 async function navigateAccountPage(path, push = true) {
+  caseReveal.close();
   if (!accountPaths.includes(path)) { renderStart(); return; }
   if (push && location.pathname !== path) history.pushState({}, '', path);
   const visit = ++accountVisit;
@@ -111,6 +121,7 @@ function accountValueMarkup() {
 }
 function renderAccountPage() {
   if (!pageLoaded || !currentAccountPage) return;
+  if (caseOpening === accountVisit && currentAccountPage === '/shop') return;
   if (currentAccountPage === '/shop') renderShop();
   else if (currentAccountPage === '/inventory') renderInventory();
   else if (currentAccountPage === '/profile') renderProfile();
@@ -184,18 +195,32 @@ function renderAdmin() {
 }
 function renderShop() {
   const box = accountCatalog.cases.find(box => box.id === accountSelectedCase) || accountCatalog.cases[0];
+  accountSelectedCase = box.id;
+  const caseName = box => t(box.name, box.nameDe || box.name);
+  const result = accountResult?.caseId === box.id ? accountResult : null;
   accountContent.innerHTML = pageHeading('Shop', t('Sealed cases. Unexpected finds.', 'Versiegelte Kisten. Unerwartete Fundstücke.')) +
     `<div class="shop-balance">${account ? `${number(account.tokens)} ${t('tokens available', 'Tokens verfügbar')}` : `${t('Browse the cases. Log in to earn tokens and open one.', 'Entdecke die Kisten. Melde dich an, um Tokens zu verdienen und eine zu öffnen.')} <a href="/login" data-page>${t('Log in', 'Anmelden')} →</a>`}</div>
-    <div class="case-options">${accountCatalog.cases.map(option => `<button class="case-option ${box.id === option.id ? 'is-selected' : ''}" data-account="select-case" data-id="${option.id}" aria-pressed="${box.id === option.id}"><span class="case-art" aria-hidden="true">▱<b>JG.</b></span><span><strong>${option.name}</strong><small>${number(option.cost)} ${t('tokens', 'Tokens')}</small></span></button>`).join('')}</div>
-    <section class="case-stage" aria-label="${t('Case opening', 'Kistenöffnung')}"><div class="case-stage-heading"><span>${box.name.toUpperCase()}</span><span>${t('YOUR NEXT FIND', 'DEIN NÄCHSTER FUND')}</span></div>
-    <div class="case-window" aria-hidden="true"><div class="case-marker"></div><div class="case-reel">${accountCatalog.items.slice(0, 10).map(item => itemCard(item, false)).join('')}</div></div>
-    <div class="case-result" role="status">${accountResult ? resultMarkup() : `<h2>${t('What’s inside?', 'Was steckt drin?')}</h2><p>${t('One digital auction collectible in every case.', 'Ein digitales Auktionslos in jeder Kiste.')}</p>`}</div>
-    <button class="primary-button case-open" data-account="pull" ${!account || account.tokens < box.cost || !box.available || accountBusy ? 'disabled' : ''}>${account ? `${accountResult ? t('Open another case', 'Weitere Kiste öffnen') : t('Open case', 'Kiste öffnen')} · ${number(box.cost)} ${t('tokens', 'Tokens')}` : t('Log in to open cases', 'Zum Öffnen anmelden')}</button></section>
+    <p class="shop-edition"><span>${t('DAILY EDITION', 'TAGESAUSGABE')} · ${accountCatalog.rotationDate}</span>${t('New prices and finds at 00:00 UTC. Today’s offers stay fixed until then.', 'Neue Preise und Fundstücke um 00:00 UTC. Bis dahin gelten die heutigen Angebote.')}</p>
+    <div class="case-options">${accountCatalog.cases.map(option => `<button class="case-option case-theme-${option.category} ${box.id === option.id ? 'is-selected' : ''} ${option.available ? '' : 'is-restocking'}" data-account="select-case" data-id="${option.id}" aria-pressed="${box.id === option.id}"><span class="case-art" aria-hidden="true"><b>${option.badge}</b></span><span><strong>${caseName(option)}</strong><small>${option.available ? `${number(option.cost)} ${t('tokens', 'Tokens')}` : t('Restocking', 'Wird aufgefüllt')}</small></span></button>`).join('')}</div>
+    <section class="case-stage" aria-label="${t('Case opening', 'Kistenöffnung')}"><div class="case-stage-heading"><span>${caseName(box).toUpperCase()}</span><span>${box.available ? `${box.items.length} ${t('FINDS IN THIS EDITION', 'FUNDE IN DIESER AUSGABE')}` : t('MORE FINDS ON THE WAY', 'NEUE FUNDE UNTERWEGS')}</span></div>
+    ${box.available ? `<div class="case-window" aria-hidden="true"><div class="case-marker"></div><div class="case-reel">${box.items.slice(0, 10).map(item => tierCard(item.rarity)).join('')}</div></div>` : ''}
+    <div class="case-result" role="status">${result ? resultMarkup() : `<h2>${box.available ? t('What’s inside?', 'Was steckt drin?') : t('Good finds take time.', 'Gute Funde brauchen Zeit.')}</h2><p>${box.available ? t('One digital auction collectible in every case.', 'Ein digitales Auktionslos in jeder Kiste.') : t('This category needs more distinct items. We check for new stock with each Daily edition.', 'Diese Kategorie benötigt mehr unterschiedliche Lose. Neue Bestände werden mit jeder Tagesausgabe geprüft.')}</p>`}</div>
+    <button class="primary-button case-open" data-account="pull" ${!account || account.tokens < box.cost || !box.available || accountBusy ? 'disabled' : ''}>${!box.available ? t('Currently unavailable', 'Derzeit nicht verfügbar') : account ? `${result ? t('Open another case', 'Weitere Kiste öffnen') : t('Open case', 'Kiste öffnen')} · ${number(box.cost)} ${t('tokens', 'Tokens')}` : t('Log in to open cases', 'Zum Öffnen anmelden')}</button></section>
+    ${box.available ? `<details class="case-contents"><summary>${t('Explore this edition’s contents', 'Inhalte dieser Ausgabe entdecken')} · ${box.items.length}</summary><p>${t('Rarity and token resale values belong to this case edition. Collected items keep these values when the shop rotates.', 'Seltenheit und Token-Verkaufswerte gehören zu dieser Kistenausgabe. Gesammelte Lose behalten diese Werte beim Shopwechsel.')}</p><div class="inventory-grid">${box.items.map(item => itemCard(item, false)).join('')}</div></details>` : ''}
     <p class="data-note">${t('Digital collectibles. No ownership of the real auction item. Tokens have no cash value.', 'Digitale Sammelobjekte. Kein Eigentum am echten Auktionsgegenstand. Tokens haben keinen Geldwert.')}</p>`;
 }
 function resultMarkup() {
   return `<p class="rarity-label rarity-${accountResult.rarity}">${rarityLabel(accountResult.rarity)}</p><h2>${accountEscape(accountResult.title)}</h2><p>${accountResult.sold ? t('Sold. Tokens added to your balance.', 'Verkauft. Tokens gutgeschrieben.') : t('Your find is safe in your inventory.', 'Dein Fund liegt sicher im Inventar.')}</p>
     ${accountResult.sold ? '' : `<button class="secondary-button" data-account="sell-result" data-id="${accountResult.id}">${t('Sell now', 'Sofort verkaufen')} · ${number(accountResult.sellValue)} ${t('tokens', 'Tokens')}</button>`}`;
+}
+function tierCard(rarity) {
+  return `<div class="case-tier rarity-${accountEscape(rarity)}"><span class="case-tier-symbol" aria-hidden="true">◇</span><span class="rarity-label">${rarityLabel(rarity)}</span></div>`;
+}
+function revealCaseItem() {
+  const box = accountCatalog.cases.find(box => box.id === accountResult.caseId);
+  caseReveal.innerHTML = `<div class="case-reveal-content rarity-${accountEscape(accountResult.rarity)}"><p class="eyebrow">${t('YOUR FIND', 'DEIN FUND')}</p><h2 id="case-reveal-title">${accountEscape(accountResult.title)}</h2><img src="${accountEscape(accountResult.image)}" alt=""><p class="rarity-label">${rarityLabel(accountResult.rarity)}</p><p>${t('Auction value', 'Auktionswert')} ${euro(accountResult.price)}</p><p role="status">${accountResult.sold ? t('Sold. Tokens added to your balance.', 'Verkauft. Tokens gutgeschrieben.') : t('Your find is safe in your inventory.', 'Dein Fund liegt sicher im Inventar.')}</p><div class="case-reveal-actions">${accountResult.sold ? '' : `<button class="secondary-button" data-account="sell-result" data-id="${accountEscape(accountResult.id)}">${t('Sell now', 'Sofort verkaufen')} · ${number(accountResult.sellValue)} ${t('tokens', 'Tokens')}</button>`}<button class="primary-button" data-account="pull" ${!account || account.tokens < box.cost || !box.available ? 'disabled' : ''}>${t('Open another case', 'Weitere Kiste öffnen')} · ${number(box.cost)} ${t('tokens', 'Tokens')}</button><button class="text-button" data-account="close-reveal" autofocus>${accountResult.sold ? t('Close', 'Schließen') : t('Keep item', 'Behalten')}</button></div></div>`;
+  if (!caseReveal.open) caseReveal.showModal();
+  caseReveal.querySelector('[data-account="close-reveal"]').focus({ preventScroll: true });
 }
 async function accountGameStart(mode) {
   await accountReady; if (!account) return null;
@@ -219,23 +244,40 @@ async function pullCase(visit) {
   const result = await accountApi('cases/open', { caseId: box.id, requestId, revision: accountCatalog.revision });
   try { localStorage.removeItem(storageKey); } catch {}
   if (account?.id !== owner) return;
-  updateAccount(result.user); accountResult = result.item;
+  updateAccount(result.user); accountResult = null;
   if (visit !== accountVisit) return;
   renderAccountPage();
+  caseOpening = visit;
+  try {
   const reel = accountContent.querySelector('.case-reel'), viewport = accountContent.querySelector('.case-window'), resultNode = accountContent.querySelector('.case-result');
   resultNode.innerHTML = `<h2>${t('The hammer is spinning…', 'Der Hammer kreist …')}</h2><p>${t('Revealing your find.', 'Dein Fund wird aufgedeckt.')}</p>`;
   const winnerIndex = 34;
-  const cards = Array.from({ length: 42 }, (_, index) => index === winnerIndex ? result.item : accountCatalog.items[Math.floor(Math.random() * accountCatalog.items.length)]);
-  reel.innerHTML = cards.map(item => itemCard(item, false)).join(''); reel.querySelectorAll('img').forEach(img => img.loading = 'eager');
-  let imageTimer;
-  await Promise.race([reel.children[winnerIndex].querySelector('img').decode().catch(() => {}), new Promise(resolve => { imageTimer = setTimeout(resolve, 1800); })]); clearTimeout(imageTimer);
-  if (visit !== accountVisit || !reel.isConnected) return;
+  const cards = Array.from({ length: 42 }, (_, index) => index === winnerIndex ? result.item : box.items[Math.floor(Math.random() * box.items.length)]);
+  reel.innerHTML = cards.map(item => tierCard(item.rarity)).join('');
+  const pause = ms => new Promise(resolve => setTimeout(resolve, ms));
+  if (matchMedia('(prefers-reduced-motion: reduce)').matches) {
+    // Preserve the reveal pacing without rapid horizontal travel or flashing.
+    reel.classList.add('case-reel-reduced');
+    for (let step = 0; step < 8; step++) {
+      if (visit !== accountVisit || !reel.isConnected) return;
+      reel.innerHTML = tierCard(cards[step * 4].rarity);
+      await pause(650);
+    }
+    reel.innerHTML = tierCard(result.item.rarity);
+  } else {
   const width = reel.children[0].getBoundingClientRect().width, landing = winnerIndex * (width + 12) + width / 2 - viewport.clientWidth / 2;
-  const animation = reel.animate([{ transform: 'translateX(0)' }, { transform: `translateX(${-landing}px)` }], { duration: matchMedia('(prefers-reduced-motion: reduce)').matches ? 0 : 5200, easing: 'cubic-bezier(.12,.72,.12,1)', fill: 'forwards' });
+  const animation = reel.animate([{ transform: 'translateX(0)' }, { transform: `translateX(${-landing}px)` }], { duration: 5200, easing: 'cubic-bezier(.12,.72,.12,1)', fill: 'forwards' });
   await animation.finished;
+  }
   if (visit !== accountVisit || !reel.isConnected) return;
-  reel.children[winnerIndex].classList.add('is-pulled'); resultNode.innerHTML = resultMarkup();
-  resultNode.querySelector('button')?.focus({ preventScroll: true });
+  (reel.children[winnerIndex] || reel.children[0]).classList.add('is-pulled');
+  resultNode.innerHTML = `<h2>${rarityLabel(result.item.rarity)}</h2><p>${t('Opening your find…', 'Dein Fund wird enthüllt …')}</p>`;
+  await pause(750);
+  if (visit !== accountVisit || !reel.isConnected || account?.id !== owner) return;
+  accountResult = result.item;
+  resultNode.innerHTML = resultMarkup();
+  revealCaseItem();
+  } finally { caseOpening = null; }
 }
 document.addEventListener('click', event => {
   const link = event.target.closest('a[data-page]');
@@ -255,13 +297,14 @@ document.addEventListener('click', async event => {
       await navigateAccountPage('/login');
     }
     if (action === 'select-case') { accountSelectedCase = button.dataset.id; accountResult = null; renderAccountPage(); }
-    if (action === 'pull') await pullCase(visit);
+    if (action === 'close-reveal') caseReveal.close();
+    if (action === 'pull') { caseReveal.close(); await pullCase(visit); }
     if (action === 'sell' || action === 'sell-result') {
       const owner = account.id, result = await accountApi('inventory/sell', { id: button.dataset.id });
       if (account?.id !== owner) return;
       updateAccount(result.user); if (accountResult?.id === button.dataset.id) accountResult.sold = true;
       accountItems = accountItems.filter(item => item.id !== button.dataset.id);
-      if (visit === accountVisit) { renderAccountPage(); showToast(t(`${result.value} tokens added.`, `${result.value} Tokens gutgeschrieben.`)); }
+      if (visit === accountVisit) { renderAccountPage(); if (caseReveal.open) revealCaseItem(); showToast(t(`${result.value} tokens added.`, `${result.value} Tokens gutgeschrieben.`)); }
     }
     if (action === 'revoke') { await accountApi('codes/revoke', { id: button.dataset.id }); if (visit === accountVisit) await navigateAccountPage('/admin', false); }
     if (action === 'friend-accept' || action === 'friend-remove') {

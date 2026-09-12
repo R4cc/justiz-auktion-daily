@@ -1,5 +1,5 @@
 import { Accounts, AccountError } from './accounts.mjs';
-import { caseCatalog, publicCaseCatalog } from './cases.mjs';
+import { loadCaseCatalog, publicCaseCatalog, rotationDate } from './cases.mjs';
 import { readArchive } from './database.mjs';
 import { higherLowerDeck } from './higher-lower.mjs';
 
@@ -24,13 +24,9 @@ export async function createAccountApi({ dataDir, dailyPayload, json, env = proc
   await accounts.bootstrap(env.ADMIN_USERNAME, env.ADMIN_PASSWORD);
   const secure = env.COOKIE_SECURE !== 'false' && (env.COOKIE_SECURE === 'true' || env.NODE_ENV === 'production');
   const cookie = token => `jg_session=${token}; Path=/; HttpOnly; SameSite=Strict; Max-Age=${token ? 2592000 : 0}${secure ? '; Secure' : ''}`;
-  let catalog, catalogStamp;
+  let catalog;
   function getCatalog() {
-    const archive = readArchive(dataDir);
-    if (!catalog || catalogStamp !== archive.updatedAt) {
-      catalog = caseCatalog(archive.auctions);
-      catalogStamp = archive.updatedAt;
-    }
+    if (!catalog || catalog.rotationDate !== rotationDate()) catalog = loadCaseCatalog(dataDir);
     return catalog;
   }
   return async (request, response, url) => {

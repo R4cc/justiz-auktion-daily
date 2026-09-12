@@ -595,18 +595,31 @@ button:focus-visible, a:focus-visible { outline: 3px solid var(--red); outline-o
 .text-button { background: none; border: 0; text-decoration: underline; cursor: pointer; padding: 10px; }
 .reward-note { padding: 14px 16px; background: #e7ecdf; border: 1px solid #d2dbca; border-radius: 10px; font-size: 13px; line-height: 1.7; }
 .earning-detail { font-size: 12px; line-height: 1.7; color: var(--muted); }
-.case-options { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin: 24px 0; }
-.case-option { display: flex; align-items: center; gap: 20px; min-width: 0; padding: 18px; text-align: left; border: 1px solid var(--line); border-radius: 14px; background: #efeadd; cursor: pointer; }
+.case-options { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px; margin: 24px 0; }
+.case-option { display: flex; flex-direction: column; align-items: center; gap: 16px; min-width: 0; padding: 18px; text-align: center; border: 1px solid var(--line); border-radius: 14px; background: #efeadd; cursor: pointer; }
 .case-option.is-selected { border: 2px solid var(--ink); padding: 17px; background: #e8ebdd; }
 .case-option strong, .case-option small { display: block; }
-.case-option strong { font-size: 19px; letter-spacing: -.6px; }
+.case-option strong { font-size: 16px; letter-spacing: -.4px; }
 .case-option small { margin-top: 6px; font: 12px 'DM Mono', monospace; }
-.case-art { position: relative; display: grid; place-items: center; width: 90px; height: 64px; flex: 0 0 90px; border: 3px solid #74623c; background: linear-gradient(150deg, #eed991, #bda260); border-radius: 7px; box-shadow: 4px 5px 0 #10251e19, inset 0 0 0 7px #ffffff26; transform: rotate(-6deg); font-size: 0; }
-.case-art::before, .case-art::after { content: ''; position: absolute; width: 8px; background: #74623c; top: 0; bottom: 0; }
+.case-art { --case-light: #eed991; --case-dark: #bda260; --case-trim: #74623c; position: relative; display: grid; place-items: center; width: 90px; height: 64px; flex: 0 0 64px; border: 3px solid var(--case-trim); background: linear-gradient(150deg, var(--case-light), var(--case-dark)); border-radius: 7px; box-shadow: 4px 5px 0 #10251e19, inset 0 0 0 7px #ffffff26; transform: rotate(-6deg); font-size: 0; }
+.case-art::before, .case-art::after { content: ''; position: absolute; width: 8px; background: var(--case-trim); top: 0; bottom: 0; }
 .case-art::before { left: 10px; } .case-art::after { right: 10px; }
-.case-art b { font: 800 21px 'Manrope', sans-serif; color: #534a33; }
-.case-option + .case-option .case-art { background: linear-gradient(150deg, #9dcac1, #558c7e); border-color: #2e6557; }
-.case-option + .case-option .case-art::before, .case-option + .case-option .case-art::after { background: #2e6557; }
+.case-art b { font: 800 12px 'Manrope', sans-serif; color: var(--case-trim); }
+.case-theme-premium .case-art { --case-light: #9dcac1; --case-dark: #558c7e; --case-trim: #204d41; }
+.case-theme-cars .case-art { --case-light: #bdcbdc; --case-dark: #7f9ab4; --case-trim: #334e68; }
+.case-theme-wine .case-art { --case-light: #deb3b8; --case-dark: #b77986; --case-trim: #60283c; }
+.case-theme-electronics .case-art { --case-light: #a8d4d8; --case-dark: #6ba6b0; --case-trim: #275860; }
+.case-theme-tools .case-art { --case-light: #efc395; --case-dark: #c28b57; --case-trim: #704522; }
+.case-theme-jewellery .case-art { --case-light: #ece0a2; --case-dark: #c5a557; --case-trim: #6b551d; }
+.case-theme-collectibles .case-art { --case-light: #cec1df; --case-dark: #a28abf; --case-trim: #56406e; }
+.case-option.is-restocking { background: transparent; border-style: dashed; }
+.case-option.is-restocking .case-art { opacity: .55; }
+.shop-edition { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 10px; color: var(--muted); font-size: 12px; line-height: 1.7; margin: 22px 0; }
+.shop-edition > span { font-family: 'DM Mono', monospace; color: var(--ink); }
+.case-contents { margin: 26px 0; }
+.case-contents summary { cursor: pointer; font-weight: 800; padding: 12px 0; }
+.case-contents > p { font-size: 13px; line-height: 1.7; color: var(--muted); margin-bottom: 22px; }
+@media (max-width: 900px) { .case-options { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 .case-stage { overflow: hidden; padding: 20px 0 26px; text-align: center; color: #f7f3e8; background: radial-gradient(ellipse at 50% 35%, #35574d, #152b26 70%); border-radius: 16px; }
 .case-stage-heading { display: flex; justify-content: space-between; gap: 12px; padding: 0 22px 20px; font: 10px 'DM Mono', monospace; letter-spacing: 1.5px; color: #cfdbcd; }
 .case-window { overflow: hidden; position: relative; border-block: 1px solid #cadacf35; padding: 16px 0; height: 238px; }
@@ -615,6 +628,19 @@ button:focus-visible, a:focus-visible { outline: 3px solid var(--red); outline-o
 .case-marker::before { content: ''; position: absolute; top: 0; left: -7px; border: 8px solid transparent; border-top: 12px solid #f4dd91; }
 .case-marker::after { content: ''; position: absolute; bottom: 0; left: -7px; border: 8px solid transparent; border-bottom: 12px solid #f4dd91; }
 .case-reel { display: flex; gap: 12px; width: max-content; will-change: transform; }
+.case-tier { width: 170px; height: 204px; flex: 0 0 170px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 24px; border: 1px solid var(--rarity); border-bottom: 4px solid var(--rarity); border-radius: 10px; background: #203a32; color: #f7f3e8; }
+.case-tier-symbol { color: var(--rarity); font-size: 76px; line-height: 1; text-shadow: 0 0 24px var(--rarity); }
+.case-reel-reduced { width: 100%; justify-content: center; }
+.case-reveal { padding: 0; border: 0; border-radius: 18px; width: min(480px, calc(100vw - 32px)); max-height: calc(100dvh - 32px); color: var(--ink); background: var(--paper); box-shadow: 0 24px 100px #0008; }
+.case-reveal::backdrop { background: #0c211dcc; }
+.case-reveal-content { padding: 26px; border-top: 6px solid var(--rarity); text-align: center; }
+.case-reveal h2 { font-size: 23px; margin: 8px 0; overflow-wrap: anywhere; }
+.case-reveal img { display: block; width: 100%; height: min(230px, 28dvh); object-fit: contain; background: #fff; border-radius: 10px; margin: 18px 0; }
+.case-reveal .rarity-label { display: inline-block; }
+.case-reveal p { font-size: 13px; margin: 10px 0; }
+.case-reveal-actions { display: grid; gap: 12px; margin-top: 22px; }
+.case-reveal-actions button { width: 100%; white-space: normal; margin: 0; }
+.case-reveal button:disabled { opacity: .5; cursor: not-allowed; }
 .collection-item { --rarity: #83919c; display: flex; flex-direction: column; min-width: 0; padding: 14px; border: 1px solid var(--line); border-bottom: 4px solid var(--rarity); border-radius: 10px; background: #fffcf4; text-align: left; color: var(--ink); }
 .rarity-common { --rarity: #83919c; } .rarity-uncommon { --rarity: #4d79c7; } .rarity-rare { --rarity: #8262c7; } .rarity-epic { --rarity: #c65391; } .rarity-legendary { --rarity: #c89520; }
 .rarity-label { font: 10px 'DM Mono', monospace; text-transform: uppercase; letter-spacing: 1px; border-left: 3px solid var(--rarity); padding-left: 7px; }

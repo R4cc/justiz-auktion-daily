@@ -272,7 +272,8 @@ export class Accounts {
       if (!box) fail('invalid_case');
       if (!box.weights.some(Boolean)) fail('empty_catalog', 503);
       if (!db.prepare('UPDATE users SET tokens = tokens - ? WHERE id = ? AND tokens >= ?').run(box.cost, user.id, box.cost).changes) fail('insufficient_tokens', 409);
-      const item = { ...drawItem(catalog, box), id: randomUUID(), caseId, createdAt: this.now() };
+      const item = { ...drawItem(catalog, box), id: randomUUID(), caseId, caseCost: box.cost,
+        edition: catalog.rotationDate, createdAt: this.now() };
       db.prepare('INSERT INTO inventory (id, user_id, item, created_at) VALUES (?, ?, ?, ?)').run(item.id, user.id, JSON.stringify(item), this.now());
       db.prepare('INSERT INTO case_openings VALUES (?, ?, ?, ?)').run(user.id, requestId, caseId, JSON.stringify(item));
       return item;

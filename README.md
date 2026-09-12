@@ -31,17 +31,25 @@ Each newly created account starts with **1,000 tokens**. Existing accounts are n
 - Higher or Lower pays **20 tokens per correct comparison** once the final streak reaches **3**, capped at **200 tokens**. Payment happens on a miss or deck completion. A shorter run pays zero and still uses that day's allowance.
 - Additional games are practice and cannot earn more tokens. A new allowance arrives with the Daily reset at **00:00 UTC**. An abandoned run must be resumed before that reset; old runs cannot pay out afterward.
 
-The **Seized Goods Case** costs 100 tokens; the **Contraband Case** costs 250. Both favor lower-rarity items, with draw weights configured on the server. Each opening draws one digital auction collectible, saves it immediately to the inventory, then plays a decelerating reel animation (instant reveal with reduced motion). Keep the item, sell it immediately, or open another case. Items can also be sold from the inventory. Tokens cannot be bought with real money, transferred, or redeemed for cash; collectibles do not confer ownership of the real auction lots.
+The shop offers **Seized Goods**, **Contraband**, **Car**, **Wine**, **Electronics**, **Tool**, **Jewellery**, and **Collector** cases. Themed cases draw only from their category; Contraband selects the upper-value portion of the mixed archive. Each opening saves one digital collectible to inventory before playing a 5.2-second rarity-only reel. Reduced motion uses centered tier changes with the same duration, without horizontal movement. After a 750 ms pause on the winning tier, a dialog reveals the item with keep, sell, and open-another options. The reel tiers and expandable contents list use only the selected case's current stock. Tokens cannot be bought with real money, transferred, or redeemed for cash; collectibles do not confer ownership of real auction lots.
 
-| Rarity | Sale value (tokens) |
+Every case has a **daily edition**, refreshing at **00:00 UTC** with the Daily game. A SQLite snapshot fixes the entire edition across refreshes, archive updates and restarts. Newly collected auction stock enters the next edition. Definitions or economy changes invalidate the snapshot's configuration key; client catalog revisions prevent charging an outdated offer. Snapshots are retained for 30 days, while collected items retain their own permanent value records.
+
+Reference prices are 100 tokens for Seized Goods, 250 for Contraband, 500 for Car, 150 for Wine, 200 for Electronics, 150 for Tool, 350 for Jewellery and 200 for Collector. Actual prices reflect the median auction value of the selected stock, bounded to a 0.75–1.5 market factor, and a deterministic daily offer factor from 0.9–1.1. Prices round to 10 tokens with a floor of 50. These are game economy reference points, not a euro-to-token exchange rate.
+
+Resale values scale with the **price paid for that case edition**:
+
+| Rarity | Sale value relative to case cost |
 | --- | ---: |
-| Common | 10 |
-| Uncommon | 100 |
-| Rare | 250 |
-| Epic | 750 |
-| Legendary | 2,500 |
+| Common | 0.1× |
+| Uncommon | 1× |
+| Rare | 2.5× |
+| Epic | 7.5× |
+| Legendary | 25× |
 
-Rarity is a heuristic based on `0.8 * min(1, log10(price + 1) / 5) + 0.2 / sqrt(similar-family-size)`, with thresholds 0.32, 0.46, 0.60 and 0.78. Price is the archived final price when available, otherwise the current bid. Similar product families contribute one representative each, so duplicate listings do not increase a family's draw odds. Within a rarity, each family is equally likely. With all rarity pools available, each case has a 50% chance of returning an item whose sale value covers another opening of the same case; Legendary is a 0.5% pull with a much steeper payout. Weights for unavailable rarities are excluded and the remaining weights are normalized, so the live break-even chance can differ when the archive has no items in a rarity. Draw odds and weights are omitted from the public catalog response and the UI. If contents or case configuration change, the catalog refreshes before retrying the opening. Collected items keep their original rarity and resale value even when the archive changes; existing case identifiers remain compatible.
+Rarity is relative to each case's stock: families rank by `log10(price + 1) + 0.5 / sqrt(familySize)`, using the archived final price where available, otherwise the current bid. The five rank bands each reserve one distinct family and divide the rest in proportions 45/25/17/10/3. A deterministic rotating window selects up to 24 families across these bands, swapping items where spare stock exists. Duplicate listings count as one family and cannot increase draw odds. Small pools rotate fewer items; cases with fewer than five distinct eligible families show **Restocking** instead of substituting another category or redistributing the odds.
+
+Every available case has exactly a **50% chance** that resale alone funds another opening of the same edition. Legendary drops occur **0.1%** of the time. The common-to-legendary ticket weights are 5000/3500/1200/290/10, giving a 94.25% average token return with the non-linear payouts above. Both properties remain fixed as prices and contents rotate. Draw probabilities and weights stay out of the public catalog response and the interface; prices, contents and resale values remain visible. Collected items retain their original rarity, euro value and token resale value, including items acquired before this system was introduced. Old case identifiers remain compatible.
 
 The server chooses draws using cryptographic randomness. SQLite transactions make charging and item creation atomic; request IDs make case retries safe, and repeated sales or reward submissions cannot credit tokens twice. Logged-in Higher or Lower keeps future prices out of its game response and validates each comparison on the server. Guest endpoints remain public practice data; this is a casual game, not a competitive anti-cheat system. Back up the full `/data` volume, using SQLite's backup API or stopping the container before copying it.
 
