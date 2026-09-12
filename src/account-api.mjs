@@ -45,6 +45,7 @@ export async function createAccountApi({ dataDir, dailyPayload, json, env = proc
         else {
           if (!user) throw new AccountError('login_required', 401);
           if (route === 'inventory') json(response, 200, { items: accounts.inventory(user) });
+          else if (route === 'friends') json(response, 200, accounts.friends(user));
           else if (route === 'codes') json(response, 200, { codes: accounts.listCodes(user) });
           else throw new AccountError('not_found', 404);
         }
@@ -70,6 +71,11 @@ export async function createAccountApi({ dataDir, dailyPayload, json, env = proc
         response.setHeader('set-cookie', cookie(''));
         result = { user: null };
       } else if (route === 'codes') result = { codes: accounts.codes(user, payload.count) };
+      else if (route === 'friends/request') {
+        accounts.throttle(`friend-request:${user.id}`, 20);
+        accounts.requestFriend(user, payload.username); result = accounts.friends(user);
+      } else if (route === 'friends/accept') { accounts.acceptFriend(user, payload.id); result = accounts.friends(user); }
+      else if (route === 'friends/remove') { accounts.removeFriend(user, payload.id); result = accounts.friends(user); }
       else if (route === 'codes/revoke') { accounts.revokeCode(user, payload.id); result = { ok: true }; }
       else if (route === 'cases/open') {
         if (typeof payload.revision !== 'string') throw new AccountError('catalog_changed', 409);

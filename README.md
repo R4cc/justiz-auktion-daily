@@ -8,6 +8,10 @@ The application serves the game and its JSON API from one lightweight Node proce
 
 ## Accounts, registration codes and cases
 
+The depot shows the account's **total value in euros**, calculated from the saved auction prices of all items currently in its inventory. Each collected copy counts once; sold items stop counting immediately. Tokens have no euro conversion and are excluded. This is a collection value, not a cash balance or payout amount.
+
+Open **Freunde** to send a friend request using an exact username (case-insensitive). The recipient can accept or decline; the sender can cancel a pending request, and either friend can remove the friendship. Accepted friends see each other's inventory value, item count, and today's server-recorded Daily result out of 5,000 points. Unfinished games show progress and unplayed games are labelled separately; scores reset with the UTC date. Pending requests reveal only usernames and request direction. Use **Aktualisieren** to fetch current friend statistics. Friendships persist in SQLite, with up to 100 friends and pending requests per account.
+
 Set `ADMIN_USERNAME` and `ADMIN_PASSWORD` in your Compose `.env` before starting the service. Usernames use 3–32 ASCII letters, numbers, underscores or hyphens (case-insensitive); passwords require 12–128 characters. Both admin variables must be supplied together. With both omitted, guest play stays available, but there is no initial admin to issue registration codes.
 
 Sign in through **Anmelden / Kisten**, then open **Registrierungscodes**. Admins can generate 1–50 single-use codes at a time, see whether they have been used, and revoke unused codes. Copy new codes immediately: their full values are shown only after generation, and only hashes are stored. Registration requires a username, password and valid code; no email or third-party login is used.

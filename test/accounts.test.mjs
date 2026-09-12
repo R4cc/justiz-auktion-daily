@@ -23,6 +23,63 @@ async function fixture(t) {
   return { dir, service, admin, register, nextDay: () => now += 86400000 };
 }
 
+test('friend requests require recipient acceptance, hide pending statistics and persist without duplicates', async t => {
+  const { service, admin, register, dir } = await fixture(t);
+  const alice = await register('Alice'), bob = await register('Bob');
+  assert.throws(() => service.requestFriend(alice, 'alice'), /friend_self/);
+  assert.throws(() => service.requestFriend(alice, 'Missing'), /user_not_found/);
+  service.requestFriend(alice, ' bOB ');
+  service.requestFriend(alice, 'Bob');
+  service.requestFriend(bob, 'Alice');
+  assert.deepEqual(service.friends(alice).friends, [{ id: bob.id, username: 'Bob', status: 'outgoing' }]);
+  assert.equal(service.friends(bob).friends[0].status, 'incoming');
+  assert.equal(service.friends(admin).friends.length, 0);
+  assert.throws(() => service.acceptFriend(alice, bob.id), /friend_request_not_found/);
+  assert.throws(() => service.acceptFriend(admin, alice.id), /friend_request_not_found/);
+  service.acceptFriend(bob, alice.id);
+  service.acceptFriend(bob, alice.id);
+  assert.equal(service.friends(alice).friends[0].status, 'accepted');
+  assert.equal(service.friends(bob).friends[0].inventoryValueEur, 0);
+  closeDataStore(dir);
+  assert.equal(new Accounts(dir).friends(alice).friends.length, 1);
+  service.removeFriend(admin, bob.id);
+  assert.equal(service.friends(alice).friends.length, 1);
+  service.removeFriend(bob, alice.id);
+  assert.equal(service.friends(alice).friends.length, 0);
+  service.requestFriend(alice, 'Bob'); service.removeFriend(alice, bob.id);
+  assert.equal(service.friends(bob).friends.length, 0);
+  service.requestFriend(alice, 'Bob'); service.removeFriend(bob, alice.id);
+  assert.equal(service.friends(alice).friends.length, 0);
+});
+
+test('account and friend euro values count retained copies, exclude sold items and tokens, and daily scores reset in UTC', async t => {
+  const { service, admin, register, nextDay } = await fixture(t);
+  const friend = await register('Friend');
+  service.requestFriend(admin, 'Friend'); service.acceptFriend(friend, admin.id);
+  let daily = service.startGame(admin, 'daily', () => lots.slice(0, 5));
+  assert.equal(service.profile(admin).daily.status, 'not_started');
+  service.answer(admin, daily.id, 0, lots[0].actualBid);
+  assert.deepEqual(service.friends(friend).friends[0].daily, { status: 'in_progress', completedRounds: 1, score: null });
+  for (let i = 1; i < 5; i++) service.answer(admin, daily.id, i, lots[i].actualBid);
+  assert.equal(service.friends(friend).friends[0].daily.score, 5000);
+  const catalog = caseCatalog([{ ...lots[0], currentBid: 123.45 }]);
+  const item = service.openCase(admin, catalog, 'fundkiste', 'value-request-0001');
+  assert.equal(service.profile(admin).accountValueEur, 123.45);
+  nextDay();
+  assert.equal(service.friends(friend).friends[0].daily.score, null);
+  assert.equal(service.friends(friend).friends[0].daily.status, 'not_started');
+  daily = service.startGame(admin, 'daily', () => lots.slice(0, 5));
+  for (let i = 0; i < 5; i++) service.answer(admin, daily.id, i, 0);
+  service.openCase(admin, catalog, 'fundkiste', 'value-request-0002');
+  assert.equal(service.profile(admin).accountValueEur, 246.9);
+  assert.equal(service.friends(friend).friends[0].itemCount, 2);
+  service.sell(admin, item.id);
+  const summary = service.friends(friend).friends[0];
+  assert.equal(summary.inventoryValueEur, 123.45);
+  assert.equal(summary.itemCount, 1);
+  assert.ok(!('tokens' in summary) && !('password_hash' in summary) && !('auctions' in summary.daily));
+});
+
 test('registration codes are single-use and admin-only; credentials, sessions and bootstrap persist safely', async t => {
   const { service, dir, admin, register } = await fixture(t);
   const [code] = service.codes(admin, 2);
@@ -180,6 +237,17 @@ test('HTTP API enforces authentication, CSRF headers, admin permissions and sess
   const registered = await post('register', { username: 'player', password, code: codes.codes[0] });
   const playerCookie = registered.headers.get('set-cookie');
   assert.equal(registered.status, 200);
+  const player = (await registered.json()).user;
+  assert.equal((await fetch(base + 'friends')).status, 401);
+  assert.equal((await post('friends/request', { username: 'player' }, cookie, { 'x-requested-with': '' })).status, 403);
+  const pending = await (await post('friends/request', { username: 'player' }, cookie)).json();
+  assert.equal(pending.friends[0].status, 'outgoing');
+  assert.ok(!('inventoryValueEur' in pending.friends[0]));
+  assert.equal((await post('friends/accept', { id: player.id }, cookie)).status, 404);
+  const accepted = await (await post('friends/accept', { id: profile.user.id }, playerCookie)).json();
+  assert.equal(accepted.friends[0].status, 'accepted');
+  assert.equal(accepted.friends[0].inventoryValueEur, 0);
+  assert.equal((await (await post('friends/remove', { id: player.id }, cookie)).json()).friends.length, 0);
   assert.equal((await post('codes', { count: 1 }, playerCookie)).status, 403);
   assert.equal((await fetch(base + 'codes', { headers: { cookie: playerCookie } })).status, 403);
   assert.equal((await post('logout', {}, playerCookie)).status, 200);

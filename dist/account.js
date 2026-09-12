@@ -3,6 +3,7 @@ let accountTab = 'cases';
 let accountCatalog = null;
 let accountItems = [];
 let accountCodes = [];
+let accountFriends = { friends: [], date: '' };
 let freshCodes = [];
 let accountBusy = false;
 let accountDailyRun = null;
@@ -21,7 +22,10 @@ const accountErrors = {
   forbidden: 'Diese Aktion ist nicht erlaubt.', daily_reset: 'Ein neues Daily ist da. Bitte lade die Seite neu.',
   insufficient_variety: 'Noch nicht genug unterschiedliche Auktionen verfügbar.',
   answer_conflict: 'Dieser Tipp wurde bereits in einem anderen Tab abgegeben. Starte das Spiel erneut, um fortzusetzen.',
-  empty_catalog: 'Aktuell sind keine Kisteninhalte verfügbar.'
+  empty_catalog: 'Aktuell sind keine Kisteninhalte verfügbar.',
+  user_not_found: 'Dieser Benutzername wurde nicht gefunden.', friend_self: 'Du kannst dich nicht selbst hinzufügen.',
+  friend_limit: 'Die maximale Anzahl von 100 Freunden und offenen Anfragen wurde erreicht.',
+  friend_request_not_found: 'Diese Anfrage ist nicht mehr verfügbar. Bitte aktualisiere die Freundesliste.'
 };
 const accountEscape = value => String(value ?? '').replace(/[&<>"']/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[char]);
 async function accountApi(route, payload) {
@@ -84,15 +88,17 @@ function itemCard(item, controls = true) {
 function accountShell() {
   accountContent.innerHTML = `<div class="collection-heading"><p class="eyebrow">DEIN AUKTIONSDEPOT</p><h2>${account ? `Hallo, ${accountEscape(account.username)}.` : 'Vom Tipp zum Fundstück.'}</h2>
     <p>Spielen. Tokens verdienen. Echte Auktionsmotive sammeln.</p></div>
+    ${account ? `<div class="account-value"><span>GESAMTER KONTOWERT<strong>${euro(account.accountValueEur)}</strong></span><p>Auktionswerte deiner Sammlung (${account.itemCount} ${account.itemCount === 1 ? 'Los' : 'Lose'}). Tokens zählen nicht zum Eurowert. Keine Auszahlung in echtem Geld.</p></div>` : ''}
     <nav class="collection-tabs" aria-label="Auktionsdepot">
       <button data-account="tab" data-tab="cases" ${accountTab === 'cases' ? 'aria-current="page"' : ''}>Kisten</button>
       <button data-account="tab" data-tab="inventory" ${accountTab === 'inventory' ? 'aria-current="page"' : ''}>Inventar</button>
+      ${account ? `<button data-account="tab" data-tab="friends" ${accountTab === 'friends' ? 'aria-current="page"' : ''}>Freunde</button>` : ''}
       ${account?.admin ? `<button data-account="tab" data-tab="admin" ${accountTab === 'admin' ? 'aria-current="page"' : ''}>Registrierungscodes</button>` : ''}
       <button data-account="${account ? 'logout' : 'tab'}" data-tab="login">${account ? 'Abmelden' : 'Anmelden'}</button>
       ${account ? `<strong class="token-balance">${account.tokens} ◈</strong>` : ''}
     </nav><div id="collection-pane"></div>`;
   const pane = accountContent.querySelector('#collection-pane');
-  if (accountTab === 'login' || accountTab === 'register' || (!account && accountTab === 'inventory')) {
+  if (accountTab === 'login' || accountTab === 'register' || (!account && ['inventory', 'friends'].includes(accountTab))) {
     const register = accountTab === 'register';
     pane.innerHTML = `<form id="account-form" class="account-form"><h3>${register ? 'Konto erstellen' : 'Willkommen zurück'}</h3>
       <label>Benutzername<input name="username" autocomplete="username" required pattern="[a-zA-Z0-9_-]{3,32}" minlength="3" maxlength="32"></label>
@@ -105,6 +111,8 @@ function accountShell() {
       <form id="code-form" class="code-form"><label>Anzahl<input name="count" type="number" min="1" max="50" value="5" required></label><button class="primary-button">Codes erstellen</button></form>
       ${freshCodes.length ? `<label class="fresh-codes">Neue Codes — jetzt kopieren und sicher aufbewahren<textarea readonly rows="${Math.min(10, freshCodes.length + 1)}">${freshCodes.join('\n')}</textarea></label>` : ''}
       <div class="code-list">${accountCodes.map(code => `<div><code>…${accountEscape(code.label)}</code><span>${code.used_at !== null ? 'Verwendet' : code.revoked ? 'Widerrufen' : 'Verfügbar'}</span>${code.used_at === null && !code.revoked ? `<button data-account="revoke" data-id="${code.id}">Widerrufen</button>` : ''}</div>`).join('') || '<p>Noch keine Codes erstellt.</p>'}</div>`;
+  } else if (accountTab === 'friends' && account) {
+    renderFriends(pane);
   } else if (accountTab === 'inventory') {
     const filtered = accountItems.filter(item => accountFilter === 'all' || item.rarity === accountFilter);
     accountInventoryPage = Math.min(accountInventoryPage, Math.max(0, Math.ceil(filtered.length / 24) - 1));
@@ -113,6 +121,23 @@ function accountShell() {
       ${filtered.length ? `<div class="inventory-grid">${filtered.slice(accountInventoryPage * 24, (accountInventoryPage + 1) * 24).map(item => itemCard(item)).join('')}</div>
       <div class="inventory-pages"><button data-account="page" data-step="-1" ${accountInventoryPage ? '' : 'disabled'}>← Zurück</button><span>${accountInventoryPage + 1} / ${Math.ceil(filtered.length / 24)}</span><button data-account="page" data-step="1" ${(accountInventoryPage + 1) * 24 >= filtered.length ? 'disabled' : ''}>Weiter →</button></div>` : '<div class="collection-empty"><span>◇</span><h3>Hier wartet dein nächster Fund.</h3><p>Öffne eine Kiste und sammle Auktionslose in deinem Inventar.</p><button class="primary-button" data-account="tab" data-tab="cases">Zu den Kisten →</button></div>'}`;
   } else renderCases(pane);
+}
+function dailyFriendLabel(daily) {
+  if (daily.status === 'completed') return `${daily.score.toLocaleString('de-DE')} / 5.000 Pkt`;
+  return daily.status === 'in_progress' ? `In Arbeit · ${daily.completedRounds} / 5 Lose` : 'Noch nicht gespielt';
+}
+function renderFriends(pane) {
+  const accepted = accountFriends.friends.filter(friend => friend.status === 'accepted');
+  const incoming = accountFriends.friends.filter(friend => friend.status === 'incoming');
+  const outgoing = accountFriends.friends.filter(friend => friend.status === 'outgoing');
+  const requests = (friends, incoming) => friends.map(friend => `<div class="friend-request"><strong>${accountEscape(friend.username)}</strong><span>${incoming ? 'Möchte mit dir befreundet sein' : 'Wartet auf Antwort'}</span><div>${incoming ? `<button data-account="friend-accept" data-id="${friend.id}">Annehmen</button>` : ''}<button data-account="friend-remove" data-id="${friend.id}">${incoming ? 'Ablehnen' : 'Zurückziehen'}</button></div></div>`).join('');
+  pane.innerHTML = `<div class="friends-heading"><div><h3>Gemeinsam sammeln.</h3><p>Daily vom ${accountEscape(accountFriends.date)} · Reset um 00:00 UTC</p></div><button data-account="tab" data-tab="friends">Aktualisieren</button></div>
+    <form id="friend-form" class="friend-form"><label>Benutzername<input name="username" required minlength="3" maxlength="32" pattern="[a-zA-Z0-9_-]{3,32}" autocomplete="off" placeholder="Benutzername eines Freundes"></label><button class="secondary-button" type="submit">Anfrage senden</button><p class="account-error" role="alert"></p></form>
+    <p class="earning-detail">Nach dem Annehmen seht ihr gegenseitig euren Inventarwert und den heutigen Daily-Spielstand.</p>
+    ${incoming.length ? `<h3>Anfragen an dich · ${incoming.length}</h3><div class="friend-requests">${requests(incoming, true)}</div>` : ''}
+    ${outgoing.length ? `<h3>Gesendete Anfragen · ${outgoing.length}</h3><div class="friend-requests">${requests(outgoing, false)}</div>` : ''}
+    <h3>Deine Freunde · ${accepted.length}</h3>
+    ${accepted.length ? `<div class="friend-grid">${accepted.map(friend => `<article class="friend-card"><h4>${accountEscape(friend.username)}</h4><dl><div><dt>HEUTIGES DAILY</dt><dd>${dailyFriendLabel(friend.daily)}</dd></div><div><dt>INVENTARWERT</dt><dd>${euro(friend.inventoryValueEur)}</dd></div><div><dt>GESAMMELTE LOSE</dt><dd>${friend.itemCount}</dd></div></dl><button data-account="friend-remove" data-id="${friend.id}">Freund entfernen</button></article>`).join('')}</div>` : '<p class="collection-empty">Noch keine Freunde. Sende eine Anfrage über den Benutzernamen.</p>'}`;
 }
 function renderCases(pane) {
   const box = accountCatalog.cases.find(box => box.id === accountSelectedCase) || accountCatalog.cases[0];
@@ -136,6 +161,7 @@ async function loadAccountTab(tab) {
   if (!accountCatalog) accountCatalog = await accountApi('cases');
   if (tab === 'inventory' && account) accountItems = (await accountApi('inventory')).items;
   if (tab === 'admin' && account?.admin) accountCodes = (await accountApi('codes')).codes;
+  if (tab === 'friends' && account) accountFriends = await accountApi('friends');
   if (account?.id === owner) accountShell();
 }
 async function openAccount() {
@@ -217,7 +243,7 @@ document.addEventListener('click', async event => {
     if (action === 'logout') {
       await accountApi('logout', {});
       updateAccount(null); accountDailyRun = null; higherLowerRequest++; higherLowerRun = null;
-      accountResult = null; freshCodes = []; accountItems = []; accountCodes = [];
+      accountResult = null; freshCodes = []; accountItems = []; accountCodes = []; accountFriends = { friends: [], date: '' };
       renderStart(); await loadAccountTab('login');
     }
     if (action === 'select-case') { accountSelectedCase = button.dataset.id; accountResult = null; accountShell(); }
@@ -230,12 +256,16 @@ document.addEventListener('click', async event => {
       accountShell(); showToast(`${result.value} Tokens gutgeschrieben.`);
     }
     if (action === 'revoke') { await accountApi('codes/revoke', { id: button.dataset.id }); await loadAccountTab('admin'); }
+    if (action === 'friend-accept' || action === 'friend-remove') {
+      accountFriends = await accountApi(action === 'friend-accept' ? 'friends/accept' : 'friends/remove', { id: button.dataset.id });
+      accountShell();
+    }
     if (action === 'page') { accountInventoryPage += Number(button.dataset.step); accountShell(); }
   } catch (error) { showToast(error.message); }
   finally { accountBusy = false; if (button.isConnected) button.disabled = false; }
 });
 document.addEventListener('submit', async event => {
-  if (!event.target.matches('#account-form, #code-form')) return;
+  if (!event.target.matches('#account-form, #code-form, #friend-form')) return;
   event.preventDefault();
   if (accountBusy) return;
   accountBusy = true;
@@ -248,6 +278,9 @@ document.addEventListener('submit', async event => {
       const result = await accountApi(accountTab === 'register' ? 'register' : 'login', data);
       updateAccount(result.user); accountDailyRun = null; higherLowerRequest++; higherLowerRun = null;
       accountResult = null; freshCodes = []; renderStart(); await loadAccountTab('cases');
+    } else if (form.id === 'friend-form') {
+      accountFriends = await accountApi('friends/request', { username: data.username.trim() });
+      accountShell();
     } else {
       freshCodes = (await accountApi('codes', { count: Number(data.count) })).codes;
       await loadAccountTab('admin');

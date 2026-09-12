@@ -2,6 +2,7 @@ import { randomBytes, randomUUID, createHash, scrypt, timingSafeEqual } from 'no
 import { promisify } from 'node:util';
 import { withDatabase, transaction } from './database.mjs';
 import { drawItem } from './cases.mjs';
+import { scoreGuess } from './core.mjs';
 
 const derive = promisify(scrypt);
 const digest = value => createHash('sha256').update(value).digest('hex');
@@ -67,6 +68,14 @@ export class Accounts {
         user_id TEXT NOT NULL REFERENCES users(id), request_id TEXT NOT NULL, case_id TEXT NOT NULL,
         item TEXT NOT NULL CHECK(json_valid(item)), PRIMARY KEY(user_id, request_id)
       ) STRICT;
+      CREATE TABLE IF NOT EXISTS friendships (
+        user_a TEXT NOT NULL REFERENCES users(id), user_b TEXT NOT NULL REFERENCES users(id),
+        requested_by TEXT NOT NULL REFERENCES users(id), created_at INTEGER NOT NULL,
+        accepted INTEGER NOT NULL DEFAULT 0 CHECK(accepted IN (0, 1)),
+        PRIMARY KEY(user_a, user_b), CHECK(user_a < user_b),
+        CHECK(requested_by = user_a OR requested_by = user_b)
+      ) STRICT;
+      CREATE INDEX IF NOT EXISTS friendships_user_b ON friendships(user_b);
     `));
   }
   db(work) { return withDatabase(this.dataDir, work); }
@@ -160,8 +169,60 @@ export class Accounts {
       const row = db.prepare('SELECT id, username, admin, tokens FROM users WHERE id = ?').get(user.id);
       const reward = db.prepare(`SELECT daily_rewards.earned, account_games.mode, account_games.complete FROM daily_rewards
         JOIN account_games ON run_id = account_games.id WHERE daily_rewards.user_id = ? AND daily_rewards.date = ?`).get(user.id, day(this.now()));
-      return { ...row, admin: Boolean(row.admin), reward: reward || null, date: day(this.now()) };
+      return { ...row, ...this.summary(db, user.id), admin: Boolean(row.admin), reward: reward || null, date: day(this.now()) };
     });
+  }
+  summary(db, userId) {
+    // Sum saved item values in cents; sold items and tokens do not count as euros.
+    const inventory = db.prepare(`SELECT COUNT(*) AS itemCount,
+      COALESCE(SUM(CAST(ROUND(json_extract(item, '$.price') * 100) AS INTEGER)), 0) AS cents
+      FROM inventory WHERE user_id = ? AND sold_at IS NULL`).get(userId);
+    const game = db.prepare(`SELECT payload FROM account_games WHERE user_id = ? AND date = ? AND mode = 'daily'
+      ORDER BY rowid DESC LIMIT 1`).get(userId, day(this.now()));
+    const run = game ? JSON.parse(game.payload) : null;
+    const daily = { status: run?.complete ? 'completed' : run?.answers.length ? 'in_progress' : 'not_started',
+      completedRounds: run?.answers.length || 0,
+      score: run?.complete ? run.answers.reduce((total, guess, i) => total + scoreGuess(guess, run.auctions[i].actualBid), 0) : null };
+    return { inventoryValueEur: inventory.cents / 100, accountValueEur: inventory.cents / 100,
+      itemCount: inventory.itemCount, daily };
+  }
+  friends(user) {
+    return this.db(db => {
+      const rows = db.prepare(`SELECT u.id, u.username, f.requested_by, f.accepted FROM friendships f
+        JOIN users u ON u.id = CASE WHEN f.user_a = ? THEN f.user_b ELSE f.user_a END
+        WHERE f.user_a = ? OR f.user_b = ? ORDER BY u.username COLLATE NOCASE`).all(user.id, user.id, user.id);
+      return { date: day(this.now()), friends: rows.map(row => ({ id: row.id, username: row.username,
+        status: row.accepted ? 'accepted' : row.requested_by === user.id ? 'outgoing' : 'incoming',
+        ...(row.accepted ? this.summary(db, row.id) : {}) })) };
+    });
+  }
+  requestFriend(user, username) {
+    if (typeof username !== 'string' || !/^[a-zA-Z0-9_-]{3,32}$/.test(username.trim())) fail('invalid_username');
+    return this.atomic(db => {
+      const target = db.prepare('SELECT id FROM users WHERE username = ?').get(username.trim());
+      if (!target) fail('user_not_found', 404);
+      if (target.id === user.id) fail('friend_self');
+      const pair = [user.id, target.id].sort();
+      if (db.prepare('SELECT 1 FROM friendships WHERE user_a = ? AND user_b = ?').get(...pair)) return;
+      for (const id of pair) {
+        const count = db.prepare('SELECT COUNT(*) AS count FROM friendships WHERE user_a = ? OR user_b = ?').get(id, id).count;
+        if (count >= 100) fail('friend_limit', 409);
+      }
+      db.prepare('INSERT INTO friendships (user_a, user_b, requested_by, created_at) VALUES (?, ?, ?, ?)')
+        .run(...pair, user.id, this.now());
+    });
+  }
+  acceptFriend(user, friendId) {
+    const pair = [user.id, String(friendId)].sort();
+    this.atomic(db => {
+      const result = db.prepare('UPDATE friendships SET accepted = 1 WHERE user_a = ? AND user_b = ? AND requested_by != ?')
+        .run(...pair, user.id);
+      if (!result.changes) fail('friend_request_not_found', 404);
+    });
+  }
+  removeFriend(user, friendId) {
+    const pair = [user.id, String(friendId)].sort();
+    this.db(db => db.prepare('DELETE FROM friendships WHERE user_a = ? AND user_b = ?').run(...pair));
   }
   inventory(user) {
     return this.db(db => db.prepare('SELECT id, item, created_at FROM inventory WHERE user_id = ? AND sold_at IS NULL ORDER BY created_at DESC, id')
