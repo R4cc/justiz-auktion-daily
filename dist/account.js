@@ -262,18 +262,19 @@ async function pullCase(visit) {
   const cards = Array.from({ length: 42 }, (_, index) => index === winnerIndex ? result.item : box.items[Math.floor(Math.random() * box.items.length)]);
   reel.innerHTML = cards.map(item => tierCard(item.rarity)).join('');
   const pause = ms => new Promise(resolve => setTimeout(resolve, ms));
+  const width = reel.children[0].getBoundingClientRect().width;
+  const landingAt = index => index * (width + 12) + width / 2 - viewport.clientWidth / 2;
   if (matchMedia('(prefers-reduced-motion: reduce)').matches) {
-    // Keep the centered, low-motion reveal brisk without horizontal travel or flashing.
-    reel.classList.add('case-reel-reduced');
-    for (let step = 0; step < 8; step++) {
+    // Jump the full reel between centered stops, simulating a wheel without interpolation.
+    const tierDelays = [80, 90, 110, 140, 180, 240, 320, 420, 540, 680, 820, 1000];
+    for (let step = 0; step < tierDelays.length; step++) {
       if (visit !== accountVisit || !reel.isConnected) return;
-      reel.innerHTML = tierCard(cards[step * 4].rarity);
-      await pause(325);
+      reel.style.transform = `translateX(${-landingAt(step * 3)}px)`;
+      await pause(tierDelays[step]);
     }
-    reel.innerHTML = tierCard(result.item.rarity);
+    reel.style.transform = `translateX(${-landingAt(winnerIndex)}px)`;
   } else {
-  const width = reel.children[0].getBoundingClientRect().width, landing = winnerIndex * (width + 12) + width / 2 - viewport.clientWidth / 2;
-  const animation = reel.animate([{ transform: 'translateX(0)' }, { transform: `translateX(${-landing}px)` }], { duration: 5200, easing: 'cubic-bezier(.12,.72,.12,1)', fill: 'forwards' });
+  const animation = reel.animate([{ transform: 'translateX(0)' }, { transform: `translateX(${-landingAt(winnerIndex)}px)` }], { duration: 5200, easing: 'cubic-bezier(.12,.72,.12,1)', fill: 'forwards' });
   await animation.finished;
   }
   if (visit !== accountVisit || !reel.isConnected) return;

@@ -630,7 +630,6 @@ button:focus-visible, a:focus-visible { outline: 3px solid var(--red); outline-o
 .case-reel { display: flex; gap: 12px; width: max-content; will-change: transform; }
 .case-tier { width: 170px; height: 204px; flex: 0 0 170px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 24px; border: 1px solid var(--rarity); border-bottom: 4px solid var(--rarity); border-radius: 10px; background: #203a32; color: #f7f3e8; }
 .case-tier-symbol { color: var(--rarity); font-size: 76px; line-height: 1; text-shadow: 0 0 24px var(--rarity); }
-.case-reel-reduced { width: 100%; justify-content: center; }
 .case-reveal { padding: 0; border: 0; border-radius: 18px; width: min(480px, calc(100vw - 32px)); max-height: calc(100dvh - 32px); color: var(--ink); background: var(--paper); box-shadow: 0 24px 100px #0008; }
 .case-reveal::backdrop { background: #0c211dcc; }
 .case-reveal-content { padding: 26px; border-top: 6px solid var(--rarity); text-align: center; }

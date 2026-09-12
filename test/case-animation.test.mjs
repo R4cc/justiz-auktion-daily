@@ -9,10 +9,11 @@ const tierSource = source.slice(source.indexOf('function tierCard('), source.ind
 const flush = () => new Promise(resolve => setImmediate(resolve));
 
 function opening(reduced) {
-  const timers = [], frames = [];
+  const timers = [], frames = [], transforms = [];
   let revealed = 0, elapsed = 0, markup = '';
   const reel = {
     isConnected: true, classList: { add() {} }, children: [],
+    style: { set transform(value) { transforms.push(value); } },
     set innerHTML(value) {
       markup = value; frames.push(value);
       this.children = [...value.matchAll(/class="case-tier /g)].map(() => ({
@@ -39,9 +40,9 @@ function opening(reduced) {
     resultMarkup: () => 'REVEALED', revealCaseItem: () => { revealed++; }
   });
   vm.runInContext(tierSource + pullSource, context);
-  return { context, reel, frames, status, start: () => vm.runInContext('pullCase(1)', context),
+  return { context, reel, frames, transforms, status, start: () => vm.runInContext('pullCase(1)', context),
     get revealed() { return revealed; }, get elapsed() { return elapsed; },
-    async tick() { const timer = timers.shift(); assert.ok(timer); elapsed += timer.ms; timer.resolve(); await flush(); }
+    async tick() { const timer = timers.shift(); assert.ok(timer); elapsed += timer.ms; timer.resolve(); await flush(); return timer.ms; }
   };
 }
 
@@ -50,17 +51,22 @@ for (const reduced of [false, true]) {
     const run = opening(reduced), done = run.start();
     await flush();
     assert.equal(run.context.accountResult, null);
-    for (let step = 0; step < (reduced ? 8 : 1); step++) {
+    const delays = [];
+    for (let step = 0; step < (reduced ? 12 : 1); step++) {
       assert.equal(run.revealed, 0);
-      await run.tick();
+      delays.push(await run.tick());
     }
-    assert.equal(run.elapsed, reduced ? 2600 : 5200);
+    assert.deepEqual(delays, reduced ? [80, 90, 110, 140, 180, 240, 320, 420, 540, 680, 820, 1000] : [5200]);
+    assert.equal(run.elapsed, reduced ? 4620 : 5200);
     assert.equal(run.revealed, 0);
     assert.match(run.status.innerHTML, /legendary/);
     assert.ok(run.frames.every(frame => !/SECRET|<img|secret.jpg|decoy.jpg/.test(frame)));
-    if (reduced) assert.equal(run.reel.children.length, 1);
+    if (reduced) {
+      assert.equal(run.reel.children.length, 42);
+      assert.deepEqual(run.transforms, [...Array(12)].map((_, step) => `translateX(${165 - step * 546}px)`).concat('translateX(-6023px)'));
+    }
     await run.tick(); await done;
-    assert.equal(run.elapsed, reduced ? 3350 : 5950);
+    assert.equal(run.elapsed, reduced ? 5370 : 5950);
     assert.equal(run.revealed, 1);
     assert.equal(run.context.accountResult.title, 'SECRET WINNER');
     assert.equal(run.context.caseOpening, null);
