@@ -290,6 +290,7 @@ function startGame() {
 }
 
 function renderStart() {
+  window.scrollTo({ top: 0, behavior: 'instant' });
   clearInterval(countdownTimer);
   state.view = 'start';
   const saved = getTodayRecord();
@@ -298,22 +299,32 @@ function renderStart() {
   app.innerHTML = `
     <section class="start-screen">
       <div class="start-main">
-        <p class="eyebrow game-number">TAGESAUKTION · #${gameNumber()}</p>
-        <h1 class="hero-title">JUSTIZ<br>GUESSR<span>.</span></h1>
-        <p class="hero-copy"><strong>5 echte Justiz-Auktionen.</strong></p>
+        <p class="eyebrow game-number"><span class="live-dot" aria-hidden="true"></span> DER HAMMER DES TAGES · #${gameNumber()}</p>
+        <h1 class="hero-title">Zum Ersten.<br>Zum Zweiten.<br><span>Dein Tipp!</span></h1>
+        <p class="hero-copy">Vom Fundstück zum Glücksgriff: Schätze die Gebote von <strong>5 echten Justiz-Auktionen.</strong> Wie gut ist dein Preisgefühl?</p>
         <div class="start-actions">
           <button class="primary-button" type="button" data-action="play">${buttonText}<span class="button-arrow">→</span></button>
           <button class="secondary-button random-button" type="button" data-action="random">Freies Spiel starten <span aria-hidden="true">↻</span></button>
         </div>
+        <p class="play-note">Keine Anmeldung. Kein echtes Geld. Nur dein Bauchgefühl.</p>
+        <div class="how-strip" aria-label="Spielablauf"><span><b>01</b> Entdecken</span><span><b>02</b> Schätzen</span><span><b>03</b> Abräumen</span></div>
       </div>
       <aside class="start-side" aria-label="Tagesstatistik">
+        <div class="auction-art" aria-hidden="true">
+          <span class="art-caption">DAS TÄGLICHE AUKTIONSSPIEL</span>
+          <span class="art-spark art-spark--one">✳</span><span class="art-spark art-spark--two">✦</span>
+          <div class="bid-paddle"><span>BIETERNUMMER</span><strong>001</strong><small>DEIN PREISGEFÜHL ZÄHLT</small></div>
+          <div class="gavel"><i class="gavel-head"></i><i class="gavel-handle"></i></div>
+          <span class="art-stamp">HEUTE<br><strong>5 LOSE</strong><br>FÜR DICH</span>
+          <span class="art-caption art-caption--bottom">KLEINE SCHÄTZE. GROSSE FRAGEZEICHEN.</span>
+        </div>
         <div class="ticket">
           <div class="ticket-top">
-            <p class="ticket-label">HEUTE ZU HOLEN</p>
+            <p class="ticket-label">DEIN TAGESZIEL</p>
             <p class="ticket-number">5.000 PKT</p>
           </div>
           <div class="ticket-stats">
-            <div class="ticket-stat"><span>STREAK</span><strong>${playerStats.streak ? `🔥 ${playerStats.streak} Tage` : '—'}</strong></div>
+            <div class="ticket-stat"><span>STREAK</span><strong>${playerStats.streak ? `🔥 ${playerStats.streak} Tag${playerStats.streak === 1 ? '' : 'e'}` : '—'}</strong></div>
             <div class="ticket-stat"><span>BESTWERT</span><strong>${playerStats.best ? playerStats.best.toLocaleString('de-DE') : '—'}</strong></div>
           </div>
         </div>
@@ -338,8 +349,8 @@ function renderRound() {
   app.innerHTML = `
     <section class="game-shell">
       <div class="game-topline">
-        <span class="round-count">${state.round + 1} / 5<small>${gameMode === 'random' ? 'FREIES SPIEL' : 'DAILY'}</small></span>
-        <div class="progress-track" aria-label="Spielfortschritt"><div class="progress-fill" style="width:${((state.round + (answer ? 1 : 0)) / 5) * 100}%"></div></div>
+        <span class="round-count">LOS ${String(state.round + 1).padStart(2, '0')} / 05<small>${gameMode === 'random' ? 'FREIES SPIEL' : 'TAGESAUKTION'}</small></span>
+        <div class="lot-progress" aria-label="${state.answers.length} von 5 Auktionen geschätzt">${Array.from({ length: 5 }, (_, index) => `<span class="lot-step${state.answers[index] ? ' is-complete' : index === state.round ? ' is-current' : ''}" aria-hidden="true">${state.answers[index] ? '✓' : String(index + 1).padStart(2, '0')}</span>`).join('')}</div>
         <span class="running-score">${runningScore.toLocaleString('de-DE')} PKT</span>
       </div>
       <div class="auction-layout${answer ? ' auction-layout--result' : ''}">
@@ -355,7 +366,7 @@ function renderRound() {
           <span class="time-tag${ended ? ' time-tag--ended' : ''}"><span class="clock-icon" aria-hidden="true"></span><span data-countdown>${timeRemaining(auction.endAt)}</span></span>
         </div>
         <div class="auction-panel${answer ? ' auction-panel--result' : ''}">
-          <p class="auction-id">JUSTIZ-AUKTION #${auction.id}</p>
+          <p class="auction-id">${answer ? 'DER HAMMER IST GEFALLEN' : 'UNTER DEM HAMMER'} · #${auction.id}</p>
           <h1 class="auction-title">${auction.title}</h1>
           ${answer ? revealMarkup(auction, answer) : `
             <p class="auction-description" tabindex="0" role="region" aria-label="Auktionsbeschreibung">${censorCurrencyValues(auction.description)}</p>
@@ -374,7 +385,8 @@ function renderRound() {
       node.closest('.time-tag')?.classList.toggle('time-tag--ended', !auction.endAt || Date.parse(auction.endAt) <= Date.now());
     }
   }, 30000);
-  setTimeout(() => document.querySelector(answer ? '[data-action="next"]' : '#price-input')?.focus(), 50);
+  window.scrollTo({ top: 0, behavior: 'instant' });
+  setTimeout(() => document.querySelector(answer ? '[data-action="next"]' : '#price-input')?.focus({ preventScroll: true }), 50);
 }
 
 function guessMarkup(ended = false) {
@@ -383,8 +395,9 @@ function guessMarkup(ended = false) {
       <label for="price-input">${ended ? 'Was war das Endgebot?' : 'Was ist das aktuelle Gebot?'}</label>
       <div class="guess-control">
         <div class="input-wrap"><span class="currency">€</span><input id="price-input" class="price-input" inputmode="decimal" autocomplete="off" placeholder="0" /></div>
-        <button class="submit-guess" type="submit">Tipp abgeben</button>
+        <button class="submit-guess" type="submit">Tipp abgeben <span aria-hidden="true">↗</span></button>
       </div>
+      <p class="input-hint">Dein Tipp ist kein echtes Gebot. <span>Enter ↵</span></p>
     </form>`;
 }
 
@@ -429,7 +442,7 @@ function revealMarkup(auction, answer) {
 function submitGuess(form) {
   const raw = form.querySelector('#price-input').value.trim().replace(/\s/g, '').replace(',', '.');
   const guess = Number(raw);
-  if (!Number.isFinite(guess) || guess < 0) {
+  if (!raw || !Number.isFinite(guess) || guess < 0) {
     showToast('Bitte gib einen gültigen Eurobetrag ein.');
     return;
   }
@@ -465,6 +478,7 @@ function finishGame() {
 }
 
 function renderResults() {
+  window.scrollTo({ top: 0, behavior: 'instant' });
   clearInterval(countdownTimer);
   const total = state.answers.reduce((sum, item) => sum + item.score, 0);
   const averageError = state.answers.reduce((sum, item) => sum + item.error, 0) / state.answers.length;
@@ -474,7 +488,7 @@ function renderResults() {
   app.innerHTML = `
     <section class="results-screen">
       <div class="results-header">
-        <div><p class="eyebrow">${gameMode === 'random' ? 'FREIES SPIEL' : `TAGESAUKTION #${gameNumber()}`} · GESCHAFFT</p><h1>DEIN<br>ERGEBNIS<span style="color:var(--red)">.</span></h1></div>
+        <div><p class="eyebrow">${gameMode === 'random' ? 'FREIES SPIEL' : `TAGESAUKTION #${gameNumber()}`} · GESCHAFFT</p><h1>Zum Dritten.<br><span style="color:var(--red)">Abgerechnet!</span></h1></div>
         <div class="results-score"><strong>${total.toLocaleString('de-DE')} / 5.000</strong><span>GESAMTPUNKTE</span></div>
       </div>
       <div class="result-stats">
