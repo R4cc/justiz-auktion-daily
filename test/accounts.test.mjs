@@ -4,8 +4,8 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { createServer } from 'node:http';
-import { Accounts } from '../src/accounts.mjs';
-import { caseCatalog, itemRarity, drawItem } from '../src/cases.mjs';
+import { Accounts, STARTING_TOKENS } from '../src/accounts.mjs';
+import { CASES, caseCatalog, publicCaseCatalog, itemRarity, drawItem } from '../src/cases.mjs';
 import { closeDataStore, upsertAuctions } from '../src/database.mjs';
 import { createAccountApi } from '../src/account-api.mjs';
 
@@ -87,7 +87,8 @@ test('registration codes are single-use and admin-only; credentials, sessions an
   assert.equal(results.filter(result => result.status === 'fulfilled').length, 1);
   const token = results.find(result => result.status === 'fulfilled').value;
   const user = service.user(token);
-  assert.equal(user.tokens, 0);
+  assert.equal(user.tokens, STARTING_TOKENS);
+  assert.equal(service.profile(admin).tokens, STARTING_TOKENS);
   assert.notEqual(user.password_hash, password);
   assert.throws(() => service.codes(user, 2), { status: 403 });
   assert.throws(() => service.listCodes(user), { status: 403 });
@@ -124,7 +125,7 @@ test('daily rewards are once per account per UTC day across modes, survive repla
   for (let i = 0; i < 5; i++) run = service.answer(admin, run.id, i, 10);
   assert.equal(run.earned, 100);
   assert.equal(service.answer(admin, run.id, 4, 10).earned, 100);
-  assert.equal(service.profile(admin).tokens, 100);
+  assert.equal(service.profile(admin).tokens, STARTING_TOKENS + 100);
   assert.throws(() => service.answer(admin, run.id, 4, 20), /answer_conflict/);
   const hl = service.startGame(admin, 'higher-lower', () => lots);
   assert.equal(hl.auctions[0].actualBid, 10);
@@ -132,7 +133,7 @@ test('daily rewards are once per account per UTC day across modes, survive repla
   let result;
   for (let i = 0; i < 7; i++) result = service.answer(admin, hl.id, i, 'higher');
   assert.equal(result.earned, 0);
-  assert.equal(service.profile(admin).tokens, 100);
+  assert.equal(service.profile(admin).tokens, STARTING_TOKENS + 100);
   nextDay();
   assert.equal(service.profile(admin).reward, null);
   assert.throws(() => service.answer(admin, run.id, 0, 10), /daily_reset/);
@@ -140,7 +141,7 @@ test('daily rewards are once per account per UTC day across modes, survive repla
   assert.notEqual(fresh.id, hl.id);
   for (let i = 0; i < 7; i++) result = service.answer(admin, fresh.id, i, 'higher');
   assert.equal(result.earned, 140);
-  assert.equal(service.profile(admin).tokens, 240);
+  assert.equal(service.profile(admin).tokens, STARTING_TOKENS + 240);
 });
 
 test('first answer reserves the run, low streaks earn zero, ties count and another mode cannot replace a failed run', async t => {
@@ -153,7 +154,7 @@ test('first answer reserves the run, low streaks earn zero, ties count and anoth
   assert.equal(ended.earned, 0);
   const daily = service.startGame(admin, 'daily', () => []);
   for (let i = 0; i < 5; i++) service.answer(admin, daily.id, i, 10);
-  assert.equal(service.profile(admin).tokens, 0);
+  assert.equal(service.profile(admin).tokens, STARTING_TOKENS);
   nextDay();
   const tie = service.startGame(admin, 'higher-lower', () => Array.from({ length: 15 }, () => ({ ...lots[0], actualBid: 10 })));
   let result;
@@ -166,25 +167,23 @@ test('case debits, item ownership, idempotent openings and sales remain atomic a
   const { service, dir, admin, register } = await fixture(t);
   const other = await register('other');
   const catalog = caseCatalog(lots);
-  assert.throws(() => service.openCase(admin, catalog, 'fundkiste', 'test-request-00001'), /insufficient_tokens/);
   const daily = service.startGame(admin, 'daily', () => lots.slice(0, 5));
   for (let i = 0; i < 5; i++) service.answer(admin, daily.id, i, 10);
   assert.throws(() => service.openCase(admin, catalog, 'fundkiste', 'test-request-00001', 'stale'), /catalog_changed/);
-  assert.equal(service.profile(admin).tokens, 100);
+  assert.equal(service.profile(admin).tokens, STARTING_TOKENS + 100);
   const item = service.openCase(admin, catalog, 'fundkiste', 'test-request-00001');
-  assert.equal(service.profile(admin).tokens, 0);
+  assert.equal(service.profile(admin).tokens, STARTING_TOKENS);
   assert.deepEqual(service.openCase(admin, catalog, 'fundkiste', 'test-request-00001'), item);
   assert.throws(() => service.openCase(admin, catalog, 'schatzkiste', 'test-request-00001'), /request_conflict/);
-  assert.throws(() => service.openCase(admin, catalog, 'fundkiste', 'test-request-00002'), /insufficient_tokens/);
   assert.equal(service.inventory(admin).length, 1);
   assert.equal(service.inventory(other).length, 0);
   assert.throws(() => service.sell(other, item.id), { status: 404 });
   service.sell(admin, item.id); service.sell(admin, item.id);
-  assert.equal(service.profile(admin).tokens, item.sellValue);
+  assert.equal(service.profile(admin).tokens, STARTING_TOKENS + item.sellValue);
   assert.equal(service.inventory(admin).length, 0);
   closeDataStore(dir);
   const reopened = new Accounts(dir);
-  assert.equal(reopened.profile(admin).tokens, item.sellValue);
+  assert.equal(reopened.profile(admin).tokens, STARTING_TOKENS + item.sellValue);
   assert.equal(reopened.inventory(admin).length, 0);
   assert.deepEqual(reopened.openCase(admin, catalog, 'fundkiste', 'test-request-00001'), item);
 });
@@ -210,6 +209,60 @@ test('rarity reflects price and uniqueness; catalog collapses families and norma
   assert.ok(caseCatalog([]).cases.every(box => box.odds.every(rarity => rarity.chance === 0)));
 });
 
+test('bulk grants credit only existing accounts, survive restart and never double-credit retries or later signups', async t => {
+  const { service, admin, register, dir } = await fixture(t);
+  const alice = await register('Alice'), bob = await register('Bob');
+  const request = 'bulk-grant-test-0001';
+  const grant = service.grantTokens(admin, 735, request);
+  assert.equal(grant.recipients, 3);
+  for (const user of [admin, alice, bob]) assert.equal(service.profile(user).tokens, STARTING_TOKENS + 735);
+  const newcomer = await register('Newcomer');
+  assert.equal(service.profile(newcomer).tokens, STARTING_TOKENS);
+  assert.deepEqual(service.grantTokens(admin, 735, request), grant);
+  assert.throws(() => service.grantTokens(admin, 736, request), /request_conflict/);
+  closeDataStore(dir);
+  const reopened = new Accounts(dir);
+  assert.deepEqual(reopened.grantTokens(admin, 735, request), grant);
+  assert.equal(reopened.profile(newcomer).tokens, STARTING_TOKENS);
+  assert.equal(reopened.profile(alice).tokens, STARTING_TOKENS + 735);
+  assert.equal(reopened.grantTokens(admin, 15, 'bulk-grant-test-0002').recipients, 4);
+  assert.equal(reopened.profile(newcomer).tokens, STARTING_TOKENS + 15);
+  assert.equal(reopened.profile(alice).tokens, STARTING_TOKENS + 750);
+  assert.equal(reopened.adminOverview(admin).playerCount, 4);
+  assert.equal(reopened.adminOverview(admin).grants.length, 2);
+});
+
+test('bulk grants reject regular users and invalid amounts without changing balances', async t => {
+  const { service, admin, register } = await fixture(t);
+  const player = await register('Player');
+  assert.throws(() => service.adminOverview(player), { status: 403 });
+  assert.throws(() => service.grantTokens(player, 100, 'bulk-grant-test-0001'), { status: 403 });
+  for (const amount of [0, -1, 1.5, 1_000_001, Infinity, NaN, '100', null]) {
+    assert.throws(() => service.grantTokens(admin, amount, 'bulk-grant-test-0001'), /invalid_grant_amount/);
+  }
+  assert.throws(() => service.grantTokens(admin, 100, 'bad'), { status: 400 });
+  assert.equal(service.profile(player).tokens, STARTING_TOKENS);
+  assert.equal(service.profile(admin).tokens, STARTING_TOKENS);
+  assert.equal(service.adminOverview(admin).grants.length, 0);
+});
+
+test('case payouts rise non-linearly, legendary pulls stay exceptional and half of full-catalog pulls can fund the same case', () => {
+  assert.deepEqual(CASES.map(box => box.weights), [[5000, 3000, 1400, 550, 50], [3500, 1500, 3000, 1950, 50]]);
+  assert.deepEqual(caseCatalog(lots).rarities.map(rarity => rarity.sell), [10, 100, 250, 750, 2500]);
+  for (const box of CASES) {
+    const total = box.weights.reduce((sum, n) => sum + n, 0);
+    const reusable = box.weights.reduce((sum, weight, index) => sum + (caseCatalog(lots).rarities[index].sell >= box.cost ? weight : 0), 0);
+    assert.equal(reusable / total, .5);
+    assert.equal(box.weights[4] / total, .005);
+  }
+  const catalog = publicCaseCatalog(caseCatalog(lots));
+  assert.deepEqual(catalog.cases.map(box => box.name), ['Seized Goods Case', 'Contraband Case']);
+  assert.deepEqual(catalog.cases.map(box => box.id), ['fundkiste', 'schatzkiste']);
+  assert.ok(catalog.cases.every(box => box.available));
+  assert.doesNotMatch(JSON.stringify(catalog), /"(?:odds|weights|chance)":/);
+  assert.ok(publicCaseCatalog(caseCatalog([])).cases.every(box => !box.available));
+});
+
 test('HTTP API enforces authentication, CSRF headers, admin permissions and session cookies without exposing secrets', async t => {
   const { dir } = await fixture(t);
   upsertAuctions(dir, lots);
@@ -223,6 +276,11 @@ test('HTTP API enforces authentication, CSRF headers, admin permissions and sess
   const post = (route, value, cookie = '', extra = {}) => fetch(base + route, { method: 'POST', headers: {
     'content-type': 'application/json', 'x-requested-with': 'JUSTIZGUESSR', cookie, ...extra }, body: JSON.stringify(value) });
   assert.equal((await fetch(base + 'inventory')).status, 401);
+  assert.equal((await fetch(base + 'admin')).status, 401);
+  assert.equal((await post('admin/grant-tokens', { amount: 400, requestId: 'bulk-grant-api-0001' })).status, 401);
+  const publicCatalog = await (await fetch(base + 'cases')).json();
+  assert.equal(publicCatalog.cases[0].name, 'Seized Goods Case');
+  assert.doesNotMatch(JSON.stringify(publicCatalog), /"(?:odds|weights|chance)":/);
   assert.equal((await post('login', { username: 'admin', password }, '', { 'x-requested-with': '' })).status, 403);
   assert.equal((await post('login', { username: 'admin', password }, '', { 'sec-fetch-site': 'cross-site' })).status, 403);
   const response = await post('login', { username: 'admin', password });
@@ -231,7 +289,7 @@ test('HTTP API enforces authentication, CSRF headers, admin permissions and sess
   assert.match(cookie, /HttpOnly; SameSite=Strict/); assert.match(cookie, /Secure/);
   const profile = await response.json();
   assert.ok(!JSON.stringify(profile).includes('password'));
-  assert.equal(profile.user.tokens, 0);
+  assert.equal(profile.user.tokens, STARTING_TOKENS);
   const codes = await (await post('codes', { count: 3 }, cookie)).json();
   assert.equal(codes.codes.length, 3);
   const registered = await post('register', { username: 'player', password, code: codes.codes[0] });
@@ -250,6 +308,17 @@ test('HTTP API enforces authentication, CSRF headers, admin permissions and sess
   assert.equal((await (await post('friends/remove', { id: player.id }, cookie)).json()).friends.length, 0);
   assert.equal((await post('codes', { count: 1 }, playerCookie)).status, 403);
   assert.equal((await fetch(base + 'codes', { headers: { cookie: playerCookie } })).status, 403);
+  const grantBody = { amount: 400, requestId: 'bulk-grant-api-0001' };
+  assert.equal((await fetch(base + 'admin', { headers: { cookie: playerCookie } })).status, 403);
+  assert.equal((await post('admin/grant-tokens', grantBody, playerCookie)).status, 403);
+  assert.equal((await post('admin/grant-tokens', grantBody, cookie, { 'x-requested-with': '' })).status, 403);
+  const grant = await (await post('admin/grant-tokens', grantBody, cookie)).json();
+  assert.equal(grant.grant.recipients, 2);
+  assert.equal(grant.user.tokens, STARTING_TOKENS + 400);
+  const later = await (await post('register', { username: 'later', password, code: codes.codes[1] })).json();
+  assert.equal(later.user.tokens, STARTING_TOKENS);
+  assert.deepEqual((await (await post('admin/grant-tokens', grantBody, cookie)).json()).grant, grant.grant);
+  assert.equal((await (await fetch(base + 'admin', { headers: { cookie } })).json()).playerCount, 3);
   assert.equal((await post('logout', {}, playerCookie)).status, 200);
   assert.equal((await (await fetch(base + 'me', { headers: { cookie: playerCookie } })).json()).user, null);
   assert.equal((await post('login', { username: 'admin', password: 'x'.repeat(9000) })).status, 413);

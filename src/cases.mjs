@@ -4,14 +4,14 @@ import { buildAuctionFamilies } from './auction-selection.mjs';
 
 export const RARITIES = [
   { id: 'common', name: 'Gewöhnlich', sell: 10 },
-  { id: 'uncommon', name: 'Ungewöhnlich', sell: 25 },
-  { id: 'rare', name: 'Selten', sell: 70 },
-  { id: 'epic', name: 'Episch', sell: 180 },
-  { id: 'legendary', name: 'Legendär', sell: 500 }
+  { id: 'uncommon', name: 'Ungewöhnlich', sell: 100 },
+  { id: 'rare', name: 'Selten', sell: 250 },
+  { id: 'epic', name: 'Episch', sell: 750 },
+  { id: 'legendary', name: 'Legendär', sell: 2500 }
 ];
 export const CASES = [
-  { id: 'fundkiste', name: 'Fundkiste', cost: 100, weights: [60, 25, 10, 4, 1] },
-  { id: 'schatzkiste', name: 'Schatzkiste', cost: 250, weights: [15, 30, 35, 15, 5] }
+  { id: 'fundkiste', name: 'Seized Goods Case', cost: 100, weights: [5000, 3000, 1400, 550, 50] },
+  { id: 'schatzkiste', name: 'Contraband Case', cost: 250, weights: [3500, 1500, 3000, 1950, 50] }
 ];
 
 // A transparent heuristic: 80% logarithmic price, 20% uniqueness among similar lots.
@@ -30,12 +30,17 @@ export function caseCatalog(auctions) {
     return { auctionId: auction.id, title: auction.title, image: auctionGallery(auction)[0],
       price, rarity: rarity.id, sellValue: rarity.sell, familySize: family.length };
   });
-  const revision = createHash('sha256').update(JSON.stringify(items)).digest('hex');
+  const revision = createHash('sha256').update(JSON.stringify({ items, cases: CASES })).digest('hex');
   return { revision, items, rarities: RARITIES, cases: CASES.map(box => {
     const weights = box.weights.map((weight, i) => items.some(item => item.rarity === RARITIES[i].id) ? weight : 0);
     const total = weights.reduce((sum, weight) => sum + weight, 0);
     return { ...box, weights, odds: weights.map((weight, i) => ({ ...RARITIES[i], chance: total ? weight / total * 100 : 0 })) };
   }) };
+}
+
+export function publicCaseCatalog(catalog) {
+  return { revision: catalog.revision, items: catalog.items, rarities: catalog.rarities,
+    cases: catalog.cases.map(({ id, name, cost, weights }) => ({ id, name, cost, available: weights.some(Boolean) })) };
 }
 
 export function drawItem(catalog, box, random = randomInt) {

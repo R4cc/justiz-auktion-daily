@@ -9,10 +9,11 @@ function hlBest() {
 }
 function hlStorageKey() { return typeof account !== 'undefined' && account ? `justizguessr:higher-lower-best:${account.id}` : 'justizguessr:higher-lower-best'; }
 async function startHigherLower() {
+  showGamePage();
   const request = ++higherLowerRequest;
   clearInterval(countdownTimer);
   state.view = 'higher-lower-loading';
-  app.innerHTML = '<section class="hl-screen"><p class="eyebrow">HIGHER OR LOWER</p><h1>Die Lose werden gemischt …</h1><button class="secondary-button" data-action="home">Zur Startseite</button></section>';
+  app.innerHTML = `<section class="hl-screen"><p class="eyebrow">HIGHER OR LOWER</p><h1>${t('Shuffling the lots…', 'Die Lose werden gemischt …')}</h1><button class="secondary-button" data-action="home">${t('Back to home', 'Zur Startseite')}</button></section>`;
   try {
     const serverRun = await accountGameStart('higher-lower');
     let payload = serverRun;
@@ -33,7 +34,7 @@ async function startHigherLower() {
   } catch (error) {
     if (request !== higherLowerRequest || state.view !== 'higher-lower-loading') return;
     renderStart();
-    showToast(error.message === 'variety' ? 'Noch nicht genug unterschiedliche Auktionen mit bestätigtem Endgebot. Versuche es später erneut.' : 'Die Lose konnten nicht geladen werden. Bitte versuche es erneut.');
+    showToast(error.message === 'variety' ? t('Not enough different auctions with confirmed final bids yet. Try again later.', 'Noch nicht genug unterschiedliche Auktionen mit bestätigtem Endgebot. Versuche es später erneut.') : t('The lots could not be loaded. Please try again.', 'Die Lose konnten nicht geladen werden. Bitte versuche es erneut.'));
   }
 }
 function renderHigherLower(focus = false) {
@@ -44,23 +45,23 @@ function renderHigherLower(focus = false) {
     const images = auctionImages(item);
     const image = images[run.images[side]];
     return `<article class="hl-card ${side ? 'hl-challenger' : ''}">
-      <p class="eyebrow">${side ? 'DAS NÄCHSTE LOS' : 'DIE MESSLATTE'} · ${hlEscape(item.category)}</p>
-      <div class="hl-photo"><img src="${hlEscape(image)}" alt="${hlEscape(item.title)} – Bild ${run.images[side] + 1} von ${images.length}">
-      ${images.length > 1 ? `<div class="hl-gallery"><button data-action="hl-image" data-side="${side}" data-direction="-1" aria-label="Vorheriges Bild: ${side ? 'nächstes Los' : 'Messlatte'}">←</button><span>${run.images[side] + 1} / ${images.length}</span><button data-action="hl-image" data-side="${side}" data-direction="1" aria-label="Nächstes Bild: ${side ? 'nächstes Los' : 'Messlatte'}">→</button></div>` : ''}</div>
+      <p class="eyebrow">${side ? t('THE NEXT LOT', 'DAS NÄCHSTE LOS') : t('THE BENCHMARK', 'DIE MESSLATTE')} · ${hlEscape(listingLabel(item.category))}</p>
+      <div class="hl-photo"><img src="${hlEscape(image)}" alt="${hlEscape(item.title)} – ${t('Image', 'Bild')} ${run.images[side] + 1} ${t('of', 'von')} ${images.length}">
+      ${images.length > 1 ? `<div class="hl-gallery"><button data-action="hl-image" data-side="${side}" data-direction="-1" aria-label="${t('Previous image', 'Vorheriges Bild')}: ${side ? t('next lot', 'nächstes Los') : t('benchmark', 'Messlatte')}">←</button><span>${run.images[side] + 1} / ${images.length}</span><button data-action="hl-image" data-side="${side}" data-direction="1" aria-label="${t('Next image', 'Nächstes Bild')}: ${side ? t('next lot', 'nächstes Los') : t('benchmark', 'Messlatte')}">→</button></div>` : ''}</div>
       <h2>${hlEscape(item.title)}</h2>
-      <div class="hl-price ${side && run.revealed ? 'hl-price-reveal' : ''}">${side && !run.revealed ? '<span aria-label="Preis noch verdeckt">?</span>' : euro(item.actualBid)}</div>
-      <p class="hl-price-label">${side && !run.revealed ? 'Höher oder niedriger als die Messlatte?' : 'BESTÄTIGTES ENDGEBOT'}</p>
+      <div class="hl-price ${side && run.revealed ? 'hl-price-reveal' : ''}">${side && !run.revealed ? `<span aria-label="${t('Price still hidden', 'Preis noch verdeckt')}">?</span>` : euro(item.actualBid)}</div>
+      <p class="hl-price-label">${side && !run.revealed ? t('Higher or lower than the benchmark?', 'Höher oder niedriger als die Messlatte?') : t('CONFIRMED FINAL BID', 'BESTÄTIGTES ENDGEBOT')}</p>
     </article>`;
   }).join('<span class="hl-versus" aria-hidden="true">VS</span>');
   app.innerHTML = `<section class="hl-screen">
-    <div class="hl-heading"><div><p class="eyebrow">HIGHER OR LOWER</p><h1>Was bringt mehr?</h1></div><div class="hl-streak"><strong>${run.streak}</strong><span>IN FOLGE · BESTE ${hlBest()}</span></div></div>
+    <div class="hl-heading"><div><p class="eyebrow">HIGHER OR LOWER</p><h1>${t('Which sells for more?', 'Was bringt mehr?')}</h1></div><div class="hl-streak"><strong>${run.streak}</strong><span>${t('IN A ROW · BEST', 'IN FOLGE · BESTE')} ${hlBest()}</span></div></div>
     ${rewardBanner()}
     <div class="hl-board">${cards}</div>
     <div class="hl-controls">
-    ${run.revealed ? `<div class="hl-verdict"><h2>${!run.correct ? 'Zum Dritten. Vorbei!' : finished ? 'Alle Lose abgeräumt!' : tied ? 'Gleichstand. Du bleibst drin!' : 'Richtig. Der Lauf geht weiter!'}</h2><p>${finished ? `${run.streak} ${run.streak === 1 ? 'richtiger Vergleich' : 'richtige Vergleiche'} in Folge. Noch eine Runde?` : 'Das aufgedeckte Los wird deine neue Messlatte.'}</p></div>
-      <button class="primary-button" data-action="${finished ? 'higher-lower' : 'hl-next'}">${finished ? 'Noch einmal spielen ↻' : 'Nächstes Los →'}</button>` : `<div class="hl-choices"><button class="primary-button" data-action="hl-higher">↑ Höher</button><button class="secondary-button" data-action="hl-lower">↓ Niedriger</button></div><p>Gleicher Preis? Beide Tipps zählen. Ein Fehler beendet deinen Lauf.</p>`}
-    <button class="hl-home" data-action="home">Zur Startseite</button>
-    </div><p class="data-note">${run.index} / ${run.auctions.length - 1} Vergleiche · Echte Endgebote. Unterschiedliche Lose. Kein echtes Geld.</p>
+    ${run.revealed ? `<div class="hl-verdict"><h2>${!run.correct ? t('Going, gone. Game over!', 'Zum Dritten. Vorbei!') : finished ? t('You cleared every lot!', 'Alle Lose abgeräumt!') : tied ? t('A tie. You’re still in!', 'Gleichstand. Du bleibst drin!') : t('Correct. Keep it going!', 'Richtig. Der Lauf geht weiter!')}</h2><p>${finished ? t(`${run.streak} correct in a row. Another round?`, `${run.streak} ${run.streak === 1 ? 'richtiger Vergleich' : 'richtige Vergleiche'} in Folge. Noch eine Runde?`) : t('The revealed lot becomes your next benchmark.', 'Das aufgedeckte Los wird deine neue Messlatte.')}</p></div>
+      <button class="primary-button" data-action="${finished ? 'higher-lower' : 'hl-next'}">${finished ? t('Play again ↻', 'Noch einmal spielen ↻') : t('Next lot →', 'Nächstes Los →')}</button>` : `<div class="hl-choices"><button class="primary-button" data-action="hl-higher" ${run.pending ? 'disabled' : ''}>↑ ${t('Higher', 'Höher')}</button><button class="secondary-button" data-action="hl-lower" ${run.pending ? 'disabled' : ''}>↓ ${t('Lower', 'Niedriger')}</button></div><p>${t('Same price? Either guess counts. One miss ends your run.', 'Gleicher Preis? Beide Tipps zählen. Ein Fehler beendet deinen Lauf.')}</p>`}
+    <button class="hl-home" data-action="home">${t('Back to home', 'Zur Startseite')}</button>
+    </div><p class="data-note">${run.index} / ${run.auctions.length - 1} ${t('comparisons · Real final bids. Different lots. No real money.', 'Vergleiche · Echte Endgebote. Unterschiedliche Lose. Kein echtes Geld.')}</p>
   </section>`;
   if (focus) app.querySelector('.hl-controls button')?.focus({ preventScroll: true });
 }

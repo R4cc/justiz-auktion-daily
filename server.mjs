@@ -922,6 +922,11 @@ const server =
 
         if (await accountApi(request, response, url)) return;
 
+        if (['GET', 'HEAD'].includes(request.method) && ['/shop', '/inventory', '/profile', '/login', '/register', '/admin'].includes(url.pathname)) {
+          await sendFile(request, response, publicDir, '/index.html', 'no-cache');
+          return;
+        }
+
         if (
           request.method ===
             'GET' &&

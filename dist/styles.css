@@ -429,6 +429,7 @@ button { color: inherit; }
 .result-stats { border-radius: 4px; }
 .help-dialog { border: 1px solid var(--ink); border-radius: 8px; }
 button:focus-visible, a:focus-visible { outline: 3px solid var(--red); outline-offset: 5px; }
+.primary-button:focus-visible { outline-color: var(--ink); outline-offset: 3px; }
 @keyframes catalogue-enter { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
 @keyframes paddle-enter { from { opacity: 0; transform: translateY(55px) rotate(-30deg); } to { opacity: 1; transform: translateY(0) rotate(-16deg); } }
 @keyframes gavel-enter { 0% { opacity: 0; transform: rotate(-30deg); } 55% { opacity: 1; transform: rotate(40deg); } 75% { transform: rotate(20deg); } 100% { transform: rotate(30deg); } }
@@ -550,12 +551,9 @@ button:focus-visible, a:focus-visible { outline: 3px solid var(--red); outline-o
 }
 @media (prefers-reduced-motion: reduce) { .hl-price-reveal { animation: none; } }
 
-/* Account depot, collection and case opening. */
+/* Account pages, collection and case opening. */
 .account-button { border: 1px solid var(--line); border-radius: 9px; padding: 10px 14px; background: transparent; font-size: 12px; font-weight: 800; cursor: pointer; max-width: 240px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.account-dialog { width: min(1040px, calc(100% - 24px)); max-height: calc(100dvh - 24px); padding: 36px; border: 1px solid var(--line); border-radius: 22px; color: var(--ink); background: var(--paper); overscroll-behavior: contain; }
-.account-dialog::backdrop { background: #112d28b8; backdrop-filter: blur(5px); }
-.account-toast { display: none; position: sticky; bottom: 0; z-index: 5; padding: 14px 18px; background: var(--ink); color: var(--paper); border-radius: 10px; font-size: 13px; box-shadow: 0 3px 20px #0003; }
-.account-toast.show { display: block; }
+.account-page { width: min(1040px, calc(100% - 40px)); margin: 0 auto; padding: 42px 0 72px; }
 .account-value { display: flex; align-items: center; gap: 24px; padding: 18px; border: 1px solid var(--line); border-radius: 12px; background: #e8ebdd; }
 .account-value > span { flex: 0 0 auto; font: 10px 'DM Mono', monospace; }
 .account-value strong { display: block; font-size: 26px; margin-top: 8px; }
@@ -584,12 +582,9 @@ button:focus-visible, a:focus-visible { outline: 3px solid var(--red); outline-o
   .friend-request > div { margin-left: 0; }
   .friends-heading { align-items: start; flex-wrap: wrap; }
 }
-.account-dialog .dialog-close { position: absolute; top: 12px; right: 12px; }
-.collection-heading h2 { font-size: clamp(26px, 4vw, 42px); letter-spacing: -1.6px; margin: 8px 0; overflow-wrap: anywhere; }
+.collection-heading h1 { font-size: clamp(32px, 4vw, 48px); letter-spacing: -1.6px; margin: 8px 0; overflow-wrap: anywhere; }
 .collection-heading > p:last-child { color: var(--muted); font-size: 14px; }
-.collection-tabs { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 16px 0; margin: 12px 0 18px; border-bottom: 1px solid var(--line); }
-.collection-tabs button, .inventory-pages button, .code-list button { border: 1px solid var(--line); border-radius: 8px; padding: 10px 14px; background: transparent; cursor: pointer; font-size: 12px; font-weight: 800; }
-.collection-tabs button[aria-current] { color: var(--paper); background: var(--ink); }
+.inventory-pages button, .code-list button { border: 1px solid var(--line); border-radius: 8px; padding: 10px 14px; background: transparent; cursor: pointer; font-size: 12px; font-weight: 800; }
 .token-balance { margin-left: auto; font-family: 'DM Mono', monospace; white-space: nowrap; }
 .account-form { max-width: 420px; margin: 28px auto; display: grid; gap: 16px; }
 .account-form label, .code-form label, .fresh-codes { display: grid; gap: 8px; font-size: 13px; font-weight: 700; }
@@ -634,18 +629,12 @@ button:focus-visible, a:focus-visible { outline: 3px solid var(--red); outline-o
 .item-value { font: 10px 'DM Mono', monospace; margin-top: auto; }
 .case-reel .is-pulled { box-shadow: inset 0 0 0 2px var(--rarity), 0 0 24px var(--rarity); }
 .case-result { padding: 20px 22px 14px; min-height: 106px; }
-.case-result h3 { font-size: 22px; margin: 7px 0; overflow-wrap: anywhere; }
+.case-result h2 { font-size: 22px; margin: 7px 0; overflow-wrap: anywhere; }
 .case-result p { font-size: 12px; color: #d5dfd4; }
 .case-result .rarity-label { display: inline-block; }
 .case-result .secondary-button, .case-result .secondary-button:hover { background: #284e42; color: #f7f3e8; border-color: #e4e9dc60; }
 .case-stage .case-open, .case-stage .case-open:hover { background: #f0df95; color: #263e31; margin: 10px 16px 0; max-width: calc(100% - 32px); border-color: #f0df95; box-shadow: 0 4px 0 #a9914f; }
-.account-dialog button:disabled { opacity: .5; cursor: not-allowed; }
-.case-odds { margin-top: 26px; }
-.case-odds h3 { font-size: 14px; }
-.case-odds > div { display: grid; grid-template-columns: repeat(5, 1fr); gap: 10px; }
-.case-odds > div > span { display: grid; gap: 8px; border-top: 3px solid var(--rarity); padding: 12px 0; }
-.case-odds b { font-size: 11px; } .case-odds strong { font: 18px 'DM Mono', monospace; } .case-odds small { font-size: 10px; color: var(--muted); }
-.rarity-explainer { font-size: 12px; line-height: 1.8; margin: 14px 0; } .rarity-explainer summary { cursor: pointer; font-weight: 800; }
+.account-page button:disabled { opacity: .5; cursor: not-allowed; }
 .inventory-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px; }
 .inventory-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 24px 0; }
 .inventory-heading h3 { margin: 0; } .inventory-heading h3 span { display: block; font-size: 12px; color: var(--muted); margin-top: 5px; }
@@ -660,16 +649,58 @@ button:focus-visible, a:focus-visible { outline: 3px solid var(--red); outline-o
   .site-header { height: auto !important; min-height: 84px; flex-wrap: wrap; gap: 10px; padding: 14px 0; }
   .header-actions { flex-wrap: wrap; justify-content: flex-end; }
   .account-button { max-width: 180px; padding: 9px; font-size: 10px; }
-  .account-dialog { padding: 30px 16px 20px; border-radius: 14px; }
-  .collection-tabs { gap: 6px; } .collection-tabs button { padding: 9px; font-size: 11px; }
+  .account-page { padding-top: 28px; }
   .token-balance { font-size: 13px; }
   .case-options { gap: 8px; } .case-option, .case-option.is-selected { padding: 12px 8px; flex-direction: column; gap: 14px; text-align: center; }
   .case-option strong { font-size: 15px; } .case-art { width: 80px; height: 55px; flex-basis: 55px; }
   .case-stage-heading { font-size: 8px; letter-spacing: .5px; padding: 0 12px 16px; }
-  .case-result h3 { font-size: 18px; } .case-open { min-height: 48px; padding: 10px 16px; font-size: 12px; }
-  .case-odds > div { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .case-result h2 { font-size: 18px; } .case-open { min-height: 48px; padding: 10px 16px; font-size: 12px; }
   .inventory-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
   .collection-item { padding: 10px; } .collection-item img { height: 100px; }
   .code-form { flex-wrap: wrap; } .fresh-codes textarea { font-size: 11px; }
 }
 @media (prefers-reduced-motion: reduce) { .case-reel { will-change: auto; } }
+
+[hidden] { display: none !important; }
+.site-header { display: grid; grid-template-columns: minmax(0, 1fr) auto; height: auto; gap: 18px 24px; padding: 18px 0 12px; }
+.header-actions { justify-content: end; gap: 14px; }
+.site-nav { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; }
+.site-nav a { color: var(--muted); text-decoration: none; font-size: 13px; font-weight: 800; padding: 10px 14px; border-radius: 8px; }
+.site-nav a:hover { background: #e8ebdd; color: var(--ink); }
+.site-nav a[aria-current] { color: var(--paper); background: var(--ink); }
+.account-button { justify-self: end; color: var(--ink); text-decoration: none; }
+#language-select { border: 1px solid var(--line); border-radius: 8px; background: transparent; color: var(--ink); padding: 8px; font: 12px 'Manrope', sans-serif; }
+.primary-button, .secondary-button { text-decoration: none; }
+.collection-heading { margin-bottom: 30px; }
+.collection-heading h1:focus { outline: none; }
+.collection-empty .primary-button { margin-top: 14px; }
+.shop-balance { display: flex; justify-content: space-between; align-items: center; gap: 14px; padding: 18px 0; border-block: 1px solid var(--line); font-size: 13px; }
+.shop-balance a { color: var(--ink); }
+.profile-stats { display: flex; align-items: center; gap: 32px; padding: 24px 0; }
+.profile-stats > div { flex: 1; }
+.profile-stats span { font: 10px 'DM Mono', monospace; color: var(--muted); }
+.profile-stats strong { display: block; font-size: 20px; margin-top: 8px; }
+.profile-stats button { min-height: 44px; padding: 10px 18px; font-size: 12px; }
+.profile-friends, .admin-section { margin-top: 36px; border-top: 1px solid var(--line); padding-top: 20px; }
+.admin-section > p, .admin-section li { font-size: 13px; line-height: 1.8; color: var(--muted); }
+.grant-form { display: flex; flex-wrap: wrap; gap: 14px; align-items: end; margin: 24px 0; }
+.grant-form label { display: grid; gap: 8px; font-size: 13px; font-weight: 700; }
+.grant-form input { width: 180px; padding: 12px; border: 1px solid var(--line); border-radius: 8px; background: #fffdf7; }
+.grant-form .account-error { flex-basis: 100%; }
+.grant-history p { font: 12px 'DM Mono', monospace; line-height: 1.8; color: var(--muted); }
+.inventory-heading h2 { font-size: 22px; margin: 0; }
+.inventory-heading small { display: block; font-size: 12px; color: var(--muted); margin-top: 5px; }
+@media (max-width: 700px) {
+  .site-header { column-gap: 8px; row-gap: 14px; }
+  .header-actions { gap: 8px; }
+  .daily-reset { display: none; }
+  .site-nav { grid-column: 1 / -1; grid-row: 2; }
+  .site-nav a { padding: 10px 12px; font-size: 12px; }
+  .account-button { grid-column: 1 / -1; justify-self: start; max-width: 100%; font-size: 12px; }
+  .wordmark { font-size: .9rem; }
+  #language-select { max-width: 90px; padding: 8px 4px; }
+  .profile-stats { gap: 20px; flex-wrap: wrap; }
+  .profile-stats > div { flex: 1 1 130px; }
+  .profile-stats strong { font-size: 17px; }
+  .shop-balance { flex-wrap: wrap; }
+}

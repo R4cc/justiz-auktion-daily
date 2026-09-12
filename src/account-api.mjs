@@ -1,5 +1,5 @@
 import { Accounts, AccountError } from './accounts.mjs';
-import { caseCatalog } from './cases.mjs';
+import { caseCatalog, publicCaseCatalog } from './cases.mjs';
 import { readArchive } from './database.mjs';
 import { higherLowerDeck } from './higher-lower.mjs';
 
@@ -41,12 +41,13 @@ export async function createAccountApi({ dataDir, dailyPayload, json, env = proc
       const route = url.pathname.slice('/api/account/'.length);
       if (request.method === 'GET') {
         if (route === 'me') json(response, 200, { user: user ? accounts.profile(user) : null });
-        else if (route === 'cases') json(response, 200, getCatalog());
+        else if (route === 'cases') json(response, 200, publicCaseCatalog(getCatalog()));
         else {
           if (!user) throw new AccountError('login_required', 401);
           if (route === 'inventory') json(response, 200, { items: accounts.inventory(user) });
           else if (route === 'friends') json(response, 200, accounts.friends(user));
           else if (route === 'codes') json(response, 200, { codes: accounts.listCodes(user) });
+          else if (route === 'admin') json(response, 200, accounts.adminOverview(user));
           else throw new AccountError('not_found', 404);
         }
         return true;
@@ -71,6 +72,7 @@ export async function createAccountApi({ dataDir, dailyPayload, json, env = proc
         response.setHeader('set-cookie', cookie(''));
         result = { user: null };
       } else if (route === 'codes') result = { codes: accounts.codes(user, payload.count) };
+      else if (route === 'admin/grant-tokens') result = { grant: accounts.grantTokens(user, payload.amount, payload.requestId), user: accounts.profile(user) };
       else if (route === 'friends/request') {
         accounts.throttle(`friend-request:${user.id}`, 20);
         accounts.requestFriend(user, payload.username); result = accounts.friends(user);

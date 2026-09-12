@@ -1,57 +1,40 @@
 <!doctype html>
-<html lang="de">
+<html lang="en">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="theme-color" content="#f7f3e8" />
-    <meta name="description" content="Fünf echte Justiz-Auktionen. Schätze den aktuellen Preis." />
-    <title>JUSTIZGUESSR — Das tägliche Auktionsspiel</title>
-    <link rel="icon" type="image/png" sizes="64x64" href="favicon.png" />
+    <meta name="description" content="Five real auctions. Guess the price, collect the surprises." />
+    <title>JUSTIZGUESSR — The daily auction game</title>
+    <link rel="icon" type="image/png" sizes="64x64" href="/favicon.png" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
-    <link rel="stylesheet" href="styles.css?v=20260912-9" />
+    <link rel="stylesheet" href="/styles.css?v=20260912-10" />
   </head>
   <body>
     <div class="paper-noise" aria-hidden="true"></div>
     <header class="site-header">
-      <button class="wordmark" type="button" data-action="home" aria-label="Zur Startseite">
+      <button class="wordmark" type="button" data-action="home" aria-label="Home">
         <span class="brand-symbol" aria-hidden="true">J<span>g.</span></span><span>JUSTIZGUESSR</span>
       </button>
       <div class="header-actions">
-        <button class="account-button" type="button" data-account="open">Anmelden / Kisten</button>
-        <span class="daily-reset" aria-label="Zeit bis zum nächsten Tagesspiel">
-          <span>NEUES DAILY IN</span><strong data-daily-reset>--:--:--</strong>
-        </span>
-        <button class="icon-button" type="button" data-action="help" aria-label="Spielregeln anzeigen">?</button>
+        <span class="daily-reset"><span>NEXT DAILY IN</span><strong data-daily-reset>--:--:--</strong></span>
+        <select id="language-select" aria-label="Language"><option value="en">English</option><option value="de">Deutsch</option></select>
+        <button class="icon-button" type="button" data-action="help" aria-label="Game rules">?</button>
       </div>
+      <nav class="site-nav" aria-label="Main navigation">
+        <a href="/" data-page>Play</a><a href="/inventory" data-page>Inventory</a><a href="/shop" data-page>Shop</a><a href="/profile" data-page>Profile</a><a href="/admin" data-page hidden>Admin</a>
+      </nav>
+      <a id="header-auth" class="account-button" href="/login" data-page>Log in / Register</a>
     </header>
-
     <main id="app" aria-live="polite"></main>
-
-    <dialog id="help-dialog" class="help-dialog">
-      <form method="dialog">
-        <button class="dialog-close" aria-label="Schließen">×</button>
-        <p class="eyebrow">SO FUNKTIONIERT'S</p>
-        <h2>Preisgefühl statt Fachwissen.</h2>
-        <div class="rules-grid">
-          <div><span>01</span><p>Du siehst fünf echte, öffentlich gelistete Justiz-Auktionen.</p></div>
-          <div><span>02</span><p>Schätze den aktuellen Gebotsstand. Restzeit und Zustand helfen dir.</p></div>
-          <div><span>03</span><p>Eine großzügige Kurve belohnt Nähe. Bei günstigen Auktionen zählt der Euro-Abstand stärker, damit kleine Beträge nicht unverhältnismäßig hart bestraft werden.</p></div>
-        </div>
-        <p class="fine-print">Der offizielle Tagessatz kann auf diesem Gerät einmal abgeschlossen werden. Datenstand und Wertung sind für alle Spieler des Tages identisch.</p>
-        <h2>Higher or Lower</h2><p>Vergleiche zwei beendete Auktionen: War das nächste Endgebot höher oder niedriger? Jeder richtige Tipp verlängert deinen Lauf. Bei Gleichstand zählen beide Tipps. Ein Fehler beendet die Runde; wer alle Lose schafft, gewinnt. Dein bester Lauf wird auf diesem Gerät gespeichert.</p>
-      </form>
-    </dialog>
-
+    <main id="account-page" class="account-page" hidden><div id="account-content"></div></main>
+    <dialog id="help-dialog" class="help-dialog"></dialog>
     <div id="toast" class="toast" role="status" aria-live="polite"></div>
-    <dialog id="account-dialog" class="account-dialog" aria-label="Kisten, Inventar und Konto">
-      <button class="dialog-close" type="button" data-account="close" aria-label="Depot schließen">×</button>
-      <div id="account-content"></div>
-      <div id="account-toast" class="account-toast" role="status" aria-live="polite"></div>
-    </dialog>
-    <script src="account.js?v=20260912-2" defer></script>
-    <script src="higher-lower.js?v=20260912-2" defer></script>
-    <script src="app.js?v=20260912-8" defer></script>
+    <script src="/i18n.js?v=20260912-1" defer></script>
+    <script src="/account.js?v=20260912-3" defer></script>
+    <script src="/higher-lower.js?v=20260912-3" defer></script>
+    <script src="/app.js?v=20260912-9" defer></script>
   </body>
 </html>

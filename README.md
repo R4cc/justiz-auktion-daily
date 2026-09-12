@@ -8,34 +8,40 @@ The application serves the game and its JSON API from one lightweight Node proce
 
 ## Accounts, registration codes and cases
 
-The depot shows the account's **total value in euros**, calculated from the saved auction prices of all items currently in its inventory. Each collected copy counts once; sold items stop counting immediately. Tokens have no euro conversion and are excluded. This is a collection value, not a cash balance or payout amount.
+The interface defaults to **English**, with **Deutsch** available in the header. The choice is saved on the device and applies to navigation, games, authentication, inventory, shop, profile and admin pages. Auction titles and descriptions retain their original source language.
 
-Open **Freunde** to send a friend request using an exact username (case-insensitive). The recipient can accept or decline; the sender can cancel a pending request, and either friend can remove the friendship. Accepted friends see each other's inventory value, item count, and today's server-recorded Daily result out of 5,000 points. Unfinished games show progress and unplayed games are labelled separately; scores reset with the UTC date. Pending requests reveal only usernames and request direction. Use **Aktualisieren** to fetch current friend statistics. Friendships persist in SQLite, with up to 100 friends and pending requests per account.
+**Inventory** (`/inventory`), **Shop** (`/shop`) and **Profile** (`/profile`) are separate pages with reloadable URLs and browser back/forward support. Navigation stays visible to guests. Guests can browse the shop; opening cases requires login and sufficient tokens. Inventory and Profile show a login notice to guests. **Log in / Register** opens only authentication (`/login` and `/register`).
+
+Inventory and Profile show the account's **total value in euros**, calculated from the saved auction prices of all items currently in its inventory. Each collected copy counts once; sold items stop counting immediately. Tokens have no euro conversion and are excluded. This is a collection value, not a cash balance or payout amount.
+
+The **Friends** section on Profile lets you send a friend request using an exact username (case-insensitive). The recipient can accept or decline; the sender can cancel a pending request, and either friend can remove the friendship. Accepted friends see each other's inventory value, item count, and today's server-recorded Daily result out of 5,000 points. Unfinished games show progress and unplayed games are labelled separately; scores reset with the UTC date. Pending requests reveal only usernames and request direction. Use **Refresh** to fetch current friend statistics. Friendships persist in SQLite, with up to 100 friends and pending requests per account.
 
 Set `ADMIN_USERNAME` and `ADMIN_PASSWORD` in your Compose `.env` before starting the service. Usernames use 3–32 ASCII letters, numbers, underscores or hyphens (case-insensitive); passwords require 12–128 characters. Both admin variables must be supplied together. With both omitted, guest play stays available, but there is no initial admin to issue registration codes.
 
-Sign in through **Anmelden / Kisten**, then open **Registrierungscodes**. Admins can generate 1–50 single-use codes at a time, see whether they have been used, and revoke unused codes. Copy new codes immediately: their full values are shown only after generation, and only hashes are stored. Registration requires a username, password and valid code; no email or third-party login is used.
+Sign in through **Log in / Register**, then open **Admin** (`/admin`). Admins can generate 1–50 single-use registration codes at a time, see whether they have been used, and revoke unused codes. Copy new codes immediately: their full values are shown only after generation, and only hashes are stored. Registration requires a username, password and valid code; no email or third-party login is used.
+
+The Admin page also offers **Give players tokens**: enter a whole amount from 1 to 1,000,000 to credit every account that exists at submission time, including admin accounts. The grant is a single atomic transaction with a saved receipt and retry protection. Future registrations receive their normal starting balance but never inherit previous grants. The page shows the current recipient count and the latest 20 grant receipts. Grants do not consume or reset daily game rewards.
 
 On restart, the configured admin is created if absent. Changing its configured password updates that admin and invalidates its sessions. An existing regular user cannot be promoted by choosing its name in the environment. Changing the configured username creates a separate admin; existing admins are retained. Keep credentials out of source control. Passwords use salted scrypt hashes, sessions are stored as hashes and expire after 30 days, and authentication is rate-limited. Compose enables Secure, HttpOnly, SameSite=Strict cookies for the HTTPS tunnel. Set `COOKIE_SECURE=false` only when testing over local HTTP; never use it for the public deployment.
 
-Each account starts with **0 tokens**. One rewarded run is available per **UTC day**, shared between Daily and Higher or Lower:
+Each newly created account starts with **1,000 tokens**. Existing accounts are not modified by this setting. One rewarded run is available per **UTC day**, shared between Daily and Higher or Lower:
 
 - The first submitted answer reserves that day's rewarded run. Refreshing or returning to the same unfinished run resumes it, including on another device. Starting a screen without answering does not consume the allowance.
 - Completing all five Daily guesses pays **100 tokens**, regardless of score.
 - Higher or Lower pays **20 tokens per correct comparison** once the final streak reaches **3**, capped at **200 tokens**. Payment happens on a miss or deck completion. A shorter run pays zero and still uses that day's allowance.
 - Additional games are practice and cannot earn more tokens. A new allowance arrives with the Daily reset at **00:00 UTC**. An abandoned run must be resumed before that reset; old runs cannot pay out afterward.
 
-The **Fundkiste** costs 100 tokens; the **Schatzkiste** costs 250. Each opening draws one digital auction collectible, saves it immediately to the inventory, then plays a decelerating reel animation (instant reveal with reduced motion). Keep the item, sell it immediately, or open another case. Items can also be sold from the inventory. Tokens cannot be bought with real money, transferred, or redeemed for cash; collectibles do not confer ownership of the real auction lots.
+The **Seized Goods Case** costs 100 tokens; the **Contraband Case** costs 250. Both favor lower-rarity items, with draw weights configured on the server. Each opening draws one digital auction collectible, saves it immediately to the inventory, then plays a decelerating reel animation (instant reveal with reduced motion). Keep the item, sell it immediately, or open another case. Items can also be sold from the inventory. Tokens cannot be bought with real money, transferred, or redeemed for cash; collectibles do not confer ownership of the real auction lots.
 
-| Rarity | Sale value | Fundkiste weight | Schatzkiste weight |
-| --- | ---: | ---: | ---: |
-| Common | 10 | 60 | 15 |
-| Uncommon | 25 | 25 | 30 |
-| Rare | 70 | 10 | 35 |
-| Epic | 180 | 4 | 15 |
-| Legendary | 500 | 1 | 5 |
+| Rarity | Sale value (tokens) |
+| --- | ---: |
+| Common | 10 |
+| Uncommon | 100 |
+| Rare | 250 |
+| Epic | 750 |
+| Legendary | 2,500 |
 
-Rarity is a heuristic based on `0.8 * min(1, log10(price + 1) / 5) + 0.2 / sqrt(similar-family-size)`, with thresholds 0.32, 0.46, 0.60 and 0.78. Price is the archived final price when available, otherwise the current bid. Similar product families contribute one representative each, so duplicate listings do not increase a family's draw odds. Within a rarity, each family is equally likely. Weights for unavailable rarities are excluded and the remaining weights are normalized; the UI displays those actual percentages before purchase. If contents change, opening pauses for a fresh review of the odds. Collected items keep their original rarity and resale value even when the archive changes.
+Rarity is a heuristic based on `0.8 * min(1, log10(price + 1) / 5) + 0.2 / sqrt(similar-family-size)`, with thresholds 0.32, 0.46, 0.60 and 0.78. Price is the archived final price when available, otherwise the current bid. Similar product families contribute one representative each, so duplicate listings do not increase a family's draw odds. Within a rarity, each family is equally likely. With all rarity pools available, each case has a 50% chance of returning an item whose sale value covers another opening of the same case; Legendary is a 0.5% pull with a much steeper payout. Weights for unavailable rarities are excluded and the remaining weights are normalized, so the live break-even chance can differ when the archive has no items in a rarity. Draw odds and weights are omitted from the public catalog response and the UI. If contents or case configuration change, the catalog refreshes before retrying the opening. Collected items keep their original rarity and resale value even when the archive changes; existing case identifiers remain compatible.
 
 The server chooses draws using cryptographic randomness. SQLite transactions make charging and item creation atomic; request IDs make case retries safe, and repeated sales or reward submissions cannot credit tokens twice. Logged-in Higher or Lower keeps future prices out of its game response and validates each comparison on the server. Guest endpoints remain public practice data; this is a casual game, not a competitive anti-cheat system. Back up the full `/data` volume, using SQLite's backup API or stopping the container before copying it.
 

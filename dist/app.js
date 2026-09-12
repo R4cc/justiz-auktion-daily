@@ -107,7 +107,7 @@ function changeAuctionImage(direction) {
   if (!gallery || images.length < 2) return;
   galleryIndex = (galleryIndex + direction + images.length) % images.length;
   gallery.querySelector('.auction-image').src = images[galleryIndex];
-  gallery.querySelector('.auction-image').alt = `${auction.title} – Bild ${galleryIndex + 1} von ${images.length}`;
+  gallery.querySelector('.auction-image').alt = `${auction.title} – ${t('Image', 'Bild')} ${galleryIndex + 1} ${t('of', 'von')} ${images.length}`;
   gallery.querySelector('.auction-image-backdrop').src = images[galleryIndex];
   gallery.querySelector('[data-image-count]').textContent = `${galleryIndex + 1} / ${images.length}`;
 }
@@ -155,12 +155,13 @@ async function loadDailyGame() {
 }
 
 async function startRandomGame() {
+  showGamePage();
   const request = ++higherLowerRequest;
   state.view = 'random-loading';
   const button = document.querySelector('[data-action="random"]');
   if (button) {
     button.disabled = true;
-    button.textContent = 'Zufallsrunde wird geladen …';
+    button.textContent = t("Loading a random round…", "Zufallsrunde wird geladen …");
   }
   try {
     const response = await fetch('/api/random', { headers: { accept: 'application/json' } });
@@ -184,11 +185,11 @@ async function startRandomGame() {
     if (request !== higherLowerRequest) return;
     renderStart();
     showToast(error.message === 'insufficient_variety'
-      ? 'Noch nicht genug unterschiedliche Auktionen. Bitte versuche es später erneut.'
-      : 'Die Zufallsrunde konnte gerade nicht geladen werden.');
+      ? t("Not enough different auctions yet. Please try again later.", "Noch nicht genug unterschiedliche Auktionen. Bitte versuche es später erneut.")
+      : t("The random round could not be loaded.", "Die Zufallsrunde konnte gerade nicht geladen werden."));
     if (button) {
       button.disabled = false;
-      button.textContent = 'Freies Spiel starten';
+      button.textContent = t("Start a free game", "Freies Spiel starten");
     }
   }
 }
@@ -215,19 +216,19 @@ function saveProgress() {
 }
 
 function euro(value) {
-  return new Intl.NumberFormat('de-DE', { style: 'currency', currency: 'EUR', minimumFractionDigits: value % 1 ? 2 : 0 }).format(value);
+  return new Intl.NumberFormat(uiLocale(), { style: 'currency', currency: 'EUR', minimumFractionDigits: value % 1 ? 2 : 0 }).format(value);
 }
 
 function timeRemaining(endAt) {
   const distance = new Date(endAt).getTime() - Date.now();
-  if (distance <= 0) return 'Auktion beendet';
+  if (distance <= 0) return t("Auction ended", "Auktion beendet");
   const minutes = Math.floor(distance / 60000);
   const days = Math.floor(minutes / 1440);
   const hours = Math.floor((minutes % 1440) / 60);
   const mins = minutes % 60;
-  if (days) return `Endet in ${days}T ${hours}Std ${mins}Min`;
-  if (hours) return `Endet in ${hours}Std ${mins}Min`;
-  return `Endet in ${Math.max(1, mins)}Min`;
+  if (days) return t(`Ends in ${days}d ${hours}h ${mins}m`, `Endet in ${days}T ${hours}Std ${mins}Min`);
+  if (hours) return t(`Ends in ${hours}h ${mins}m`, `Endet in ${hours}Std ${mins}Min`);
+  return t(`Ends in ${Math.max(1, mins)}m`, `Endet in ${Math.max(1, mins)}Min`);
 }
 
 function scoreGuess(guess, actual) {
@@ -243,8 +244,9 @@ function censorCurrencyValues(value = '') {
   const priceLabel = String.raw`(?:aktuelles\s+Gebot|derzeitiges\s+Gebot|momentanes\s+Gebot|Höchstgebot|Gebotsstand|Startgebot|Mindestgebot|Endgebot|Gebot|Zuschlagspreis|Schätzwert|Verkehrswert|Wiederbeschaffungswert|Warenwert|Zeitwert|Neupreis|Listenpreis|Kaufpreis|Verkaufspreis|Startpreis|aktueller\s+Preis|Preis|Wert|UVP|VB|NP)`;
   const labeledValue = new RegExp(String.raw`\b(${priceLabel})\b\s*(?:(?:in\s+Höhe\s+)?von|beträgt|beläuft\s+sich\s+auf|lag\s+bei|liegt\s+bei|war|ist|:|=)?\s*(?:ca\.?\s*)?${amount}`, 'giu');
   return String(value || '')
-    .replace(currencyValue, '[Preis ausgeblendet]')
-    .replace(labeledValue, (_, label) => `${label}: [Preis ausgeblendet]`);
+    .replaceAll('[Preis ausgeblendet]', t('[price hidden]', '[Preis ausgeblendet]'))
+    .replace(currencyValue, t('[price hidden]', '[Preis ausgeblendet]'))
+    .replace(labeledValue, (_, label) => `${label}: ${t('[price hidden]', '[Preis ausgeblendet]')}`);
 }
 
 function currentError(guess, actual) {
@@ -269,11 +271,11 @@ function upgradeSavedState(saved) {
 }
 
 function accuracy(score) {
-  if (score === 1000) return { label: 'Perfekt!', message: 'Genau ins Schwarze getroffen.', icon: '★', className: 'green', emoji: '🟩' };
-  if (score >= 850) return { label: 'Sehr nah dran!', message: 'Dein Preisgefühl sitzt.', icon: '◎', className: 'green', emoji: '🟩' };
-  if (score >= 650) return { label: 'Gut geschätzt!', message: 'Du warst ziemlich dicht dran.', icon: '★', className: 'yellow', emoji: '🟨' };
-  if (score >= 400) return { label: 'Nicht schlecht', message: 'Die Richtung hat gestimmt.', icon: '◆', className: 'orange', emoji: '🟧' };
-  return { label: 'Daneben', message: '', icon: '↗', className: 'red', emoji: '🟥' };
+  if (score === 1000) return { label: t("Perfect!", "Perfekt!"), message: t("Right on the money.", "Genau ins Schwarze getroffen."), icon: '★', className: 'green', emoji: '🟩' };
+  if (score >= 850) return { label: t("So close!", "Sehr nah dran!"), message: t("You know your prices.", "Dein Preisgefühl sitzt."), icon: '◎', className: 'green', emoji: '🟩' };
+  if (score >= 650) return { label: t("Good guess!", "Gut geschätzt!"), message: t("You were pretty close.", "Du warst ziemlich dicht dran."), icon: '★', className: 'yellow', emoji: '🟨' };
+  if (score >= 400) return { label: t("Not bad", "Nicht schlecht"), message: t("You were on the right track.", "Die Richtung hat gestimmt."), icon: '◆', className: 'orange', emoji: '🟧' };
+  return { label: t("Off the mark", "Daneben"), message: '', icon: '↗', className: 'red', emoji: '🟥' };
 }
 
 function stats() {
@@ -297,6 +299,7 @@ function stats() {
 let dailyStarting = false;
 async function startGame() {
   if (dailyStarting) return;
+  showGamePage();
   dailyStarting = true;
   const request = ++higherLowerRequest;
   state.view = 'daily-loading';
@@ -328,49 +331,49 @@ async function startGame() {
 }
 
 function renderStart() {
+  showGamePage();
   higherLowerRequest++;
   window.scrollTo({ top: 0, behavior: 'instant' });
   clearInterval(countdownTimer);
   state.view = 'start';
   const saved = getTodayRecord();
   const playerStats = stats();
-  const buttonText = saved?.view === 'results' ? 'Ergebnis ansehen' : saved?.answers?.length ? 'Spiel fortsetzen' : 'Heutiges Spiel starten';
+  const buttonText = saved?.view === 'results' ? t("View results", "Ergebnis ansehen") : saved?.answers?.length ? t("Continue game", "Spiel fortsetzen") : t("Play today’s game", "Heutiges Spiel starten");
   app.innerHTML = `
     <section class="start-screen">
       <div class="start-main">
-        <p class="eyebrow game-number"><span class="live-dot" aria-hidden="true"></span> DER HAMMER DES TAGES · #${gameNumber()}</p>
-        <h1 class="hero-title">Zum Ersten.<br>Zum Zweiten.<br><span>Dein Tipp!</span></h1>
-        <p class="hero-copy">Vom Fundstück zum Glücksgriff: Schätze die Gebote von <strong>5 echten Justiz-Auktionen.</strong> Wie gut ist dein Preisgefühl?</p>
+        <p class="eyebrow game-number"><span class="live-dot" aria-hidden="true"></span> ${t("THE DAILY HAMMER", "DER HAMMER DES TAGES")} · #${gameNumber()}</p>
+        <h1 class="hero-title">${t("Going once.", "Zum Ersten.")}<br>${t("Going twice.", "Zum Zweiten.")}<br><span>${t("Your guess!", "Dein Tipp!")}</span></h1>
+        <p class="hero-copy">${t("From lost property to lucky finds: guess the bids on", "Vom Fundstück zum Glücksgriff: Schätze die Gebote von")} <strong>${t("5 real justice auctions.", "5 echten Justiz-Auktionen.")}</strong> ${t("How good is your sense of value?", "Wie gut ist dein Preisgefühl?")}</p>
         <div class="start-actions">
           <button class="primary-button" type="button" data-action="play">${buttonText}<span class="button-arrow">→</span></button>
-          <button class="secondary-button random-button" type="button" data-action="random">Freies Spiel starten <span aria-hidden="true">↻</span></button>
-          <button class="secondary-button hl-start" type="button" data-action="higher-lower"><span>Higher or Lower <small>Höher? Niedriger? Halte deinen Lauf am Leben.</small></span><span aria-hidden="true">↑↓</span></button>
+          <button class="secondary-button random-button" type="button" data-action="random">${t("Start a free game", "Freies Spiel starten")} <span aria-hidden="true">↻</span></button>
+          <button class="secondary-button hl-start" type="button" data-action="higher-lower"><span>Higher or Lower <small>${t("Higher? Lower? Keep your streak alive.", "Höher? Niedriger? Halte deinen Lauf am Leben.")}</small></span><span aria-hidden="true">↑↓</span></button>
         </div>
-        <p class="play-note">Als Gast spielen oder mit Konto Auktionslose sammeln. Kein echtes Geld.</p>
-        ${rewardBanner()}
-        <div class="how-strip" aria-label="Spielablauf"><span><b>01</b> Entdecken</span><span><b>02</b> Schätzen</span><span><b>03</b> Abräumen</span></div>
+        <p class="play-note">${t("Play as a guest or sign in to collect auction finds. No real money.", "Als Gast spielen oder mit Konto Auktionslose sammeln. Kein echtes Geld.")}</p>
+        <div class="how-strip" aria-label="${t("How to play", "Spielablauf")}"><span><b>01</b> ${t("Discover", "Entdecken")}</span><span><b>02</b> ${t("Guess", "Schätzen")}</span><span><b>03</b> ${t("Collect", "Abräumen")}</span></div>
       </div>
-      <aside class="start-side" aria-label="Tagesstatistik">
+      <aside class="start-side" aria-label="${t("Daily statistics", "Tagesstatistik")}">
         <div class="auction-art" aria-hidden="true">
-          <span class="art-caption">DAS TÄGLICHE AUKTIONSSPIEL</span>
+          <span class="art-caption">${t("THE DAILY AUCTION GAME", "DAS TÄGLICHE AUKTIONSSPIEL")}</span>
           <span class="art-spark art-spark--one">✳</span><span class="art-spark art-spark--two">✦</span>
-          <div class="bid-paddle"><span>BIETERNUMMER</span><strong>001</strong><small>DEIN PREISGEFÜHL ZÄHLT</small></div>
+          <div class="bid-paddle"><span>${t("BIDDER NUMBER", "BIETERNUMMER")}</span><strong>001</strong><small>${t("TRUST YOUR INSTINCT", "DEIN PREISGEFÜHL ZÄHLT")}</small></div>
           <div class="gavel"><i class="gavel-head"></i><i class="gavel-handle"></i></div>
-          <span class="art-stamp">HEUTE<br><strong>5 LOSE</strong><br>FÜR DICH</span>
-          <span class="art-caption art-caption--bottom">KLEINE SCHÄTZE. GROSSE FRAGEZEICHEN.</span>
+          <span class="art-stamp">${t("TODAY", "HEUTE")}<br><strong>${t("5 LOTS", "5 LOSE")}</strong><br>${t("FOR YOU", "FÜR DICH")}</span>
+          <span class="art-caption art-caption--bottom">${t("LITTLE TREASURES. BIG QUESTIONS.", "KLEINE SCHÄTZE. GROSSE FRAGEZEICHEN.")}</span>
         </div>
         <div class="ticket">
           <div class="ticket-top">
-            <p class="ticket-label">DEIN TAGESZIEL</p>
-            <p class="ticket-number">5.000 PKT</p>
+            <p class="ticket-label">${t("YOUR DAILY TARGET", "DEIN TAGESZIEL")}</p>
+            <p class="ticket-number">${number(5000)} ${t("PTS", "PKT")}</p>
           </div>
           <div class="ticket-stats">
-            <div class="ticket-stat"><span>STREAK</span><strong>${playerStats.streak ? `🔥 ${playerStats.streak} Tag${playerStats.streak === 1 ? '' : 'e'}` : '—'}</strong></div>
-            <div class="ticket-stat"><span>BESTWERT</span><strong>${playerStats.best ? playerStats.best.toLocaleString('de-DE') : '—'}</strong></div>
+            <div class="ticket-stat"><span>STREAK</span><strong>${playerStats.streak ? `🔥 ${dayLabel(playerStats.streak)}` : '—'}</strong></div>
+            <div class="ticket-stat"><span>${t("PERSONAL BEST", "BESTWERT")}</span><strong>${playerStats.best ? playerStats.best.toLocaleString(uiLocale()) : '—'}</strong></div>
           </div>
         </div>
         <div class="score-explainer">
-          <div class="indicator-key"><span>🟩 EXAKT</span><span>🟨 NAH DRAN</span><span>🟧 FAIR</span><span>🟥 DANEBEN</span></div>
+          <div class="indicator-key"><span>${t("🟩 EXACT", "🟩 EXAKT")}</span><span>${t("🟨 CLOSE", "🟨 NAH DRAN")}</span><span>🟧 FAIR</span><span>${t("🟥 MISSED", "🟥 DANEBEN")}</span></div>
         </div>
       </aside>
     </section>`;
@@ -390,29 +393,29 @@ function renderRound() {
   app.innerHTML = `
     <section class="game-shell">
       <div class="game-topline">
-        <span class="round-count">LOS ${String(state.round + 1).padStart(2, '0')} / 05<small>${gameMode === 'random' ? 'FREIES SPIEL' : 'TAGESAUKTION'}</small></span>
-        <div class="lot-progress" aria-label="${state.answers.length} von 5 Auktionen geschätzt">${Array.from({ length: 5 }, (_, index) => `<span class="lot-step${state.answers[index] ? ' is-complete' : index === state.round ? ' is-current' : ''}" aria-hidden="true">${state.answers[index] ? '✓' : String(index + 1).padStart(2, '0')}</span>`).join('')}</div>
-        <span class="running-score">${runningScore.toLocaleString('de-DE')} PKT</span>
+        <span class="round-count">${t("LOT", "LOS")} ${String(state.round + 1).padStart(2, '0')} / 05<small>${gameMode === 'random' ? t("FREE PLAY", "FREIES SPIEL") : t("DAILY AUCTION", "TAGESAUKTION")}</small></span>
+        <div class="lot-progress" aria-label="${state.answers.length} ${t('of 5 auctions guessed', 'von 5 Auktionen geschätzt')}">${Array.from({ length: 5 }, (_, index) => `<span class="lot-step${state.answers[index] ? ' is-complete' : index === state.round ? ' is-current' : ''}" aria-hidden="true">${state.answers[index] ? '✓' : String(index + 1).padStart(2, '0')}</span>`).join('')}</div>
+        <span class="running-score">${runningScore.toLocaleString(uiLocale())} ${t("PTS", "PKT")}</span>
       </div>
       <div class="auction-layout${answer ? ' auction-layout--result' : ''}">
-        <div class="auction-image-wrap"${images.length > 1 ? ' role="region" aria-roledescription="Karussell" aria-label="Auktionsbilder"' : ''}>
+        <div class="auction-image-wrap"${images.length > 1 ? ` role="region" aria-roledescription="${t('carousel', 'Karussell')}" aria-label="${t('Auction images', 'Auktionsbilder')}"` : ''}>
           <img class="auction-image-backdrop" referrerpolicy="no-referrer" src="${images[galleryIndex]}" alt="" aria-hidden="true" />
-          <img class="auction-image" referrerpolicy="no-referrer" src="${images[galleryIndex]}" alt="${auction.title}${images.length > 1 ? ` – Bild ${galleryIndex + 1} von ${images.length}` : ''}" />
+          <img class="auction-image" referrerpolicy="no-referrer" src="${images[galleryIndex]}" alt="${auction.title}${images.length > 1 ? ` – ${t('Image', 'Bild')} ${galleryIndex + 1} ${t('of', 'von')} ${images.length}` : ''}" />
           ${images.length > 1 ? `
-            <button class="carousel-arrow carousel-arrow--previous" type="button" data-action="previous-image" aria-label="Vorheriges Bild">‹</button>
-            <button class="carousel-arrow carousel-arrow--next" type="button" data-action="next-image" aria-label="Nächstes Bild">›</button>
+            <button class="carousel-arrow carousel-arrow--previous" type="button" data-action="previous-image" aria-label="${t("Previous image", "Vorheriges Bild")}">‹</button>
+            <button class="carousel-arrow carousel-arrow--next" type="button" data-action="next-image" aria-label="${t("Next image", "Nächstes Bild")}">›</button>
             <span class="image-count" data-image-count role="status" aria-live="polite" aria-atomic="true">${galleryIndex + 1} / ${images.length}</span>
           ` : ''}
-          <span class="category-tag">${auction.category.toUpperCase()}</span>
+          <span class="category-tag">${listingLabel(auction.category).toUpperCase()}</span>
           <span class="time-tag${ended ? ' time-tag--ended' : ''}"><span class="clock-icon" aria-hidden="true"></span><span data-countdown>${timeRemaining(auction.endAt)}</span></span>
         </div>
         <div class="auction-panel${answer ? ' auction-panel--result' : ''}">
-          <p class="auction-id">${answer ? 'DER HAMMER IST GEFALLEN' : 'UNTER DEM HAMMER'} · #${auction.id}</p>
+          <p class="auction-id">${answer ? t("THE HAMMER HAS FALLEN", "DER HAMMER IST GEFALLEN") : t("UNDER THE HAMMER", "UNTER DEM HAMMER")} · #${auction.id}</p>
           <h1 class="auction-title${auctionTitleSizeClass(auction.title)}">${auction.title}</h1>
           ${answer ? revealMarkup(auction, answer) : `
-            <p class="auction-description" tabindex="0" role="region" aria-label="Auktionsbeschreibung">${censorCurrencyValues(auction.description)}</p>
+            <p class="auction-description" tabindex="0" role="region" aria-label="${t("Auction description", "Auktionsbeschreibung")}">${censorCurrencyValues(auction.description)}</p>
             <div class="fact-list">
-              <div class="fact"><span>ZUSTAND</span><strong>${auction.condition}</strong></div>
+              <div class="fact"><span>${t("CONDITION", "ZUSTAND")}</span><strong>${listingLabel(auction.condition)}</strong></div>
             </div>
             ${guessMarkup(ended)}
           `}
@@ -433,12 +436,12 @@ function renderRound() {
 function guessMarkup(ended = false) {
   return `
     <form class="guess-form" id="guess-form">
-      <label for="price-input">${ended ? 'Was war das Endgebot?' : 'Was ist das aktuelle Gebot?'}</label>
+      <label for="price-input">${ended ? t("What was the final bid?", "Was war das Endgebot?") : t("What is the current bid?", "Was ist das aktuelle Gebot?")}</label>
       <div class="guess-control">
         <div class="input-wrap"><span class="currency">€</span><input id="price-input" class="price-input" inputmode="decimal" autocomplete="off" placeholder="0" /></div>
-        <button class="submit-guess" type="submit">Tipp abgeben <span aria-hidden="true">↗</span></button>
+        <button class="submit-guess" type="submit">${t("Submit guess", "Tipp abgeben")} <span aria-hidden="true">↗</span></button>
       </div>
-      <p class="input-hint">Dein Tipp ist kein echtes Gebot. <span>Enter ↵</span></p>
+      <p class="input-hint">${t("Your guess is not a real bid.", "Dein Tipp ist kein echtes Gebot.")} <span>Enter ↵</span></p>
     </form>`;
 }
 
@@ -447,7 +450,7 @@ function revealMarkup(auction, answer) {
   const difference = auction.actualBid - answer.guess;
   const sign = difference > 0 ? '+' : difference < 0 ? '−' : '';
   const arrow = difference > 0 ? '↗' : difference < 0 ? '↘' : '●';
-  const relationship = difference > 0 ? 'höher' : difference < 0 ? 'niedriger' : 'genau gleich';
+  const relationship = difference > 0 ? t("higher", "höher") : difference < 0 ? t("lower", "niedriger") : t("exactly the same", "genau gleich");
   return `
     <div class="reveal-panel reveal-${level.className}">
       <div class="result-feedback">
@@ -456,26 +459,26 @@ function revealMarkup(auction, answer) {
       </div>
       <div class="bid-comparison">
         <div class="bid-value">
-          <span>DEIN TIPP</span>
+          <span>${t("YOUR GUESS", "DEIN TIPP")}</span>
           <strong>${euro(answer.guess)}</strong>
         </div>
-        <div class="difference-indicator ${level.className}" aria-label="Das echte Gebot ist ${relationship}; Abweichung ${answer.error.toFixed(1).replace('.', ',')} Prozent">
-          <strong>${sign}${answer.error.toFixed(1).replace('.', ',')} %</strong>
+        <div class="difference-indicator ${level.className}" aria-label="${t('The actual bid is', 'Das echte Gebot ist')} ${relationship}; ${t('difference', 'Abweichung')} ${number(answer.error, 1)} ${t('percent', 'Prozent')}">
+          <strong>${sign}${number(answer.error, 1)} %</strong>
           <span aria-hidden="true">${arrow}</span>
         </div>
         <div class="bid-value bid-value--actual">
-          <span>ECHTES GEBOT</span>
+          <span>${t("ACTUAL BID", "ECHTES GEBOT")}</span>
           <strong>${euro(auction.actualBid)}</strong>
         </div>
       </div>
-      <p class="start-bid">Startgebot <strong>${euro(auction.startBid)}</strong></p>
+      <p class="start-bid">${t("Starting bid", "Startgebot")} <strong>${euro(auction.startBid)}</strong></p>
       <div class="round-reward">
         <span class="reward-star" aria-hidden="true">★</span>
-        <div class="reward-copy"><span>DEINE PUNKTE</span><strong>${answer.score.toLocaleString('de-DE')} <small>PKT</small></strong></div>
+        <div class="reward-copy"><span>${t("YOUR POINTS", "DEINE PUNKTE")}</span><strong>${answer.score.toLocaleString(uiLocale())} <small>${t("PTS", "PKT")}</small></strong></div>
       </div>
       <div class="next-row">
-        <button class="primary-button" type="button" data-action="next">${state.round === 4 ? 'Ergebnis ansehen' : 'Nächste Auktion'}<span class="button-arrow">→</span></button>
-        <a class="auction-link" href="${auction.url}" target="_blank" rel="noreferrer">Original ansehen ↗</a>
+        <button class="primary-button" type="button" data-action="next">${state.round === 4 ? t("View results", "Ergebnis ansehen") : t("Next auction", "Nächste Auktion")}<span class="button-arrow">→</span></button>
+        <a class="auction-link" href="${auction.url}" target="_blank" rel="noreferrer">${t("View original", "Original ansehen")} ↗</a>
       </div>
     </div>`;
 }
@@ -486,7 +489,7 @@ async function submitGuess(form) {
   const raw = form.querySelector('#price-input').value.trim().replace(/\s/g, '').replace(',', '.');
   const guess = Number(raw);
   if (!raw || !Number.isFinite(guess) || guess < 0) {
-    showToast('Bitte gib einen gültigen Eurobetrag ein.');
+    showToast(t("Please enter a valid euro amount.", "Bitte gib einen gültigen Eurobetrag ein."));
     return;
   }
   dailySubmitting = true;
@@ -540,27 +543,27 @@ function renderResults() {
   app.innerHTML = `
     <section class="results-screen">
       <div class="results-header">
-        <div><p class="eyebrow">${gameMode === 'random' ? 'FREIES SPIEL' : `TAGESAUKTION #${gameNumber()}`} · GESCHAFFT</p><h1>Zum Dritten.<br><span style="color:var(--red)">Abgerechnet!</span></h1></div>
-        <div class="results-score"><strong>${total.toLocaleString('de-DE')} / 5.000</strong><span>GESAMTPUNKTE</span></div>
+        <div><p class="eyebrow">${gameMode === 'random' ? t("FREE PLAY", "FREIES SPIEL") : `${t('DAILY AUCTION', 'TAGESAUKTION')} #${gameNumber()}`} · ${t("COMPLETE", "GESCHAFFT")}</p><h1>${t("Going, gone.", "Zum Dritten.")}<br><span style="color:var(--red)">${t("Let’s add it up!", "Abgerechnet!")}</span></h1></div>
+        <div class="results-score"><strong>${total.toLocaleString(uiLocale())} / ${number(5000)}</strong><span>${t("TOTAL POINTS", "GESAMTPUNKTE")}</span></div>
       </div>
       <div class="result-stats">
-        <div class="result-stat"><span>BESTE RUNDE</span><strong>${state.answers[bestIndex].score} Pkt</strong></div>
-        <div class="result-stat"><span>Ø ABWEICHUNG</span><strong>${averageError.toFixed(1).replace('.', ',')} %</strong></div>
+        <div class="result-stat"><span>${t("BEST ROUND", "BESTE RUNDE")}</span><strong>${state.answers[bestIndex].score} ${t("pts", "Pkt")}</strong></div>
+        <div class="result-stat"><span>${t("AVG. DIFFERENCE", "Ø ABWEICHUNG")}</span><strong>${number(averageError, 1)} %</strong></div>
         ${gameMode === 'random'
-          ? `<div class="result-stat"><span>BEENDETE AUKTIONEN</span><strong>${completedAuctions} / 5</strong></div>`
-          : `<div class="result-stat"><span>AKTUELLER STREAK</span><strong>${playerStats.streak ? `🔥 ${playerStats.streak} Tag${playerStats.streak === 1 ? '' : 'e'}` : '—'}</strong></div>`}
+          ? `<div class="result-stat"><span>${t("ENDED AUCTIONS", "BEENDETE AUKTIONEN")}</span><strong>${completedAuctions} / 5</strong></div>`
+          : `<div class="result-stat"><span>${t("CURRENT STREAK", "AKTUELLER STREAK")}</span><strong>${playerStats.streak ? `🔥 ${dayLabel(playerStats.streak)}` : '—'}</strong></div>`}
       </div>
       <div class="results-list">
         ${AUCTIONS.map((auction, index) => resultRow(auction, state.answers[index], index)).join('')}
       </div>
       <div class="results-actions">
-        ${account && gameMode === 'daily' ? '<button class="secondary-button" type="button" data-account="open">Kisten & Inventar ◈</button>' : ''}
-        ${gameMode === 'random' ? '<button class="primary-button" type="button" data-action="random">Neue Zufallsrunde <span class="button-arrow">↻</span></button>' : ''}
-        <button class="${gameMode === 'random' ? 'secondary' : 'primary'}-button" type="button" data-action="share">Ergebnis teilen <span class="button-arrow">↗</span></button>
-        <button class="secondary-button" type="button" data-action="copy">Text kopieren</button>
-        <button class="secondary-button" type="button" data-action="home">Zur Startseite</button>
+        ${account && gameMode === 'daily' ? `<a class="secondary-button" href="/shop" data-page>Shop ◈</a>` : ''}
+        ${gameMode === 'random' ? `<button class="primary-button" type="button" data-action="random">${t('New random round', 'Neue Zufallsrunde')} <span class="button-arrow">↻</span></button>` : ''}
+        <button class="${gameMode === 'random' ? 'secondary' : 'primary'}-button" type="button" data-action="share">${t("Share result", "Ergebnis teilen")} <span class="button-arrow">↗</span></button>
+        <button class="secondary-button" type="button" data-action="copy">${t("Copy text", "Text kopieren")}</button>
+        <button class="secondary-button" type="button" data-action="home">${t("Back to home", "Zur Startseite")}</button>
       </div>
-      <p class="data-note">${gameMode === 'random' ? 'Diese Runde stammt aus dem dauerhaft gespeicherten Auktionsarchiv. Beendete Auktionen werden mit ihrem letzten erfassten Endgebot gespielt.' : 'Gebotsstände wurden für dieses Tagesspiel festgeschrieben. Die Originalauktion kann sich danach weiter verändern.'}</p>
+      <p class="data-note">${gameMode === 'random' ? t("This round uses the auction archive. Ended auctions use their last recorded final bid.", "Diese Runde stammt aus dem dauerhaft gespeicherten Auktionsarchiv. Beendete Auktionen werden mit ihrem letzten erfassten Endgebot gespielt.") : t("Prices are fixed for this Daily. The original auction may continue to change.", "Gebotsstände wurden für dieses Tagesspiel festgeschrieben. Die Originalauktion kann sich danach weiter verändern.")}</p>
     </section>`;
 }
 
@@ -569,10 +572,10 @@ function resultRow(auction, answer, index) {
   return `
     <div class="result-row">
       <img class="result-thumb" src="${auction.image}" alt="" />
-      <a class="result-name result-auction-link" href="${auction.url}" target="_blank" rel="noreferrer"><strong>${index + 1}. ${auction.title}</strong><span>AUKTION #${auction.id} ÖFFNEN ↗</span></a>
-      <div class="result-cell"><strong>${euro(answer.guess)}</strong><span>DEIN TIPP</span></div>
-      <div class="result-cell"><strong>${euro(auction.actualBid)}</strong><span>GEBOT</span></div>
-      <div class="result-cell"><strong>${answer.error.toFixed(1).replace('.', ',')} %</strong><span>ABWEICHUNG</span></div>
+      <a class="result-name result-auction-link" href="${auction.url}" target="_blank" rel="noreferrer"><strong>${index + 1}. ${auction.title}</strong><span>${t(`OPEN AUCTION #${auction.id}`, `AUKTION #${auction.id} ÖFFNEN`)} ↗</span></a>
+      <div class="result-cell"><strong>${euro(answer.guess)}</strong><span>${t("YOUR GUESS", "DEIN TIPP")}</span></div>
+      <div class="result-cell"><strong>${euro(auction.actualBid)}</strong><span>${t("BID", "GEBOT")}</span></div>
+      <div class="result-cell"><strong>${number(answer.error, 1)} %</strong><span>${t("DIFFERENCE", "ABWEICHUNG")}</span></div>
       <div class="result-points"><span class="accuracy-square ${level.className}"></span><strong>${answer.score}</strong></div>
     </div>`;
 }
@@ -581,12 +584,12 @@ function shareText() {
   const total = state.answers.reduce((sum, item) => sum + item.score, 0);
   const streak = stats().streak;
   return [
-    gameMode === 'random' ? 'JUSTIZGUESSR · FREIES SPIEL' : `JUSTIZGUESSR #${gameNumber()}`,
+    gameMode === 'random' ? t("JUSTIZGUESSR · FREE PLAY", "JUSTIZGUESSR · FREIES SPIEL") : `JUSTIZGUESSR #${gameNumber()}`,
     '',
     ...state.answers.map(item => `${accuracy(item.score).emoji} ${item.score}`),
     '',
-    `${total.toLocaleString('de-DE')} / 5.000`,
-    gameMode === 'daily' && streak ? `🔥 ${streak} Tag${streak === 1 ? '' : 'e'} Streak` : ''
+    `${total.toLocaleString(uiLocale())} / ${number(5000)}`,
+    gameMode === 'daily' && streak ? `🔥 ${dayLabel(streak)} streak` : ''
   ].filter((line, index, all) => line || all[index - 1] !== '').join('\n');
 }
 
@@ -595,15 +598,15 @@ async function shareResult() {
   if (navigator.share) {
     try { await navigator.share({ text }); return; } catch (error) { if (error.name === 'AbortError') return; }
   }
-  try { await navigator.clipboard.writeText(text); showToast('Ergebnis kopiert — spoilerfrei.'); }
-  catch { showToast('Teilen ist in diesem Browser nicht verfügbar.'); }
+  try { await navigator.clipboard.writeText(text); showToast(t("Results copied — no spoilers.", "Ergebnis kopiert — spoilerfrei.")); }
+  catch { showToast(t("Sharing is unavailable in this browser.", "Teilen ist in diesem Browser nicht verfügbar.")); }
 }
 
 async function copyResult() {
   const text = shareText();
   try {
     await navigator.clipboard.writeText(text);
-    showToast('Ergebnistext kopiert — spoilerfrei.');
+    showToast(t("Results copied — no spoilers.", "Ergebnistext kopiert — spoilerfrei."));
   } catch {
     const field = document.createElement('textarea');
     field.value = text;
@@ -614,7 +617,7 @@ async function copyResult() {
     field.select();
     const copied = document.execCommand('copy');
     field.remove();
-    showToast(copied ? 'Ergebnistext kopiert — spoilerfrei.' : 'Kopieren ist in diesem Browser nicht verfügbar.');
+    showToast(copied ? t("Results copied — no spoilers.", "Ergebnistext kopiert — spoilerfrei.") : t("Copying is unavailable in this browser.", "Kopieren ist in diesem Browser nicht verfügbar."));
   }
 }
 
@@ -641,7 +644,7 @@ function launchConfetti() {
 }
 
 function showToast(message) {
-  const target = accountDialog.open ? document.querySelector('#account-toast') : toast;
+  const target = toast;
   target.textContent = message;
   target.classList.add('show');
   setTimeout(() => target.classList.remove('show'), 5000);
@@ -686,7 +689,7 @@ document.addEventListener('keydown', event => {
   nextRound();
 });
 
-renderStart();
+if (accountPaths.includes(location.pathname)) navigateAccountPage(location.pathname, false); else renderStart();
 dailyLoadPromise = loadDailyGame();
 updateDailyReset();
 setInterval(updateDailyReset, 1000);
@@ -699,8 +702,8 @@ function registerWebMcpTools() {
 
   register({
     name: 'get_daily_game_status',
-    title: 'Tagesspiel-Status lesen',
-    description: 'Liest Spielnummer, Fortschritt und bisherigen Punktestand, ohne das Spiel zu verändern.',
+    title: t("Read daily game status", "Tagesspiel-Status lesen"),
+    description: t("Read the game number, progress and score.", "Liest Spielnummer, Fortschritt und bisherigen Punktestand, ohne das Spiel zu verändern."),
     inputSchema: { type: 'object', properties: {}, additionalProperties: false },
     annotations: { readOnlyHint: true, untrustedContentHint: false },
     execute() {
@@ -716,8 +719,8 @@ function registerWebMcpTools() {
 
   register({
     name: 'start_daily_game',
-    title: 'Tagesspiel öffnen',
-    description: 'Startet das heutige Spiel, setzt es fort oder öffnet ein bereits abgeschlossenes Ergebnis.',
+    title: t("Open daily game", "Tagesspiel öffnen"),
+    description: t("Start or resume today’s game, or view its completed result.", "Startet das heutige Spiel, setzt es fort oder öffnet ein bereits abgeschlossenes Ergebnis."),
     inputSchema: { type: 'object', properties: {}, additionalProperties: false },
     annotations: { readOnlyHint: false, untrustedContentHint: false },
     async execute() {
@@ -729,8 +732,8 @@ function registerWebMcpTools() {
 
   register({
     name: 'start_random_game',
-    title: 'Zufallsrunde öffnen',
-    description: 'Startet ein freies Spiel mit fünf zufälligen Auktionen aus dem gespeicherten Archiv.',
+    title: t("Open random round", "Zufallsrunde öffnen"),
+    description: t("Start a free game with five random auctions from the archive.", "Startet ein freies Spiel mit fünf zufälligen Auktionen aus dem gespeicherten Archiv."),
     inputSchema: { type: 'object', properties: {}, additionalProperties: false },
     annotations: { readOnlyHint: false, untrustedContentHint: false },
     async execute() {
@@ -741,3 +744,12 @@ function registerWebMcpTools() {
 }
 
 registerWebMcpTools();
+
+// Preserve unfinished guesses when changing the interface language.
+document.addEventListener('jg:language', () => {
+  const guess = document.querySelector('#price-input')?.value;
+  if (state.view === 'start') renderStart();
+  else if (state.view === 'game') { renderRound(); if (guess !== undefined) document.querySelector('#price-input').value = guess; }
+  else if (state.view === 'results') renderResults();
+  else if (state.view === 'higher-lower') renderHigherLower();
+});

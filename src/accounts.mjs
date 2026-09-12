@@ -8,6 +8,7 @@ const derive = promisify(scrypt);
 const digest = value => createHash('sha256').update(value).digest('hex');
 const day = now => new Date(now).toISOString().slice(0, 10);
 const SESSION_MS = 30 * 86400000;
+export const STARTING_TOKENS = 1000;
 export class AccountError extends Error {
   constructor(code, status = 400) { super(code); this.status = status; }
 }
@@ -76,6 +77,11 @@ export class Accounts {
         CHECK(requested_by = user_a OR requested_by = user_b)
       ) STRICT;
       CREATE INDEX IF NOT EXISTS friendships_user_b ON friendships(user_b);
+      CREATE TABLE IF NOT EXISTS token_grants (
+        admin_id TEXT NOT NULL REFERENCES users(id), request_id TEXT NOT NULL,
+        amount INTEGER NOT NULL CHECK(amount > 0), recipients INTEGER NOT NULL,
+        created_at INTEGER NOT NULL, PRIMARY KEY(admin_id, request_id)
+      ) STRICT;
     `));
   }
   db(work) { return withDatabase(this.dataDir, work); }
@@ -93,8 +99,8 @@ export class Accounts {
       if (existing) {
         db.prepare('UPDATE users SET password_hash = ? WHERE id = ?').run(hash, existing.id);
         db.prepare('DELETE FROM account_sessions WHERE user_id = ?').run(existing.id);
-      } else db.prepare('INSERT INTO users (id, username, password_hash, admin, created_at) VALUES (?, ?, ?, 1, ?)')
-        .run(randomUUID(), username, hash, this.now());
+      } else db.prepare('INSERT INTO users (id, username, password_hash, admin, tokens, created_at) VALUES (?, ?, ?, 1, ?, ?)')
+        .run(randomUUID(), username, hash, STARTING_TOKENS, this.now());
     });
   }
   throttle(key, limit = 30) {
@@ -134,7 +140,8 @@ export class Accounts {
         .run(this.now(), codeHash);
       if (!result.changes) fail('invalid_code');
       const id = randomUUID();
-      db.prepare('INSERT INTO users (id, username, password_hash, created_at) VALUES (?, ?, ?, ?)').run(id, username, hash, this.now());
+      db.prepare('INSERT INTO users (id, username, password_hash, tokens, created_at) VALUES (?, ?, ?, ?, ?)')
+        .run(id, username, hash, STARTING_TOKENS, this.now());
       return this.session(db, id);
     });
   }
@@ -163,6 +170,30 @@ export class Accounts {
   revokeCode(user, id) {
     if (!user.admin) fail('forbidden', 403);
     this.db(db => db.prepare('UPDATE registration_codes SET revoked = 1 WHERE hash = ? AND used_at IS NULL').run(String(id)));
+  }
+  adminOverview(user) {
+    if (!user.admin) fail('forbidden', 403);
+    return this.db(db => ({ playerCount: db.prepare('SELECT COUNT(*) AS count FROM users').get().count,
+      grants: db.prepare('SELECT amount, recipients, created_at AS createdAt FROM token_grants ORDER BY created_at DESC, rowid DESC LIMIT 20').all() }));
+  }
+  grantTokens(user, amount, requestId) {
+    if (!user.admin) fail('forbidden', 403);
+    if (!Number.isSafeInteger(amount) || amount < 1 || amount > 1000000) fail('invalid_grant_amount');
+    if (typeof requestId !== 'string' || !/^[a-zA-Z0-9-]{16,80}$/.test(requestId)) fail('invalid_request');
+    return this.atomic(db => {
+      const previous = db.prepare('SELECT amount, recipients, created_at AS createdAt FROM token_grants WHERE admin_id = ? AND request_id = ?').get(user.id, requestId);
+      if (previous) {
+        if (previous.amount !== amount) fail('request_conflict', 409);
+        return { ...previous };
+      }
+      const highest = db.prepare('SELECT MAX(tokens) AS tokens FROM users').get().tokens || 0;
+      if (!Number.isSafeInteger(highest + amount)) fail('token_balance_limit', 409);
+      // One transaction snapshots the recipients at execution time. No grant is applied at registration.
+      const recipients = db.prepare('UPDATE users SET tokens = tokens + ?').run(amount).changes;
+      const createdAt = this.now();
+      db.prepare('INSERT INTO token_grants VALUES (?, ?, ?, ?, ?)').run(user.id, requestId, amount, recipients, createdAt);
+      return { amount, recipients, createdAt };
+    });
   }
   profile(user) {
     return this.db(db => {
