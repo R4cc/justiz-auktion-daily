@@ -2,7 +2,7 @@
 
 A daily price-guessing game based on public listings from [justiz-auktion.de](https://www.justiz-auktion.de/), plus replayable random rounds drawn from the saved auction archive.
 
-The application serves the game and its JSON API from one lightweight Node process. No account is required; player progress and streaks stay in the browser, while auction history and immutable daily sets are stored in the container's `/data` volume.
+The application serves the game and its JSON API from one lightweight Node process. No account is required; player progress and streaks stay in the browser. Auctions, immutable daily sets, random-game rotation history, and the fetch queue are stored in SQLite in the container's `/data` volume.
 
 ## Run with Docker
 
@@ -20,15 +20,22 @@ docker run --rm \
   your-user/justizguessr:latest
 ```
 
-The `/data` volume preserves archived auctions, cached listing images, final prices, immutable daily game sets, and the pending fetch queue across container upgrades. The service discovers listings every six hours and then processes exactly one listing page, auction page, start-date page, or image per rolling interval (two minutes by default). Requests are never run concurrently, HTTP 429/5xx responses are retried with increasing delays, and completed auctions with a stored final price are not fetched again. A day's five auctions and their scoring prices are never changed after generation, and an auction already used by a previous daily is not selected for another one. Free-play rounds may include active or completed archived auctions and do not affect daily progress or streaks.
+The `/data` volume preserves `justizguessr.sqlite`, cached listing images, and any legacy JSON files. On first startup, existing `auctions.json`, `daily-games.json`, and `fetch-queue.json` data is imported into SQLite without deleting the source files. Those JSON files are backup-only after a successful import.
+
+The service discovers listings every six hours and processes one listing page, auction page, start-date page, or image at a time. Queue state and retry timing are committed after every step. HTTP 429/5xx responses use an adaptive backoff, and completed auctions with a stored final price are not fetched again. Each fetched auction updates one database row instead of rewriting the complete archive.
+
+A daily game's five auctions and scoring prices are immutable. The database enforces that an auction ID can belong to only one daily game, and daily-use history is retained indefinitely. Free-play uses a persistent least-used rotation: every eligible unique auction is drawn once before the pool begins another pass. With 1,200 eligible auctions, that normally prevents a repeat for roughly 240 five-auction games.
 
 Optional environment variables:
 
 - `PORT` — HTTP port inside the container, default `3000`
 - `DATA_DIR` — persistent data directory, default `/data`
 - `DISCOVERY_INTERVAL_HOURS` — interval for adding listing pages to the persistent queue, default `6` (the legacy `REFRESH_INTERVAL_HOURS` name remains supported)
-- `FETCH_INTERVAL_SECONDS` — delay between individual outbound requests, default `120` and minimum `30`
-- `COLLECT_PAGES` — listing-result pages included in each discovery sweep, default `12`
+- `COLLECT_MAX_PAGES` — maximum listing-result pages included in a discovery sweep, default `250`
+- `FETCH_MIN_INTERVAL_MS` — fastest allowed fetch pace, default `250`
+- `FETCH_INITIAL_INTERVAL_MS` — starting fetch interval, default `750`
+- `FETCH_MAX_INTERVAL_MS` — maximum adaptive interval after failures, default `120000`
+- `FETCH_IDLE_POLL_MS` — idle queue polling interval, default `30000`
 
 ## Run behind Cloudflare Tunnel
 
@@ -66,5 +73,7 @@ npm ci
 npm test
 npm start
 ```
+
+Local execution requires Node.js 22.13 or newer for the built-in SQLite module.
 
 The game is then available at `http://localhost:3000`. Container health can be checked at `GET /healthz`, while `GET /stats` returns non-sensitive collector and queue totals as plain text. The current frozen daily set is served from `GET /api/daily`, and a fresh five-auction free-play set is served from `GET /api/random`.

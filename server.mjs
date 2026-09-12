@@ -7,7 +7,6 @@ import {
 } from 'node:fs';
 
 import {
-  readFile,
   stat
 } from 'node:fs/promises';
 
@@ -26,9 +25,21 @@ import {
 } from './src/collector.mjs';
 
 import {
+  censorCurrencyValues,
   selectRandomSet,
   utcDateKey
 } from './src/core.mjs';
+
+import {
+  closeDataStore,
+  initializeDataStore,
+  readArchive,
+  readDailyGames,
+  readQueue as readStoredQueue,
+  readRandomStats,
+  readRandomUsage,
+  recordRandomGame
+} from './src/database.mjs';
 
 import {
   formatPublicStats
@@ -247,35 +258,9 @@ function text(
   response.end(body);
 }
 
-async function readDataJson(
-  filename,
-  fallback
-) {
-  try {
-    return JSON.parse(
-      await readFile(
-        path.join(
-          dataDir,
-          filename
-        ),
-        'utf8'
-      )
-    );
-  } catch (error) {
-    if (
-      error.code ===
-      'ENOENT'
-    ) {
-      return fallback;
-    }
-
-    throw error;
-  }
-}
-
 async function readFetchQueue() {
-  return readDataJson(
-    'fetch-queue.json',
+  return readStoredQueue(
+    dataDir,
     {
       version:
         null,
@@ -308,32 +293,24 @@ async function publicStats() {
   const [
     archive,
     queue,
-    daily
+    daily,
+    random
   ] =
     await Promise.all([
-      readDataJson(
-        'auctions.json',
-        {
-          auctions:
-            []
-        }
-      ),
+      readArchive(dataDir),
 
       readFetchQueue(),
 
-      readDataJson(
-        'daily-games.json',
-        {
-          games:
-            {}
-        }
-      )
+      readDailyGames(dataDir),
+
+      readRandomStats(dataDir)
     ]);
 
   return formatPublicStats({
     archive,
     queue,
     daily,
+    random,
 
     fetchState:
       lastRefresh
@@ -467,6 +444,11 @@ async function dailyPayload() {
         auction => ({
           ...auction,
 
+          description:
+            censorCurrencyValues(
+              auction.description
+            ),
+
           actualBid:
             auction.correctPrice
         })
@@ -476,21 +458,28 @@ async function dailyPayload() {
 
 async function randomPayload() {
   const archive =
-    JSON.parse(
-      await readFile(
-        path.join(
-          dataDir,
-          'auctions.json'
-        ),
-        'utf8'
-      )
+    readArchive(
+      dataDir
+    );
+
+  const usage =
+    readRandomUsage(
+      dataDir
     );
 
   const game =
     selectRandomSet(
       archive.auctions ||
-      []
+      [],
+      5,
+      Math.random,
+      usage
     );
+
+  recordRandomGame(
+    dataDir,
+    game
+  );
 
   return {
     ...game,
@@ -499,6 +488,11 @@ async function randomPayload() {
       game.auctions.map(
         auction => ({
           ...auction,
+
+          description:
+            censorCurrencyValues(
+              auction.description
+            ),
 
           actualBid:
             auction.correctPrice
@@ -715,16 +709,7 @@ async function maybeScheduleDiscovery({
     await Promise.all([
       readFetchQueue(),
 
-      readDataJson(
-        'auctions.json',
-        {
-          updatedAt:
-            null,
-
-          auctions:
-            []
-        }
-      )
+      readArchive(dataDir)
     ]);
 
   if (
@@ -882,6 +867,10 @@ function scheduleUtcRollover() {
 
   timer.unref();
 }
+
+initializeDataStore(
+  dataDir
+);
 
 await seedArchiveIfEmpty({
   dataDir,
@@ -1232,12 +1221,17 @@ function shutdown(
   );
 
   server.close(
-    error =>
+    error => {
+      closeDataStore(
+        dataDir
+      );
+
       process.exit(
         error
           ? 1
           : 0
-      )
+      );
+    }
   );
 
   setTimeout(

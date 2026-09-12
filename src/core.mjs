@@ -25,16 +25,57 @@ export function scoreGuess(guess, actual) {
     return 0;
   }
 
-  const error =
+  // A fixed cushion keeps small Euro misses on inexpensive auctions from
+  // consuming most of the score. The power curve rewards close guesses
+  // generously while still separating increasingly large misses.
+  const priceDistance =
     Math.abs(guess - actual) /
-    actual;
+    (actual + 15);
 
   return Math.round(
-    1000 *
-    Math.exp(
-      -2.5 * error
+    1000 /
+    (
+      1 +
+      Math.pow(
+        priceDistance / 0.5,
+        1.7
+      )
     )
   );
+}
+
+export function censorCurrencyValues(value = '') {
+  const amount =
+    String.raw`(?:\d{1,3}(?:[.,'’\s\u00a0]\d{3})+|\d+)(?:[,.](?:\d{1,2}|-{1,2}))?(?:\s*(?:Tsd\.?|Mio\.?|k))?`;
+
+  const currency =
+    String.raw`(?:€|&euro;|&#8364;|&#x20ac;|EUR|Euro|CHF|Schweizer(?:ische)?\s+Franken|Franken|USD|US-Dollar|Dollar|GBP|Pfund|£|&pound;|&#163;|CAD|AUD|JPY|¥|US\$|\$)`;
+
+  const currencyValue =
+    new RegExp(
+      String.raw`(?:${currency}\s*(?::|=)?\s*(?:ca\.?\s*)?${amount}|${amount}\s*${currency})`,
+      'giu'
+    );
+
+  const priceLabel =
+    String.raw`(?:aktuelles\s+Gebot|derzeitiges\s+Gebot|momentanes\s+Gebot|Höchstgebot|Gebotsstand|Startgebot|Mindestgebot|Endgebot|Gebot|Zuschlagspreis|Schätzwert|Verkehrswert|Wiederbeschaffungswert|Warenwert|Zeitwert|Neupreis|Listenpreis|Kaufpreis|Verkaufspreis|Startpreis|aktueller\s+Preis|Preis|Wert|UVP|VB|NP)`;
+
+  const labeledValue =
+    new RegExp(
+      String.raw`\b(${priceLabel})\b\s*(?:(?:in\s+Höhe\s+)?von|beträgt|beläuft\s+sich\s+auf|lag\s+bei|liegt\s+bei|war|ist|:|=)?\s*(?:ca\.?\s*)?${amount}`,
+      'giu'
+    );
+
+  return String(value || '')
+    .replace(
+      currencyValue,
+      '[Preis ausgeblendet]'
+    )
+    .replace(
+      labeledValue,
+      (_, label) =>
+        `${label}: [Preis ausgeblendet]`
+    );
 }
 
 function deterministicJitter(
@@ -360,7 +401,9 @@ function playableAuction(
       auction.title,
 
     description:
-      auction.description,
+      censorCurrencyValues(
+        auction.description
+      ),
 
     category:
       auction.category ||
@@ -509,7 +552,8 @@ export function selectDailySet(
   auctions,
   dateKey,
   previousSets = {},
-  count = 5
+  count = 5,
+  usedAuctionIds = []
 ) {
   const now =
     Date.parse(
@@ -528,16 +572,19 @@ export function selectDailySet(
 
   const previouslyUsedIds =
     new Set(
-      historicalDates.flatMap(
-        key =>
-          previousSets[key]
-            ?.auctions
-            ?.map(
-              item =>
-                item.id
-            ) ||
-          []
-      )
+      [
+        ...usedAuctionIds,
+        ...historicalDates.flatMap(
+          key =>
+            previousSets[key]
+              ?.auctions
+              ?.map(
+                item =>
+                  Number(item.id)
+              ) ||
+            []
+        )
+      ].map(Number)
     );
 
   const previouslyUsedStrongKeys =
@@ -626,7 +673,7 @@ export function selectDailySet(
         auction =>
           !previouslyUsedIds
             .has(
-              auction.id
+              Number(auction.id)
             )
       )
       .filter(
@@ -763,7 +810,7 @@ export function selectDailySet(
       new Set(
         selected.map(
           item =>
-            item.id
+            Number(item.id)
         )
       );
 
@@ -804,10 +851,10 @@ export function selectDailySet(
         .filter(
           item =>
             !selectedIds.has(
-              item.id
+              Number(item.id)
             ) &&
             !previouslyUsedIds.has(
-              item.id
+              Number(item.id)
             )
         )
         .filter(
@@ -904,14 +951,15 @@ export function selectDailySet(
 export function selectRandomSet(
   auctions,
   count = 5,
-  random = Math.random
+  random = Math.random,
+  usage = new Map()
 ) {
   const byId =
     [
       ...new Map(
         auctions.map(
           auction => [
-            auction?.id,
+            Number(auction?.id),
             auction
           ]
         )
@@ -960,6 +1008,28 @@ export function selectRandomSet(
       byId[index]
     ];
   }
+
+  const useCount =
+    auction => {
+      const value =
+        usage instanceof Map
+          ? usage.get(Number(auction.id))
+          : usage?.[auction.id];
+
+      return Number(
+        typeof value === 'object'
+          ? value?.useCount
+          : value
+      ) || 0;
+    };
+
+  // The shuffle provides variety among equally used auctions. Stable sorting
+  // then exhausts the least-used pool before any auction is repeated.
+  byId.sort(
+    (a, b) =>
+      useCount(a) -
+      useCount(b)
+  );
 
   const unique =
     uniqueCandidates(

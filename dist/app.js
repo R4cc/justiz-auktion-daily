@@ -80,9 +80,10 @@ const app = document.querySelector('#app');
 const helpDialog = document.querySelector('#help-dialog');
 const toast = document.querySelector('#toast');
 const GAME_EPOCH = Date.UTC(2026, 0, 1);
+const SCORE_VERSION = 2;
 const initialUtcDate = new Date().toISOString().slice(0, 10);
 let countdownTimer;
-let state = { view: 'start', round: 0, answers: [] };
+let state = { view: 'start', round: 0, answers: [], scoreVersion: SCORE_VERSION };
 let dailyLoadPromise = Promise.resolve();
 let galleryAuction = null;
 let galleryIndex = 0;
@@ -164,7 +165,7 @@ async function startRandomGame() {
       actualBid: Number(item.actualBid ?? item.correctPrice),
       startBid: Number(item.startBid || 0)
     }));
-    state = { view: 'game', round: 0, answers: [] };
+    state = { view: 'game', round: 0, answers: [], scoreVersion: SCORE_VERSION };
     renderRound();
   } catch {
     showToast('Die Zufallsrunde konnte gerade nicht geladen werden.');
@@ -211,8 +212,41 @@ function timeRemaining(endAt) {
 }
 
 function scoreGuess(guess, actual) {
-  const error = Math.abs(guess - actual) / Math.max(actual, 0.01);
-  return Math.round(1000 * Math.exp(-2.5 * error));
+  if (!Number.isFinite(guess) || guess < 0 || !Number.isFinite(actual) || actual <= 0) return 0;
+  const priceDistance = Math.abs(guess - actual) / (actual + 15);
+  return Math.round(1000 / (1 + Math.pow(priceDistance / 0.5, 1.7)));
+}
+
+function censorCurrencyValues(value = '') {
+  const amount = String.raw`(?:\d{1,3}(?:[.,'’\s\u00a0]\d{3})+|\d+)(?:[,.](?:\d{1,2}|-{1,2}))?(?:\s*(?:Tsd\.?|Mio\.?|k))?`;
+  const currency = String.raw`(?:€|&euro;|&#8364;|&#x20ac;|EUR|Euro|CHF|Schweizer(?:ische)?\s+Franken|Franken|USD|US-Dollar|Dollar|GBP|Pfund|£|&pound;|&#163;|CAD|AUD|JPY|¥|US\$|\$)`;
+  const currencyValue = new RegExp(String.raw`(?:${currency}\s*(?::|=)?\s*(?:ca\.?\s*)?${amount}|${amount}\s*${currency})`, 'giu');
+  const priceLabel = String.raw`(?:aktuelles\s+Gebot|derzeitiges\s+Gebot|momentanes\s+Gebot|Höchstgebot|Gebotsstand|Startgebot|Mindestgebot|Endgebot|Gebot|Zuschlagspreis|Schätzwert|Verkehrswert|Wiederbeschaffungswert|Warenwert|Zeitwert|Neupreis|Listenpreis|Kaufpreis|Verkaufspreis|Startpreis|aktueller\s+Preis|Preis|Wert|UVP|VB|NP)`;
+  const labeledValue = new RegExp(String.raw`\b(${priceLabel})\b\s*(?:(?:in\s+Höhe\s+)?von|beträgt|beläuft\s+sich\s+auf|lag\s+bei|liegt\s+bei|war|ist|:|=)?\s*(?:ca\.?\s*)?${amount}`, 'giu');
+  return String(value || '')
+    .replace(currencyValue, '[Preis ausgeblendet]')
+    .replace(labeledValue, (_, label) => `${label}: [Preis ausgeblendet]`);
+}
+
+function currentError(guess, actual) {
+  return Math.abs(guess - actual) / actual * 100;
+}
+
+function upgradeSavedState(saved) {
+  if (!saved?.answers || saved.scoreVersion === SCORE_VERSION) return saved;
+  const answers = saved.answers.map((answer, index) => {
+    const actual = AUCTIONS[index]?.actualBid;
+    if (!Number.isFinite(answer.guess) || !Number.isFinite(actual) || actual <= 0) return answer;
+    return { ...answer, score: scoreGuess(answer.guess, actual), error: currentError(answer.guess, actual) };
+  });
+  const upgraded = { ...saved, answers, scoreVersion: SCORE_VERSION };
+  localStorage.setItem(todayStorageKey(), JSON.stringify(upgraded));
+  if (saved.view === 'results') {
+    const total = answers.reduce((sum, answer) => sum + answer.score, 0);
+    const history = getHistory().map(entry => entry.date === utcDateKey() ? { ...entry, total, scoreVersion: SCORE_VERSION } : entry);
+    localStorage.setItem('justizguessr:history', JSON.stringify(history));
+  }
+  return upgraded;
 }
 
 function accuracy(score) {
@@ -225,7 +259,7 @@ function accuracy(score) {
 
 function stats() {
   const history = getHistory();
-  const scores = history.map(entry => entry.total);
+  const scores = history.filter(entry => entry.scoreVersion === SCORE_VERSION).map(entry => entry.total);
   let streak = 0;
   const completed = new Set(history.map(entry => entry.date));
   let cursor = new Date(`${utcDateKey()}T00:00:00Z`);
@@ -244,13 +278,13 @@ function stats() {
 function startGame() {
   gameMode = 'daily';
   AUCTIONS = DAILY_AUCTIONS;
-  const saved = getTodayRecord();
+  const saved = upgradeSavedState(getTodayRecord());
   if (saved?.view === 'results') {
     state = saved;
     renderResults();
     return;
   }
-  state = saved?.answers ? saved : { view: 'game', round: 0, answers: [] };
+  state = saved?.answers ? saved : { view: 'game', round: 0, answers: [], scoreVersion: SCORE_VERSION };
   state.view = 'game';
   renderRound();
 }
@@ -324,7 +358,7 @@ function renderRound() {
           <p class="auction-id">JUSTIZ-AUKTION #${auction.id}</p>
           <h1 class="auction-title">${auction.title}</h1>
           ${answer ? revealMarkup(auction, answer) : `
-            <p class="auction-description" tabindex="0" role="region" aria-label="Auktionsbeschreibung">${auction.description}</p>
+            <p class="auction-description" tabindex="0" role="region" aria-label="Auktionsbeschreibung">${censorCurrencyValues(auction.description)}</p>
             <div class="fact-list">
               <div class="fact"><span>ZUSTAND</span><strong>${auction.condition}</strong></div>
             </div>
@@ -402,7 +436,7 @@ function submitGuess(form) {
   const actual = AUCTIONS[state.round].actualBid;
   const score = scoreGuess(guess, actual);
   const isExact = Math.round(guess * 100) === Math.round(actual * 100);
-  state.answers[state.round] = { guess, score, error: Math.abs(guess - actual) / actual * 100 };
+  state.answers[state.round] = { guess, score, error: currentError(guess, actual) };
   saveProgress();
   renderRound();
   if (isExact) requestAnimationFrame(launchConfetti);
@@ -424,7 +458,7 @@ function finishGame() {
   const total = state.answers.reduce((sum, item) => sum + item.score, 0);
   if (gameMode === 'daily') {
     const history = getHistory().filter(item => item.date !== utcDateKey());
-    history.push({ date: utcDateKey(), game: gameNumber(), total });
+    history.push({ date: utcDateKey(), game: gameNumber(), total, scoreVersion: SCORE_VERSION });
     localStorage.setItem('justizguessr:history', JSON.stringify(history.slice(-400)));
   }
   renderResults();

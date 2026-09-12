@@ -1,7 +1,6 @@
 import {
   mkdir,
   readFile,
-  rename,
   writeFile
 } from 'node:fs/promises';
 
@@ -11,6 +10,16 @@ import {
   selectDailySet,
   utcDateKey
 } from './core.mjs';
+
+import {
+  readArchive,
+  readDailyGames,
+  readDailyUsedIds,
+  readQueue,
+  saveDailyGame,
+  upsertAuctions,
+  writeQueue
+} from './database.mjs';
 
 const BASE_URL =
   'https://www.justiz-auktion.de';
@@ -22,7 +31,7 @@ const DAILY_SELECTION_VERSION =
   3;
 
 export const ROLLING_QUEUE_VERSION =
-  4;
+  5;
 
 const LEGACY_LISTING_PAGE_SIZE =
   10;
@@ -694,61 +703,6 @@ export function parseAuctionStart(
         `${value[1]} ${value[2]}`
       )
     : null;
-}
-
-async function readJson(
-  filename,
-  fallback
-) {
-  try {
-    return JSON.parse(
-      await readFile(
-        filename,
-        'utf8'
-      )
-    );
-  } catch (error) {
-    if (
-      error.code ===
-      'ENOENT'
-    ) {
-      return fallback;
-    }
-
-    throw error;
-  }
-}
-
-async function writeJsonAtomic(
-  filename,
-  value
-) {
-  await mkdir(
-    path.dirname(
-      filename
-    ),
-    {
-      recursive:
-        true
-    }
-  );
-
-  const temporary =
-    `${filename}.${process.pid}.tmp`;
-
-  await writeFile(
-    temporary,
-    `${JSON.stringify(
-      value,
-      null,
-      2
-    )}\n`
-  );
-
-  await rename(
-    temporary,
-    filename
-  );
 }
 
 function createHttpError(
@@ -2455,16 +2409,10 @@ export async function enqueueRollingDiscovery({
     );
   }
 
-  const queuePath =
-    path.join(
-      dataDir,
-      'fetch-queue.json'
-    );
-
   const queue =
     normalizeQueue(
-      await readJson(
-        queuePath,
+      readQueue(
+        dataDir,
         emptyQueue()
       )
     );
@@ -2583,8 +2531,8 @@ export async function enqueueRollingDiscovery({
   queue.updatedAt =
     queue.lastDiscoveryAt;
 
-  await writeJsonAtomic(
-    queuePath,
+  writeQueue(
+    dataDir,
     queue
   );
 
@@ -2609,22 +2557,10 @@ export async function processRollingTask({
     );
   }
 
-  const queuePath =
-    path.join(
-      dataDir,
-      'fetch-queue.json'
-    );
-
-  const archivePath =
-    path.join(
-      dataDir,
-      'auctions.json'
-    );
-
   const queue =
     normalizeQueue(
-      await readJson(
-        queuePath,
+      readQueue(
+        dataDir,
         emptyQueue()
       )
     );
@@ -2746,15 +2682,8 @@ export async function processRollingTask({
   }
 
   const archive =
-    await readJson(
-      archivePath,
-      {
-        updatedAt:
-          null,
-
-        auctions:
-          []
-      }
+    readArchive(
+      dataDir
     );
 
   const byId =
@@ -2781,8 +2710,8 @@ export async function processRollingTask({
   queue.version =
     ROLLING_QUEUE_VERSION;
 
-  await writeJsonAtomic(
-    queuePath,
+  writeQueue(
+    dataDir,
     queue
   );
 
@@ -2794,6 +2723,9 @@ export async function processRollingTask({
 
     let archiveChanged =
       false;
+
+    let changedAuction =
+      null;
 
     if (
       task.kind ===
@@ -3011,7 +2943,7 @@ export async function processRollingTask({
           result.effectivePageSize;
 
         hasMore =
-          urls.length > 0 &&
+          newUrls.length > 0 &&
           nextPage <
             pageLimit &&
           (
@@ -3152,6 +3084,9 @@ export async function processRollingTask({
       archiveChanged =
         true;
 
+      changedAuction =
+        merged;
+
       if (
         !merged.startAt
       ) {
@@ -3220,21 +3155,26 @@ export async function processRollingTask({
         );
 
       if (auction) {
+        const updatedAuction = {
+          ...auction,
+
+          startAt:
+            parseAuctionStart(
+              await response.text()
+            ) ||
+            auction.startAt
+        };
+
         byId.set(
           task.auctionId,
-          {
-            ...auction,
-
-            startAt:
-              parseAuctionStart(
-                await response.text()
-              ) ||
-              auction.startAt
-          }
+          updatedAuction
         );
 
         archiveChanged =
           true;
+
+        changedAuction =
+          updatedAuction;
       }
     } else if (
       task.kind ===
@@ -3253,21 +3193,26 @@ export async function processRollingTask({
             dataDir
           );
 
+        const updatedAuction = {
+          ...auction,
+
+          image,
+
+          images: [
+            image
+          ]
+        };
+
         byId.set(
           task.auctionId,
-          {
-            ...auction,
-
-            image,
-
-            images: [
-              image
-            ]
-          }
+          updatedAuction
         );
 
         archiveChanged =
           true;
+
+        changedAuction =
+          updatedAuction;
       }
     } else if (
       task.kind !==
@@ -3291,16 +3236,11 @@ export async function processRollingTask({
     if (
       archiveChanged
     ) {
-      await writeJsonAtomic(
-        archivePath,
-        {
-          updatedAt,
-
-          auctions:
-            [
-              ...byId.values()
-            ]
-        }
+      upsertAuctions(
+        dataDir,
+        [changedAuction]
+          .filter(Boolean),
+        updatedAt
       );
     }
 
@@ -3325,8 +3265,8 @@ export async function processRollingTask({
     queue.updatedAt =
       updatedAt;
 
-    await writeJsonAtomic(
-      queuePath,
+    writeQueue(
+      dataDir,
       queue
     );
 
@@ -3468,8 +3408,8 @@ export async function processRollingTask({
         now
       ).toISOString();
 
-    await writeJsonAtomic(
-      queuePath,
+    writeQueue(
+      dataDir,
       queue
     );
 
@@ -3683,22 +3623,9 @@ export async function collectAuctions({
     );
   }
 
-  const archivePath =
-    path.join(
-      dataDir,
-      'auctions.json'
-    );
-
   const existing =
-    await readJson(
-      archivePath,
-      {
-        updatedAt:
-          null,
-
-        auctions:
-          []
-      }
+    readArchive(
+      dataDir
     );
 
   const byId =
@@ -3769,12 +3696,19 @@ export async function collectAuctions({
           result.html
         );
 
+      const previousListingCount =
+        listingUrls.size;
+
       urls.forEach(
         url =>
           listingUrls.add(
             url
           )
       );
+
+      const newListingCount =
+        listingUrls.size -
+        previousListingCount;
 
       const nextStart =
         listingStart +
@@ -3796,6 +3730,17 @@ export async function collectAuctions({
       if (
         !urls.length
       ) {
+        break;
+      }
+
+      if (
+        newListingCount ===
+        0
+      ) {
+        logger.info(
+          `Listing discovery stopped at page ${page + 1}: no new auctions`
+        );
+
         break;
       }
 
@@ -4018,9 +3963,10 @@ export async function collectAuctions({
     auctions
   };
 
-  await writeJsonAtomic(
-    archivePath,
-    archive
+  upsertAuctions(
+    dataDir,
+    auctions,
+    updatedAt
   );
 
   logger.info(
@@ -4035,29 +3981,16 @@ export async function ensureDailyGame({
   dateKey = utcDateKey(),
   logger = console
 } = {}) {
-  const dailyPath =
-    path.join(
-      dataDir,
-      'daily-games.json'
-    );
-
   const daily =
-    await readJson(
-      dailyPath,
-      {
-        updatedAt:
-          null,
-
-        games:
-          {}
-      }
+    readDailyGames(
+      dataDir
     );
 
   if (
     daily.games[
       dateKey
-    ]?.selectionVersion ===
-    DAILY_SELECTION_VERSION
+    ]?.auctions?.length ===
+    5
   ) {
     return daily.games[
       dateKey
@@ -4065,59 +3998,28 @@ export async function ensureDailyGame({
   }
 
   const archive =
-    await readJson(
-      path.join(
-        dataDir,
-        'auctions.json'
-      ),
-      {
-        auctions:
-          []
-      }
+    readArchive(
+      dataDir
     );
 
   const game = {
     ...selectDailySet(
       archive.auctions,
       dateKey,
-      daily.games
+      daily.games,
+      5,
+      readDailyUsedIds(
+        dataDir
+      )
     ),
 
     selectionVersion:
       DAILY_SELECTION_VERSION
   };
 
-  daily.games[
-    dateKey
-  ] =
-    game;
-
-  const retainedDates =
-    Object.keys(
-      daily.games
-    )
-      .sort()
-      .slice(-730);
-
-  daily.games =
-    Object.fromEntries(
-      retainedDates.map(
-        key => [
-          key,
-          daily.games[
-            key
-          ]
-        ]
-      )
-    );
-
-  daily.updatedAt =
-    new Date()
-      .toISOString();
-
-  await writeJsonAtomic(
-    dailyPath,
-    daily
+  saveDailyGame(
+    dataDir,
+    game
   );
 
   logger.info(
@@ -4131,16 +4033,9 @@ export async function seedArchiveIfEmpty({
   dataDir,
   seedFile
 }) {
-  const archivePath =
-    path.join(
-      dataDir,
-      'auctions.json'
-    );
-
   const current =
-    await readJson(
-      archivePath,
-      null
+    readArchive(
+      dataDir
     );
 
   if (
@@ -4158,9 +4053,10 @@ export async function seedArchiveIfEmpty({
       )
     );
 
-  await writeJsonAtomic(
-    archivePath,
-    seed
+  upsertAuctions(
+    dataDir,
+    seed.auctions || [],
+    seed.updatedAt
   );
 
   return seed;

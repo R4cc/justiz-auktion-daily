@@ -22,6 +22,7 @@ export function formatPublicStats({
   archive = {},
   queue = {},
   daily = {},
+  random = {},
   fetchState = {},
   now = Date.now()
 } = {}) {
@@ -152,6 +153,26 @@ export function formatPublicStats({
         {}
       ).length
     }`,
+
+    `daily_auctions_used: ${
+      new Set(
+        Object.values(
+          daily.games ||
+          {}
+        ).flatMap(
+          game =>
+            game.auctions?.map(
+              auction =>
+                auction.id
+            ) ||
+            []
+        )
+      ).size
+    }`,
+
+    `random_games_saved: ${Number(random.games || 0)}`,
+
+    `random_auctions_used: ${Number(random.uniqueAuctions || 0)}`,
 
     '',
 

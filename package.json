@@ -5,7 +5,7 @@
   "type": "module",
   "description": "A daily price guessing game powered by public Justiz-Auktion listings.",
   "engines": {
-    "node": ">=22"
+    "node": ">=22.13"
   },
   "scripts": {
     "start": "node server.mjs",

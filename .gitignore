@@ -6,6 +6,9 @@ runtime-data*/
 !.env.example
 coverage/
 *.log
+*.sqlite
+*.sqlite-shm
+*.sqlite-wal
 npm-debug.log*
 .DS_Store
 Thumbs.db
