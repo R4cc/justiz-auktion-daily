@@ -84,6 +84,25 @@ const initialUtcDate = new Date().toISOString().slice(0, 10);
 let countdownTimer;
 let state = { view: 'start', round: 0, answers: [] };
 let dailyLoadPromise = Promise.resolve();
+let galleryAuction = null;
+let galleryIndex = 0;
+
+function auctionImages(auction) {
+  return [...new Set([auction.image, ...(Array.isArray(auction.images) ? auction.images : [])]
+    .filter(image => typeof image === 'string' && image.trim()))];
+}
+
+function changeAuctionImage(direction) {
+  const auction = AUCTIONS[state.round];
+  const images = auctionImages(auction);
+  const gallery = app.querySelector('.auction-image-wrap');
+  if (!gallery || images.length < 2) return;
+  galleryIndex = (galleryIndex + direction + images.length) % images.length;
+  gallery.querySelector('.auction-image').src = images[galleryIndex];
+  gallery.querySelector('.auction-image').alt = `${auction.title} – Bild ${galleryIndex + 1} von ${images.length}`;
+  gallery.querySelector('.auction-image-backdrop').src = images[galleryIndex];
+  gallery.querySelector('[data-image-count]').textContent = `${galleryIndex + 1} / ${images.length}`;
+}
 
 function updateDailyReset() {
   const now = new Date();
@@ -274,6 +293,11 @@ function renderStart() {
 function renderRound() {
   clearInterval(countdownTimer);
   const auction = AUCTIONS[state.round];
+  const images = auctionImages(auction);
+  if (galleryAuction !== auction) {
+    galleryAuction = auction;
+    galleryIndex = 0;
+  }
   const answer = state.answers[state.round];
   const ended = !auction.endAt || Date.parse(auction.endAt) <= Date.now();
   const runningScore = state.answers.reduce((sum, item) => sum + item.score, 0);
@@ -285,9 +309,14 @@ function renderRound() {
         <span class="running-score">${runningScore.toLocaleString('de-DE')} PKT</span>
       </div>
       <div class="auction-layout${answer ? ' auction-layout--result' : ''}">
-        <div class="auction-image-wrap">
-          <img class="auction-image-backdrop" src="${auction.image}" alt="" aria-hidden="true" />
-          <img class="auction-image" src="${auction.image}" alt="${auction.title}" />
+        <div class="auction-image-wrap"${images.length > 1 ? ' role="region" aria-roledescription="Karussell" aria-label="Auktionsbilder"' : ''}>
+          <img class="auction-image-backdrop" referrerpolicy="no-referrer" src="${images[galleryIndex]}" alt="" aria-hidden="true" />
+          <img class="auction-image" referrerpolicy="no-referrer" src="${images[galleryIndex]}" alt="${auction.title}${images.length > 1 ? ` – Bild ${galleryIndex + 1} von ${images.length}` : ''}" />
+          ${images.length > 1 ? `
+            <button class="carousel-arrow carousel-arrow--previous" type="button" data-action="previous-image" aria-label="Vorheriges Bild">‹</button>
+            <button class="carousel-arrow carousel-arrow--next" type="button" data-action="next-image" aria-label="Nächstes Bild">›</button>
+            <span class="image-count" data-image-count role="status" aria-live="polite" aria-atomic="true">${galleryIndex + 1} / ${images.length}</span>
+          ` : ''}
           <span class="category-tag">${auction.category.toUpperCase()}</span>
           <span class="time-tag${ended ? ' time-tag--ended' : ''}"><span class="clock-icon" aria-hidden="true"></span><span data-countdown>${timeRemaining(auction.endAt)}</span></span>
         </div>
@@ -295,7 +324,7 @@ function renderRound() {
           <p class="auction-id">JUSTIZ-AUKTION #${auction.id}</p>
           <h1 class="auction-title">${auction.title}</h1>
           ${answer ? revealMarkup(auction, answer) : `
-            <p class="auction-description">${auction.description}</p>
+            <p class="auction-description" tabindex="0" role="region" aria-label="Auktionsbeschreibung">${auction.description}</p>
             <div class="fact-list">
               <div class="fact"><span>ZUSTAND</span><strong>${auction.condition}</strong></div>
             </div>
@@ -525,6 +554,8 @@ document.addEventListener('submit', event => {
 
 document.addEventListener('click', event => {
   const action = event.target.closest('[data-action]')?.dataset.action;
+  if (action === 'previous-image') changeAuctionImage(-1);
+  if (action === 'next-image') changeAuctionImage(1);
   if (action === 'play') dailyLoadPromise.finally(startGame);
   if (action === 'random') startRandomGame();
   if (action === 'next') nextRound();
@@ -535,6 +566,11 @@ document.addEventListener('click', event => {
 });
 
 document.addEventListener('keydown', event => {
+  if (event.target.closest('.auction-image-wrap') && ['ArrowLeft', 'ArrowRight'].includes(event.key)) {
+    event.preventDefault();
+    changeAuctionImage(event.key === 'ArrowLeft' ? -1 : 1);
+    return;
+  }
   if (event.key !== 'Enter' || event.repeat || event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
   if (state.view !== 'game' || !state.answers[state.round]) return;
   if (event.target.closest('a, button, input, textarea, select')) return;

@@ -59,6 +59,12 @@ test('random selection includes archived auctions without duplicates', () => {
     description: 'A saved auction that remains playable after its original listing ended.',
     category: 'Archive',
     image: `/images/archive-${index}.jpg`,
+    images: [`/images/archive-${index}.jpg`],
+    sourceImages: [
+      `https://www.justiz-auktion.de/uplimg/${index}-cover.jpg`,
+      `https://www.justiz-auktion.de/uplimg/${index}-detail.jpg`,
+      `https://www.justiz-auktion.de/uplimg/${index}-detail.jpg`
+    ],
     currentBid: 10 + index,
     finalPrice: 50 + index,
     startBid: 5,
@@ -70,6 +76,13 @@ test('random selection includes archived auctions without duplicates', () => {
   assert.equal(game.auctions.length, 5);
   assert.equal(new Set(game.auctions.map(item => item.id)).size, 5);
   assert.ok(game.auctions.every(item => item.correctPrice === 50 + (item.id - 200000)));
+  for (const item of game.auctions) {
+    const index = item.id - 200000;
+    assert.deepEqual(item.images, [
+      `/images/archive-${index}.jpg`,
+      `https://www.justiz-auktion.de/uplimg/${index}-detail.jpg`
+    ]);
+  }
 });
 
 test('collector discovers and parses public auction records', () => {

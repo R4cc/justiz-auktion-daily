@@ -370,8 +370,11 @@ function playableAuction(
       auction.image,
 
     images:
-      auction.images ||
-      [auction.image],
+      [...new Set([
+        auction.image,
+        ...(auction.images || []),
+        ...(auction.sourceImages || []).slice(1)
+      ].filter(Boolean))],
 
     condition:
       auction.condition ||
