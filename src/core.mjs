@@ -1,3 +1,5 @@
+import { auctionSelectionCategory, buildAuctionFamilies, chooseVariedAuctions } from './auction-selection.mjs';
+import { auctionGallery } from './auction-images.mjs';
 import { createHash } from 'node:crypto';
 
 export const GAME_EPOCH = Date.UTC(2026, 0, 1);
@@ -108,201 +110,6 @@ function deterministicOrder(
     0xffffffff;
 }
 
-function shortHash(value) {
-  return createHash('sha256')
-    .update(value)
-    .digest('hex')
-    .slice(0, 24);
-}
-
-function normalizeText(
-  value = ''
-) {
-  return String(value)
-    .normalize('NFKD')
-    .replace(
-      /\p{M}/gu,
-      ''
-    )
-    .toLowerCase()
-    .replace(
-      /\b(?:auktion\s*id|artikel\s*nr|artikelnummer)\s*[:#.-]?\s*\d+\b/giu,
-      ' '
-    )
-    .replace(
-      /\b(?:los|lot|position|pos|nr|nummer)\s*[:#.-]?\s*\d+\b/giu,
-      ' '
-    )
-    .replace(
-      /\b\d+\s*(?:von|\/)\s*\d+\b/giu,
-      ' '
-    )
-    .replace(
-      /[()\[\]{}]/g,
-      ' '
-    )
-    .replace(
-      /[^\p{L}\p{N}]+/gu,
-      ' '
-    )
-    .replace(
-      /\s+/g,
-      ' '
-    )
-    .trim();
-}
-
-function normalizeTitle(
-  value = ''
-) {
-  const withoutSequenceSuffix =
-    String(value)
-      .replace(
-        /\s*[-–—/#]\s*\d+\s*$/u,
-        ''
-      )
-      .replace(
-        /\s*\(\s*\d+\s*(?:von|\/)\s*\d+\s*\)\s*$/iu,
-        ''
-      )
-      .replace(
-        /\s+\d+\s+(?:von)\s+\d+\s*$/iu,
-        ''
-      );
-
-  return normalizeText(
-    withoutSequenceSuffix
-  )
-    .replace(
-      /\s+(?:los|lot|position|pos|nr|nummer)\s+\d+$/u,
-      ''
-    )
-    .trim();
-}
-
-function sourceImageIdentity(
-  auction
-) {
-  const source =
-    auction?.sourceImages?.[0];
-
-  if (
-    !source ||
-    source.startsWith(
-      '/auction-images/'
-    )
-  ) {
-    return null;
-  }
-
-  try {
-    const url =
-      new URL(
-        source,
-        'https://www.justiz-auktion.de'
-      );
-
-    const identity =
-      `${url.hostname}${url.pathname}`
-        .toLowerCase();
-
-    if (
-      /placeholder|no[-_]?image|kein[-_]?bild|default/i
-        .test(identity)
-    ) {
-      return null;
-    }
-
-    return identity;
-  } catch {
-    return null;
-  }
-}
-
-export function auctionDuplicateKeys(
-  auction
-) {
-  if (!auction) {
-    return [];
-  }
-
-  const title =
-    normalizeTitle(
-      auction.title || ''
-    );
-
-  const description =
-    normalizeText(
-      auction.description || ''
-    );
-
-  const image =
-    sourceImageIdentity(
-      auction
-    );
-
-  const keys = [];
-
-  if (image) {
-    keys.push(
-      `image:${shortHash(image)}`
-    );
-  }
-
-  if (
-    title &&
-    description
-  ) {
-    keys.push(
-      `content:${shortHash(
-        `${title}\n${description}`
-      )}`
-    );
-  } else if (title) {
-    const condition =
-      normalizeText(
-        auction.condition || ''
-      );
-
-    const location =
-      normalizeText(
-        auction.location || ''
-      );
-
-    const startBid =
-      Number.isFinite(
-        auction.startBid
-      )
-        ? auction.startBid
-        : '';
-
-    keys.push(
-      `fallback:${shortHash(
-        `${title}|${condition}|${location}|${startBid}`
-      )}`
-    );
-  }
-
-  return [
-    ...new Set(keys)
-  ];
-}
-
-export function auctionFamilyKey(
-  auction
-) {
-  const title =
-    normalizeTitle(
-      auction?.title || ''
-    );
-
-  if (!title) {
-    return null;
-  }
-
-  return `title:${shortHash(title)}`;
-}
-
 function priceBand(price) {
   if (price < 50) {
     return 'under-50';
@@ -406,18 +213,13 @@ function playableAuction(
       ),
 
     category:
-      auction.category ||
-      'Sonstiges',
+      auctionSelectionCategory(auction),
 
     image:
       auction.image,
 
     images:
-      [...new Set([
-        auction.image,
-        ...(auction.images || []),
-        ...(auction.sourceImages || []).slice(1)
-      ].filter(Boolean))],
+      auctionGallery(auction),
 
     condition:
       auction.condition ||
@@ -457,613 +259,72 @@ function playableAuction(
   };
 }
 
-function collidesWithKeys(
-  auction,
-  seenKeys
-) {
-  return auctionDuplicateKeys(
-    auction
-  ).some(
-    key =>
-      seenKeys.has(key)
-  );
+function eligibleAuction(auction) {
+  return auction?.id && auction.title && auction.image &&
+    Number.isFinite(auction.finalPrice ?? auction.currentBid) &&
+    (auction.finalPrice ?? auction.currentBid) > 0;
 }
 
-function rememberKeys(
-  auction,
-  seenKeys
-) {
-  for (
-    const key of
-      auctionDuplicateKeys(
-        auction
-      )
-  ) {
-    seenKeys.add(key);
+export function selectDailySet(auctions, dateKey, previousSets = {}, count = 5, usedAuctionIds = []) {
+  const now = Date.parse(dateKey + 'T00:00:00Z');
+  const history = Object.keys(previousSets).filter(date => date < dateKey).sort()
+    .flatMap(date => previousSets[date]?.auctions || []);
+  const used = new Set([...usedAuctionIds, ...history.map(item => item.id)].map(Number));
+  const recent = Object.keys(previousSets).filter(date => date < dateKey).sort().slice(-7)
+    .flatMap(date => previousSets[date]?.auctions || []);
+  const recentCategories = new Map();
+  for (const item of recent) {
+    const category = auctionSelectionCategory(item);
+    recentCategories.set(category, (recentCategories.get(category) || 0) + 1);
   }
-}
-
-function uniqueCandidates(
-  candidates,
-  blockedStrongKeys =
-    new Set(),
-  blockedFamilyKeys =
-    new Set()
-) {
-  const strongKeys =
-    new Set(
-      blockedStrongKeys
-    );
-
-  const familyKeys =
-    new Set(
-      blockedFamilyKeys
-    );
-
-  const unique = [];
-
-  for (
-    const auction of
-      candidates
-  ) {
-    if (
-      collidesWithKeys(
-        auction,
-        strongKeys
-      )
-    ) {
-      continue;
-    }
-
-    const family =
-      auctionFamilyKey(
-        auction
-      );
-
-    if (
-      family &&
-      familyKeys.has(
-        family
-      )
-    ) {
-      continue;
-    }
-
-    unique.push(
-      auction
-    );
-
-    rememberKeys(
-      auction,
-      strongKeys
-    );
-
-    if (family) {
-      familyKeys.add(
-        family
-      );
-    }
+  const byId = new Map(auctions.map(item => [Number(item?.id), item]));
+  const families = buildAuctionFamilies([...auctions, ...history]);
+  const active = item => (!item.endAt || Date.parse(item.endAt) > now) && Number.isFinite(item.currentBid) && item.currentBid > 0;
+  const rank = (item, selected = []) => qualityScore(item, now) + (active(item) ? 100 : 0)
+    - (recentCategories.get(auctionSelectionCategory(item)) || 0) * 12
+    + (selected.some(other => priceBand(other.currentBid) === priceBand(item.currentBid)) ? 0 : 20)
+    + (selected.some(other => endSlot(other.endAt) === endSlot(item.endAt)) ? -50 : 35)
+    + deterministicJitter(dateKey, item.id) * 12;
+  const candidates = [];
+  for (const family of families) {
+    if (family.some(item => used.has(Number(item.id)))) continue;
+    const members = [...new Map(family.map(item => [Number(item.id), byId.get(Number(item.id))])).values()]
+      .filter(eligibleAuction).sort((a, b) => rank(b) - rank(a) || Number(a.id) - Number(b.id));
+    if (members.length) candidates.push(members[0]);
   }
-
-  return unique;
-}
-
-export function selectDailySet(
-  auctions,
-  dateKey,
-  previousSets = {},
-  count = 5,
-  usedAuctionIds = []
-) {
-  const now =
-    Date.parse(
-      `${dateKey}T00:00:00Z`
-    );
-
-  const historicalDates =
-    Object.keys(
-      previousSets
-    ).sort();
-
-  const recentDates =
-    historicalDates.slice(
-      -30
-    );
-
-  const previouslyUsedIds =
-    new Set(
-      [
-        ...usedAuctionIds,
-        ...historicalDates.flatMap(
-          key =>
-            previousSets[key]
-              ?.auctions
-              ?.map(
-                item =>
-                  Number(item.id)
-              ) ||
-            []
-        )
-      ].map(Number)
-    );
-
-  const previouslyUsedStrongKeys =
-    new Set();
-
-  for (
-    const item of
-      historicalDates.flatMap(
-        key =>
-          previousSets[key]
-            ?.auctions ||
-          []
-      )
-  ) {
-    rememberKeys(
-      item,
-      previouslyUsedStrongKeys
-    );
-  }
-
-  const recentFamilyKeys =
-    new Set(
-      recentDates
-        .flatMap(
-          key =>
-            previousSets[key]
-              ?.auctions ||
-            []
-        )
-        .map(
-          auctionFamilyKey
-        )
-        .filter(Boolean)
-    );
-
-  const recentCategoryCounts =
-    recentDates
-      .slice(-7)
-      .flatMap(
-        key =>
-          previousSets[key]
-            ?.auctions ||
-          []
-      )
-      .reduce(
-        (
-          counts,
-          item
-        ) =>
-          counts.set(
-            item.category,
-            (
-              counts.get(
-                item.category
-              ) ||
-              0
-            ) + 1
-          ),
-        new Map()
-      );
-
-  const ranked =
-    auctions
-      .filter(
-        auction =>
-          auction?.id &&
-          auction.title &&
-          auction.image
-      )
-      .filter(
-        auction =>
-          Number.isFinite(
-            auction.currentBid
-          ) &&
-          auction.currentBid >
-            0
-      )
-      .filter(
-        auction =>
-          !auction.endAt ||
-          Date.parse(
-            auction.endAt
-          ) > now
-      )
-      .filter(
-        auction =>
-          !previouslyUsedIds
-            .has(
-              Number(auction.id)
-            )
-      )
-      .filter(
-        auction =>
-          !collidesWithKeys(
-            auction,
-            previouslyUsedStrongKeys
-          )
-      )
-      .map(
-        auction => ({
-          ...auction,
-
-          _quality:
-            qualityScore(
-              auction,
-              now
-            ),
-
-          _jitter:
-            deterministicJitter(
-              dateKey,
-              auction.id
-            )
-        })
-      )
-      .sort(
-        (a, b) =>
-          b._quality -
-            a._quality ||
-          b._jitter -
-            a._jitter
-      );
-
-  const candidates =
-    uniqueCandidates(
-      ranked,
-      new Set(),
-      recentFamilyKeys
-    );
-
-  const selected = [];
-  const categories =
-    new Set();
-  const priceBands =
-    new Set();
-  const endSlots =
-    new Set();
-
-  const remaining = [
-    ...candidates
-  ];
-
-  while (
-    selected.length <
-      count &&
-    remaining.length
-  ) {
-    remaining.sort(
-      (a, b) => {
-        const score =
-          item =>
-            item._quality +
-            (
-              categories.has(
-                item.category
-              )
-                ? -100
-                : 60
-            ) -
-            (
-              recentCategoryCounts.get(
-                item.category
-              ) ||
-              0
-            ) *
-              12 +
-            (
-              priceBands.has(
-                priceBand(
-                  item.currentBid
-                )
-              )
-                ? 0
-                : 20
-            ) +
-            (
-              endSlots.has(
-                endSlot(
-                  item.endAt
-                )
-              )
-                ? -260
-                : 35
-            ) +
-            item._jitter *
-              12;
-
-        return score(b) -
-          score(a);
-      }
-    );
-
-    const choice =
-      remaining.shift();
-
-    selected.push(
-      choice
-    );
-
-    categories.add(
-      choice.category ||
-      'Sonstiges'
-    );
-
-    priceBands.add(
-      priceBand(
-        choice.currentBid
-      )
-    );
-
-    endSlots.add(
-      endSlot(
-        choice.endAt
-      )
-    );
-  }
-
-  if (
-    selected.length <
-    count
-  ) {
-    const selectedIds =
-      new Set(
-        selected.map(
-          item =>
-            Number(item.id)
-        )
-      );
-
-    const selectedStrongKeys =
-      new Set();
-
-    const selectedFamilyKeys =
-      new Set(
-        selected
-          .map(
-            auctionFamilyKey
-          )
-          .filter(Boolean)
-      );
-
-    for (
-      const item of
-        selected
-    ) {
-      rememberKeys(
-        item,
-        selectedStrongKeys
-      );
-    }
-
-    const archivedRanked =
-      auctions
-        .filter(
-          item =>
-            item?.id &&
-            item.title &&
-            item.image &&
-            (
-              item.finalPrice ??
-              item.currentBid
-            ) > 0
-        )
-        .filter(
-          item =>
-            !selectedIds.has(
-              Number(item.id)
-            ) &&
-            !previouslyUsedIds.has(
-              Number(item.id)
-            )
-        )
-        .filter(
-          item =>
-            !collidesWithKeys(
-              item,
-              previouslyUsedStrongKeys
-            )
-        )
-        .sort(
-          (a, b) =>
-            deterministicJitter(
-              dateKey,
-              b.id
-            ) -
-            deterministicJitter(
-              dateKey,
-              a.id
-            )
-        );
-
-    const archived =
-      uniqueCandidates(
-        archivedRanked,
-        selectedStrongKeys,
-        selectedFamilyKeys
-      );
-
-    selected.push(
-      ...archived.slice(
-        0,
-        count -
-        selected.length
-      )
-    );
-  }
-
-  if (
-    selected.length <
-    count
-  ) {
-    throw new Error(
-      `Only ${selected.length} unique eligible auctions are available; ${count} required`
-    );
-  }
-
-  const ordered =
-    selected.sort(
-      (a, b) =>
-        deterministicOrder(
-          dateKey,
-          a.id
-        ) -
-        deterministicOrder(
-          dateKey,
-          b.id
-        )
-    );
-
+  const selected = chooseVariedAuctions(candidates, count, rank);
+  selected.sort((a, b) => deterministicOrder(dateKey, a.id) - deterministicOrder(dateKey, b.id));
   return {
-    date:
-      dateKey,
-
-    gameNumber:
-      gameNumber(
-        dateKey
-      ),
-
-    generatedAt:
-      new Date()
-        .toISOString(),
-
-    auctions:
-      ordered.map(
-        ({
-          _quality,
-          _jitter,
-          ...auction
-        }) =>
-          playableAuction(
-            auction,
-            auction.endAt &&
-            Date.parse(
-              auction.endAt
-            ) <= now
-              ? auction.finalPrice ??
-                auction.currentBid
-              : auction.currentBid
-          )
-      )
+    date: dateKey,
+    gameNumber: gameNumber(dateKey),
+    generatedAt: new Date().toISOString(),
+    auctions: selected.map(item => playableAuction(item, active(item) ? item.currentBid : item.finalPrice ?? item.currentBid))
   };
 }
 
-export function selectRandomSet(
-  auctions,
-  count = 5,
-  random = Math.random,
-  usage = new Map()
-) {
-  const byId =
-    [
-      ...new Map(
-        auctions.map(
-          auction => [
-            Number(auction?.id),
-            auction
-          ]
-        )
-      ).values()
-    ]
-      .filter(
-        auction =>
-          auction?.id &&
-          auction.title &&
-          auction.image
-      )
-      .filter(
-        auction =>
-          Number.isFinite(
-            auction.finalPrice ??
-            auction.currentBid
-          )
-      )
-      .filter(
-        auction =>
-          (
-            auction.finalPrice ??
-            auction.currentBid
-          ) > 0
-      );
-
-  for (
-    let index =
-      byId.length - 1;
-    index > 0;
-    index -= 1
-  ) {
-    const target =
-      Math.floor(
-        random() *
-        (
-          index + 1
-        )
-      );
-
-    [
-      byId[index],
-      byId[target]
-    ] = [
-      byId[target],
-      byId[index]
-    ];
-  }
-
-  const useCount =
-    auction => {
-      const value =
-        usage instanceof Map
-          ? usage.get(Number(auction.id))
-          : usage?.[auction.id];
-
-      return Number(
-        typeof value === 'object'
-          ? value?.useCount
-          : value
-      ) || 0;
-    };
-
-  // The shuffle provides variety among equally used auctions. Stable sorting
-  // then exhausts the least-used pool before any auction is repeated.
-  byId.sort(
-    (a, b) =>
-      useCount(a) -
-      useCount(b)
-  );
-
-  const unique =
-    uniqueCandidates(
-      byId
-    );
-
-  if (
-    unique.length <
-    count
-  ) {
-    throw new Error(
-      `Only ${unique.length} unique playable auctions are available; ${count} required`
-    );
-  }
-
-  return {
-    mode:
-      'random',
-
-    generatedAt:
-      new Date()
-        .toISOString(),
-
-    auctions:
-      unique
-        .slice(
-          0,
-          count
-        )
-        .map(
-          auction =>
-            playableAuction(
-              auction
-            )
-        )
+export function selectRandomSet(auctions, count = 5, random = Math.random, usage = new Map()) {
+  const byId = [...new Map(auctions.filter(Boolean).map(item => [Number(item.id), item])).values()];
+  const useCount = item => {
+    const value = usage instanceof Map ? usage.get(Number(item.id)) : usage?.[item.id];
+    return Math.max(0, Number(typeof value === 'object' ? value?.useCount : value) || 0);
   };
+  const families = buildAuctionFamilies(byId);
+  const candidates = [];
+  const ranks = new Map();
+  // One random draw and one usage total per family: hundreds of duplicate listings
+  // have the same chance as one item, and cannot reset rotation with a new auction ID.
+  for (const family of families) {
+    const members = family.filter(eligibleAuction).sort((a, b) => useCount(a) - useCount(b) || Number(a.id) - Number(b.id));
+    if (!members.length) continue;
+    const choice = members[0];
+    ranks.set(choice, -family.reduce((sum, item) => sum + useCount(item), 0) + Math.min(.999999, Math.max(0, random())));
+    candidates.push(choice);
+  }
+  const selected = chooseVariedAuctions(candidates, count, item => ranks.get(item));
+  // Avoid always opening with the rarest or least-used category.
+  for (let index = selected.length - 1; index > 0; index--) {
+    const target = Math.min(index, Math.floor(Math.max(0, random()) * (index + 1)));
+    [selected[index], selected[target]] = [selected[target], selected[index]];
+  }
+  return { mode: 'random', generatedAt: new Date().toISOString(), auctions: selected.map(item => playableAuction(item)) };
 }

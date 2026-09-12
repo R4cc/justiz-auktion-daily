@@ -1,3 +1,6 @@
+import { auctionSelectionCategory } from './auction-selection.mjs';
+import { createHash } from 'node:crypto';
+import { auctionGallery, cachedAuctionImages } from './auction-images.mjs';
 import {
   mkdir,
   readFile,
@@ -28,7 +31,7 @@ const USER_AGENT =
   'JUSTIZGUESSR/1.0 (+daily public auction indexer; respectful adaptive fetches)';
 
 const DAILY_SELECTION_VERSION =
-  3;
+  4;
 
 export const ROLLING_QUEUE_VERSION =
   5;
@@ -337,87 +340,8 @@ function zonedLocalToUtc(
   ).toISOString();
 }
 
-function inferCategory(
-  title,
-  description = ''
-) {
-  const groups = [
-    [
-      'Fahrzeuge',
-      /\b(pkw|auto|fahrzeug|bmw|mercedes|volkswagen|vw|audi|motorrad|roller)\b/
-    ],
-    [
-      'Fahrräder',
-      /\b(fahrrad|mountainbike|e-bike|ebike)\b/
-    ],
-    [
-      'Schmuck & Uhren',
-      /\b(ring|kette|armreif|armband|schmuck|gold|silber|uhr|rolex)\b/
-    ],
-    [
-      'Elektronik',
-      /\b(notebook|laptop|computer|monitor|fernseher|smartphone|iphone|tablet|kamera|konsole)\b/
-    ],
-    [
-      'Werkzeuge',
-      /\b(werkzeug|bohr|makita|hilti|bosch|säge|schleifer|maschine)\b/
-    ],
-    [
-      'Mode',
-      /\b(sneaker|schuhe|jacke|shirt|kleidung|jeans|tasche)\b/
-    ],
-    [
-      'Sammlerstücke',
-      /\b(münze|sammlung|figur|lego|modell|antiqu|briefmarke)\b/
-    ],
-    [
-      'Möbel & Wohnen',
-      /\b(möbel|schrank|tisch|stuhl|sofa|lampe|porzellan)\b/
-    ],
-    [
-      'Kosmetik',
-      /\b(parfum|eau de toilette|kosmetik)\b/
-    ]
-  ];
-
-  const titleValue =
-    title.toLowerCase();
-
-  const titleMatch =
-    groups.find(
-      ([
-        ,
-        matcher
-      ]) =>
-        matcher.test(
-          titleValue
-        )
-    );
-
-  if (titleMatch) {
-    return titleMatch[
-      0
-    ];
-  }
-
-  const descriptionValue =
-    description
-      .toLowerCase()
-      .replace(
-        /\b\d{1,2}(?::\d{2})?\s*uhr\b/g,
-        ' '
-      );
-
-  return groups.find(
-    ([
-      ,
-      matcher
-    ]) =>
-      matcher.test(
-        descriptionValue
-      )
-  )?.[0] ||
-    'Sonstiges';
+function inferCategory(title, description = '') {
+  return auctionSelectionCategory({ title, description });
 }
 
 export function extractListingUrls(
@@ -474,7 +398,8 @@ export function extractListingUrls(
 
 export function parseAuctionPage(
   html,
-  url
+  url,
+  now = Date.now()
 ) {
   const text =
     cleanText(html);
@@ -662,7 +587,7 @@ export function parseAuctionPage(
         zonedLocalToUtc(
           endText
         )
-      ) <= Date.now()
+      ) <= now
         ? currentBid
         : null,
 
@@ -682,7 +607,7 @@ export function parseAuctionPage(
     url,
 
     capturedAt:
-      new Date()
+      new Date(now)
         .toISOString()
   };
 }
@@ -1658,7 +1583,7 @@ async function fetchListingPage({
 }
 
 function taskKey(task) {
-  return `${task.kind}:${task.url}`;
+  return task.kind === 'image' ? `${task.kind}:${task.auctionId}:${task.url}` : `${task.kind}:${task.url}`;
 }
 
 function addTasks(
@@ -2060,7 +1985,7 @@ function detailPriority(
     auction.finalPrice ==
       null
   ) {
-    return 95;
+    return 105;
   }
 
   if (
@@ -2154,10 +2079,9 @@ function shouldRefreshAuction(
     return true;
   }
 
-  if (
-    auction.finalPrice !=
-    null
-  ) {
+  // Older collectors finalized cached bids without a post-end observation.
+  if (auction.finalPrice != null &&
+      Date.parse(auction.capturedAt || '') >= Date.parse(auction.endAt || '')) {
     return false;
   }
 
@@ -2173,7 +2097,9 @@ function shouldRefreshAuction(
     ) &&
     endAt <= now
   ) {
-    return true;
+    const observedAt = Date.parse(auction.capturedAt || '');
+    return !Number.isFinite(observedAt) || observedAt < endAt ||
+      now - observedAt >= 6 * 60 * 60_000;
   }
 
   const capturedAt =
@@ -2235,47 +2161,29 @@ function auctionIdFromUrl(
     null;
 }
 
-function reusableImage(
-  byId,
-  item
-) {
-  const source =
-    item.sourceImages?.[0];
-
-  if (!source) {
-    return null;
-  }
-
-  for (
-    const candidate of
-      byId.values()
-  ) {
-    if (
-      candidate.id ===
-      item.id
-    ) {
-      continue;
-    }
-
-    if (
-      candidate
-        .sourceImages?.[0] !==
-      source
-    ) {
-      continue;
-    }
-
-    if (
-      candidate.image
-        ?.startsWith(
-          '/auction-images/'
-        )
-    ) {
-      return candidate.image;
+function reusableImages(byId, item, previous) {
+  const sources = new Set(item.sourceImages || []);
+  const cache = {};
+  for (const candidate of byId.values()) {
+    for (const [source, image] of Object.entries(cachedAuctionImages(candidate))) {
+      if (sources.has(source)) cache[source] = image;
     }
   }
+  return { ...cache, ...cachedAuctionImages(previous) };
+}
 
-  return null;
+function withGallery(auction, imageCache) {
+  const updated = { ...auction, imageCache };
+  updated.images = auctionGallery(updated);
+  updated.image = updated.images[0] || null;
+  return updated;
+}
+
+function enqueueImages(queue, auction, now) {
+  const cache = cachedAuctionImages(auction);
+  addTasks(queue, [...new Set(auction.sourceImages || [])]
+    .filter(source => !cache[source])
+    .map(url => ({ kind: 'image', url, auctionId: auction.id, priority: 40, notBefore: now })));
 }
 
 async function requestResource(
@@ -2323,7 +2231,8 @@ async function requestResource(
 async function saveImageResponse(
   auction,
   response,
-  dataDir
+  dataDir,
+  source
 ) {
   const contentType =
     (
@@ -2370,7 +2279,7 @@ async function saveImageResponse(
         : 'jpg';
 
   const filename =
-    `${auction.id}.${extension}`;
+    `${auction.id}-${createHash('sha256').update(source).digest('hex').slice(0, 16)}.${extension}`;
 
   await mkdir(
     path.join(
@@ -2565,6 +2474,22 @@ export async function processRollingTask({
       )
     );
 
+  if (queue.imageCacheVersion !== 1) {
+    for (const auction of readArchive(dataDir).auctions || []) {
+      enqueueImages(queue, auction, now);
+    }
+    queue.imageCacheVersion = 1;
+    writeQueue(dataDir, queue);
+  }
+
+  // Discovery only finds active listings. Refresh known URLs independently,
+  // including auctions that disappeared from search after their end time.
+  addTasks(queue, (readArchive(dataDir).auctions || [])
+    .filter(auction => auction.url && shouldRefreshAuction(auction, now))
+    .map(auction => ({ kind: 'detail', url: auction.url, auctionId: auction.id,
+      priority: detailPriority(auction, now), notBefore: now })));
+  writeQueue(dataDir, queue);
+
   const {
     minimum,
     maximum
@@ -2675,8 +2600,7 @@ export async function processRollingTask({
           ? IDLE_POLL_MS
           : Math.max(
               1,
-              taskReadyAt -
-              now
+              Math.min(IDLE_POLL_MS, taskReadyAt - now)
             )
     };
   }
@@ -3021,7 +2945,8 @@ export async function processRollingTask({
       const item =
         parseAuctionPage(
           await response.text(),
-          task.url
+          task.url,
+          now
         );
 
       const previous =
@@ -3036,44 +2961,18 @@ export async function processRollingTask({
           previous.startAt;
       }
 
-      const sharedImage =
-        reusableImage(
-          byId,
-          item
-        );
-
+      const imageCache = reusableImages(byId, item, previous);
       const merged = {
         ...previous,
-        ...item,
-
-        image:
-          previous?.image ||
-          sharedImage ||
-          item.sourceImages
-            ?.[0] ||
-          null,
-
-        images:
-          previous?.images ||
-          (
-            sharedImage
-              ? [
-                  sharedImage
-                ]
-              : item.sourceImages ||
-                []
-          ),
+        ...withGallery(item, imageCache),
 
         firstCapturedAt:
           previous
             ?.firstCapturedAt ||
           item.capturedAt,
 
-        finalPrice:
-          item.finalPrice ??
-          previous
-            ?.finalPrice ??
-          null
+        finalPrice: item.finalPrice,
+        finalizedAt: item.finalPrice != null ? item.capturedAt : null
       };
 
       byId.set(
@@ -3113,38 +3012,7 @@ export async function processRollingTask({
         );
       }
 
-      if (
-        !merged.image
-          ?.startsWith(
-            '/auction-images/'
-          ) &&
-        item.sourceImages
-          ?.[0]
-      ) {
-        addTasks(
-          queue,
-          [
-            {
-              kind:
-                'image',
-
-              url:
-                item.sourceImages[
-                  0
-                ],
-
-              auctionId:
-                item.id,
-
-              priority:
-                40,
-
-              notBefore:
-                now
-            }
-          ]
-        );
-      }
+      enqueueImages(queue, merged, now);
     } else if (
       task.kind ===
       'start'
@@ -3186,22 +3054,11 @@ export async function processRollingTask({
         );
 
       if (auction) {
-        const image =
-          await saveImageResponse(
-            auction,
-            response,
-            dataDir
-          );
-
-        const updatedAuction = {
-          ...auction,
-
-          image,
-
-          images: [
-            image
-          ]
-        };
+        const image = await saveImageResponse(auction, response, dataDir, task.url);
+        const updatedAuction = withGallery(auction, {
+          ...cachedAuctionImages(auction),
+          [task.url]: image
+        });
 
         byId.set(
           task.auctionId,
@@ -3358,10 +3215,11 @@ export async function processRollingTask({
             ) - 5
           );
       } else {
-        removeTask(
-          queue,
-          task
-        );
+        // Keep a durable cooldown for unavailable pages instead of letting
+        // the archive scheduler immediately recreate an exhausted retry.
+        persisted.attempts = 0;
+        persisted.notBefore = now + 24 * 60 * 60_000;
+        persisted.priority = 10;
       }
     } else if (
       attempts <= 8
@@ -3467,144 +3325,18 @@ export async function processRollingTask({
   }
 }
 
-async function cacheMainImage(
-  auction,
-  dataDir,
-  fetchImpl,
-  previous
-) {
-  if (
-    previous?.image
-      ?.startsWith(
-        '/auction-images/'
-      )
-  ) {
-    return {
-      ...auction,
-
-      image:
-        previous.image,
-
-      images:
-        previous.images ||
-        [
-          previous.image
-        ]
-    };
-  }
-
-  if (
-    !auction.sourceImages
-      ?.[0]
-  ) {
-    return auction;
-  }
-
-  try {
-    const response =
-      await fetchImpl(
-        auction.sourceImages[
-          0
-        ],
-        {
-          headers: {
-            'user-agent':
-              USER_AGENT,
-
-            accept:
-              'image/*'
-          },
-
-          redirect:
-            'error',
-
-          signal:
-            AbortSignal.timeout(
-              20_000
-            )
-        }
-      );
-
-    if (!response.ok) {
-      return auction;
+async function cacheAuctionImages(auction, dataDir, fetchImpl, imageCache) {
+  const cache = { ...imageCache };
+  for (const source of [...new Set(auction.sourceImages || [])]) {
+    if (cache[source]) continue;
+    try {
+      const response = await requestResource({ kind: 'image', url: source }, fetchImpl);
+      cache[source] = await saveImageResponse(auction, response, dataDir, source);
+    } catch {
+      // Keep successful images and the remote fallback; a later collection retries this source.
     }
-
-    const contentType =
-      (
-        response.headers.get(
-          'content-type'
-        ) ||
-        ''
-      ).toLowerCase();
-
-    if (
-      !contentType.startsWith(
-        'image/'
-      )
-    ) {
-      return auction;
-    }
-
-    const bytes =
-      Buffer.from(
-        await response.arrayBuffer()
-      );
-
-    if (
-      bytes.length < 1000 ||
-      bytes.length >
-        12_000_000
-    ) {
-      return auction;
-    }
-
-    const extension =
-      contentType.includes(
-        'png'
-      )
-        ? 'png'
-        : contentType.includes(
-              'webp'
-            )
-          ? 'webp'
-          : 'jpg';
-
-    const filename =
-      `${auction.id}.${extension}`;
-
-    await mkdir(
-      path.join(
-        dataDir,
-        'images'
-      ),
-      {
-        recursive:
-          true
-      }
-    );
-
-    await writeFile(
-      path.join(
-        dataDir,
-        'images',
-        filename
-      ),
-      bytes
-    );
-
-    return {
-      ...auction,
-
-      image:
-        `/auction-images/${filename}`,
-
-      images: [
-        `/auction-images/${filename}`
-      ]
-    };
-  } catch {
-    return auction;
   }
+  return withGallery(auction, cache);
 }
 
 export async function collectAuctions({
@@ -3764,8 +3496,10 @@ export async function collectAuctions({
 
   const detailUrls =
     [
+      ...[...byId.values()].filter(item => item.url && shouldRefreshAuction(item, Date.now())).map(item => item.url),
       ...listingUrls
     ]
+      .filter((url, index, urls) => urls.indexOf(url) === index)
       .filter(
         url =>
           shouldRefreshAuction(
@@ -3857,6 +3591,15 @@ export async function collectAuctions({
     );
   }
 
+  // Backfill archived galleries even when their detail pages are not due for refresh.
+  const incomingIds = new Set(incoming.map(item => item.id));
+  for (const previous of byId.values()) {
+    const cache = cachedAuctionImages(previous);
+    if (!incomingIds.has(previous.id) && previous.sourceImages?.some(source => !cache[source])) {
+      incoming.push(previous);
+    }
+  }
+
   for (
     const item of incoming
   ) {
@@ -3865,30 +3608,9 @@ export async function collectAuctions({
         item.id
       );
 
-    const sharedImage =
-      reusableImage(
-        byId,
-        item
-      );
-
-    const withImage =
-      sharedImage
-        ? {
-            ...item,
-
-            image:
-              sharedImage,
-
-            images: [
-              sharedImage
-            ]
-          }
-        : await cacheMainImage(
-            item,
-            dataDir,
-            fetchImpl,
-            previous
-          );
+    const withImage = await cacheAuctionImages(
+      item, dataDir, fetchImpl, reusableImages(byId, item, previous)
+    );
 
     byId.set(
       item.id,
@@ -3915,11 +3637,7 @@ export async function collectAuctions({
             ?.firstCapturedAt ||
           item.capturedAt,
 
-        finalPrice:
-          withImage.finalPrice ??
-          previous
-            ?.finalPrice ??
-          null
+        finalPrice: withImage.finalPrice ?? null
       }
     );
   }
@@ -3931,32 +3649,7 @@ export async function collectAuctions({
   const auctions =
     [
       ...byId.values()
-    ].map(
-      item => {
-        if (
-          item.finalPrice ==
-            null &&
-          item.endAt &&
-          Date.parse(
-            item.endAt
-          ) <= Date.now() &&
-          item.currentBid >
-            0
-        ) {
-          return {
-            ...item,
-
-            finalPrice:
-              item.currentBid,
-
-            finalizedAt:
-              updatedAt
-          };
-        }
-
-        return item;
-      }
-    );
+    ];
 
   const archive = {
     updatedAt,

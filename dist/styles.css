@@ -161,7 +161,20 @@ button { color: inherit; }
 .auction-panel--result .auction-id { margin-bottom: 11px; }
 .auction-panel--result .auction-title { font-size: clamp(1.75rem, 2.7vw, 2.55rem); }
 .auction-id { margin: 0 0 16px; color: var(--muted); font: .72rem "DM Mono", monospace; letter-spacing: .04em; }
-.auction-title { margin: 0; font-size: clamp(1.8rem, 3vw, 2.8rem); line-height: 1.08; letter-spacing: -.055em; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3; overflow: hidden; }
+.auction-title {
+  margin: 0;
+  padding-block: .02em .12em;
+  font-size: clamp(1.8rem, 3vw, 2.8rem);
+  line-height: 1.14;
+  letter-spacing: -.05em;
+  overflow-wrap: break-word;
+  hyphens: auto;
+  text-wrap: pretty;
+}
+.auction-title--long { font-size: clamp(1.6rem, 2.45vw, 2.3rem); }
+.auction-title--very-long { font-size: clamp(1.42rem, 2.05vw, 1.95rem); line-height: 1.2; letter-spacing: -.035em; }
+.auction-panel--result .auction-title--long { font-size: clamp(1.58rem, 2.25vw, 2.15rem); }
+.auction-panel--result .auction-title--very-long { font-size: clamp(1.4rem, 1.9vw, 1.82rem); }
 .auction-description { position: relative; min-height: 0; max-height: 13.2em; margin: 20px 0 24px; padding-right: 8px; color: #536071; font-size: .97rem; line-height: 1.65; overflow-y: auto; overflow-wrap: anywhere; white-space: pre-line; scrollbar-width: thin; scrollbar-color: var(--muted) transparent; }
 .auction-panel > :not(.auction-description) { flex-shrink: 0; }
 .fact-list { display: grid; grid-template-columns: 1fr; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); margin: 0 0 26px; }
@@ -222,7 +235,7 @@ button { color: inherit; }
 
 .results-screen { padding: 55px 0 84px; }
 .results-header { display: grid; grid-template-columns: 1fr auto; gap: 40px; align-items: end; border-bottom: 1px solid var(--line); padding-bottom: 34px; }
-.results-header h1 { margin: 0; font-size: clamp(3rem, 7vw, 6.5rem); line-height: .88; letter-spacing: -.08em; }
+.results-header h1 { margin: 0; padding-bottom: .08em; font-size: clamp(3rem, 7vw, 6.5rem); line-height: 1.02; letter-spacing: -.075em; overflow-wrap: anywhere; }
 .results-score { text-align: right; }
 .results-score strong { display: block; font-size: clamp(2.4rem, 5vw, 4.8rem); letter-spacing: -.075em; line-height: 1; }
 .results-score span { font: .75rem "DM Mono", monospace; color: var(--muted); }
@@ -238,7 +251,7 @@ button { color: inherit; }
 .result-auction-link { color: inherit; text-decoration: none; border-radius: 6px; }
 .result-auction-link:hover strong { color: var(--red); text-decoration: underline; text-underline-offset: 3px; }
 .result-auction-link:focus-visible { outline: 3px solid rgba(19,46,94,.24); outline-offset: 4px; }
-.result-name strong { display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: .9rem; }
+.result-name strong { display: block; padding-bottom: .08em; font-size: .9rem; line-height: 1.35; overflow-wrap: break-word; hyphens: auto; text-wrap: pretty; }
 .result-name span, .result-cell span { display: block; margin-top: 3px; font: .64rem "DM Mono", monospace; color: var(--muted); }
 .result-cell strong { font-size: .88rem; }
 .result-points { display: flex; justify-content: flex-end; align-items: center; gap: 8px; }
@@ -397,6 +410,8 @@ button { color: inherit; }
 .auction-panel { overflow: visible; padding: 34px; }
 .auction-id { color: var(--red); font-size: .65rem; line-height: 1.6; }
 .auction-title { font-size: clamp(1.8rem, 2.5vw, 2.5rem); }
+.auction-title--long { font-size: clamp(1.58rem, 2.1vw, 2.05rem); }
+.auction-title--very-long { font-size: clamp(1.4rem, 1.75vw, 1.72rem); }
 .auction-description { color: var(--muted); }
 .guess-control { border-radius: 5px; }
 .submit-guess { background: var(--ink); padding: 0 16px; }
@@ -459,6 +474,11 @@ button:focus-visible, a:focus-visible { outline: 3px solid var(--red); outline-o
   .auction-image-wrap { height: 300px; max-height: none; }
   .auction-image { padding: 55px 20px 65px; }
   .auction-panel, .auction-panel--result { padding: 24px 18px; }
+  .auction-title { font-size: 1.75rem; }
+  .auction-title--long { font-size: 1.55rem; }
+  .auction-title--very-long { font-size: 1.38rem; line-height: 1.22; }
+  .auction-panel--result .auction-title--long { font-size: 1.5rem; }
+  .auction-panel--result .auction-title--very-long { font-size: 1.34rem; }
   .guess-control { grid-template-columns: 1fr; }
   .submit-guess { border-left: 0; min-height: 48px; }
   .price-input { height: 58px; }
@@ -469,6 +489,13 @@ button:focus-visible, a:focus-visible { outline: 3px solid var(--red); outline-o
   .result-thumb { width: 45px; height: 45px; }
   .result-cell strong { font-size: .78rem; }
   .toast { width: max-content; max-width: calc(100% - 32px); border-radius: 6px; text-align: center; }
+}
+@media (max-width: 420px) {
+  .result-row { grid-template-columns: 45px minmax(0, 1fr); align-items: start; }
+  .result-thumb { grid-column: 1; grid-row: 1; }
+  .result-name { grid-column: 2; grid-row: 1; }
+  .result-points { grid-column: 2; grid-row: 2; justify-self: start; margin-top: 6px; }
+  .result-cell { grid-row: 3; }
 }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation: none !important; transition: none !important; scroll-behavior: auto !important; }

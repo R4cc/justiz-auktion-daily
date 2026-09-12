@@ -93,6 +93,13 @@ function auctionImages(auction) {
     .filter(image => typeof image === 'string' && image.trim()))];
 }
 
+function auctionTitleSizeClass(title) {
+  const length = [...String(title || '')].length;
+  if (length > 110) return ' auction-title--very-long';
+  if (length > 70) return ' auction-title--long';
+  return '';
+}
+
 function changeAuctionImage(direction) {
   const auction = AUCTIONS[state.round];
   const images = auctionImages(auction);
@@ -155,7 +162,10 @@ async function startRandomGame() {
   }
   try {
     const response = await fetch('/api/random', { headers: { accept: 'application/json' } });
-    if (!response.ok) throw new Error('random_game_unavailable');
+    if (!response.ok) {
+      const problem = await response.json().catch(() => ({}));
+      throw new Error(problem.error === 'insufficient_variety' ? 'insufficient_variety' : 'random_game_unavailable');
+    }
     const payload = await response.json();
     if (!Array.isArray(payload.auctions) || payload.auctions.length !== 5) throw new Error('invalid_random_game');
     gameMode = 'random';
@@ -167,8 +177,10 @@ async function startRandomGame() {
     }));
     state = { view: 'game', round: 0, answers: [], scoreVersion: SCORE_VERSION };
     renderRound();
-  } catch {
-    showToast('Die Zufallsrunde konnte gerade nicht geladen werden.');
+  } catch (error) {
+    showToast(error.message === 'insufficient_variety'
+      ? 'Noch nicht genug unterschiedliche Auktionen. Bitte versuche es später erneut.'
+      : 'Die Zufallsrunde konnte gerade nicht geladen werden.');
     if (button) {
       button.disabled = false;
       button.textContent = 'Freies Spiel starten';
@@ -367,7 +379,7 @@ function renderRound() {
         </div>
         <div class="auction-panel${answer ? ' auction-panel--result' : ''}">
           <p class="auction-id">${answer ? 'DER HAMMER IST GEFALLEN' : 'UNTER DEM HAMMER'} · #${auction.id}</p>
-          <h1 class="auction-title">${auction.title}</h1>
+          <h1 class="auction-title${auctionTitleSizeClass(auction.title)}">${auction.title}</h1>
           ${answer ? revealMarkup(auction, answer) : `
             <p class="auction-description" tabindex="0" role="region" aria-label="Auktionsbeschreibung">${censorCurrencyValues(auction.description)}</p>
             <div class="fact-list">

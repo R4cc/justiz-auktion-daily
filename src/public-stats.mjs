@@ -1,6 +1,4 @@
-import {
-  auctionFamilyKey
-} from './core.mjs';
+import { buildAuctionFamilies } from './auction-selection.mjs';
 
 function timestamp(value) {
   const parsed =
@@ -92,17 +90,8 @@ export function formatPublicStats({
           kind
       ).length;
 
-  const familyKeys =
-    auctions
-      .map(
-        auctionFamilyKey
-      )
-      .filter(Boolean);
-
-  const uniqueFamilies =
-    new Set(
-      familyKeys
-    ).size;
+  const familyAuctions = auctions.filter(auction => auction?.title);
+  const uniqueFamilies = buildAuctionFamilies(familyAuctions).length;
 
   const discovery =
     queue.discovery &&
@@ -117,11 +106,11 @@ export function formatPublicStats({
 
     `auctions_fetched: ${auctions.length}`,
 
-    `auctions_unique_title_families: ${uniqueFamilies}`,
+    `auctions_unique_product_families: ${uniqueFamilies}`,
 
     `auction_duplicate_family_entries: ${Math.max(
       0,
-      familyKeys.length -
+      familyAuctions.length -
       uniqueFamilies
     )}`,
 

@@ -100,7 +100,7 @@ test('random selection exhausts the least-used pool before repeating', () => {
     id: 200000 + index,
     title: `Archived auction ${index}`,
     description: 'A saved auction that remains playable after its original listing ended.',
-    category: 'Archive',
+    category: ['Vehicles', 'Tools', 'Jewelry', 'Electronics', 'Furniture'][index % 5],
     image: `/images/archive-${index}.jpg`,
     images: [`/images/archive-${index}.jpg`],
     sourceImages: [

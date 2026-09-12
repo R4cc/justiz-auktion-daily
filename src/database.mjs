@@ -80,7 +80,7 @@ function writeQueueToDatabase(database, queue) {
   `);
   for (const task of queue.tasks || []) {
     insert.run(
-      `${task.kind}:${task.url}`,
+      task.kind === 'image' ? `${task.kind}:${task.auctionId}:${task.url}` : `${task.kind}:${task.url}`,
       task.kind,
       task.url,
       Number.isFinite(task.auctionId) ? task.auctionId : null,

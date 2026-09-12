@@ -24,7 +24,15 @@ The `/data` volume preserves `justizguessr.sqlite`, cached listing images, and a
 
 The service discovers listings every six hours and processes one listing page, auction page, start-date page, or image at a time. Queue state and retry timing are committed after every step. HTTP 429/5xx responses use an adaptive backoff, and completed auctions with a stored final price are not fetched again. Each fetched auction updates one database row instead of rewriting the complete archive.
 
-A daily game's five auctions and scoring prices are immutable. The database enforces that an auction ID can belong to only one daily game, and daily-use history is retained indefinitely. Free-play uses a persistent least-used rotation: every eligible unique auction is drawn once before the pool begins another pass. With 1,200 eligible auctions, that normally prevents a repeat for roughly 240 five-auction games.
+A daily game's five auctions and scoring prices are immutable. The database enforces that an auction ID can belong to only one daily game, and daily-use history is retained indefinitely. New daily games and free-play rounds use the same variety rules:
+
+- At least four product categories in five lots, at most two lots in any category, and at most one drinks lot (wine, champagne, spirits, etc.). Titles and product descriptions are classified at selection time, so older records tagged “Sonstiges” are covered too.
+- One representative per likely duplicate product family. Matching uses normalized product names, reordered words, model numbers, text similarity, supporting descriptions, and shared source images. Different photos or auction IDs do not bypass text matching. This is a conservative heuristic, not visual image recognition; genuinely different names with no supporting metadata may still evade it.
+- Daily games exclude families containing a previously used auction. Unused archived lots can supply missing categories. Existing published daily sets are never regenerated when selection rules change.
+- Free play prefers least-used product families within the category constraints. Usage is combined across duplicate listings, so a fresh duplicate ID cannot reset rotation. Scarce categories may repeat before a large wine pool is exhausted; variety takes priority over global exhaustion.
+
+If the archive cannot satisfy those limits, selection fails rather than silently allowing a repetitive game. Source listings remain in the archive; grouping only affects game selection.
+
 
 Optional environment variables:
 
@@ -77,3 +85,5 @@ npm start
 Local execution requires Node.js 22.13 or newer for the built-in SQLite module.
 
 The game is then available at `http://localhost:3000`. Container health can be checked at `GET /healthz`, while `GET /stats` returns non-sensitive collector and queue totals as plain text. The current frozen daily set is served from `GET /api/daily`, and a fresh five-auction free-play set is served from `GET /api/random`.
+
+Known auctions refresh independently of listing discovery: every 6 hours when more than a day remains, hourly within 24 hours, every 15 minutes within 6 hours, and every 5 minutes within the last hour. Once the stored end time passes, a direct detail fetch takes priority over discovery, including for auctions no longer listed in search. These are target intervals subject to the shared request throttle and retry backoff. Updated end times extend monitoring. Only a successful observation after the returned end time establishes a final price; simply passing the deadline never finalizes a cached bid. Confirmed final records stop polling, while older records finalized before their last observation reached the end time are rechecked. Unavailable pages retain retry backoff, with a 24-hour cooldown after repeated failures. Published daily games keep their original answers; refreshed prices feed subsequent selections.

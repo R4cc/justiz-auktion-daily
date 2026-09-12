@@ -1,3 +1,4 @@
+import { auctionGallery } from './src/auction-images.mjs';
 import {
   createServer
 } from 'node:http';
@@ -429,6 +430,9 @@ async function dailyPayload() {
       dataDir
     });
 
+  // Refresh media only; daily auction selection and prices remain frozen.
+  const archived = new Map(readArchive(dataDir).auctions.map(auction => [auction.id, auction]));
+
   return {
     date:
       game.date,
@@ -443,6 +447,9 @@ async function dailyPayload() {
       game.auctions.map(
         auction => ({
           ...auction,
+
+          images: auctionGallery(archived.get(auction.id) || auction),
+          image: auctionGallery(archived.get(auction.id) || auction)[0] || auction.image,
 
           description:
             censorCurrencyValues(
@@ -1138,10 +1145,10 @@ const server =
         ) {
           json(
             response,
-            500,
+            error.code === 'insufficient_variety' ? 503 : 500,
             {
               error:
-                'internal_error'
+                error.code === 'insufficient_variety' ? 'insufficient_variety' : 'internal_error'
             }
           );
         } else {
