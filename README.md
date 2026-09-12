@@ -27,9 +27,11 @@ On restart, the configured admin is created if absent. Changing its configured p
 Each newly created account starts with **1,000 tokens**. Existing accounts are not modified by this setting. One rewarded run is available per **UTC day**, shared between Daily and Higher or Lower:
 
 - The first submitted answer reserves that day's rewarded run. Refreshing or returning to the same unfinished run resumes it, including on another device. Starting a screen without answering does not consume the allowance.
-- Completing all five Daily guesses pays **100 tokens**, regardless of score.
-- Higher or Lower pays **20 tokens per correct comparison** once the final streak reaches **3**, capped at **200 tokens**. Payment happens on a miss or deck completion. A shorter run pays zero and still uses that day's allowance.
+- Completing all five Daily guesses pays the price of the day's cheapest available case, funding one pull.
+- Higher or Lower pays one-fifth of that case price per correct comparison, rounded to a whole token, once the final streak reaches **3**. It is capped at twice the case price, so a strong run can fund at most two pulls. Payment happens on a miss or deck completion. A shorter run pays zero and still uses that day's allowance.
 - Additional games are practice and cannot earn more tokens. A new allowance arrives with the Daily reset at **00:00 UTC**. An abandoned run must be resumed before that reset; old runs cannot pay out afterward.
+
+Reward rates are saved when a run starts, so its payout cannot change if case prices refresh while the run is in progress.
 
 The shop offers **Seized Goods**, **Contraband**, **Car**, **Wine**, **Electronics**, **Tool**, **Jewellery**, and **Collector** cases. Themed cases draw only from their category; Contraband selects the upper-value portion of the mixed archive. Each opening saves one digital collectible to inventory before playing a 5.2-second rarity-only reel. Reduced motion uses faster centered tier changes over 2.6 seconds, without horizontal movement. After a 750 ms pause on the winning tier, a dialog reveals the item with keep, sell, and open-another options. The reel tiers and expandable contents list use only the selected case's current stock. Tokens cannot be bought with real money, transferred, or redeemed for cash; collectibles do not confer ownership of real auction lots.
 

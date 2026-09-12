@@ -144,6 +144,21 @@ test('daily rewards are once per account per UTC day across modes, survive repla
   assert.equal(service.profile(admin).tokens, STARTING_TOKENS + 240);
 });
 
+test('game rewards freeze the current case-priced schedule for each run', async t => {
+  const { service, admin, nextDay } = await fixture(t);
+  const rewards = { daily: 24, higherLowerPerCorrect: 5, higherLowerMax: 48, minimumStreak: 3 };
+  let run = service.startGame(admin, 'daily', () => lots.slice(0, 5), rewards);
+  for (let i = 0; i < 5; i++) run = service.answer(admin, run.id, i, lots[i].actualBid);
+  assert.equal(run.earned, 24);
+  assert.deepEqual(run.rewards, rewards);
+  nextDay();
+  run = service.startGame(admin, 'higher-lower', () => lots, rewards);
+  for (let i = 0; i < 7; i++) run = service.answer(admin, run.id, i, 'higher');
+  assert.equal(run.earned, 35);
+  assert.deepEqual(run.rewards, rewards);
+  assert.equal(service.profile(admin).tokens, STARTING_TOKENS + 59);
+});
+
 test('first answer reserves the run, low streaks earn zero, ties count and another mode cannot replace a failed run', async t => {
   const { service, admin, nextDay } = await fixture(t);
   const hl = service.startGame(admin, 'higher-lower', () => lots);
@@ -311,6 +326,10 @@ test('HTTP API enforces authentication, CSRF headers, admin permissions and sess
   assert.equal(later.user.tokens, STARTING_TOKENS);
   assert.deepEqual((await (await post('admin/grant-tokens', grantBody, cookie)).json()).grant, grant.grant);
   assert.equal((await (await fetch(base + 'admin', { headers: { cookie } })).json()).playerCount, 3);
+  let rewarded = (await (await post('games/start', { mode: 'daily' }, playerCookie)).json()).run;
+  assert.deepEqual(rewarded.rewards, publicCatalog.rewards);
+  for (let i = 0; i < 5; i++) rewarded = (await (await post('games/answer', { id: rewarded.id, position: i, answer: lots[i].actualBid }, playerCookie)).json()).run;
+  assert.equal(rewarded.earned, publicCatalog.rewards.daily);
   assert.equal((await post('logout', {}, playerCookie)).status, 200);
   assert.equal((await (await fetch(base + 'me', { headers: { cookie: playerCookie } })).json()).user, null);
   assert.equal((await post('login', { username: 'admin', password: 'x'.repeat(9000) })).status, 413);

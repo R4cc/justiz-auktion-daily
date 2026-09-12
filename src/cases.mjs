@@ -124,7 +124,13 @@ export function loadCaseCatalog(dataDir, now = Date.now()) {
 
 export function publicCaseCatalog(catalog) {
   return { revision: catalog.revision, rotationDate: catalog.rotationDate, rotatesAt: catalog.rotatesAt, rarities: catalog.rarities,
-    cases: catalog.cases.map(({ weights, ...box }) => box) };
+    rewards: caseRewards(catalog), cases: catalog.cases.map(({ weights, ...box }) => box) };
+}
+
+export function caseRewards(catalog) {
+  const costs = catalog.cases.filter(box => box.available).map(box => box.cost);
+  const daily = costs.length ? Math.min(...costs) : 100;
+  return { daily, higherLowerPerCorrect: Math.max(1, Math.round(daily / 5)), higherLowerMax: daily * 2, minimumStreak: 3 };
 }
 
 export function drawItem(catalog, box, random = randomInt) {

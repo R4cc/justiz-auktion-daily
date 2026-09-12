@@ -9,11 +9,14 @@ const digest = value => createHash('sha256').update(value).digest('hex');
 const day = now => new Date(now).toISOString().slice(0, 10);
 const SESSION_MS = 30 * 86400000;
 export const STARTING_TOKENS = 1000;
+const DEFAULT_REWARDS = { daily: 100, higherLowerPerCorrect: 20, higherLowerMax: 200, minimumStreak: 3 };
 export class AccountError extends Error {
   constructor(code, status = 400) { super(code); this.status = status; }
 }
 const fail = (code, status) => { throw new AccountError(code, status); };
 const currentItemValue = item => ({ ...item, sellValue: tokenValue(item.price) });
+const rewardRates = value => Object.fromEntries(Object.entries(DEFAULT_REWARDS).map(([key, fallback]) =>
+  [key, Number.isSafeInteger(value?.[key]) && value[key] > 0 ? value[key] : fallback]));
 
 function credentials(username, password) {
   if (typeof username !== 'string' || !/^[a-zA-Z0-9_-]{3,32}$/.test(username)) fail('invalid_username');
@@ -292,7 +295,7 @@ export class Accounts {
       return { sold: row.id, value: item.sellValue };
     });
   }
-  startGame(user, mode, makeAuctions) {
+  startGame(user, mode, makeAuctions, rewards = DEFAULT_REWARDS) {
     if (!['daily', 'higher-lower'].includes(mode)) fail('invalid_mode');
     return this.atomic(db => {
       const existing = db.prepare(`SELECT payload FROM account_games WHERE user_id = ? AND date = ? AND mode = ?
@@ -300,7 +303,8 @@ export class Accounts {
       if (existing) return this.publicGame(JSON.parse(existing.payload));
       const auctions = makeAuctions();
       if (auctions.length < 2 || (mode === 'daily' && auctions.length !== 5)) fail('game_unavailable', 503);
-      const run = { id: randomUUID(), date: day(this.now()), mode, auctions, answers: [], streak: 0, complete: false, earned: 0 };
+      const run = { id: randomUUID(), date: day(this.now()), mode, auctions, answers: [], streak: 0, complete: false, earned: 0,
+        rewards: rewardRates(rewards) };
       db.prepare('INSERT INTO account_games (id, user_id, date, mode, payload) VALUES (?, ?, ?, ?, ?)')
         .run(run.id, user.id, run.date, mode, JSON.stringify(run));
       return this.publicGame(run);
@@ -341,7 +345,9 @@ export class Accounts {
       const reward = db.prepare('SELECT * FROM daily_rewards WHERE user_id = ? AND date = ?').get(user.id, run.date);
       run.rewardEligible = reward.run_id === run.id;
       if (run.complete && run.rewardEligible) {
-        run.earned = run.mode === 'daily' ? 100 : run.streak >= 3 ? Math.min(200, run.streak * 20) : 0;
+        const rates = rewardRates(run.rewards);
+        run.earned = run.mode === 'daily' ? rates.daily : run.streak >= rates.minimumStreak ?
+          Math.min(rates.higherLowerMax, run.streak * rates.higherLowerPerCorrect) : 0;
         db.prepare('UPDATE users SET tokens = tokens + ? WHERE id = ?').run(run.earned, user.id);
         db.prepare('UPDATE daily_rewards SET earned = ? WHERE user_id = ? AND date = ?').run(run.earned, user.id, run.date);
       }

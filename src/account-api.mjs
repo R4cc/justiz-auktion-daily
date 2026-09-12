@@ -1,5 +1,5 @@
 import { Accounts, AccountError } from './accounts.mjs';
-import { loadCaseCatalog, publicCaseCatalog, rotationDate } from './cases.mjs';
+import { caseRewards, loadCaseCatalog, publicCaseCatalog, rotationDate } from './cases.mjs';
 import { readArchive } from './database.mjs';
 import { higherLowerDeck } from './higher-lower.mjs';
 
@@ -82,7 +82,7 @@ export async function createAccountApi({ dataDir, dailyPayload, json, env = proc
       else if (route === 'inventory/sell') result = { ...accounts.sell(user, payload.id), user: accounts.profile(user) };
       else if (route === 'games/start') {
         const auctions = payload.mode === 'daily' ? (await dailyPayload()).auctions : null;
-        result = { run: accounts.startGame(user, payload.mode, () => auctions || higherLowerDeck(readArchive(dataDir).auctions).auctions), user: accounts.profile(user) };
+        result = { run: accounts.startGame(user, payload.mode, () => auctions || higherLowerDeck(readArchive(dataDir).auctions).auctions, caseRewards(getCatalog())), user: accounts.profile(user) };
       } else if (route === 'games/answer') result = { run: accounts.answer(user, payload.id, payload.position, payload.answer), user: accounts.profile(user) };
       else throw new AccountError('not_found', 404);
       json(response, 200, result);

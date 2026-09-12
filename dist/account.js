@@ -62,7 +62,13 @@ function updateNavigation() {
   document.querySelector('.site-nav').setAttribute('aria-label', t('Main navigation', 'Hauptnavigation'));
 }
 function updateAccount(user) { account = user; updateNavigation(); }
-const accountReady = accountApi('me').then(result => {
+function updateAccountCatalog(catalog) {
+  accountCatalog = catalog;
+  window.justizRewards = catalog.rewards;
+  renderStaticUi();
+}
+const catalogReady = accountApi('cases').then(updateAccountCatalog).catch(() => {});
+const accountReady = Promise.all([accountApi('me'), catalogReady]).then(([result]) => {
   updateAccount(result.user);
   if (typeof renderStart === 'function' && state.view === 'start' && location.pathname === '/') renderStart();
 }).catch(() => {});
@@ -90,7 +96,7 @@ async function navigateAccountPage(path, push = true) {
     updateAccount(session.user);
     const owner = account?.id;
     if (path === '/shop' || (path === '/inventory' && account)) {
-      const catalog = await accountApi('cases'); if (visit !== accountVisit) return; accountCatalog = catalog;
+      const catalog = await accountApi('cases'); if (visit !== accountVisit) return; updateAccountCatalog(catalog);
     }
     if (path === '/inventory' && account) {
       const result = await accountApi('inventory'); if (visit !== accountVisit || account?.id !== owner) return; accountItems = result.items;
@@ -160,7 +166,8 @@ function dailyFriendLabel(daily) {
 }
 function rewardNote() {
   if (!account) return t('Log in before playing to earn tokens.', 'Melde dich vor dem Spielen an, um Tokens zu verdienen.');
-  if (!account.reward) return t('Your daily reward run is available. Finish Daily for 100 tokens, or earn up to 200 in Higher or Lower.', 'Dein täglicher Token-Lauf ist verfügbar. Schließe das Daily für 100 Tokens ab oder verdiene bis zu 200 in Higher or Lower.');
+  const rewards = accountCatalog?.rewards || { daily: 100, higherLowerMax: 200 };
+  if (!account.reward) return t(`Your daily reward run is available. Finish Daily for ${number(rewards.daily)} tokens, or earn up to ${number(rewards.higherLowerMax)} in Higher or Lower.`, `Dein täglicher Token-Lauf ist verfügbar. Schließe das Daily für ${number(rewards.daily)} Tokens ab oder verdiene bis zu ${number(rewards.higherLowerMax)} in Higher or Lower.`);
   return account.reward.complete ? t(`You earned ${account.reward.earned} tokens today. Your next reward run unlocks at 00:00 UTC.`, `Du hast heute ${account.reward.earned} Tokens verdient. Dein nächster Token-Lauf startet um 00:00 UTC.`) : t(`Resume your ${account.reward.mode === 'daily' ? 'Daily' : 'Higher or Lower'} run to earn today’s tokens.`, `Setze deinen ${account.reward.mode === 'daily' ? 'Daily' : 'Higher-or-Lower'}-Lauf für die heutigen Tokens fort.`);
 }
 function rewardBanner() { return `<p class="reward-note">${accountEscape(rewardNote())}</p>`; }

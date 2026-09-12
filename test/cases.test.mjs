@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdtemp, rm } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { CASE_RETURN_TARGET, caseCatalog, loadCaseCatalog, drawItem, publicCaseCatalog, RARITIES, tokenValue } from '../src/cases.mjs';
+import { CASE_RETURN_TARGET, caseCatalog, caseRewards, loadCaseCatalog, drawItem, publicCaseCatalog, RARITIES, tokenValue } from '../src/cases.mjs';
 import { Accounts } from '../src/accounts.mjs';
 import { closeDataStore, upsertAuctions } from '../src/database.mjs';
 
@@ -74,6 +74,16 @@ test('sale values follow auction euros and case prices preserve the target retur
     }
     assert.equal(jackpots, 10);
   }
+});
+
+test('daily game rewards track the cheapest available case', () => {
+  const catalog = caseCatalog(stock, day);
+  const cheapest = Math.min(...catalog.cases.filter(box => box.available).map(box => box.cost));
+  assert.deepEqual(caseRewards(catalog), {
+    daily: cheapest, higherLowerPerCorrect: Math.max(1, Math.round(cheapest / 5)),
+    higherLowerMax: cheapest * 2, minimumStreak: 3
+  });
+  assert.deepEqual(publicCaseCatalog(catalog).rewards, caseRewards(catalog));
 });
 
 test('editions are order-independent, rotate stock and prices, and expensive stock affects pricing', () => {
