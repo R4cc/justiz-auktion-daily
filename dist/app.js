@@ -302,6 +302,7 @@ function startGame() {
 }
 
 function renderStart() {
+  higherLowerRequest++;
   window.scrollTo({ top: 0, behavior: 'instant' });
   clearInterval(countdownTimer);
   state.view = 'start';
@@ -317,6 +318,7 @@ function renderStart() {
         <div class="start-actions">
           <button class="primary-button" type="button" data-action="play">${buttonText}<span class="button-arrow">→</span></button>
           <button class="secondary-button random-button" type="button" data-action="random">Freies Spiel starten <span aria-hidden="true">↻</span></button>
+          <button class="secondary-button hl-start" type="button" data-action="higher-lower"><span>Higher or Lower <small>Höher? Niedriger? Halte deinen Lauf am Leben.</small></span><span aria-hidden="true">↑↓</span></button>
         </div>
         <p class="play-note">Keine Anmeldung. Kein echtes Geld. Nur dein Bauchgefühl.</p>
         <div class="how-strip" aria-label="Spielablauf"><span><b>01</b> Entdecken</span><span><b>02</b> Schätzen</span><span><b>03</b> Abräumen</span></div>
@@ -618,6 +620,11 @@ document.addEventListener('click', event => {
   if (action === 'next-image') changeAuctionImage(1);
   if (action === 'play') dailyLoadPromise.finally(startGame);
   if (action === 'random') startRandomGame();
+  if (action === 'higher-lower') startHigherLower();
+  if (action === 'hl-higher') guessHigherLower('higher');
+  if (action === 'hl-lower') guessHigherLower('lower');
+  if (action === 'hl-next') nextHigherLower();
+  if (action === 'hl-image') higherLowerImage(event.target.closest('[data-action]'));
   if (action === 'next') nextRound();
   if (action === 'share') shareResult();
   if (action === 'copy') copyResult();

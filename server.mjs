@@ -1,4 +1,5 @@
 import { auctionGallery } from './src/auction-images.mjs';
+import { higherLowerDeck } from './src/higher-lower.mjs';
 import {
   createServer
 } from 'node:http';
@@ -1025,6 +1026,11 @@ const server =
             await dailyPayload()
           );
 
+          return;
+        }
+
+        if (request.method === 'GET' && url.pathname === '/api/higher-lower') {
+          json(response, 200, higherLowerDeck(readArchive(dataDir).auctions || []));
           return;
         }
 

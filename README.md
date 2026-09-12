@@ -2,6 +2,8 @@
 
 A daily price-guessing game based on public listings from [justiz-auktion.de](https://www.justiz-auktion.de/), plus replayable random rounds drawn from the saved auction archive.
 
+**Higher or Lower** compares two confirmed ended auctions. Guess whether the next final bid is higher or lower; ties count either way. A miss ends the streak, while clearing the deck wins the run. The best streak is stored separately on the device. `GET /api/higher-lower` returns a fixed deck of up to 20 distinct product families (19 comparisons), with four categories and at most one drinks lot in each five-lot block. Smaller archives produce shorter decks; fewer than five suitable varied lots returns `503 insufficient_variety`. Active listings and legacy final prices observed before the auction ended are excluded. Each new run is independently shuffled and does not consume daily or free-play rotation history.
+
 The application serves the game and its JSON API from one lightweight Node process. No account is required; player progress and streaks stay in the browser. Auctions, immutable daily sets, random-game rotation history, and the fetch queue are stored in SQLite in the container's `/data` volume.
 
 ## Run with Docker
