@@ -2,7 +2,7 @@ import { readdirSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 
-const roots = ['server.mjs', 'src', 'scripts', 'dist/app.js', 'dist/higher-lower.js', 'test'];
+const roots = ['server.mjs', 'src', 'scripts', 'dist/app.js', 'dist/higher-lower.js', 'dist/account.js', 'test'];
 const files = [];
 function visit(target) {
   const details = readdirSync(target, { withFileTypes: true });

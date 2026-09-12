@@ -1,4 +1,5 @@
 import { auctionGallery } from './src/auction-images.mjs';
+import { createAccountApi } from './src/account-api.mjs';
 import { higherLowerDeck } from './src/higher-lower.mjs';
 import {
   createServer
@@ -900,6 +901,8 @@ await maybeScheduleDiscovery({
     false
 });
 
+const accountApi = await createAccountApi({ dataDir, dailyPayload, json });
+
 const server =
   createServer(
     {
@@ -916,6 +919,8 @@ const server =
             request.url,
             `http://${request.headers.host || 'localhost'}`
           );
+
+        if (await accountApi(request, response, url)) return;
 
         if (
           request.method ===

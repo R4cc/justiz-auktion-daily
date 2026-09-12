@@ -23,7 +23,7 @@ test('Higher or Lower uses confirmed finals, excludes duplicate families, and pr
 
 test('client streak handles ties, prevents repeated guesses, stops on a miss and completes the deck', async () => {
   const storage = new Map();
-  const context = vm.createContext({ localStorage: { getItem: key => storage.get(key), setItem: (key, value) => storage.set(key, value) } });
+  const context = vm.createContext({ window: { scrollTo() {} }, localStorage: { getItem: key => storage.get(key), setItem: (key, value) => storage.set(key, value) } });
   vm.runInContext(await readFile(new URL('../dist/higher-lower.js', import.meta.url), 'utf8'), context);
   vm.runInContext(`let state = { view: 'higher-lower' }; renderHigherLower = () => {};
     higherLowerRun = { auctions: [10, 20, 20, 5].map(actualBid => ({ actualBid })), index: 1, streak: 0, revealed: false, images: [0, 0] };`, context);

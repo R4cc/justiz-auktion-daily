@@ -4,22 +4,28 @@ function hlEscape(value) {
   return String(value).replace(/[&<>"']/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[char]);
 }
 function hlBest() {
-  try { return Math.max(0, Number(localStorage.getItem('justizguessr:higher-lower-best')) || 0); }
+  try { return Math.max(0, Number(localStorage.getItem(hlStorageKey())) || 0); }
   catch { return 0; }
 }
+function hlStorageKey() { return typeof account !== 'undefined' && account ? `justizguessr:higher-lower-best:${account.id}` : 'justizguessr:higher-lower-best'; }
 async function startHigherLower() {
   const request = ++higherLowerRequest;
   clearInterval(countdownTimer);
   state.view = 'higher-lower-loading';
   app.innerHTML = '<section class="hl-screen"><p class="eyebrow">HIGHER OR LOWER</p><h1>Die Lose werden gemischt …</h1><button class="secondary-button" data-action="home">Zur Startseite</button></section>';
   try {
-    const response = await fetch('/api/higher-lower', { headers: { accept: 'application/json' } });
-    if (!response.ok) throw new Error(response.status === 503 ? 'variety' : 'unavailable');
-    const payload = await response.json();
+    const serverRun = await accountGameStart('higher-lower');
+    let payload = serverRun;
+    if (!payload) {
+      const response = await fetch('/api/higher-lower', { headers: { accept: 'application/json' } });
+      if (!response.ok) throw new Error(response.status === 503 ? 'variety' : 'unavailable');
+      payload = await response.json();
+    }
     if (!Array.isArray(payload.auctions) || payload.auctions.length < 2 ||
-        payload.auctions.some(item => !Number.isFinite(item.actualBid) || item.actualBid <= 0)) throw new Error('invalid');
+        (!serverRun && payload.auctions.some(item => !Number.isFinite(item.actualBid) || item.actualBid <= 0))) throw new Error('invalid');
     if (request !== higherLowerRequest || state.view !== 'higher-lower-loading') return;
-    higherLowerRun = { auctions: payload.auctions, index: 1, streak: 0, revealed: false, correct: false, images: [0, 0] };
+    higherLowerRun = { auctions: payload.auctions, index: Math.max(1, serverRun?.answers.length || 0),
+      streak: serverRun?.streak || 0, revealed: Boolean(serverRun?.answers.length), correct: serverRun?.correct || false, images: [0, 0], server: serverRun };
     gameMode = 'higher-lower';
     state.view = 'higher-lower';
     window.scrollTo({ top: 0, behavior: 'instant' });
@@ -48,6 +54,7 @@ function renderHigherLower(focus = false) {
   }).join('<span class="hl-versus" aria-hidden="true">VS</span>');
   app.innerHTML = `<section class="hl-screen">
     <div class="hl-heading"><div><p class="eyebrow">HIGHER OR LOWER</p><h1>Was bringt mehr?</h1></div><div class="hl-streak"><strong>${run.streak}</strong><span>IN FOLGE · BESTE ${hlBest()}</span></div></div>
+    ${rewardBanner()}
     <div class="hl-board">${cards}</div>
     <div class="hl-controls">
     ${run.revealed ? `<div class="hl-verdict"><h2>${!run.correct ? 'Zum Dritten. Vorbei!' : finished ? 'Alle Lose abgeräumt!' : tied ? 'Gleichstand. Du bleibst drin!' : 'Richtig. Der Lauf geht weiter!'}</h2><p>${finished ? `${run.streak} ${run.streak === 1 ? 'richtiger Vergleich' : 'richtige Vergleiche'} in Folge. Noch eine Runde?` : 'Das aufgedeckte Los wird deine neue Messlatte.'}</p></div>
@@ -57,14 +64,31 @@ function renderHigherLower(focus = false) {
   </section>`;
   if (focus) app.querySelector('.hl-controls button')?.focus({ preventScroll: true });
 }
-function guessHigherLower(direction) {
+async function guessHigherLower(direction) {
   const run = higherLowerRun;
-  if (state.view !== 'higher-lower' || !run || run.revealed) return;
+  if (state.view !== 'higher-lower' || !run || run.revealed || run.pending) return;
+  if (run.server) {
+    run.pending = true;
+    app.querySelectorAll('.hl-choices button').forEach(button => button.disabled = true);
+    try {
+      const updated = await accountGameAnswer(run.server, run.index - 1, direction);
+      if (higherLowerRun !== run || state.view !== 'higher-lower') return;
+      run.server = updated;
+      run.auctions = updated.auctions;
+      run.correct = updated.correct;
+      run.streak = updated.streak;
+    } catch (error) {
+      showToast(error.message);
+      if (higherLowerRun === run && state.view === 'higher-lower') renderHigherLower();
+      return;
+    } finally { run.pending = false; }
+  } else {
   const difference = run.auctions[run.index].actualBid - run.auctions[run.index - 1].actualBid;
   run.correct = difference === 0 || (direction === 'higher' ? difference > 0 : difference < 0);
-  run.revealed = true;
   if (run.correct) run.streak++;
-  try { localStorage.setItem('justizguessr:higher-lower-best', String(Math.max(hlBest(), run.streak))); } catch {}
+  }
+  run.revealed = true;
+  try { localStorage.setItem(hlStorageKey(), String(Math.max(hlBest(), run.streak))); } catch {}
   renderHigherLower(true);
 }
 function nextHigherLower() {

@@ -155,6 +155,8 @@ async function loadDailyGame() {
 }
 
 async function startRandomGame() {
+  const request = ++higherLowerRequest;
+  state.view = 'random-loading';
   const button = document.querySelector('[data-action="random"]');
   if (button) {
     button.disabled = true;
@@ -167,6 +169,7 @@ async function startRandomGame() {
       throw new Error(problem.error === 'insufficient_variety' ? 'insufficient_variety' : 'random_game_unavailable');
     }
     const payload = await response.json();
+    if (request !== higherLowerRequest) return;
     if (!Array.isArray(payload.auctions) || payload.auctions.length !== 5) throw new Error('invalid_random_game');
     gameMode = 'random';
     AUCTIONS = payload.auctions.map(item => ({
@@ -178,6 +181,8 @@ async function startRandomGame() {
     state = { view: 'game', round: 0, answers: [], scoreVersion: SCORE_VERSION };
     renderRound();
   } catch (error) {
+    if (request !== higherLowerRequest) return;
+    renderStart();
     showToast(error.message === 'insufficient_variety'
       ? 'Noch nicht genug unterschiedliche Auktionen. Bitte versuche es später erneut.'
       : 'Die Zufallsrunde konnte gerade nicht geladen werden.');
@@ -189,11 +194,13 @@ async function startRandomGame() {
 }
 
 function todayStorageKey() {
-  return `justizguessr:${utcDateKey()}`;
+  return account ? `justizguessr:${account.id}:${utcDateKey()}` : `justizguessr:${utcDateKey()}`;
 }
 
+function historyStorageKey() { return account ? `justizguessr:history:${account.id}` : 'justizguessr:history'; }
+
 function getHistory() {
-  try { return JSON.parse(localStorage.getItem('justizguessr:history') || '[]'); }
+  try { return JSON.parse(localStorage.getItem(historyStorageKey()) || '[]'); }
   catch { return []; }
 }
 
@@ -204,7 +211,7 @@ function getTodayRecord() {
 
 function saveProgress() {
   if (gameMode !== 'daily') return;
-  localStorage.setItem(todayStorageKey(), JSON.stringify({ ...state, date: utcDateKey(), game: gameNumber() }));
+  try { localStorage.setItem(todayStorageKey(), JSON.stringify({ ...state, date: utcDateKey(), game: gameNumber() })); } catch {}
 }
 
 function euro(value) {
@@ -256,7 +263,7 @@ function upgradeSavedState(saved) {
   if (saved.view === 'results') {
     const total = answers.reduce((sum, answer) => sum + answer.score, 0);
     const history = getHistory().map(entry => entry.date === utcDateKey() ? { ...entry, total, scoreVersion: SCORE_VERSION } : entry);
-    localStorage.setItem('justizguessr:history', JSON.stringify(history));
+    localStorage.setItem(historyStorageKey(), JSON.stringify(history));
   }
   return upgraded;
 }
@@ -287,9 +294,26 @@ function stats() {
   };
 }
 
-function startGame() {
+let dailyStarting = false;
+async function startGame() {
+  if (dailyStarting) return;
+  dailyStarting = true;
+  const request = ++higherLowerRequest;
+  state.view = 'daily-loading';
+  try {
+  const run = await accountGameStart('daily');
+  if (request !== higherLowerRequest) return;
+  accountDailyRun = run;
   gameMode = 'daily';
   AUCTIONS = DAILY_AUCTIONS;
+  if (accountDailyRun) {
+    AUCTIONS = accountDailyRun.auctions;
+    const answers = accountDailyRun.answers.map((guess, index) => ({ guess,
+      score: scoreGuess(guess, AUCTIONS[index].actualBid), error: currentError(guess, AUCTIONS[index].actualBid) }));
+    state = { view: accountDailyRun.complete ? 'results' : 'game', round: Math.max(0, answers.length - 1), answers, scoreVersion: SCORE_VERSION };
+    if (accountDailyRun.complete) finishGame(); else renderRound();
+    return;
+  }
   const saved = upgradeSavedState(getTodayRecord());
   if (saved?.view === 'results') {
     state = saved;
@@ -299,6 +323,8 @@ function startGame() {
   state = saved?.answers ? saved : { view: 'game', round: 0, answers: [], scoreVersion: SCORE_VERSION };
   state.view = 'game';
   renderRound();
+  } catch (error) { if (request === higherLowerRequest) { renderStart(); showToast(error.message); } }
+  finally { dailyStarting = false; }
 }
 
 function renderStart() {
@@ -320,7 +346,8 @@ function renderStart() {
           <button class="secondary-button random-button" type="button" data-action="random">Freies Spiel starten <span aria-hidden="true">↻</span></button>
           <button class="secondary-button hl-start" type="button" data-action="higher-lower"><span>Higher or Lower <small>Höher? Niedriger? Halte deinen Lauf am Leben.</small></span><span aria-hidden="true">↑↓</span></button>
         </div>
-        <p class="play-note">Keine Anmeldung. Kein echtes Geld. Nur dein Bauchgefühl.</p>
+        <p class="play-note">Als Gast spielen oder mit Konto Auktionslose sammeln. Kein echtes Geld.</p>
+        ${rewardBanner()}
         <div class="how-strip" aria-label="Spielablauf"><span><b>01</b> Entdecken</span><span><b>02</b> Schätzen</span><span><b>03</b> Abräumen</span></div>
       </div>
       <aside class="start-side" aria-label="Tagesstatistik">
@@ -453,13 +480,22 @@ function revealMarkup(auction, answer) {
     </div>`;
 }
 
-function submitGuess(form) {
+let dailySubmitting = false;
+async function submitGuess(form) {
+  if (dailySubmitting || state.answers[state.round]) return;
   const raw = form.querySelector('#price-input').value.trim().replace(/\s/g, '').replace(',', '.');
   const guess = Number(raw);
   if (!raw || !Number.isFinite(guess) || guess < 0) {
     showToast('Bitte gib einen gültigen Eurobetrag ein.');
     return;
   }
+  dailySubmitting = true;
+  const currentState = state;
+  const button = form.querySelector('button[type="submit"]');
+  button.disabled = true;
+  try {
+  if (gameMode === 'daily' && accountDailyRun) accountDailyRun = await accountGameAnswer(accountDailyRun, state.round, guess);
+  if (state !== currentState || state.view !== 'game') return;
   const actual = AUCTIONS[state.round].actualBid;
   const score = scoreGuess(guess, actual);
   const isExact = Math.round(guess * 100) === Math.round(actual * 100);
@@ -467,6 +503,8 @@ function submitGuess(form) {
   saveProgress();
   renderRound();
   if (isExact) requestAnimationFrame(launchConfetti);
+  } catch (error) { showToast(error.message); }
+  finally { dailySubmitting = false; button.disabled = false; }
 }
 
 function nextRound() {
@@ -486,7 +524,7 @@ function finishGame() {
   if (gameMode === 'daily') {
     const history = getHistory().filter(item => item.date !== utcDateKey());
     history.push({ date: utcDateKey(), game: gameNumber(), total, scoreVersion: SCORE_VERSION });
-    localStorage.setItem('justizguessr:history', JSON.stringify(history.slice(-400)));
+    try { localStorage.setItem(historyStorageKey(), JSON.stringify(history.slice(-400))); } catch {}
   }
   renderResults();
 }
@@ -516,6 +554,7 @@ function renderResults() {
         ${AUCTIONS.map((auction, index) => resultRow(auction, state.answers[index], index)).join('')}
       </div>
       <div class="results-actions">
+        ${account && gameMode === 'daily' ? '<button class="secondary-button" type="button" data-account="open">Kisten & Inventar ◈</button>' : ''}
         ${gameMode === 'random' ? '<button class="primary-button" type="button" data-action="random">Neue Zufallsrunde <span class="button-arrow">↻</span></button>' : ''}
         <button class="${gameMode === 'random' ? 'secondary' : 'primary'}-button" type="button" data-action="share">Ergebnis teilen <span class="button-arrow">↗</span></button>
         <button class="secondary-button" type="button" data-action="copy">Text kopieren</button>
@@ -602,9 +641,10 @@ function launchConfetti() {
 }
 
 function showToast(message) {
-  toast.textContent = message;
-  toast.classList.add('show');
-  setTimeout(() => toast.classList.remove('show'), 2400);
+  const target = accountDialog.open ? document.querySelector('#account-toast') : toast;
+  target.textContent = message;
+  target.classList.add('show');
+  setTimeout(() => target.classList.remove('show'), 5000);
 }
 
 document.addEventListener('submit', event => {
@@ -633,6 +673,7 @@ document.addEventListener('click', event => {
 });
 
 document.addEventListener('keydown', event => {
+  if (event.target.closest('dialog')) return;
   if (event.target.closest('.auction-image-wrap') && ['ArrowLeft', 'ArrowRight'].includes(event.key)) {
     event.preventDefault();
     changeAuctionImage(event.key === 'ArrowLeft' ? -1 : 1);
@@ -681,7 +722,7 @@ function registerWebMcpTools() {
     annotations: { readOnlyHint: false, untrustedContentHint: false },
     async execute() {
       await dailyLoadPromise;
-      startGame();
+      await startGame();
       return { gameNumber: gameNumber(), view: state.view, currentRound: state.round + 1 };
     }
   });

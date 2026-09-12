@@ -3,6 +3,10 @@ services:
     image: ${DOCKERHUB_USERNAME}/justizguessr:${JUSTIZGUESSR_TAG:-latest}
     pull_policy: always
     restart: unless-stopped
+    environment:
+      ADMIN_USERNAME: ${ADMIN_USERNAME:-}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-}
+      COOKIE_SECURE: ${COOKIE_SECURE:-true}
     user: "65532:65532"
     read_only: true
     cap_drop:

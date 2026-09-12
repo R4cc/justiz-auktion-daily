@@ -4,7 +4,36 @@ A daily price-guessing game based on public listings from [justiz-auktion.de](ht
 
 **Higher or Lower** compares two confirmed ended auctions. Guess whether the next final bid is higher or lower; ties count either way. A miss ends the streak, while clearing the deck wins the run. The best streak is stored separately on the device. `GET /api/higher-lower` returns a fixed deck of up to 20 distinct product families (19 comparisons), with four categories and at most one drinks lot in each five-lot block. Smaller archives produce shorter decks; fewer than five suitable varied lots returns `503 insufficient_variety`. Active listings and legacy final prices observed before the auction ended are excluded. Each new run is independently shuffled and does not consume daily or free-play rotation history.
 
-The application serves the game and its JSON API from one lightweight Node process. No account is required; player progress and streaks stay in the browser. Auctions, immutable daily sets, random-game rotation history, and the fetch queue are stored in SQLite in the container's `/data` volume.
+The application serves the game and its JSON API from one lightweight Node process. Guests can play without an account. Registered players earn tokens and collect digital auction items; accounts, sessions, rewarded game progress, inventories, auctions, daily sets, and the fetch queue persist in SQLite in the container's `/data` volume. Device-only game statistics remain separate for each account and for guests.
+
+## Accounts, registration codes and cases
+
+Set `ADMIN_USERNAME` and `ADMIN_PASSWORD` in your Compose `.env` before starting the service. Usernames use 3–32 ASCII letters, numbers, underscores or hyphens (case-insensitive); passwords require 12–128 characters. Both admin variables must be supplied together. With both omitted, guest play stays available, but there is no initial admin to issue registration codes.
+
+Sign in through **Anmelden / Kisten**, then open **Registrierungscodes**. Admins can generate 1–50 single-use codes at a time, see whether they have been used, and revoke unused codes. Copy new codes immediately: their full values are shown only after generation, and only hashes are stored. Registration requires a username, password and valid code; no email or third-party login is used.
+
+On restart, the configured admin is created if absent. Changing its configured password updates that admin and invalidates its sessions. An existing regular user cannot be promoted by choosing its name in the environment. Changing the configured username creates a separate admin; existing admins are retained. Keep credentials out of source control. Passwords use salted scrypt hashes, sessions are stored as hashes and expire after 30 days, and authentication is rate-limited. Compose enables Secure, HttpOnly, SameSite=Strict cookies for the HTTPS tunnel. Set `COOKIE_SECURE=false` only when testing over local HTTP; never use it for the public deployment.
+
+Each account starts with **0 tokens**. One rewarded run is available per **UTC day**, shared between Daily and Higher or Lower:
+
+- The first submitted answer reserves that day's rewarded run. Refreshing or returning to the same unfinished run resumes it, including on another device. Starting a screen without answering does not consume the allowance.
+- Completing all five Daily guesses pays **100 tokens**, regardless of score.
+- Higher or Lower pays **20 tokens per correct comparison** once the final streak reaches **3**, capped at **200 tokens**. Payment happens on a miss or deck completion. A shorter run pays zero and still uses that day's allowance.
+- Additional games are practice and cannot earn more tokens. A new allowance arrives with the Daily reset at **00:00 UTC**. An abandoned run must be resumed before that reset; old runs cannot pay out afterward.
+
+The **Fundkiste** costs 100 tokens; the **Schatzkiste** costs 250. Each opening draws one digital auction collectible, saves it immediately to the inventory, then plays a decelerating reel animation (instant reveal with reduced motion). Keep the item, sell it immediately, or open another case. Items can also be sold from the inventory. Tokens cannot be bought with real money, transferred, or redeemed for cash; collectibles do not confer ownership of the real auction lots.
+
+| Rarity | Sale value | Fundkiste weight | Schatzkiste weight |
+| --- | ---: | ---: | ---: |
+| Common | 10 | 60 | 15 |
+| Uncommon | 25 | 25 | 30 |
+| Rare | 70 | 10 | 35 |
+| Epic | 180 | 4 | 15 |
+| Legendary | 500 | 1 | 5 |
+
+Rarity is a heuristic based on `0.8 * min(1, log10(price + 1) / 5) + 0.2 / sqrt(similar-family-size)`, with thresholds 0.32, 0.46, 0.60 and 0.78. Price is the archived final price when available, otherwise the current bid. Similar product families contribute one representative each, so duplicate listings do not increase a family's draw odds. Within a rarity, each family is equally likely. Weights for unavailable rarities are excluded and the remaining weights are normalized; the UI displays those actual percentages before purchase. If contents change, opening pauses for a fresh review of the odds. Collected items keep their original rarity and resale value even when the archive changes.
+
+The server chooses draws using cryptographic randomness. SQLite transactions make charging and item creation atomic; request IDs make case retries safe, and repeated sales or reward submissions cannot credit tokens twice. Logged-in Higher or Lower keeps future prices out of its game response and validates each comparison on the server. Guest endpoints remain public practice data; this is a casual game, not a competitive anti-cheat system. Back up the full `/data` volume, using SQLite's backup API or stopping the container before copying it.
 
 ## Run with Docker
 

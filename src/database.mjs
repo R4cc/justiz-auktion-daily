@@ -11,7 +11,7 @@ function readLegacyJson(filename, fallback) {
   return JSON.parse(readFileSync(filename, 'utf8'));
 }
 
-function transaction(database, work) {
+export function transaction(database, work) {
   database.exec('BEGIN IMMEDIATE');
   try {
     const result = work();
@@ -242,7 +242,7 @@ function openDatabase(dataDir) {
   return database;
 }
 
-function withDatabase(dataDir, work) {
+export function withDatabase(dataDir, work) {
   return work(openDatabase(dataDir));
 }
 
