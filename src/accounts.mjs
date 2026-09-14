@@ -3,6 +3,11 @@ import { promisify } from 'node:util';
 import { withDatabase, transaction } from './database.mjs';
 import { drawItem, tokenValue } from './cases.mjs';
 import { scoreGuess } from './core.mjs';
+import { AccountError } from './errors.mjs';
+import { ensureResaleSchema } from './resale.mjs';
+import { marketCategoryForItem } from './market.mjs';
+
+export { AccountError };
 
 const derive = promisify(scrypt);
 const digest = value => createHash('sha256').update(value).digest('hex');
@@ -10,11 +15,8 @@ const day = now => new Date(now).toISOString().slice(0, 10);
 const SESSION_MS = 30 * 86400000;
 export const STARTING_TOKENS = 1000;
 const DEFAULT_REWARDS = { daily: 100, higherLowerPerCorrect: 20, higherLowerMax: 200, minimumStreak: 3 };
-export class AccountError extends Error {
-  constructor(code, status = 400) { super(code); this.status = status; }
-}
 const fail = (code, status) => { throw new AccountError(code, status); };
-const currentItemValue = item => ({ ...item, sellValue: tokenValue(item.price) });
+const currentItemValue = item => ({ ...item, sellValue: tokenValue(item.price), marketCategory: marketCategoryForItem(item) });
 const collectibleIdentity = item => JSON.stringify([item.auctionId, item.title, item.image, item.price, item.rarity, tokenValue(item.price)]);
 const rewardRates = value => Object.fromEntries(Object.entries(DEFAULT_REWARDS).map(([key, fallback]) =>
   [key, Number.isSafeInteger(value?.[key]) && value[key] > 0 ? value[key] : fallback]));
@@ -45,7 +47,8 @@ export class Accounts {
       CREATE TABLE IF NOT EXISTS users (
         id TEXT PRIMARY KEY, username TEXT NOT NULL COLLATE NOCASE UNIQUE,
         password_hash TEXT NOT NULL, admin INTEGER NOT NULL DEFAULT 0, banned INTEGER NOT NULL DEFAULT 0,
-        tokens INTEGER NOT NULL DEFAULT 0 CHECK(tokens >= 0), created_at INTEGER NOT NULL
+        grants_seen_at INTEGER NOT NULL DEFAULT 0,
+        tokens INTEGER NOT NULL DEFAULT 0 CHECK(tokens >= 0), xp INTEGER NOT NULL DEFAULT 0, created_at INTEGER NOT NULL
       ) STRICT;
       CREATE TABLE IF NOT EXISTS account_sessions (
         hash TEXT PRIMARY KEY, user_id TEXT NOT NULL REFERENCES users(id), expires INTEGER NOT NULL
@@ -96,6 +99,14 @@ export class Accounts {
       `);
       const columns = db.prepare('PRAGMA table_info(users)').all().map(column => column.name);
       if (!columns.includes('banned')) db.exec('ALTER TABLE users ADD COLUMN banned INTEGER NOT NULL DEFAULT 0');
+      if (!columns.includes('grants_seen_at')) {
+        db.exec('ALTER TABLE users ADD COLUMN grants_seen_at INTEGER NOT NULL DEFAULT 0');
+        // Grants that predate the migration stay unannounced.
+        db.prepare('UPDATE users SET grants_seen_at = ?').run(this.now());
+      }
+      // Resale listings reference inventory rows; creating the tables here keeps
+      // the sell/list locking consistent for every database this class opens.
+      ensureResaleSchema(db);
     });
   }
   db(work) { return withDatabase(this.dataDir, work); }
@@ -113,8 +124,8 @@ export class Accounts {
       if (existing) {
         db.prepare('UPDATE users SET password_hash = ? WHERE id = ?').run(hash, existing.id);
         db.prepare('DELETE FROM account_sessions WHERE user_id = ?').run(existing.id);
-      } else db.prepare('INSERT INTO users (id, username, password_hash, admin, tokens, created_at) VALUES (?, ?, ?, 1, ?, ?)')
-        .run(randomUUID(), username, hash, STARTING_TOKENS, this.now());
+      } else db.prepare('INSERT INTO users (id, username, password_hash, admin, tokens, created_at, grants_seen_at) VALUES (?, ?, ?, 1, ?, ?, ?)')
+        .run(randomUUID(), username, hash, STARTING_TOKENS, this.now(), this.now());
     });
   }
   throttle(key, limit = 30) {
@@ -154,8 +165,8 @@ export class Accounts {
         .run(this.now(), codeHash);
       if (!result.changes) fail('invalid_code');
       const id = randomUUID();
-      db.prepare('INSERT INTO users (id, username, password_hash, tokens, created_at) VALUES (?, ?, ?, ?, ?)')
-        .run(id, username, hash, STARTING_TOKENS, this.now());
+      db.prepare('INSERT INTO users (id, username, password_hash, tokens, created_at, grants_seen_at) VALUES (?, ?, ?, ?, ?, ?)')
+        .run(id, username, hash, STARTING_TOKENS, this.now(), this.now());
       return this.session(db, id);
     });
   }
@@ -252,10 +263,16 @@ export class Accounts {
   }
   profile(user) {
     return this.db(db => {
-      const row = db.prepare('SELECT id, username, admin, tokens FROM users WHERE id = ?').get(user.id);
+      const row = db.prepare('SELECT id, username, admin, tokens, created_at, grants_seen_at FROM users WHERE id = ?').get(user.id);
       const reward = db.prepare(`SELECT daily_rewards.earned, account_games.mode, account_games.complete FROM daily_rewards
         JOIN account_games ON run_id = account_games.id WHERE daily_rewards.user_id = ? AND daily_rewards.date = ?`).get(user.id, day(this.now()));
-      return { ...row, ...this.summary(db, user.id), admin: Boolean(row.admin), reward: reward || null, date: day(this.now()) };
+      // Token gifts are consumed on read, so every grant is announced exactly once.
+      const gifts = [...db.prepare('SELECT amount, created_at FROM user_token_grants WHERE user_id = ? AND created_at > ?').all(user.id, row.grants_seen_at),
+        ...db.prepare('SELECT amount, created_at FROM token_grants WHERE created_at > ? AND created_at >= ?').all(row.grants_seen_at, row.created_at)]
+        .sort((left, right) => left.created_at - right.created_at).map(gift => ({ amount: gift.amount, createdAt: gift.created_at }));
+      db.prepare('UPDATE users SET grants_seen_at = ? WHERE id = ?').run(this.now(), user.id);
+      const { created_at, grants_seen_at, ...publicRow } = row;
+      return { ...publicRow, ...this.summary(db, user.id), admin: Boolean(row.admin), reward: reward || null, gifts, date: day(this.now()) };
     });
   }
   summary(db, userId) {
@@ -343,7 +360,10 @@ export class Accounts {
       if (!box) fail('invalid_case');
       if (!box.weights.some(Boolean)) fail('empty_catalog', 503);
       if (!db.prepare('UPDATE users SET tokens = tokens - ? WHERE id = ? AND tokens >= ?').run(box.cost, user.id, box.cost).changes) fail('insufficient_tokens', 409);
-      const item = { ...drawItem(catalog, box), id: randomUUID(), caseId, caseCost: box.cost,
+      // marketCategory is frozen with the item, like rarity and sellValue.
+      const drawn = drawItem(catalog, box);
+      const item = { ...drawn, id: randomUUID(), caseId, caseCost: box.cost,
+        marketCategory: marketCategoryForItem(drawn),
         edition: catalog.rotationDate, createdAt: this.now() };
       db.prepare('INSERT INTO inventory (id, user_id, item, created_at) VALUES (?, ?, ?, ?)').run(item.id, user.id, JSON.stringify(item), this.now());
       db.prepare('INSERT INTO case_openings VALUES (?, ?, ?, ?)').run(user.id, requestId, caseId, JSON.stringify(item));
@@ -354,6 +374,8 @@ export class Accounts {
     return this.atomic(db => {
       const row = db.prepare('SELECT * FROM inventory WHERE id = ? AND user_id = ?').get(String(id), user.id);
       if (!row) fail('item_not_found', 404);
+      // Items in a live resale auction are locked; the listing owns their fate.
+      if (db.prepare(`SELECT 1 FROM resale_auctions WHERE inventory_id = ? AND status = 'active'`).get(row.id)) fail('item_listed', 409);
       const item = currentItemValue(JSON.parse(row.item));
       if (row.sold_at === null) {
         db.prepare('UPDATE inventory SET sold_at = ? WHERE id = ?').run(this.now(), row.id);
@@ -369,6 +391,8 @@ export class Accounts {
       const identity = collectibleIdentity(JSON.parse(selected.item));
       const rows = db.prepare('SELECT id, item FROM inventory WHERE user_id = ? AND sold_at IS NULL').all(user.id)
         .filter(row => collectibleIdentity(JSON.parse(row.item)) === identity);
+      const listed = new Set(db.prepare(`SELECT inventory_id AS id FROM resale_auctions WHERE status = 'active'`).all().map(row => row.id));
+      if (rows.some(row => listed.has(row.id))) fail('item_listed', 409);
       const value = rows.reduce((sum, row) => sum + currentItemValue(JSON.parse(row.item)).sellValue, 0);
       const balance = db.prepare('SELECT tokens FROM users WHERE id = ?').get(user.id).tokens;
       if (!Number.isSafeInteger(balance + value)) fail('token_balance_limit', 409);

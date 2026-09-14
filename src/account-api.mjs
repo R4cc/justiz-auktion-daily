@@ -3,6 +3,9 @@ import { caseRewards, loadCaseCatalog, publicCaseCatalog, rotationDate } from '.
 import { readArchive } from './database.mjs';
 import { higherLowerDeck } from './higher-lower.mjs';
 import { auctionGallery } from './auction-images.mjs';
+import { featureFlags } from './features.mjs';
+import { saveNewsEvent } from './news.mjs';
+import { cancelListing, listItem, listingsByUser, placeBid } from './resale.mjs';
 
 const AUCTION_PAGE_SIZE = 25;
 
@@ -45,7 +48,7 @@ async function body(request) {
   } catch { throw new AccountError('invalid_json'); }
 }
 
-export async function createAccountApi({ dataDir, dailyPayload, json, env = process.env }) {
+export async function createAccountApi({ dataDir, dailyPayload, json, env = process.env, flags = featureFlags(env) }) {
   const accounts = new Accounts(dataDir);
   await accounts.bootstrap(env.ADMIN_USERNAME, env.ADMIN_PASSWORD);
   const secure = env.COOKIE_SECURE !== 'false' && (env.COOKIE_SECURE === 'true' || env.NODE_ENV === 'production');
@@ -68,6 +71,7 @@ export async function createAccountApi({ dataDir, dailyPayload, json, env = proc
         else {
           if (!user) throw new AccountError('login_required', 401);
           if (route === 'inventory') json(response, 200, { items: accounts.inventory(user) });
+          else if (route === 'resale/listings' && flags.resales) json(response, 200, { listings: listingsByUser(dataDir, user.id) });
           else if (route === 'friends') json(response, 200, accounts.friends(user));
           else if (route === 'codes') json(response, 200, { codes: accounts.listCodes(user) });
           else if (route === 'admin') json(response, 200, accounts.adminOverview(user));
@@ -112,6 +116,15 @@ export async function createAccountApi({ dataDir, dailyPayload, json, env = proc
       else if (route === 'admin/grant-tokens') result = { grant: accounts.grantTokens(user, payload.amount, payload.requestId), user: accounts.profile(user) };
       else if (route === 'admin/grant-user-tokens') result = { grant: accounts.grantUserTokens(user, payload.userId, payload.amount, payload.requestId), user: accounts.profile(user) };
       else if (route === 'admin/ban') result = { ban: accounts.banUser(user, payload.userId, payload.banned) };
+      else if (route === 'admin/news' && flags.news) {
+        if (!user.admin) throw new AccountError('forbidden', 403);
+        result = { event: saveNewsEvent(dataDir, payload) };
+      }
+      else if (flags.resales && route === 'resale/listings') {
+        result = { listing: listItem(dataDir, user, payload), user: accounts.profile(user) };
+      }
+      else if (flags.resales && route === 'resale/bid') result = { listing: placeBid(dataDir, user, payload.id, payload.amount), user: accounts.profile(user) };
+      else if (flags.resales && route === 'resale/cancel') result = { listing: cancelListing(dataDir, user, payload.id), user: accounts.profile(user) };
       else if (route === 'friends/request') {
         accounts.throttle(`friend-request:${user.id}`, 20);
         accounts.requestFriend(user, payload.username); result = accounts.friends(user);

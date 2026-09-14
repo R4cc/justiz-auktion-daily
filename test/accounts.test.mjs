@@ -121,6 +121,25 @@ test('admins ban and unban players, revoking sessions, blocking logins and hidin
   await service.login({ username: 'alice', password });
 });
 
+test('admin token gifts are announced exactly once on the next profile read', async t => {
+  const { service, admin, register, nextDay } = await fixture(t);
+  const alice = await register('Alice');
+  assert.deepEqual(service.profile(alice).gifts, []);
+  nextDay();
+  service.grantUserTokens(admin, alice.id, 250, 'gift-user-test-0001');
+  service.grantUserTokens(admin, alice.id, 125, 'gift-user-test-0002');
+  const profile = service.profile(alice);
+  assert.deepEqual(profile.gifts.map(gift => gift.amount), [250, 125]);
+  assert.ok(!JSON.stringify(profile).includes('grants_seen_at'));
+  assert.deepEqual(service.profile(alice).gifts, []);
+  nextDay();
+  service.grantTokens(admin, 100, 'gift-bulk-test-0001');
+  assert.deepEqual(service.profile(alice).gifts.map(gift => gift.amount), [100]);
+  assert.deepEqual(service.profile(admin).gifts.map(gift => gift.amount), [100]);
+  const bob = await register('Bob');
+  assert.deepEqual(service.profile(bob).gifts, []);
+});
+
 test('registration codes are single-use and admin-only; credentials, sessions and bootstrap persist safely', async t => {
   const { service, dir, admin, register } = await fixture(t);
   const [code] = service.codes(admin, 2);

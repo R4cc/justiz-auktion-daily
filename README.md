@@ -45,6 +45,10 @@ Legendary drops occur **0.1%** of the time. The common-to-legendary ticket weigh
 
 The server chooses draws using cryptographic randomness. SQLite transactions make charging and item creation atomic; request IDs make case retries safe, and repeated sales or reward submissions cannot credit tokens twice. Logged-in Higher or Lower keeps future prices out of its game response and validates each comparison on the server. Guest endpoints remain public practice data; this is a casual game, not a competitive anti-cheat system. Back up the full `/data` volume, using SQLite's backup API or stopping the container before copying it.
 
+## Auction economy foundation (experimental)
+
+The repository carries a flag-gated technical foundation for the coming auction economy: market categories with a global per-category index, a news-event store with structural market effects, player resale auctions of inventory items (with item locking, so a listed item cannot be sold or listed twice), and a "Mystery Palette" vocabulary over the existing case system. None of it changes gameplay, and every system stays invisible until enabled: set `FEATURE_NEWS`, `FEATURE_MARKET`, `FEATURE_RESALES`, or `FEATURE_PALETTES` to `1` to expose the corresponding read-only endpoints (resale mutations and admin news seeding ride along behind the first two flags). See [`docs/auction-economy-foundation.md`](docs/auction-economy-foundation.md) for the schema, API contracts, compatibility decisions, and the explicit list of intentionally unfinished mechanics.
+
 ## Run with Docker
 
 ```bash

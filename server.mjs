@@ -1,5 +1,6 @@
 import { auctionGallery } from './src/auction-images.mjs';
 import { createAccountApi } from './src/account-api.mjs';
+import { createEconomyApi } from './src/economy-api.mjs';
 import { higherLowerDeck } from './src/higher-lower.mjs';
 import {
   createServer
@@ -903,6 +904,8 @@ await maybeScheduleDiscovery({
 
 const accountApi = await createAccountApi({ dataDir, dailyPayload, json });
 
+const economyApi = createEconomyApi({ dataDir, json });
+
 const server =
   createServer(
     {
@@ -919,6 +922,8 @@ const server =
             request.url,
             `http://${request.headers.host || 'localhost'}`
           );
+
+        if (await economyApi(request, response, url)) return;
 
         if (await accountApi(request, response, url)) return;
 

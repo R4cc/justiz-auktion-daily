@@ -45,7 +45,21 @@ function accountError(code) {
     invalid_grant_amount: t('Enter a whole number from 1 to 1,000,000 tokens.', 'Gib eine ganze Zahl von 1 bis 1.000.000 Tokens ein.'),
     invalid_grant_user: t('Choose a user to receive the tokens.', 'Wähle einen Benutzer aus, der die Tokens erhalten soll.'),
     request_conflict: t('This request was already used with different values.', 'Diese Anfrage wurde bereits mit anderen Werten verwendet.'),
-    account_banned: t('This account has been banned.', 'Dieses Konto wurde gesperrt.')
+    account_banned: t('This account has been banned.', 'Dieses Konto wurde gesperrt.'),
+    item_listed: t('This item is listed in a resale auction.', 'Dieser Gegenstand ist in einer Verkaufsauktion gelistet.'),
+    item_sold: t('This item has already been sold.', 'Dieser Gegenstand wurde bereits verkauft.'),
+    invalid_listing: t('This listing is not valid. Check price and end time.', 'Diese Auktion ist ungültig. Prüfe Startpreis und Endzeit.'),
+    auction_not_found: t('This auction is no longer available.', 'Diese Auktion ist nicht mehr verfügbar.'),
+    auction_ended: t('This auction has ended.', 'Diese Auktion ist beendet.'),
+    auction_has_bids: t('This auction already has bids and cannot be cancelled.', 'Diese Auktion hat bereits Gebote und kann nicht storniert werden.'),
+    own_auction: t('You cannot bid on your own auction.', 'Du kannst nicht auf deine eigene Auktion bieten.'),
+    bid_too_low: t('Your bid must beat the current highest bid.', 'Dein Gebot muss höher als das aktuelle Höchstgebot sein.'),
+    invalid_bid: t('Enter a whole number of tokens.', 'Gib eine ganze Zahl an Tokens ein.'),
+    invalid_market_effects: t('The market effect is not valid.', 'Der Markteffekt ist ungültig.'),
+    invalid_palette: t('The referenced palette is not valid.', 'Die referenzierte Palette ist ungültig.'),
+    invalid_status: t('The status is not valid.', 'Der Status ist ungültig.'),
+    invalid_title: t('Enter a title of 1–200 characters.', 'Gib einen Titel mit 1–200 Zeichen ein.'),
+    invalid_body: t('Enter a text of 1–4,000 characters.', 'Gib einen Text mit 1–4.000 Zeichen ein.')
   };
   return errors[code] || t('Something went wrong. Please try again.', 'Das hat nicht geklappt. Bitte versuche es erneut.');
 }
@@ -69,7 +83,17 @@ function updateNavigation() {
   auth.textContent = account ? `${account.username} · ${number(account.tokens)} ${t('tokens', 'Tokens')}` : t('Log in / Register', 'Anmelden / Registrieren');
   document.querySelector('.site-nav').setAttribute('aria-label', t('Main navigation', 'Hauptnavigation'));
 }
-function updateAccount(user) { account = user; updateNavigation(); }
+function giftToast(gifts) {
+  const total = gifts.reduce((sum, gift) => sum + gift.amount, 0);
+  return gifts.length === 1
+    ? t(`You were given ${number(total)} tokens.`, `Du hast ${number(total)} Tokens geschenkt bekommen.`)
+    : t(`You were given ${number(total)} tokens across ${gifts.length} gifts.`, `Du hast ${number(total)} Tokens aus ${gifts.length} Geschenken erhalten.`);
+}
+function updateAccount(user) {
+  account = user;
+  if (user?.gifts?.length) showToast(giftToast(user.gifts));
+  updateNavigation();
+}
 function updateAccountCatalog(catalog) {
   accountCatalog = catalog;
   window.justizRewards = catalog.rewards;
