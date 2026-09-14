@@ -235,7 +235,7 @@ function openDatabase(dataDir) {
     CREATE INDEX IF NOT EXISTS fetch_tasks_schedule_idx
       ON fetch_tasks(not_before, priority DESC);
 
-    PRAGMA user_version = 3;
+    PRAGMA user_version = 4;
   `);
   migrateLegacyFiles(database, resolvedDataDir);
   openDatabases.set(resolvedDataDir, database);

@@ -4,7 +4,7 @@ import { withDatabase, transaction } from './database.mjs';
 import { drawItem, tokenValue } from './cases.mjs';
 import { scoreGuess } from './core.mjs';
 import { AccountError } from './errors.mjs';
-import { ensureResaleSchema } from './resale.mjs';
+import { ensureResaleSchema, inventoryIsLocked, lockedInventoryIds } from './resale.mjs';
 import { marketCategoryForItem } from './market.mjs';
 
 export { AccountError };
@@ -106,7 +106,7 @@ export class Accounts {
       }
       // Resale listings reference inventory rows; creating the tables here keeps
       // the sell/list locking consistent for every database this class opens.
-      ensureResaleSchema(db);
+      ensureResaleSchema(db, this.now());
     });
   }
   db(work) { return withDatabase(this.dataDir, work); }
@@ -374,8 +374,9 @@ export class Accounts {
     return this.atomic(db => {
       const row = db.prepare('SELECT * FROM inventory WHERE id = ? AND user_id = ?').get(String(id), user.id);
       if (!row) fail('item_not_found', 404);
-      // Items in a live resale auction are locked; the listing owns their fate.
-      if (db.prepare(`SELECT 1 FROM resale_auctions WHERE inventory_id = ? AND status = 'active'`).get(row.id)) fail('item_listed', 409);
+      // Items in a live or ended-but-unsettled resale auction are locked; the
+      // listing owns their fate until settlement moves the item to the winner.
+      if (inventoryIsLocked(db, row.id)) fail('item_listed', 409);
       const item = currentItemValue(JSON.parse(row.item));
       if (row.sold_at === null) {
         db.prepare('UPDATE inventory SET sold_at = ? WHERE id = ?').run(this.now(), row.id);
@@ -391,7 +392,7 @@ export class Accounts {
       const identity = collectibleIdentity(JSON.parse(selected.item));
       const rows = db.prepare('SELECT id, item FROM inventory WHERE user_id = ? AND sold_at IS NULL').all(user.id)
         .filter(row => collectibleIdentity(JSON.parse(row.item)) === identity);
-      const listed = new Set(db.prepare(`SELECT inventory_id AS id FROM resale_auctions WHERE status = 'active'`).all().map(row => row.id));
+      const listed = lockedInventoryIds(db);
       if (rows.some(row => listed.has(row.id))) fail('item_listed', 409);
       const value = rows.reduce((sum, row) => sum + currentItemValue(JSON.parse(row.item)).sellValue, 0);
       const balance = db.prepare('SELECT tokens FROM users WHERE id = ?').get(user.id).tokens;

@@ -1,11 +1,13 @@
 # Auction Economy Foundation — Handoff Notes
 
-Status: **foundation only**. This document describes the technical groundwork
-for turning the case-opening game into an auction-centric economy (Mystery
-Palettes, news events, a global market, player resale auctions, XP/levels, and
-later Storage Wars and businesses). Gameplay mechanics, balancing, and
-simulation are intentionally **not** implemented. Every placeholder below is
-marked as such.
+Status: **foundation + resale transactional core**. This document describes the
+technical groundwork for turning the case-opening game into an auction-centric
+economy (Mystery Palettes, news events, a global market, player resale
+auctions, XP/levels, and later Storage Wars and businesses), including the
+resale-auction transactional foundation: **bid escrow, outbid refunds,
+settlement, seller payout, and inventory ownership transfer**. Gameplay
+mechanics, balancing, and simulation are intentionally **not** implemented.
+Every placeholder below is marked as such.
 
 Everything shipped here is additive and flag-gated: with no environment
 variables set, the live game behaves exactly as before.
@@ -20,13 +22,13 @@ variables set, the live game behaves exactly as before.
 | Feature flags | `src/features.mjs` | Env-driven, all default off |
 | Market categories + global market state | `src/market.mjs` | Category registry, mapping tables, neutral index store |
 | News events | `src/news.mjs` | Domain validation + persistence + public serialization |
-| Resale auctions | `src/resale.mjs` | Listings, bids, lazy close, item locking |
+| Resale auctions | `src/resale.mjs` | Listings, escrowed bids, lazy close + settlement, item locking, seller payout |
 | Palette terminology | `src/palettes.mjs` | Palette view over the case catalog (compatibility layer) |
 | Public read APIs | `src/economy-api.mjs` | Flag-gated GET endpoints |
 | Frontend data access | `dist/economy.js` | `window.justizEconomy` helpers, no UI |
-| Tests | `test/market.test.mjs`, `test/news.test.mjs`, `test/resale.test.mjs`, `test/palettes.test.mjs`, `test/economy-api.test.mjs` | 18 new tests; full suite green (82 tests) |
+| Tests | `test/market.test.mjs`, `test/news.test.mjs`, `test/resale.test.mjs`, `test/palettes.test.mjs`, `test/economy-api.test.mjs` | full suite green (89 tests) |
 
-## 2. Database changes (all additive, `PRAGMA user_version` bumped 2 → 3)
+## 2. Database changes (all additive, `PRAGMA user_version` bumped 2 → 3 → 4)
 
 No existing table, column, or row was modified or deleted. New tables are
 created lazily by their owning modules (`CREATE TABLE IF NOT EXISTS` on first
@@ -50,7 +52,9 @@ documented lock checks.
   `inventory_id → inventory` (**unique per active listing** via partial unique
   index), `start_price INTEGER`, `current_bid INTEGER`, `current_bidder_id`,
   `status CHECK IN ('active','ended','cancelled')`, `started_at`/`ends_at`/
-  `closed_at INTEGER` (epoch ms, matching the accounts tables), `winner_id`.
+  `closed_at`/`settled_at INTEGER` (epoch ms, matching the accounts tables),
+  `winner_id`. `settled_at` was added later via the `PRAGMA table_info` ALTER
+  pattern together with a one-time legacy cleanup (see §3, resale auctions).
 - `resale_bids` (`src/resale.mjs`) — `auction_id → resale_auctions`,
   `bidder_id → users`, `amount INTEGER CHECK > 0`, `created_at INTEGER`.
 - `users.xp` (`src/accounts.mjs`) — `INTEGER NOT NULL DEFAULT 0`, added via the
@@ -149,22 +153,77 @@ supply/demand logic exists.** Default index is 100 everywhere.
 
 1. **No duplication.** A listing references the original `inventory` row and
    serializes the item by joining it at read time. Nothing is ever copied or
-   minted.
+   minted; ownership moves **only** at settlement, by updating that same
+   row's `user_id`.
 2. **Single active listing per item**, enforced by a partial unique index
    (`WHERE status = 'active'`) plus an explicit pre-check.
-3. **Locking.** `accounts.sell` / `accounts.sellAll` refuse (`item_listed`,
-   409) any item with an active listing. `Accounts`' constructor creates the
-   resale tables so the lock check always has its target.
+3. **Locking.** One shared condition (`RESALE_LOCK_SQL` in `resale.mjs`, used
+   by `inventoryIsLocked`/`lockedInventoryIds`): an item is locked while its
+   auction is `active` **or** `ended` with a winner but not yet settled.
+   `accounts.sell`, `accounts.sellAll` and `listItem` all refuse (`item_listed`,
+   409) through those helpers — there is exactly one lock predicate in the
+   codebase. Settled, cancelled and bid-less lost auctions release the item;
+   after settlement only the winner, as the new owner, may relist.
 4. **Ownership.** Only the owner can list/cancel; listing someone else's row
    is a 404 (no existence leak). A sold item (`sold_at` set) cannot be listed.
-5. **Lazy deterministic close.** Any read/bid first closes due auctions:
-   `status='ended'`, `winner_id=current_bidder_id`. No timers, no cron.
-6. Bid rules: integer tokens, first bid ≥ `start_price`, later bids must beat
-   `current_bid` by ≥ 1, seller cannot bid, bidder's current balance must
-   cover the amount (advisory — **no escrow exists yet**).
-7. Cancel is only possible while active **and** bid-free; it releases the
-   item. An `ended` listing **with a winner** also blocks re-listing, so an
-   item cannot be sold twice while settlement is still pending.
+5. **Escrow at bid time.** A row's `current_bid` together with its
+   `current_bidder_id` **is** the escrow — no separate ledger table. Those
+   tokens were deducted from the bidder's `users.tokens` the moment the bid
+   was placed; `users.tokens` is always spendable balance and never counts
+   tokens held in bids. Consequences:
+   - First bid: the full amount is reserved atomically
+     (`UPDATE users SET tokens = tokens - ? WHERE tokens >= ?` — a rejected
+     debit can never partially apply).
+   - A different bidder outbids: new bidder is charged the full amount and
+     the previous holder is refunded their exact amount **in the same
+     transaction**. No intermediate state is observable.
+   - The current highest bidder raises their own bid: only the difference is
+     charged (no refund-then-recharge).
+   - A rejected bid (invalid amount, lowball, seller's own auction,
+     insufficient funds) changes no balances, no bid rows, no current bid.
+   - While an auction is live, exactly its `current_bid` is out of
+     circulation; bid transitions and settlement never create or destroy
+     tokens (asserted in tests via `SUM(tokens)`).
+6. **Deterministic lazy close.** Close and settlement are conceptually
+   separate steps. Any operation first closes due auctions
+   (`status='ended'`, `winner_id=current_bidder_id`). Reads (`getResale`,
+   `listResales`) additionally run settlement (`settleDueListings`) lazily —
+   that is the stand-in for a scheduler until one exists. `settleAuction(id)`
+   and `settleDueListings()` are the explicit entry points a future scheduler
+   should call; no cron infrastructure exists yet.
+7. **Settlement (idempotent).** For an ended auction with a winner, one
+   transaction verifies: not already settled; the seller still owns the
+   inventory row; the item is not sold; the escrow is internally consistent
+   (winner = current bidder, positive amount, winner ≠ seller). It then
+   transfers the inventory row (`UPDATE inventory SET user_id = winner`),
+   credits the seller with the escrowed amount, and stamps `settled_at` with
+   a guarded `UPDATE ... WHERE settled_at IS NULL` — the database-level
+   idempotency guarantee. Repeat calls return the settled state unchanged:
+   no second payout, transfer, or winner-balance change. The winner already
+   paid at bid time and is never charged at settlement. Ended without bids:
+   only `settled_at` is stamped; the seller keeps the item, no tokens move.
+8. **Settlement robustness.** All verification happens before any write, so a
+   failure rolls back with nothing half-settled. `settleDueListings` settles
+   each due auction in its own transaction and reports (instead of throwing)
+   per-auction failures: a corrupted listing stays ended-but-unsettled — and
+   therefore locked — rather than silently destroying tokens or blocking the
+   others. A direct `settleAuction` call surfaces the error
+   (`escrow_inconsistent`/`settlement_conflict`). Settlement is a pure
+   database operation: it does not depend on sessions or login state.
+9. Bid rules: integer tokens, first bid ≥ `start_price`, later bids must beat
+   `current_bid` by ≥ 1, seller cannot bid, balance must cover the charge.
+10. Cancel is only possible while active **and** bid-free; it releases the
+   item (no escrow can exist on a bid-free auction, so no refund path is
+   needed there).
+11. **Legacy foundation rows.** Foundation bids were advisory (no tokens
+   moved), so a foundation auction with a high bidder can never settle under
+   escrow rules without minting tokens. When the `settled_at` column is
+   added to an existing database, a one-time cleanup cancels every auction
+   that already has a `current_bidder_id` — nothing was ever escrowed, so
+   there is nothing to refund; `resale_bids` history rows stay untouched and
+   the item is released. Bid-free auctions simply continue under the new
+   rules. The feature is flag-gated and was never live, so this only affects
+   development databases.
 
 ## 4. APIs added
 
@@ -194,7 +253,11 @@ Authenticated, under the existing account API conventions (session cookie,
 Listing serialization (camelCase, matching project payload conventions):
 `{ id, sellerId, sellerUsername, inventoryId, item: { title, image, price,
 rarity, marketCategory }, startPrice, currentBid, bidCount, status, startedAt,
-endsAt, winnerId, closedAt, bids? }`.
+endsAt, winnerId, closedAt, settledAt, bids? }`. `settledAt` is the only
+settlement field exposed; escrow internals are not serialized (the escrow
+amount is simply `currentBid`). There are intentionally no HTTP endpoints for
+settlement — reads settle lazily, and a future scheduler calls the module
+functions directly.
 
 There are intentionally **no** HTTP endpoints for `setMarketIndex` — market
 writes belong to the future simulation, not to clients.
@@ -228,8 +291,9 @@ writes belong to the future simulation, not to clients.
 - Bidding UX, real-time updates (no websocket infrastructure exists).
 - XP curves, levels, level-gated content (`users.xp` is a reserved column).
 - Storage Wars and businesses (do not build).
-- Auction settlement economics: **no escrow, no token movement, no item
-  transfer** — see §7.
+- Settlement economics are **done** (escrow, refunds, payout, transfer — see
+  §3 and §7.5); what is still missing for later passes is XP awarding and a
+  real settlement scheduler.
 
 ## 7. Extension points for the next implementation
 
@@ -254,16 +318,19 @@ writes belong to the future simulation, not to clients.
 4. **NPC bidding** — `resale_bids.bidder_id` currently always references a
    real user. Options: pseudo-user rows in `users` (admin-flagged), or a
    nullable `bidder_id` + new `npc` columns. `placeBid` is the transactional
-   pattern to copy. Decide escrow first (see below).
-5. **Auction settlement (the big TODO)** — when an auction ends with a
-   winner, someone must (a) move tokens (escrow at bid time vs. payment at
-   settlement), (b) transfer the inventory row (`UPDATE inventory SET user_id
-   = winner`) — never insert a copy, (c) award XP (`users.xp` is waiting), and
-   (d) release/complete the listing. `closeDueListings` in `resale.mjs` is the
-   hook where winner determination already happens; settlement should be a
-   separate transactional step invoked by your scheduler after close. Note the
-   guard: an ended-with-winner listing blocks re-listing precisely so
-   settlement cannot race a resale.
+   pattern to copy; escrow semantics already work for any user row (NPC
+   winners would need their escrow funded like anyone else's, or settlement
+   would need an explicit NPC branch).
+5. **Auction settlement — implemented.** Escrow at bid time, outbid refunds,
+   idempotent settlement, seller payout, and inventory transfer all live in
+   `src/resale.mjs` (`placeBid`, `settleAuction`, `settleDueListings`; see
+   §3). What remains for later passes: XP awards at settlement
+   (`users.xp` is waiting — settlement is the natural hook) and replacing
+   lazy read-driven settlement with a scheduler that calls
+   `settleDueListings` on a cadence. The close/settlement split is already
+   shaped for that: `closeDueListings` determines winners,
+   `settleListingRow` moves value and ownership, and both are idempotent
+   under repeated invocation.
 6. **XP / levels** — write to `users.xp` from settlement and game rewards
    (`accounts.answer` is where token rewards land today). Design the curve
    later; expose via `accounts.profile` when needed.
@@ -272,13 +339,13 @@ writes belong to the future simulation, not to clients.
 
 ## 8. TODOs
 
-- [ ] Escrow design for bids (current balance check is advisory only; a
-      bidder can spend tokens after bidding).
-- [ ] Settlement implementation (see §7.5) — until then, winners are recorded
-      but nothing is paid or transferred.
 - [ ] News authoring UI/admin page (the `admin/news` POST is API-only).
 - [ ] Frontend pages for news/market/resales (data layer in `economy.js` is
       ready; no routes, no UI, no styles exist).
+- [ ] XP awards on settlement and game rewards (design the curve first;
+      `settleListingRow` is the natural hook).
+- [ ] Scheduler that closes + settles due listings on a cadence (today reads
+      do it lazily via `settleDueListings`).
 - [ ] Decide whether `Getränke` should split from `wine` (data-only change in
       `market.mjs`).
 - [ ] Runtime wiring of `marketHistory`/snapshots into any UI or simulation.
@@ -287,13 +354,17 @@ writes belong to the future simulation, not to clients.
 
 ## 9. Design decisions to reconsider before core mechanics
 
-- **"Bidder pays at settlement, not at bid"**: there is no token hold. If you
-  keep this, cap concurrent bids per user; if you escrow, `placeBid` needs a
-  release path on outbid. This choice drives NPC design too.
-- **Lazy close instead of a scheduler**: deterministic and test-friendly, but
-  winners only exist once someone looks at the listing. A scheduler that
-  closes + settles on a cadence will probably replace `closeDueListings`
-  calls in reads.
+- **Escrow representation**: `current_bid` + `current_bidder_id` double as the
+  escrow (tokens are deducted from balances at bid time; see §3). This avoids
+  a ledger table entirely. If auctions ever need to distinguish "escrowed"
+  from "winning amount" (fees, partial refunds), add an explicit
+  `escrow_amount` column then — do not fork the meaning of `current_bid`
+  silently.
+- **Lazy close/settlement instead of a scheduler**: deterministic and
+  test-friendly, but winners only exist and get paid once someone reads a
+  listing. A scheduler calling `settleDueListings` on a cadence will probably
+  replace the lazy settlement in reads (the lazy close in mutation paths can
+  stay).
 - **`marketCategory` frozen on items vs. derived**: new items store it (like
   `rarity`/`sellValue`), legacy items derive. If the mapping table changes
   later, legacy items' effective category changes with it — decide whether to
