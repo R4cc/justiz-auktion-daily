@@ -1,5 +1,5 @@
 let account = null, accountCatalog = null, accountItems = [], accountCodes = [], freshCodes = [];
-let accountFriends = { friends: [], date: '' }, accountAdmin = { playerCount: 0, grants: [] };
+let accountFriends = { friends: [], date: '' }, accountAdmin = { playerCount: 0, users: [], grants: [], userGrants: [] };
 let accountBusy = false, accountDailyRun = null, accountResult = null;
 let caseOpening = null;
 const caseReveal = document.createElement('dialog');
@@ -37,6 +37,7 @@ function accountError(code) {
     friend_limit: t('The limit of 100 friends and pending requests has been reached.', 'Das Limit von 100 Freunden und offenen Anfragen wurde erreicht.'),
     friend_request_not_found: t('That request is no longer available. Refresh your profile.', 'Diese Anfrage ist nicht mehr verfügbar. Aktualisiere dein Profil.'),
     invalid_grant_amount: t('Enter a whole number from 1 to 1,000,000 tokens.', 'Gib eine ganze Zahl von 1 bis 1.000.000 Tokens ein.'),
+    invalid_grant_user: t('Choose a user to receive the tokens.', 'Wähle einen Benutzer aus, der die Tokens erhalten soll.'),
     request_conflict: t('This request was already used with different values.', 'Diese Anfrage wurde bereits mit anderen Werten verwendet.')
   };
   return errors[code] || t('Something went wrong. Please try again.', 'Das hat nicht geklappt. Bitte versuche es erneut.');
@@ -192,7 +193,10 @@ function friendsMarkup() {
 function renderAdmin() {
   accountContent.innerHTML = pageHeading(t('Admin desk.', 'Adminbereich.'), t('Invite players and give your community a token boost.', 'Lade Spieler ein und schenke deiner Community Tokens.'));
   if (!account?.admin) { accountContent.innerHTML += `<p class="collection-empty">${t('Log in with an admin account to access this page.', 'Melde dich mit einem Adminkonto an, um diese Seite zu nutzen.')}</p>`; return; }
-  accountContent.innerHTML += `<section class="admin-section"><h2>${t('Give players tokens', 'Spielern Tokens geben')}</h2><p>${t(`Give a custom amount to every existing account, including admins (${accountAdmin.playerCount} currently). Accounts registered afterwards will not receive this grant.`, `Gib jedem bestehenden Konto inklusive Admins einen Betrag deiner Wahl (aktuell ${accountAdmin.playerCount}). Später registrierte Konten erhalten diese Gutschrift nicht.`)}</p>
+  accountContent.innerHTML += `<section class="admin-section"><h2>${t('Give one user tokens', 'Einem Benutzer Tokens geben')}</h2><p>${t('Credit a specific existing account. This adds to their current balance.', 'Schreibe einem bestimmten bestehenden Konto Tokens gut. Der Betrag wird zum aktuellen Guthaben addiert.')}</p>
+    <form id="user-grant-form" class="grant-form"><label>${t('User', 'Benutzer')}<select name="userId" required><option value="">${t('Choose a user', 'Benutzer wählen')}</option>${accountAdmin.users.map(user => `<option value="${accountEscape(user.id)}">${accountEscape(user.username)} · ${number(user.tokens)} ${t('tokens', 'Tokens')}${user.admin ? ' · Admin' : ''}</option>`).join('')}</select></label><label>${t('Tokens', 'Tokens')}<input name="amount" type="number" min="1" max="1000000" step="1" value="100" required></label><button class="primary-button" type="submit">${t('Give tokens', 'Tokens geben')}</button><p class="account-error" role="alert"></p></form>
+    <div class="grant-history">${accountAdmin.userGrants.map(grant => `<p>${new Date(grant.createdAt).toLocaleString(uiLocale())} · ${accountEscape(grant.username)} · +${number(grant.amount)} ${t('tokens', 'Tokens')}</p>`).join('')}</div></section>
+    <section class="admin-section"><h2>${t('Give all players tokens', 'Allen Spielern Tokens geben')}</h2><p>${t(`Give a custom amount to every existing account, including admins (${accountAdmin.playerCount} currently). Accounts registered afterwards will not receive this grant.`, `Gib jedem bestehenden Konto inklusive Admins einen Betrag deiner Wahl (aktuell ${accountAdmin.playerCount}). Später registrierte Konten erhalten diese Gutschrift nicht.`)}</p>
     <form id="grant-form" class="grant-form"><label>${t('Tokens per player', 'Tokens pro Spieler')}<input name="amount" type="number" min="1" max="1000000" step="1" value="100" required></label><button class="primary-button" type="submit">${t('Give tokens to all current players', 'Tokens an alle aktuellen Spieler geben')}</button><p class="account-error" role="alert"></p></form>
     <div class="grant-history">${accountAdmin.grants.map(grant => `<p>${new Date(grant.createdAt).toLocaleString(uiLocale())} · ${number(grant.amount)} ${t('tokens each', 'Tokens je Spieler')} · ${grant.recipients} ${t('players', 'Spieler')}</p>`).join('')}</div></section>
     <section class="admin-section"><h2>${t('Registration codes', 'Registrierungscodes')}</h2><p>${t('Each code allows one registration. Full codes are shown only just after creation.', 'Jeder Code erlaubt eine Registrierung. Vollständige Codes werden nur direkt nach dem Erstellen angezeigt.')}</p>
@@ -329,7 +333,7 @@ document.addEventListener('click', async event => {
   }
 });
 document.addEventListener('submit', async event => {
-  if (!event.target.matches('#account-form, #code-form, #friend-form, #grant-form')) return;
+  if (!event.target.matches('#account-form, #code-form, #friend-form, #grant-form, #user-grant-form')) return;
   event.preventDefault(); if (accountBusy) return; accountBusy = true;
   const visit = accountVisit, form = event.target, page = currentAccountPage, button = form.querySelector('button[type="submit"]'); button.disabled = true;
   try {
@@ -341,6 +345,14 @@ document.addEventListener('submit', async event => {
     } else if (form.id === 'friend-form') {
       const result = await accountApi('friends/request', { username: data.username.trim() });
       if (visit === accountVisit) { accountFriends = result; renderAccountPage(); }
+    } else if (form.id === 'user-grant-form') {
+      const amount = Number(data.amount), key = `justizguessr:pending-user-grant:${account.id}:${data.userId}:${amount}`;
+      let requestId; try { requestId = localStorage.getItem(key); } catch {}
+      requestId ||= crypto.randomUUID(); try { localStorage.setItem(key, requestId); } catch {}
+      const result = await accountApi('admin/grant-user-tokens', { userId: data.userId, amount, requestId });
+      try { localStorage.removeItem(key); } catch {}
+      updateAccount(result.user);
+      if (visit === accountVisit) { await navigateAccountPage('/admin', false); showToast(t(`Gave ${number(result.grant.amount)} tokens to ${result.grant.username}.`, `${result.grant.username} hat ${number(result.grant.amount)} Tokens erhalten.`)); }
     } else if (form.id === 'grant-form') {
       const amount = Number(data.amount), key = `justizguessr:pending-grant:${account.id}:${amount}`;
       let requestId; try { requestId = localStorage.getItem(key); } catch {}

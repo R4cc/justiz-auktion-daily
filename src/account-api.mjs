@@ -69,6 +69,7 @@ export async function createAccountApi({ dataDir, dailyPayload, json, env = proc
         result = { user: null };
       } else if (route === 'codes') result = { codes: accounts.codes(user, payload.count) };
       else if (route === 'admin/grant-tokens') result = { grant: accounts.grantTokens(user, payload.amount, payload.requestId), user: accounts.profile(user) };
+      else if (route === 'admin/grant-user-tokens') result = { grant: accounts.grantUserTokens(user, payload.userId, payload.amount, payload.requestId), user: accounts.profile(user) };
       else if (route === 'friends/request') {
         accounts.throttle(`friend-request:${user.id}`, 20);
         accounts.requestFriend(user, payload.username); result = accounts.friends(user);

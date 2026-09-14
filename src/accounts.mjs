@@ -86,6 +86,11 @@ export class Accounts {
         amount INTEGER NOT NULL CHECK(amount > 0), recipients INTEGER NOT NULL,
         created_at INTEGER NOT NULL, PRIMARY KEY(admin_id, request_id)
       ) STRICT;
+      CREATE TABLE IF NOT EXISTS user_token_grants (
+        admin_id TEXT NOT NULL REFERENCES users(id), request_id TEXT NOT NULL,
+        user_id TEXT NOT NULL REFERENCES users(id), amount INTEGER NOT NULL CHECK(amount > 0),
+        created_at INTEGER NOT NULL, PRIMARY KEY(admin_id, request_id)
+      ) STRICT;
     `));
   }
   db(work) { return withDatabase(this.dataDir, work); }
@@ -177,8 +182,15 @@ export class Accounts {
   }
   adminOverview(user) {
     if (!user.admin) fail('forbidden', 403);
-    return this.db(db => ({ playerCount: db.prepare('SELECT COUNT(*) AS count FROM users').get().count,
-      grants: db.prepare('SELECT amount, recipients, created_at AS createdAt FROM token_grants ORDER BY created_at DESC, rowid DESC LIMIT 20').all() }));
+    return this.db(db => ({
+      playerCount: db.prepare('SELECT COUNT(*) AS count FROM users').get().count,
+      users: db.prepare('SELECT id, username, admin, tokens FROM users ORDER BY username COLLATE NOCASE').all()
+        .map(row => ({ ...row, admin: Boolean(row.admin) })),
+      grants: db.prepare('SELECT amount, recipients, created_at AS createdAt FROM token_grants ORDER BY created_at DESC, rowid DESC LIMIT 20').all(),
+      userGrants: db.prepare(`SELECT g.amount, g.created_at AS createdAt, u.username
+        FROM user_token_grants g JOIN users u ON u.id = g.user_id
+        ORDER BY g.created_at DESC, g.rowid DESC LIMIT 20`).all().map(row => ({ ...row }))
+    }));
   }
   grantTokens(user, amount, requestId) {
     if (!user.admin) fail('forbidden', 403);
@@ -197,6 +209,28 @@ export class Accounts {
       const createdAt = this.now();
       db.prepare('INSERT INTO token_grants VALUES (?, ?, ?, ?, ?)').run(user.id, requestId, amount, recipients, createdAt);
       return { amount, recipients, createdAt };
+    });
+  }
+  grantUserTokens(user, userId, amount, requestId) {
+    if (!user.admin) fail('forbidden', 403);
+    if (!Number.isSafeInteger(amount) || amount < 1 || amount > 1000000) fail('invalid_grant_amount');
+    if (typeof userId !== 'string' || !userId) fail('invalid_grant_user');
+    if (typeof requestId !== 'string' || !/^[a-zA-Z0-9-]{16,80}$/.test(requestId)) fail('invalid_request');
+    return this.atomic(db => {
+      const previous = db.prepare(`SELECT g.user_id AS userId, g.amount, g.created_at AS createdAt, u.username
+        FROM user_token_grants g JOIN users u ON u.id = g.user_id
+        WHERE g.admin_id = ? AND g.request_id = ?`).get(user.id, requestId);
+      if (previous) {
+        if (previous.userId !== userId || previous.amount !== amount) fail('request_conflict', 409);
+        return { ...previous };
+      }
+      const target = db.prepare('SELECT id, username, tokens FROM users WHERE id = ?').get(userId);
+      if (!target) fail('user_not_found', 404);
+      if (!Number.isSafeInteger(target.tokens + amount)) fail('token_balance_limit', 409);
+      db.prepare('UPDATE users SET tokens = tokens + ? WHERE id = ?').run(amount, target.id);
+      const createdAt = this.now();
+      db.prepare('INSERT INTO user_token_grants VALUES (?, ?, ?, ?, ?)').run(user.id, requestId, target.id, amount, createdAt);
+      return { userId: target.id, username: target.username, amount, createdAt };
     });
   }
   profile(user) {

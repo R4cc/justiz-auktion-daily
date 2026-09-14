@@ -710,7 +710,8 @@ button:focus-visible, a:focus-visible { outline: 3px solid var(--red); outline-o
 .admin-section > p, .admin-section li { font-size: 13px; line-height: 1.8; color: var(--muted); }
 .grant-form { display: flex; flex-wrap: wrap; gap: 14px; align-items: end; margin: 24px 0; }
 .grant-form label { display: grid; gap: 8px; font-size: 13px; font-weight: 700; }
-.grant-form input { width: 180px; padding: 12px; border: 1px solid var(--line); border-radius: 8px; background: #fffdf7; }
+.grant-form input, .grant-form select { width: 180px; padding: 12px; border: 1px solid var(--line); border-radius: 8px; color: var(--ink); background: #fffdf7; font: inherit; }
+.grant-form select { width: min(320px, 100%); }
 .grant-form .account-error { flex-basis: 100%; }
 .grant-history p { font: 12px 'DM Mono', monospace; line-height: 1.8; color: var(--muted); }
 .inventory-heading h2 { font-size: 22px; margin: 0; }

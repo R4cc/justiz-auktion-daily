@@ -261,6 +261,40 @@ test('bulk grants reject regular users and invalid amounts without changing bala
   assert.equal(service.adminOverview(admin).grants.length, 0);
 });
 
+test('single-user grants credit only the selected account and safely retry across restarts', async t => {
+  const { service, admin, register, dir } = await fixture(t);
+  const alice = await register('Alice'), bob = await register('Bob');
+  const request = 'user-grant-test-0001';
+  const grant = service.grantUserTokens(admin, alice.id, 735, request);
+  assert.deepEqual(grant, { userId: alice.id, username: 'Alice', amount: 735, createdAt: grant.createdAt });
+  assert.equal(service.profile(alice).tokens, STARTING_TOKENS + 735);
+  assert.equal(service.profile(bob).tokens, STARTING_TOKENS);
+  assert.equal(service.profile(admin).tokens, STARTING_TOKENS);
+  assert.deepEqual(service.grantUserTokens(admin, alice.id, 735, request), grant);
+  assert.throws(() => service.grantUserTokens(admin, bob.id, 735, request), /request_conflict/);
+  assert.throws(() => service.grantUserTokens(admin, alice.id, 736, request), /request_conflict/);
+  closeDataStore(dir);
+  const reopened = new Accounts(dir);
+  assert.deepEqual(reopened.grantUserTokens(admin, alice.id, 735, request), grant);
+  assert.equal(reopened.profile(alice).tokens, STARTING_TOKENS + 735);
+  const overview = reopened.adminOverview(admin);
+  assert.deepEqual(overview.userGrants[0], { username: 'Alice', amount: 735, createdAt: grant.createdAt });
+  assert.deepEqual(overview.users.map(user => user.username), ['admin', 'Alice', 'Bob']);
+  assert.ok(overview.users.every(user => !('password_hash' in user)));
+});
+
+test('single-user grants reject non-admins, missing users and invalid values', async t => {
+  const { service, admin, register } = await fixture(t);
+  const player = await register('Player');
+  assert.throws(() => service.grantUserTokens(player, admin.id, 100, 'user-grant-test-0001'), { status: 403 });
+  assert.throws(() => service.grantUserTokens(admin, 'missing', 100, 'user-grant-test-0001'), { status: 404 });
+  assert.throws(() => service.grantUserTokens(admin, '', 100, 'user-grant-test-0001'), /invalid_grant_user/);
+  for (const amount of [0, -1, 1.5, 1_000_001, '100', null]) {
+    assert.throws(() => service.grantUserTokens(admin, player.id, amount, 'user-grant-test-0001'), /invalid_grant_amount/);
+  }
+  assert.equal(service.profile(player).tokens, STARTING_TOKENS);
+});
+
 test('public case editions expose their prices and contents without draw probabilities', () => {
   const catalog = publicCaseCatalog(caseCatalog(lots));
   assert.deepEqual(catalog.cases.slice(0, 2).map(box => box.name), ['Seized Goods Case', 'Contraband Case']);
@@ -318,6 +352,7 @@ test('HTTP API enforces authentication, CSRF headers, admin permissions and sess
   const grantBody = { amount: 400, requestId: 'bulk-grant-api-0001' };
   assert.equal((await fetch(base + 'admin', { headers: { cookie: playerCookie } })).status, 403);
   assert.equal((await post('admin/grant-tokens', grantBody, playerCookie)).status, 403);
+  assert.equal((await post('admin/grant-user-tokens', { ...grantBody, userId: player.id }, playerCookie)).status, 403);
   assert.equal((await post('admin/grant-tokens', grantBody, cookie, { 'x-requested-with': '' })).status, 403);
   const grant = await (await post('admin/grant-tokens', grantBody, cookie)).json();
   assert.equal(grant.grant.recipients, 2);
@@ -325,7 +360,15 @@ test('HTTP API enforces authentication, CSRF headers, admin permissions and sess
   const later = await (await post('register', { username: 'later', password, code: codes.codes[1] })).json();
   assert.equal(later.user.tokens, STARTING_TOKENS);
   assert.deepEqual((await (await post('admin/grant-tokens', grantBody, cookie)).json()).grant, grant.grant);
-  assert.equal((await (await fetch(base + 'admin', { headers: { cookie } })).json()).playerCount, 3);
+  const userGrantBody = { userId: player.id, amount: 125, requestId: 'user-grant-api-0001' };
+  const userGrant = await (await post('admin/grant-user-tokens', userGrantBody, cookie)).json();
+  assert.equal(userGrant.grant.username, 'player');
+  assert.equal(userGrant.grant.amount, 125);
+  assert.deepEqual((await (await post('admin/grant-user-tokens', userGrantBody, cookie)).json()).grant, userGrant.grant);
+  const adminOverview = await (await fetch(base + 'admin', { headers: { cookie } })).json();
+  assert.equal(adminOverview.playerCount, 3);
+  assert.equal(adminOverview.userGrants[0].username, 'player');
+  assert.ok(adminOverview.users.some(user => user.id === player.id && user.tokens === STARTING_TOKENS + 400 + 125));
   let rewarded = (await (await post('games/start', { mode: 'daily' }, playerCookie)).json()).run;
   assert.deepEqual(rewarded.rewards, publicCatalog.rewards);
   for (let i = 0; i < 5; i++) rewarded = (await (await post('games/answer', { id: rewarded.id, position: i, answer: lots[i].actualBid }, playerCookie)).json()).run;
