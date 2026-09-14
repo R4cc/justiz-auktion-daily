@@ -1,8 +1,7 @@
 import { featureFlags } from './features.mjs';
-import { rotationDate, loadCaseCatalog } from './cases.mjs';
 import { marketState } from './market.mjs';
+import { loadPaletteCatalog } from './palette-definitions.mjs';
 import { listPublishedNews } from './news.mjs';
-import { publicPaletteCatalog } from './palettes.mjs';
 import { listResales, getResale } from './resale.mjs';
 import { AccountError } from './errors.mjs';
 
@@ -10,11 +9,6 @@ import { AccountError } from './errors.mjs';
 // Every route is off until its feature flag is enabled; disabled routes fall
 // through (404) so unfinished systems never surface to normal players.
 export function createEconomyApi({ dataDir, json, flags = featureFlags() }) {
-  let catalog;
-  function getCatalog() {
-    if (!catalog || catalog.rotationDate !== rotationDate()) catalog = loadCaseCatalog(dataDir);
-    return catalog;
-  }
   const limited = (value, fallback, max) => Math.min(Math.max(Number(value) || fallback, 1), max);
   return (request, response, url) => {
     if (request.method !== 'GET' || !url.pathname.startsWith('/api/')) return false;
@@ -28,7 +22,9 @@ export function createEconomyApi({ dataDir, json, flags = featureFlags() }) {
         return true;
       }
       if (flags.palettes && url.pathname === '/api/palettes') {
-        json(response, 200, publicPaletteCatalog(getCatalog()));
+        // Persisted palette catalog: frozen editions with evaluated
+        // availability; the legacy case catalog is untouched by this.
+        json(response, 200, loadPaletteCatalog(dataDir));
         return true;
       }
       if (flags.resales && url.pathname === '/api/resales') {

@@ -55,7 +55,10 @@ function upsertAuction(statement, auction) {
   );
 }
 
-function setState(database, key, value, updatedAt = new Date().toISOString()) {
+// Shared app_state access. Exported db-scoped so domains can keep durable
+// markers (e.g. the market simulation activation) in the same store without
+// each owning their own key/value table.
+export function setState(database, key, value, updatedAt = new Date().toISOString()) {
   updatedAt ||= new Date().toISOString();
   database.prepare(`
     INSERT INTO app_state (key, value_json, updated_at)
@@ -66,7 +69,7 @@ function setState(database, key, value, updatedAt = new Date().toISOString()) {
   `).run(key, JSON.stringify(value), updatedAt);
 }
 
-function getState(database, key, fallback) {
+export function getState(database, key, fallback) {
   const row = database.prepare('SELECT value_json FROM app_state WHERE key = ?').get(key);
   return row ? JSON.parse(row.value_json) : fallback;
 }
@@ -234,9 +237,11 @@ function openDatabase(dataDir) {
 
     CREATE INDEX IF NOT EXISTS fetch_tasks_schedule_idx
       ON fetch_tasks(not_before, priority DESC);
-
-    PRAGMA user_version = 4;
   `);
+  // Bump the schema marker without ever lowering a newer one (a database
+  // opened by a newer code version keeps its marker).
+  const schemaVersion = database.prepare('PRAGMA user_version').get().user_version;
+  if (schemaVersion < 6) database.exec('PRAGMA user_version = 6');
   migrateLegacyFiles(database, resolvedDataDir);
   openDatabases.set(resolvedDataDir, database);
   return database;
@@ -258,11 +263,18 @@ export function closeDataStore(dataDir) {
   openDatabases.delete(resolvedDataDir);
 }
 
+// Db-scoped, read-only archive access for code already inside a transaction
+// (e.g. palette edition generation during news publication). Never opens or
+// expects a transaction itself.
+export function readArchiveRows(database) {
+  return { auctions: database.prepare('SELECT payload_json FROM auctions ORDER BY id').all()
+    .map(row => JSON.parse(row.payload_json)) };
+}
+
 export function readArchive(dataDir) {
   return withDatabase(dataDir, database => ({
     updatedAt: getState(database, 'archive_updated_at', null),
-    auctions: database.prepare('SELECT payload_json FROM auctions ORDER BY id').all()
-      .map(row => JSON.parse(row.payload_json))
+    ...readArchiveRows(database)
   }));
 }
 

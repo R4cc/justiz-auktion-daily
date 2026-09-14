@@ -6,6 +6,7 @@ import path from 'node:path';
 import { createServer } from 'node:http';
 import { createAccountApi } from '../src/account-api.mjs';
 import { createEconomyApi } from '../src/economy-api.mjs';
+import { marketState } from '../src/market.mjs';
 import { featureFlags } from '../src/features.mjs';
 import { closeDataStore, upsertAuctions } from '../src/database.mjs';
 
@@ -56,23 +57,38 @@ test('economy endpoints expose news, global market, palettes and resale listings
   const endsAt = new Date(Date.now() + 3600_000).toISOString();
   const login = await post(base, 'login', { username: 'admin', password });
   const cookie = login.headers.get('set-cookie');
-  // Admin news tooling seeds the public feed.
+  // Admin news tooling seeds the public feed with a real market effect.
   const news = await post(base, 'admin/news', { id: 'news-tool-bust', title: 'Tool importer busted',
-    body: 'Seized tools will be auctioned soon.', status: 'published', paletteIds: ['tools'],
-    marketEffects: [{ category: 'tools', direction: 'down' }] }, cookie);
+    body: 'Seized tools will be auctioned soon.', status: 'published',
+    marketEffects: [{ category: 'tools', direction: 'down', magnitude: 4 }] }, cookie);
   assert.equal(news.status, 200);
   const publicNews = await (await fetch(`${base}/api/news`)).json();
   assert.deepEqual(publicNews.news.map(item => item.id), ['news-tool-bust']);
-  assert.deepEqual(publicNews.news[0].marketEffects, [{ category: 'tools', direction: 'down', magnitude: null }]);
+  assert.deepEqual(publicNews.news[0].marketEffects, [{ category: 'tools', direction: 'down', magnitude: 4 }]);
   // Non-admins cannot seed news; bad events are rejected.
   assert.equal((await post(base, 'admin/news', { title: 'x', body: 'y' })).status, 401);
   assert.equal((await post(base, 'admin/news', { title: '', body: 'y' }, cookie)).status, 400);
+  assert.equal((await post(base, 'admin/news', { id: 'x', title: 'x', body: 'y', status: 'published',
+    marketEffects: [{ category: 'tools', direction: 'down' }] }, cookie)).status, 400);
   const market = await (await fetch(`${base}/api/market`)).json();
   assert.ok(market.categories.length >= 8);
-  assert.ok(market.categories.every(category => category.currentIndex === 100 && category.baseIndex === 100));
+  // The publication moved its category deterministically; the rest stays neutral.
+  assert.equal(market.categories.find(category => category.category === 'tools').currentIndex, 96);
+  assert.ok(market.categories.filter(category => category.category !== 'tools')
+    .every(category => category.currentIndex === 100 && category.baseIndex === 100));
   const palettes = await (await fetch(`${base}/api/palettes`)).json();
   assert.ok(palettes.palettes.some(palette => palette.id === 'fundkiste'));
   assert.doesNotMatch(JSON.stringify(palettes), /"(?:odds|weights|chance)":/);
+  // The persisted edition catalog exposes frozen edition metadata and no
+  // purchase path.
+  const fundkiste = palettes.palettes.find(palette => palette.id === 'fundkiste');
+  assert.equal(fundkiste.kind, 'base');
+  assert.equal(fundkiste.rewardCount, 3);
+  assert.equal(fundkiste.acquisitionMode, 'auction');
+  assert.equal(fundkiste.purchasable, false);
+  assert.ok(fundkiste.editionId.startsWith('base:fundkiste:'));
+  assert.ok(fundkiste.story.fictional);
+  assert.equal(fundkiste.available, fundkiste.availability === 'available');
   // Resale flow over HTTP: list an owned item, see it publicly, sell attempt blocked.
   const catalogResponse = await (await fetch(`${base}/api/account/cases`)).json();
   const opened = await (await post(base, 'cases/open', { caseId: 'fundkiste', requestId: 'economy-open-000001',
@@ -102,4 +118,19 @@ test('account api hides resale routes entirely while the resales flag is off', a
   assert.equal((await fetch(`${base}/api/market`)).status, 404);
   assert.equal((await fetch(`${base}/api/palettes`)).status, 404);
   assert.equal((await fetch(`${base}/api/resales`)).status, 404);
+});
+
+test('publication registers market effects even while the market endpoint is hidden', async t => {
+  const { dir, base } = await fixture(t, {
+    ADMIN_USERNAME: 'admin', ADMIN_PASSWORD: password, COOKIE_SECURE: 'true',
+    FEATURE_NEWS: '1' // market flag deliberately off
+  });
+  const login = await post(base, 'login', { username: 'admin', password });
+  const cookie = login.headers.get('set-cookie');
+  assert.equal((await fetch(`${base}/api/market`)).status, 404);
+  const news = await (await post(base, 'admin/news', { id: 'hidden-market-bust', title: 'Wine cellar seized',
+    body: 'B.', status: 'published', marketEffects: [{ category: 'wine', direction: 'up', magnitude: 6 }] }, cookie)).json();
+  assert.equal(news.event.status, 'published');
+  const state = marketState(dir);
+  assert.equal(state.categories.find(category => category.category === 'wine').currentIndex, 106);
 });

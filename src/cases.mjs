@@ -31,7 +31,9 @@ export function itemRarity(price, familySize) {
   return RARITIES[[.32, .46, .60, .78].filter(threshold => score >= threshold).length];
 }
 
-function matchesTheme(item, theme) {
+// Exported so palette editions can reuse the exact legacy theme semantics
+// (vehicle parts are not cars, spirits are not wine). Do not add new rules here.
+export function matchesTheme(item, theme) {
   if (theme === 'mixed' || theme === 'premium') return true;
   const category = auctionSelectionCategory(item), title = normalizeSelectionText(item.title);
   if (theme === 'cars') return category === 'Fahrzeuge' &&
@@ -57,8 +59,15 @@ function tierSizes(length) {
   return sizes;
 }
 
-function edition(definition, families, dayIndex) {
-  let stock = families.map(family => family.filter(item => matchesTheme(item, definition.category))).filter(family => family.length).map(family => {
+// Shared tiered pool construction for case editions and palette editions:
+// eligibility filtering, one representative per deduplicated family (chosen by
+// the selection index), value-rank ordering, the premium trim, tier sizing and
+// caps, and deterministic per-tier offsets. Case editions keep their theme
+// predicate; palette event editions pass a market-category eligibility. This
+// is the single rarity algorithm — do not fork it.
+export function buildEditionItems(definition, families, dayIndex, eligible = null) {
+  const predicate = eligible || (item => matchesTheme(item, definition.category));
+  let stock = families.map(family => family.filter(predicate)).filter(family => family.length).map(family => {
     const auction = family[dayIndex % family.length];
     const price = auction.finalPrice ?? auction.currentBid;
     return { auctionId: auction.id, title: auction.title, image: auctionGallery(auction)[0],
@@ -79,7 +88,11 @@ function edition(definition, families, dayIndex) {
       }
     });
   }
-  const items = selected.map(item => ({ ...item, sellValue: tokenValue(item.price) }));
+  return selected.map(item => ({ ...item, sellValue: tokenValue(item.price) }));
+}
+
+function edition(definition, families, dayIndex) {
+  const items = buildEditionItems(definition, families, dayIndex);
   const available = items.length >= 5;
   const totalWeight = CASE_WEIGHTS.reduce((sum, weight) => sum + weight, 0);
   const expectedValue = available ? RARITIES.reduce((sum, rarity, tier) => {
