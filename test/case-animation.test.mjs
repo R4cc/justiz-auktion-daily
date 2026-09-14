@@ -28,6 +28,7 @@ function opening(reduced) {
   const item = { id: 'pull', rarity: 'legendary', title: 'SECRET WINNER', image: '/secret.jpg', caseId: 'test' };
   const status = { innerHTML: '' };
   const context = vm.createContext({
+    Math: Object.assign(Object.create(Math), { random: () => 0.5 }),
     account: { id: 'user' }, accountCatalog: { cases: [{ id: 'test', items: [{ rarity: 'common', title: 'SECRET DECOY', image: '/decoy.jpg' }] }], revision: 'edition' },
     accountSelectedCase: 'test', accountVisit: 1, accountResult: null, caseOpening: null,
     accountApi: async () => ({ user: { id: 'user' }, item }),
@@ -56,17 +57,20 @@ for (const reduced of [false, true]) {
       assert.equal(run.revealed, 0);
       delays.push(await run.tick());
     }
-    assert.deepEqual(delays, reduced ? [80, 90, 110, 140, 180, 240, 320, 420, 540, 680, 820, 1000] : [5200]);
-    assert.equal(run.elapsed, reduced ? 4620 : 5200);
+    assert.deepEqual(delays, reduced ? [80, 90, 110, 140, 180, 240, 320, 420, 540, 680, 820, 1000] : [5050]);
+    assert.equal(run.elapsed, reduced ? 4620 : 5050);
     assert.equal(run.revealed, 0);
     assert.match(run.status.innerHTML, /legendary/);
     assert.ok(run.frames.every(frame => !/SECRET|<img|secret.jpg|decoy.jpg/.test(frame)));
     if (reduced) {
       assert.equal(run.reel.children.length, 42);
-      assert.deepEqual(run.transforms, [...Array(12)].map((_, step) => `translateX(${165 - step * 546}px)`).concat('translateX(-6023px)'));
+      // random() = 0.5 seeds winner 34 and a dead-center landing bias of 85px.
+      const winner = 28 + Math.floor(0.5 * 12), at = index => -(index * (170 + 12) + 170 * (0.25 + 0.5 * 0.5) - 500 / 2);
+      const stops = [...Array(12)].map((_, step) => Math.round(winner * (step + 1) / 12));
+      assert.deepEqual(run.transforms, stops.map(index => `translateX(${at(index)}px)`).concat(`translateX(${at(winner)}px)`));
     }
     await run.tick(); await done;
-    assert.equal(run.elapsed, reduced ? 5370 : 5950);
+    assert.equal(run.elapsed, reduced ? 5370 : 5800);
     assert.equal(run.revealed, 1);
     assert.equal(run.context.accountResult.title, 'SECRET WINNER');
     assert.equal(run.context.caseOpening, null);

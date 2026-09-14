@@ -280,11 +280,19 @@ export function selectDailySet(auctions, dateKey, previousSets = {}, count = 5, 
   const byId = new Map(auctions.map(item => [Number(item?.id), item]));
   const families = buildAuctionFamilies([...auctions, ...history]);
   const active = item => (!item.endAt || Date.parse(item.endAt) > now) && Number.isFinite(item.currentBid) && item.currentBid > 0;
-  const rank = (item, selected = []) => qualityScore(item, now) + (active(item) ? 100 : 0)
-    - (recentCategories.get(auctionSelectionCategory(item)) || 0) * 12
-    + (selected.some(other => priceBand(other.currentBid) === priceBand(item.currentBid)) ? 0 : 20)
-    + (selected.some(other => endSlot(other.endAt) === endSlot(item.endAt)) ? -50 : 35)
-    + deterministicJitter(dateKey, item.id) * 12;
+  // Scaling contract for rank (bigger is picked first):
+  //   active bonus 40000   – hard tier: playable lots before archived ones
+  //   jitter * 3000        – the day's random draw; must dominate everything below so
+  //                          crawl-state (bid counts, quality flags) cannot decide picks
+  //   * 10 heuristics <=~2700 – soft tie-breakers the jitter may override at will
+  const rank = (item, selected = []) => (active(item) ? 40000 : 0)
+    + deterministicJitter(dateKey, item.id) * 3000
+    + 10 * (
+      qualityScore(item, now)
+      - (recentCategories.get(auctionSelectionCategory(item)) || 0) * 12
+      + (selected.some(other => priceBand(other.currentBid) === priceBand(item.currentBid)) ? 0 : 20)
+      + (selected.some(other => endSlot(other.endAt) === endSlot(item.endAt)) ? -50 : 35)
+    );
   const candidates = [];
   for (const family of families) {
     if (family.some(item => used.has(Number(item.id)))) continue;

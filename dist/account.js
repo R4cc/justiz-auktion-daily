@@ -343,23 +343,24 @@ async function pullCase(visit) {
   try {
   const reel = accountContent.querySelector('.case-reel'), viewport = accountContent.querySelector('.case-window'), resultNode = accountContent.querySelector('.case-result');
   resultNode.innerHTML = `<h2>${t('The hammer is spinning…', 'Der Hammer kreist …')}</h2><p>${t('Revealing your find.', 'Dein Fund wird aufgedeckt.')}</p>`;
-  const winnerIndex = 34;
+  const winnerIndex = 28 + Math.floor(Math.random() * 12);
   const cards = Array.from({ length: 42 }, (_, index) => index === winnerIndex ? result.item : box.items[Math.floor(Math.random() * box.items.length)]);
   reel.innerHTML = cards.map(item => tierCard(item.rarity)).join('');
   const pause = ms => new Promise(resolve => setTimeout(resolve, ms));
   const width = reel.children[0].getBoundingClientRect().width;
-  const landingAt = index => index * (width + 12) + width / 2 - viewport.clientWidth / 2;
+  const landingBias = width * (0.25 + Math.random() * 0.5);
+  const landingAt = index => index * (width + 12) + landingBias - viewport.clientWidth / 2;
   if (matchMedia('(prefers-reduced-motion: reduce)').matches) {
     // Jump the full reel between centered stops, simulating a wheel without interpolation.
     const tierDelays = [80, 90, 110, 140, 180, 240, 320, 420, 540, 680, 820, 1000];
     for (let step = 0; step < tierDelays.length; step++) {
       if (visit !== accountVisit || !reel.isConnected) return;
-      reel.style.transform = `translateX(${-landingAt(step * 3)}px)`;
+      reel.style.transform = `translateX(${-landingAt(Math.round(winnerIndex * (step + 1) / tierDelays.length))}px)`;
       await pause(tierDelays[step]);
     }
     reel.style.transform = `translateX(${-landingAt(winnerIndex)}px)`;
   } else {
-  const animation = reel.animate([{ transform: 'translateX(0)' }, { transform: `translateX(${-landingAt(winnerIndex)}px)` }], { duration: 5200, easing: 'cubic-bezier(.12,.72,.12,1)', fill: 'forwards' });
+  const animation = reel.animate([{ transform: 'translateX(0)' }, { transform: `translateX(${-landingAt(winnerIndex)}px)` }], { duration: 4600 + Math.round(Math.random() * 900), easing: 'cubic-bezier(.12,.72,.12,1)', fill: 'forwards' });
   await animation.finished;
   }
   if (visit !== accountVisit || !reel.isConnected) return;

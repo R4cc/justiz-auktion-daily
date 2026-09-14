@@ -31,7 +31,7 @@ const USER_AGENT =
   'JUSTIZGUESSR/1.0 (+daily public auction indexer; respectful adaptive fetches)';
 
 const DAILY_SELECTION_VERSION =
-  4;
+  5;
 
 export const ROLLING_QUEUE_VERSION =
   5;
