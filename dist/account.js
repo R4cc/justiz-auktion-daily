@@ -1,5 +1,6 @@
 let account = null, accountCatalog = null, accountItems = [], accountCodes = [], freshCodes = [];
-let accountFriends = { friends: [], date: '' }, accountAdmin = { playerCount: 0, users: [], grants: [], userGrants: [] };
+let accountFriends = { friends: [], date: '' }, accountAdmin = { playerCount: 0, users: [], grants: [] };
+let accountLeaderboard = { date: '', leaders: [] }, adminUserFilter = '';
 let accountBusy = false, accountDailyRun = null, accountResult = null;
 let caseOpening = null;
 const caseReveal = document.createElement('dialog');
@@ -11,7 +12,7 @@ caseReveal.addEventListener('close', () => {
 });
 let accountSelectedCase = 'fundkiste', accountInventoryPage = 0, accountFilter = 'all';
 let currentAccountPage = null, accountVisit = 0, pageLoaded = false;
-const accountPaths = ['/shop', '/inventory', '/profile', '/login', '/register', '/admin'];
+const accountPaths = ['/shop', '/inventory', '/profile', '/login', '/register', '/admin', '/leaderboard'];
 const accountPage = document.querySelector('#account-page');
 const accountContent = document.querySelector('#account-content');
 const accountEscape = value => String(value ?? '').replace(/[&<>"']/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[char]);
@@ -38,7 +39,8 @@ function accountError(code) {
     friend_request_not_found: t('That request is no longer available. Refresh your profile.', 'Diese Anfrage ist nicht mehr verfügbar. Aktualisiere dein Profil.'),
     invalid_grant_amount: t('Enter a whole number from 1 to 1,000,000 tokens.', 'Gib eine ganze Zahl von 1 bis 1.000.000 Tokens ein.'),
     invalid_grant_user: t('Choose a user to receive the tokens.', 'Wähle einen Benutzer aus, der die Tokens erhalten soll.'),
-    request_conflict: t('This request was already used with different values.', 'Diese Anfrage wurde bereits mit anderen Werten verwendet.')
+    request_conflict: t('This request was already used with different values.', 'Diese Anfrage wurde bereits mit anderen Werten verwendet.'),
+    account_banned: t('This account has been banned.', 'Dieses Konto wurde gesperrt.')
   };
   return errors[code] || t('Something went wrong. Please try again.', 'Das hat nicht geklappt. Bitte versuche es erneut.');
 }
@@ -51,7 +53,7 @@ async function accountApi(route, payload) {
   return result;
 }
 function updateNavigation() {
-  const labels = { '/': t('Play', 'Spielen'), '/shop': 'Shop', '/inventory': t('Inventory', 'Inventar'), '/profile': t('Profile', 'Profil'), '/admin': 'Admin' };
+  const labels = { '/': t('Play', 'Spielen'), '/shop': 'Shop', '/inventory': t('Inventory', 'Inventar'), '/leaderboard': t('Leaderboard', 'Rangliste'), '/profile': t('Profile', 'Profil'), '/admin': 'Admin' };
   for (const link of document.querySelectorAll('.site-nav a')) {
     link.textContent = labels[link.getAttribute('href')];
     if (link.pathname === location.pathname) link.setAttribute('aria-current', 'page'); else link.removeAttribute('aria-current');
@@ -102,6 +104,9 @@ async function navigateAccountPage(path, push = true) {
     if (path === '/inventory' && account) {
       const result = await accountApi('inventory'); if (visit !== accountVisit || account?.id !== owner) return; accountItems = result.items;
     }
+    if (path === '/leaderboard') {
+      const result = await accountApi('leaderboard'); if (visit !== accountVisit) return; accountLeaderboard = result;
+    }
     if (path === '/profile' && account) {
       const result = await accountApi('friends'); if (visit !== accountVisit || account?.id !== owner) return; accountFriends = result;
     }
@@ -133,6 +138,7 @@ function renderAccountPage() {
   else if (currentAccountPage === '/inventory') renderInventory();
   else if (currentAccountPage === '/profile') renderProfile();
   else if (currentAccountPage === '/admin') renderAdmin();
+  else if (currentAccountPage === '/leaderboard') renderLeaderboard();
   else renderAuth();
 }
 function renderAuth() {
@@ -175,6 +181,13 @@ function dailyFriendLabel(daily) {
   if (daily.status === 'completed') return `${number(daily.score)} / ${number(5000)} ${t('pts', 'Pkt')}`;
   return daily.status === 'in_progress' ? t(`In progress · ${daily.completedRounds} / 5 lots`, `In Arbeit · ${daily.completedRounds} / 5 Lose`) : t('Not played yet', 'Noch nicht gespielt');
 }
+function renderLeaderboard() {
+  accountContent.innerHTML = pageHeading(t('Global leaderboard.', 'Globale Rangliste.'), t('The top 100 players, ranked by the auction value of their collection.', 'Die besten 100 Spieler, sortiert nach dem Auktionswert ihrer Sammlung.'));
+  const rows = accountLeaderboard.leaders.map(leader => `<tr${account?.id === leader.id ? ' class="is-me"' : ''}><td class="leaderboard-rank">${leader.rank}</td><td class="leaderboard-name">${accountEscape(leader.username)}</td>
+    <td>${leader.score === null ? t('Not played yet', 'Noch nicht gespielt') : `${number(leader.score)} / ${number(5000)} ${t('pts', 'Pkt')}`}</td><td>${euro(leader.inventoryValueEur)}</td></tr>`).join('');
+  accountContent.innerHTML += `<div class="friends-heading"><div><h2>${t('Top 100', 'Top 100')}</h2><p>${t('Daily for', 'Daily vom')} ${accountLeaderboard.date} · ${t('Resets at 00:00 UTC', 'Reset um 00:00 UTC')}</p></div><button data-account="refresh">${t('Refresh', 'Aktualisieren')}</button></div>
+    ${rows ? `<div class="leaderboard-wrap"><table class="leaderboard-table"><thead><tr><th scope="col">#</th><th scope="col">${t('Player', 'Spieler')}</th><th scope="col">${t('TODAY’S DAILY', 'HEUTIGES DAILY')}</th><th scope="col">${t('INVENTORY VALUE', 'INVENTARWERT')}</th></tr></thead><tbody>${rows}</tbody></table></div>` : `<p class="collection-empty">${t('No players yet. Register to claim the first rank.', 'Noch keine Spieler. Registriere dich für den ersten Platz.')}</p>`}`;
+}
 function rewardNote() {
   if (!account) return t('Log in before playing to earn tokens.', 'Melde dich vor dem Spielen an, um Tokens zu verdienen.');
   const rewards = accountCatalog?.rewards || { daily: 100, higherLowerMax: 200 };
@@ -200,13 +213,24 @@ function friendsMarkup() {
     <h3>${t('Your friends', 'Deine Freunde')} · ${accepted.length}</h3>
     ${accepted.length ? `<div class="friend-grid">${accepted.map(friend => `<article class="friend-card"><h4>${accountEscape(friend.username)}</h4><dl><div><dt>${t('TODAY’S DAILY', 'HEUTIGES DAILY')}</dt><dd>${dailyFriendLabel(friend.daily)}</dd></div><div><dt>${t('INVENTORY VALUE', 'INVENTARWERT')}</dt><dd>${euro(friend.inventoryValueEur)}</dd></div><div><dt>${t('COLLECTED ITEMS', 'GESAMMELTE LOSE')}</dt><dd>${friend.itemCount}</dd></div></dl><button data-account="friend-remove" data-id="${friend.id}">${t('Remove friend', 'Freund entfernen')}</button></article>`).join('')}</div>` : `<p class="collection-empty">${t('No friends yet. Send a request using their username.', 'Noch keine Freunde. Sende eine Anfrage über den Benutzernamen.')}</p>`}`;
 }
+function adminUserListMarkup() {
+  const query = adminUserFilter.trim().toLowerCase();
+  const filtered = accountAdmin.users.filter(user => user.username.toLowerCase().includes(query));
+  const rows = filtered.slice(0, 100).map(user => `<div class="user-row${user.banned ? ' is-banned' : ''}">
+    <div class="user-row-main"><strong>${accountEscape(user.username)}</strong><span>${number(user.tokens)} ${t('tokens', 'Tokens')}${user.admin ? ` · ${t('Admin', 'Admin')}` : ''}${user.banned ? ` · ${t('Banned', 'Gesperrt')}` : ''}</span></div>
+    <div class="user-row-actions">${user.admin ? '' : `<button data-account="ban-toggle" data-id="${accountEscape(user.id)}" data-banned="${user.banned ? 'true' : 'false'}">${user.banned ? t('Unban', 'Entsperren') : t('Ban', 'Sperren')}</button>`}<button data-account="grant-user" data-id="${accountEscape(user.id)}">${t('Give tokens', 'Tokens geben')}</button></div>
+  </div>`).join('');
+  const note = filtered.length > 100 ? t(`Showing 100 of ${filtered.length} players. Refine your search.`, `Zeige 100 von ${filtered.length} Spielern. Grenze die Suche weiter ein.`) :
+    filtered.length ? '' : t('No players match this search.', 'Keine Spieler gefunden.');
+  return rows + (note ? `<p class="admin-count">${note}</p>` : '');
+}
 function renderAdmin() {
-  accountContent.innerHTML = pageHeading(t('Admin desk.', 'Adminbereich.'), t('Invite players and give your community a token boost.', 'Lade Spieler ein und schenke deiner Community Tokens.'));
+  accountContent.innerHTML = pageHeading(t('Admin desk.', 'Adminbereich.'), t('Manage players, grant tokens and invite your community.', 'Verwalte Spieler, verschenke Tokens und lade deine Community ein.'));
   if (!account?.admin) { accountContent.innerHTML += `<p class="collection-empty">${t('Log in with an admin account to access this page.', 'Melde dich mit einem Adminkonto an, um diese Seite zu nutzen.')}</p>`; return; }
-  accountContent.innerHTML += `<section class="admin-section"><h2>${t('Give one user tokens', 'Einem Benutzer Tokens geben')}</h2><p>${t('Credit a specific existing account. This adds to their current balance.', 'Schreibe einem bestimmten bestehenden Konto Tokens gut. Der Betrag wird zum aktuellen Guthaben addiert.')}</p>
-    <form id="user-grant-form" class="grant-form"><label>${t('User', 'Benutzer')}<select name="userId" required><option value="">${t('Choose a user', 'Benutzer wählen')}</option>${accountAdmin.users.map(user => `<option value="${accountEscape(user.id)}">${accountEscape(user.username)} · ${number(user.tokens)} ${t('tokens', 'Tokens')}${user.admin ? ' · Admin' : ''}</option>`).join('')}</select></label><label>${t('Tokens', 'Tokens')}<input name="amount" type="number" min="1" max="1000000" step="1" value="100" required></label><button class="primary-button" type="submit">${t('Give tokens', 'Tokens geben')}</button><p class="account-error" role="alert"></p></form>
-    <div class="grant-history">${accountAdmin.userGrants.map(grant => `<p>${new Date(grant.createdAt).toLocaleString(uiLocale())} · ${accountEscape(grant.username)} · +${number(grant.amount)} ${t('tokens', 'Tokens')}</p>`).join('')}</div></section>
-    <section class="admin-section"><h2>${t('Give all players tokens', 'Allen Spielern Tokens geben')}</h2><p>${t(`Give a custom amount to every existing account, including admins (${accountAdmin.playerCount} currently). Accounts registered afterwards will not receive this grant.`, `Gib jedem bestehenden Konto inklusive Admins einen Betrag deiner Wahl (aktuell ${accountAdmin.playerCount}). Später registrierte Konten erhalten diese Gutschrift nicht.`)}</p>
+  accountContent.innerHTML += `<section class="admin-section"><h2>${t('Players', 'Spieler')}</h2><p>${t(`Search all ${accountAdmin.playerCount} players to give tokens to one account or ban it. Banned players are signed out immediately and cannot log back in.`, `Durchsuche alle ${accountAdmin.playerCount} Spieler, um einem Konto Tokens zu geben oder es zu sperren. Gesperrte Spieler werden sofort abgemeldet und können sich nicht mehr anmelden.`)}</p>
+    <div class="admin-toolbar"><label>${t('Search', 'Suche')}<input id="user-search" type="search" autocomplete="off" placeholder="${t('Username', 'Benutzername')}" value="${accountEscape(adminUserFilter)}"></label><label>${t('Tokens per grant', 'Tokens pro Grant')}<input id="grant-amount" type="number" min="1" max="1000000" step="1" value="100"></label></div>
+    <div id="user-list" class="user-list">${adminUserListMarkup()}</div>
+    <h3>${t('Give all players tokens', 'Allen Spielern Tokens geben')}</h3><p>${t(`Give a custom amount to every existing account, including admins (${accountAdmin.playerCount} currently). Accounts registered afterwards will not receive this grant.`, `Gib jedem bestehenden Konto inklusive Admins einen Betrag deiner Wahl (aktuell ${accountAdmin.playerCount}). Später registrierte Konten erhalten diese Gutschrift nicht.`)}</p>
     <form id="grant-form" class="grant-form"><label>${t('Tokens per player', 'Tokens pro Spieler')}<input name="amount" type="number" min="1" max="1000000" step="1" value="100" required></label><button class="primary-button" type="submit">${t('Give tokens to all current players', 'Tokens an alle aktuellen Spieler geben')}</button><p class="account-error" role="alert"></p></form>
     <div class="grant-history">${accountAdmin.grants.map(grant => `<p>${new Date(grant.createdAt).toLocaleString(uiLocale())} · ${number(grant.amount)} ${t('tokens each', 'Tokens je Spieler')} · ${grant.recipients} ${t('players', 'Spieler')}</p>`).join('')}</div></section>
     <section class="admin-section"><h2>${t('Registration codes', 'Registrierungscodes')}</h2><p>${t('Each code allows one registration. Full codes are shown only just after creation.', 'Jeder Code erlaubt eine Registrierung. Vollständige Codes werden nur direkt nach dem Erstellen angezeigt.')}</p>
@@ -330,6 +354,22 @@ document.addEventListener('click', async event => {
       if (visit === accountVisit) { renderAccountPage(); if (caseReveal.open) revealCaseItem(); showToast(t(`${result.value} tokens added.`, `${result.value} Tokens gutgeschrieben.`)); }
     }
     if (action === 'revoke') { await accountApi('codes/revoke', { id: button.dataset.id }); if (visit === accountVisit) await navigateAccountPage('/admin', false); }
+    if (action === 'grant-user') {
+      const owner = account.id, amount = Number(accountContent.querySelector('#grant-amount')?.value);
+      const key = `justizguessr:pending-user-grant:${owner}:${button.dataset.id}:${amount}`;
+      let requestId; try { requestId = localStorage.getItem(key); } catch {}
+      requestId ||= crypto.randomUUID(); try { localStorage.setItem(key, requestId); } catch {}
+      const result = await accountApi('admin/grant-user-tokens', { userId: button.dataset.id, amount, requestId });
+      try { localStorage.removeItem(key); } catch {}
+      if (account?.id !== owner) return;
+      updateAccount(result.user);
+      if (visit === accountVisit) { await navigateAccountPage('/admin', false); showToast(t(`Gave ${number(result.grant.amount)} tokens to ${result.grant.username}.`, `${result.grant.username} hat ${number(result.grant.amount)} Tokens erhalten.`)); }
+    }
+    if (action === 'ban-toggle') {
+      const banned = button.dataset.banned !== 'true';
+      const result = await accountApi('admin/ban', { userId: button.dataset.id, banned });
+      if (visit === accountVisit) { await navigateAccountPage('/admin', false); showToast(banned ? t(`${result.ban.username} has been banned.`, `${result.ban.username} wurde gesperrt.`) : t(`${result.ban.username} can log in again.`, `${result.ban.username} kann sich wieder anmelden.`)); }
+    }
     if (action === 'friend-accept' || action === 'friend-remove') {
       const result = await accountApi(action === 'friend-accept' ? 'friends/accept' : 'friends/remove', { id: button.dataset.id });
       if (visit === accountVisit) { accountFriends = result; renderAccountPage(); }
@@ -344,7 +384,7 @@ document.addEventListener('click', async event => {
   }
 });
 document.addEventListener('submit', async event => {
-  if (!event.target.matches('#account-form, #code-form, #friend-form, #grant-form, #user-grant-form')) return;
+  if (!event.target.matches('#account-form, #code-form, #friend-form, #grant-form')) return;
   event.preventDefault(); if (accountBusy) return; accountBusy = true;
   const visit = accountVisit, form = event.target, page = currentAccountPage, button = form.querySelector('button[type="submit"]'); button.disabled = true;
   try {
@@ -356,14 +396,6 @@ document.addEventListener('submit', async event => {
     } else if (form.id === 'friend-form') {
       const result = await accountApi('friends/request', { username: data.username.trim() });
       if (visit === accountVisit) { accountFriends = result; renderAccountPage(); }
-    } else if (form.id === 'user-grant-form') {
-      const amount = Number(data.amount), key = `justizguessr:pending-user-grant:${account.id}:${data.userId}:${amount}`;
-      let requestId; try { requestId = localStorage.getItem(key); } catch {}
-      requestId ||= crypto.randomUUID(); try { localStorage.setItem(key, requestId); } catch {}
-      const result = await accountApi('admin/grant-user-tokens', { userId: data.userId, amount, requestId });
-      try { localStorage.removeItem(key); } catch {}
-      updateAccount(result.user);
-      if (visit === accountVisit) { await navigateAccountPage('/admin', false); showToast(t(`Gave ${number(result.grant.amount)} tokens to ${result.grant.username}.`, `${result.grant.username} hat ${number(result.grant.amount)} Tokens erhalten.`)); }
     } else if (form.id === 'grant-form') {
       const amount = Number(data.amount), key = `justizguessr:pending-grant:${account.id}:${amount}`;
       let requestId; try { requestId = localStorage.getItem(key); } catch {}
@@ -381,6 +413,12 @@ document.addEventListener('submit', async event => {
   } finally { accountBusy = false; if (button.isConnected) button.disabled = false; }
 });
 document.addEventListener('change', event => { if (event.target.id === 'rarity-filter') { accountFilter = event.target.value; accountInventoryPage = 0; renderAccountPage(); } });
+document.addEventListener('input', event => {
+  if (event.target.id !== 'user-search') return;
+  adminUserFilter = event.target.value;
+  const list = document.querySelector('#user-list');
+  if (list) list.innerHTML = adminUserListMarkup();
+});
 document.addEventListener('jg:language', () => {
   updateNavigation();
   if (currentAccountPage && pageLoaded) {

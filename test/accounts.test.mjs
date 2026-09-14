@@ -80,6 +80,47 @@ test('account and friend euro values count retained copies, exclude sold items a
   assert.ok(!('tokens' in summary) && !('password_hash' in summary) && !('auctions' in summary.daily));
 });
 
+test('leaderboard ranks the top players by retained inventory value and only scores completed dailies', async t => {
+  const { service, admin, register, nextDay } = await fixture(t);
+  const alice = await register('Alice'), bob = await register('Bob');
+  const catalog = caseCatalog(lots.slice(0, 5).map(item => ({ ...item, currentBid: 123.45 })));
+  service.openCase(admin, catalog, 'fundkiste', 'leader-request-0001');
+  service.openCase(admin, catalog, 'fundkiste', 'leader-request-0002');
+  service.openCase(alice, catalog, 'fundkiste', 'leader-request-0003');
+  const sold = service.openCase(bob, catalog, 'fundkiste', 'leader-request-0004');
+  service.sell(bob, sold.id);
+  const daily = service.startGame(alice, 'daily', () => lots.slice(0, 5));
+  for (let i = 0; i < 5; i++) service.answer(alice, daily.id, i, lots[i].actualBid);
+  const partial = service.startGame(bob, 'daily', () => lots.slice(0, 5));
+  service.answer(bob, partial.id, 0, lots[0].actualBid);
+  const board = service.leaderboard();
+  assert.equal(board.date, '2026-09-12');
+  assert.deepEqual(board.leaders.map(row => [row.rank, row.username, row.inventoryValueEur, row.score]), [
+    [1, 'admin', 246.9, null], [2, 'Alice', 123.45, 5000], [3, 'Bob', 0, null]]);
+  assert.ok(!JSON.stringify(board).includes('password'));
+  nextDay();
+  assert.equal(service.leaderboard().leaders[1].score, null);
+});
+
+test('admins ban and unban players, revoking sessions, blocking logins and hiding them from the leaderboard', async t => {
+  const { service, admin, register } = await fixture(t);
+  const aliceToken = await service.register({ username: 'Alice', password, code: service.codes(admin, 1)[0] });
+  const alice = service.user(aliceToken);
+  assert.throws(() => service.banUser(alice, admin.id, true), { status: 403 });
+  assert.throws(() => service.banUser(admin, admin.id, true), /ban_admin/);
+  assert.throws(() => service.banUser(admin, 'missing-id', true), /user_not_found/);
+  assert.throws(() => service.banUser(admin, alice.id, 'yes'), /invalid_ban_state/);
+  service.openCase(admin, caseCatalog(lots.slice(0, 5).map(item => ({ ...item, currentBid: 50 }))), 'fundkiste', 'ban-request-0001');
+  assert.equal(service.leaderboard().leaders.length, 2);
+  assert.deepEqual(service.banUser(admin, alice.id, true), { userId: alice.id, username: 'Alice', banned: true });
+  assert.ok(service.adminOverview(admin).users.find(user => user.id === alice.id).banned);
+  assert.equal(service.user(aliceToken), null);
+  assert.equal(service.leaderboard().leaders.length, 1);
+  await assert.rejects(service.login({ username: 'alice', password }), { message: 'account_banned' });
+  assert.deepEqual(service.banUser(admin, alice.id, false), { userId: alice.id, username: 'Alice', banned: false });
+  await service.login({ username: 'alice', password });
+});
+
 test('registration codes are single-use and admin-only; credentials, sessions and bootstrap persist safely', async t => {
   const { service, dir, admin, register } = await fixture(t);
   const [code] = service.codes(admin, 2);
@@ -303,8 +344,8 @@ test('single-user grants credit only the selected account and safely retry acros
   assert.deepEqual(reopened.grantUserTokens(admin, alice.id, 735, request), grant);
   assert.equal(reopened.profile(alice).tokens, STARTING_TOKENS + 735);
   const overview = reopened.adminOverview(admin);
-  assert.deepEqual(overview.userGrants[0], { username: 'Alice', amount: 735, createdAt: grant.createdAt });
   assert.deepEqual(overview.users.map(user => user.username), ['admin', 'Alice', 'Bob']);
+  assert.equal(overview.users.find(user => user.username === 'Alice').tokens, STARTING_TOKENS + 735);
   assert.ok(overview.users.every(user => !('password_hash' in user)));
 });
 
@@ -347,6 +388,8 @@ test('HTTP API enforces authentication, CSRF headers, admin permissions and sess
   const publicCatalog = await (await fetch(base + 'cases')).json();
   assert.equal(publicCatalog.cases[0].name, 'Seized Goods Case');
   assert.doesNotMatch(JSON.stringify(publicCatalog), /"(?:odds|weights|chance)":/);
+  const publicBoard = await (await fetch(base + 'leaderboard')).json();
+  assert.ok(Array.isArray(publicBoard.leaders) && publicBoard.leaders.some(row => row.username === 'admin'));
   assert.equal((await post('login', { username: 'admin', password }, '', { 'x-requested-with': '' })).status, 403);
   assert.equal((await post('login', { username: 'admin', password }, '', { 'sec-fetch-site': 'cross-site' })).status, 403);
   const response = await post('login', { username: 'admin', password });
@@ -359,7 +402,7 @@ test('HTTP API enforces authentication, CSRF headers, admin permissions and sess
   const codes = await (await post('codes', { count: 3 }, cookie)).json();
   assert.equal(codes.codes.length, 3);
   const registered = await post('register', { username: 'player', password, code: codes.codes[0] });
-  const playerCookie = registered.headers.get('set-cookie');
+  let playerCookie = registered.headers.get('set-cookie');
   assert.equal(registered.status, 200);
   const player = (await registered.json()).user;
   assert.equal((await fetch(base + 'friends')).status, 401);
@@ -392,8 +435,18 @@ test('HTTP API enforces authentication, CSRF headers, admin permissions and sess
   assert.deepEqual((await (await post('admin/grant-user-tokens', userGrantBody, cookie)).json()).grant, userGrant.grant);
   const adminOverview = await (await fetch(base + 'admin', { headers: { cookie } })).json();
   assert.equal(adminOverview.playerCount, 3);
-  assert.equal(adminOverview.userGrants[0].username, 'player');
+  assert.ok(adminOverview.users.every(user => user.banned === false));
   assert.ok(adminOverview.users.some(user => user.id === player.id && user.tokens === STARTING_TOKENS + 400 + 125));
+  assert.equal((await post('admin/ban', { userId: player.id, banned: true }, playerCookie)).status, 403);
+  assert.equal((await post('admin/ban', { userId: profile.user.id, banned: true }, cookie)).status, 403);
+  assert.equal((await post('admin/ban', { userId: player.id, banned: 'yes' }, cookie)).status, 400);
+  assert.equal((await post('admin/ban', { userId: player.id, banned: true }, cookie)).status, 200);
+  assert.equal((await fetch(base + 'inventory', { headers: { cookie: playerCookie } })).status, 401);
+  assert.equal((await post('login', { username: 'player', password })).status, 403);
+  assert.equal((await post('admin/ban', { userId: player.id, banned: false }, cookie)).status, 200);
+  const relogin = await post('login', { username: 'player', password });
+  assert.equal(relogin.status, 200);
+  playerCookie = relogin.headers.get('set-cookie');
   let rewarded = (await (await post('games/start', { mode: 'daily' }, playerCookie)).json()).run;
   assert.deepEqual(rewarded.rewards, publicCatalog.rewards);
   for (let i = 0; i < 5; i++) rewarded = (await (await post('games/answer', { id: rewarded.id, position: i, answer: lots[i].actualBid }, playerCookie)).json()).run;

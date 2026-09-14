@@ -38,6 +38,7 @@ export async function createAccountApi({ dataDir, dailyPayload, json, env = proc
       if (request.method === 'GET') {
         if (route === 'me') json(response, 200, { user: user ? accounts.profile(user) : null });
         else if (route === 'cases') json(response, 200, publicCaseCatalog(getCatalog()));
+        else if (route === 'leaderboard') json(response, 200, accounts.leaderboard());
         else {
           if (!user) throw new AccountError('login_required', 401);
           if (route === 'inventory') json(response, 200, { items: accounts.inventory(user) });
@@ -70,6 +71,7 @@ export async function createAccountApi({ dataDir, dailyPayload, json, env = proc
       } else if (route === 'codes') result = { codes: accounts.codes(user, payload.count) };
       else if (route === 'admin/grant-tokens') result = { grant: accounts.grantTokens(user, payload.amount, payload.requestId), user: accounts.profile(user) };
       else if (route === 'admin/grant-user-tokens') result = { grant: accounts.grantUserTokens(user, payload.userId, payload.amount, payload.requestId), user: accounts.profile(user) };
+      else if (route === 'admin/ban') result = { ban: accounts.banUser(user, payload.userId, payload.banned) };
       else if (route === 'friends/request') {
         accounts.throttle(`friend-request:${user.id}`, 20);
         accounts.requestFriend(user, payload.username); result = accounts.friends(user);

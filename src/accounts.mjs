@@ -40,10 +40,11 @@ export class Accounts {
   constructor(dataDir, { now = Date.now } = {}) {
     this.dataDir = dataDir;
     this.now = now;
-    this.db(db => db.exec(`
+    this.db(db => {
+      db.exec(`
       CREATE TABLE IF NOT EXISTS users (
         id TEXT PRIMARY KEY, username TEXT NOT NULL COLLATE NOCASE UNIQUE,
-        password_hash TEXT NOT NULL, admin INTEGER NOT NULL DEFAULT 0,
+        password_hash TEXT NOT NULL, admin INTEGER NOT NULL DEFAULT 0, banned INTEGER NOT NULL DEFAULT 0,
         tokens INTEGER NOT NULL DEFAULT 0 CHECK(tokens >= 0), created_at INTEGER NOT NULL
       ) STRICT;
       CREATE TABLE IF NOT EXISTS account_sessions (
@@ -92,7 +93,10 @@ export class Accounts {
         user_id TEXT NOT NULL REFERENCES users(id), amount INTEGER NOT NULL CHECK(amount > 0),
         created_at INTEGER NOT NULL, PRIMARY KEY(admin_id, request_id)
       ) STRICT;
-    `));
+      `);
+      const columns = db.prepare('PRAGMA table_info(users)').all().map(column => column.name);
+      if (!columns.includes('banned')) db.exec('ALTER TABLE users ADD COLUMN banned INTEGER NOT NULL DEFAULT 0');
+    });
   }
   db(work) { return withDatabase(this.dataDir, work); }
   atomic(work) { return this.db(db => transaction(db, () => work(db))); }
@@ -134,7 +138,7 @@ export class Accounts {
   user(token) {
     if (!token || !/^[a-f0-9]{64}$/.test(token)) return null;
     return this.db(db => db.prepare(`SELECT users.* FROM users JOIN account_sessions ON users.id = user_id
-      WHERE hash = ? AND expires > ?`).get(digest(token), this.now())) || null;
+      WHERE hash = ? AND expires > ? AND banned = 0`).get(digest(token), this.now())) || null;
   }
   logout(token) { this.db(db => db.prepare('DELETE FROM account_sessions WHERE hash = ?').run(digest(token || ''))); }
   async register({ username, password, code }) {
@@ -161,6 +165,7 @@ export class Accounts {
     const row = this.db(db => db.prepare('SELECT * FROM users WHERE username = ?').get(username));
     const stored = row?.password_hash || `${'0'.repeat(32)}:${'0'.repeat(128)}`;
     if (!await passwordMatches(password, stored) || !row) fail('invalid_login', 401);
+    if (row.banned) fail('account_banned', 403);
     return this.atomic(db => this.session(db, row.id));
   }
   codes(user, count) {
@@ -185,13 +190,24 @@ export class Accounts {
     if (!user.admin) fail('forbidden', 403);
     return this.db(db => ({
       playerCount: db.prepare('SELECT COUNT(*) AS count FROM users').get().count,
-      users: db.prepare('SELECT id, username, admin, tokens FROM users ORDER BY username COLLATE NOCASE').all()
-        .map(row => ({ ...row, admin: Boolean(row.admin) })),
-      grants: db.prepare('SELECT amount, recipients, created_at AS createdAt FROM token_grants ORDER BY created_at DESC, rowid DESC LIMIT 20').all(),
-      userGrants: db.prepare(`SELECT g.amount, g.created_at AS createdAt, u.username
-        FROM user_token_grants g JOIN users u ON u.id = g.user_id
-        ORDER BY g.created_at DESC, g.rowid DESC LIMIT 20`).all().map(row => ({ ...row }))
+      users: db.prepare('SELECT id, username, admin, banned, tokens FROM users ORDER BY username COLLATE NOCASE').all()
+        .map(row => ({ ...row, admin: Boolean(row.admin), banned: Boolean(row.banned) })),
+      grants: db.prepare('SELECT amount, recipients, created_at AS createdAt FROM token_grants ORDER BY created_at DESC, rowid DESC LIMIT 20').all()
     }));
+  }
+  banUser(user, userId, banned) {
+    if (!user.admin) fail('forbidden', 403);
+    if (typeof banned !== 'boolean') fail('invalid_ban_state');
+    return this.atomic(db => {
+      const target = db.prepare('SELECT id, username, admin FROM users WHERE id = ?').get(String(userId));
+      if (!target) fail('user_not_found', 404);
+      // Admins are the recovery path for mistakes; they can never lock each other out.
+      if (target.admin) fail('ban_admin', 403);
+      db.prepare('UPDATE users SET banned = ? WHERE id = ?').run(Number(banned), target.id);
+      // Drop sessions so a stale token cannot log straight back in after an unban.
+      db.prepare('DELETE FROM account_sessions WHERE user_id = ?').run(target.id);
+      return { userId: target.id, username: target.username, banned };
+    });
   }
   grantTokens(user, amount, requestId) {
     if (!user.admin) fail('forbidden', 403);
@@ -255,6 +271,22 @@ export class Accounts {
       score: run?.complete ? run.answers.reduce((total, guess, i) => total + scoreGuess(guess, run.auctions[i].actualBid), 0) : null };
     return { inventoryValueEur: inventory.cents / 100, accountValueEur: inventory.cents / 100,
       itemCount: inventory.itemCount, daily };
+  }
+  leaderboard() {
+    return this.db(db => {
+      const players = db.prepare(`SELECT u.id, u.username,
+        COALESCE((SELECT SUM(CAST(ROUND(json_extract(i.item, '$.price') * 100) AS INTEGER))
+          FROM inventory i WHERE i.user_id = u.id AND i.sold_at IS NULL), 0) AS cents
+        FROM users u WHERE u.banned = 0 ORDER BY cents DESC, u.username COLLATE NOCASE LIMIT 100`).all();
+      const scores = new Map();
+      for (const row of db.prepare(`SELECT user_id, payload FROM account_games WHERE date = ? AND mode = 'daily' AND complete = 1`)
+        .all(day(this.now()))) {
+        const run = JSON.parse(row.payload);
+        scores.set(row.user_id, run.answers.reduce((total, guess, i) => total + scoreGuess(guess, run.auctions[i].actualBid), 0));
+      }
+      return { date: day(this.now()), leaders: players.map((row, index) => ({ rank: index + 1, id: row.id,
+        username: row.username, inventoryValueEur: row.cents / 100, score: scores.get(row.id) ?? null })) };
+    });
   }
   friends(user) {
     return this.db(db => {
