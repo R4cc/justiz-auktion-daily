@@ -149,14 +149,24 @@ function rarityLabel(id) {
   return ({ common: t('Common', 'Gewöhnlich'), uncommon: t('Uncommon', 'Ungewöhnlich'), rare: t('Rare', 'Selten'), epic: t('Epic', 'Episch'), legendary: t('Legendary', 'Legendär') })[id] || id;
 }
 function itemCard(item, controls = true) {
-  return `<article class="collection-item rarity-${accountEscape(item.rarity)}"><span class="rarity-label">${rarityLabel(item.rarity)}</span>
+  const copies = item.copies || [item];
+  return `<article class="collection-item rarity-${accountEscape(item.rarity)}"><span class="rarity-label">${rarityLabel(item.rarity)}</span>${copies.length > 1 ? `<span class="item-count" aria-label="${copies.length} ${t('copies', 'Exemplare')}">×${copies.length}</span>` : ''}
     <img src="${accountEscape(item.image)}" alt="" loading="lazy"><h3>${accountEscape(item.title)}</h3><p>${t('Auction value', 'Auktionswert')} ${euro(item.price)}</p>
-    ${controls ? `<button class="secondary-button" data-account="sell" data-id="${accountEscape(item.id)}">${t('Sell', 'Verkaufen')} · ${number(item.sellValue)} ${t('tokens', 'Tokens')}</button>` : `<span class="item-value">${number(item.sellValue)} ${t('tokens', 'Tokens')}</span>`}</article>`;
+    ${controls ? copies.length > 1 ? `<div class="item-actions"><button class="secondary-button" data-account="sell" data-id="${accountEscape(copies[0].id)}">${t('Sell one', 'Eins verkaufen')}<small>+${number(item.sellValue)}</small></button><button class="secondary-button" data-account="sell-all" data-id="${accountEscape(copies[0].id)}">${t('Sell all', 'Alle verkaufen')}<small>+${number(item.sellValue * copies.length)}</small></button></div>` : `<button class="secondary-button" data-account="sell" data-id="${accountEscape(item.id)}">${t('Sell', 'Verkaufen')} · ${number(item.sellValue)} ${t('tokens', 'Tokens')}</button>` : `<span class="item-value">${number(item.sellValue)} ${t('tokens', 'Tokens')}</span>`}</article>`;
+}
+function groupedInventory(items) {
+  const groups = new Map();
+  for (const item of items) {
+    const key = JSON.stringify([item.auctionId, item.title, item.image, item.price, item.rarity, item.sellValue]);
+    if (!groups.has(key)) groups.set(key, { ...item, copies: [] });
+    groups.get(key).copies.push(item);
+  }
+  return [...groups.values()];
 }
 function renderInventory() {
   accountContent.innerHTML = pageHeading(t('Your inventory.', 'Dein Inventar.'), t('Every find has a story. Keep yours or trade it for tokens.', 'Jeder Fund hat eine Geschichte. Behalte ihn oder tausche ihn gegen Tokens.'));
   if (!account) { accountContent.innerHTML += loginNotice('inventory'); return; }
-  const filtered = accountItems.filter(item => accountFilter === 'all' || item.rarity === accountFilter);
+  const filtered = groupedInventory(accountItems.filter(item => accountFilter === 'all' || item.rarity === accountFilter));
   accountInventoryPage = Math.min(accountInventoryPage, Math.max(0, Math.ceil(filtered.length / 24) - 1));
   accountContent.innerHTML += accountValueMarkup() + `<div class="inventory-heading"><h2>${t('Collection', 'Sammlung')} <small>${accountItems.length} ${accountItems.length === 1 ? t('item', 'Los') : t('items', 'Lose')}</small></h2><label>${t('Rarity', 'Seltenheit')} <select id="rarity-filter"><option value="all">${t('All', 'Alle')}</option>${accountCatalog.rarities.map(rarity => `<option value="${rarity.id}" ${accountFilter === rarity.id ? 'selected' : ''}>${rarityLabel(rarity.id)}</option>`).join('')}</select></label></div>
     ${filtered.length ? `<div class="inventory-grid">${filtered.slice(accountInventoryPage * 24, (accountInventoryPage + 1) * 24).map(item => itemCard(item)).join('')}</div><div class="inventory-pages"><button data-account="page" data-step="-1" ${accountInventoryPage ? '' : 'disabled'}>← ${t('Previous', 'Zurück')}</button><span>${accountInventoryPage + 1} / ${Math.ceil(filtered.length / 24)}</span><button data-account="page" data-step="1" ${(accountInventoryPage + 1) * 24 >= filtered.length ? 'disabled' : ''}>${t('Next', 'Weiter')} →</button></div>` : `<div class="collection-empty"><h2>${t('Your next find belongs here.', 'Hier wartet dein nächster Fund.')}</h2><p>${t('Open a case to start your collection, or try another rarity filter.', 'Öffne eine Kiste für deine Sammlung oder wähle einen anderen Seltenheitsfilter.')}</p><a class="primary-button" href="/shop" data-page>${t('Visit the shop', 'Zum Shop')} →</a></div>`}`;
@@ -311,11 +321,12 @@ document.addEventListener('click', async event => {
     if (action === 'select-case') { accountSelectedCase = button.dataset.id; accountResult = null; renderAccountPage(); }
     if (action === 'close-reveal') caseReveal.close();
     if (action === 'pull') { caseReveal.close(); await pullCase(visit); }
-    if (action === 'sell' || action === 'sell-result') {
-      const owner = account.id, result = await accountApi('inventory/sell', { id: button.dataset.id });
+    if (action === 'sell' || action === 'sell-all' || action === 'sell-result') {
+      const owner = account.id, result = await accountApi(action === 'sell-all' ? 'inventory/sell-all' : 'inventory/sell', { id: button.dataset.id });
       if (account?.id !== owner) return;
       updateAccount(result.user); if (accountResult?.id === button.dataset.id) accountResult.sold = true;
-      accountItems = accountItems.filter(item => item.id !== button.dataset.id);
+      const soldIds = new Set(Array.isArray(result.sold) ? result.sold : [result.sold]);
+      accountItems = accountItems.filter(item => !soldIds.has(item.id));
       if (visit === accountVisit) { renderAccountPage(); if (caseReveal.open) revealCaseItem(); showToast(t(`${result.value} tokens added.`, `${result.value} Tokens gutgeschrieben.`)); }
     }
     if (action === 'revoke') { await accountApi('codes/revoke', { id: button.dataset.id }); if (visit === accountVisit) await navigateAccountPage('/admin', false); }

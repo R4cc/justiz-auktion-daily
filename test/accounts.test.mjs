@@ -204,6 +204,31 @@ test('case debits, item ownership, idempotent openings and sales remain atomic a
   assert.deepEqual(reopened.openCase(admin, catalog, 'fundkiste', 'test-request-00001'), item);
 });
 
+test('selling all identical inventory copies is atomic, user-scoped and retry-safe', async t => {
+  const { service, admin, register } = await fixture(t);
+  const other = await register('other');
+  const catalog = caseCatalog(lots);
+  const item = service.openCase(admin, catalog, 'fundkiste', 'sell-all-test-0001');
+  const copyIds = ['copy-one', 'copy-two'];
+  service.db(db => {
+    const stored = db.prepare('SELECT item, created_at FROM inventory WHERE id = ?').get(item.id);
+    for (const id of copyIds) db.prepare('INSERT INTO inventory (id, user_id, item, created_at) VALUES (?, ?, ?, ?)')
+      .run(id, admin.id, stored.item, stored.created_at);
+    const different = { ...JSON.parse(stored.item), rarity: JSON.parse(stored.item).rarity === 'common' ? 'rare' : 'common' };
+    db.prepare('INSERT INTO inventory (id, user_id, item, created_at) VALUES (?, ?, ?, ?)')
+      .run('different-tier', admin.id, JSON.stringify(different), stored.created_at);
+  });
+  const before = service.profile(admin).tokens;
+  assert.throws(() => service.sellAll(other, item.id), { status: 404 });
+  const result = service.sellAll(admin, item.id);
+  assert.deepEqual(new Set(result.sold), new Set([item.id, ...copyIds]));
+  assert.equal(result.value, item.sellValue * 3);
+  assert.equal(service.profile(admin).tokens, before + result.value);
+  assert.deepEqual(service.inventory(admin).map(item => item.id), ['different-tier']);
+  assert.deepEqual(service.sellAll(admin, item.id), { sold: [], value: 0 });
+  assert.equal(service.profile(admin).tokens, before + result.value);
+});
+
 test('rarity reflects price and uniqueness; case contents collapse duplicate families and require all rarity tiers', () => {
   assert.equal(itemRarity(1, 1).id, 'common');
   assert.equal(itemRarity(100000, 1).id, 'legendary');

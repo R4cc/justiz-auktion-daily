@@ -81,6 +81,7 @@ export async function createAccountApi({ dataDir, dailyPayload, json, env = proc
         result = { item: accounts.openCase(user, getCatalog(), payload.caseId, payload.requestId, payload.revision), user: accounts.profile(user) };
       }
       else if (route === 'inventory/sell') result = { ...accounts.sell(user, payload.id), user: accounts.profile(user) };
+      else if (route === 'inventory/sell-all') result = { ...accounts.sellAll(user, payload.id), user: accounts.profile(user) };
       else if (route === 'games/start') {
         const auctions = payload.mode === 'daily' ? (await dailyPayload()).auctions : null;
         result = { run: accounts.startGame(user, payload.mode, () => auctions || higherLowerDeck(readArchive(dataDir).auctions).auctions, caseRewards(getCatalog())), user: accounts.profile(user) };

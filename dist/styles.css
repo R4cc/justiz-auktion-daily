@@ -640,13 +640,17 @@ button:focus-visible, a:focus-visible { outline: 3px solid var(--red); outline-o
 .case-reveal-actions { display: grid; gap: 12px; margin-top: 22px; }
 .case-reveal-actions button { width: 100%; white-space: normal; margin: 0; }
 .case-reveal button:disabled { opacity: .5; cursor: not-allowed; }
-.collection-item { --rarity: #83919c; display: flex; flex-direction: column; min-width: 0; padding: 14px; border: 1px solid var(--line); border-bottom: 4px solid var(--rarity); border-radius: 10px; background: #fffcf4; text-align: left; color: var(--ink); }
+.collection-item { --rarity: #83919c; position: relative; display: flex; flex-direction: column; min-width: 0; padding: 14px; border: 1px solid var(--line); border-bottom: 4px solid var(--rarity); border-radius: 10px; background: #fffcf4; text-align: left; color: var(--ink); }
 .rarity-common { --rarity: #83919c; } .rarity-uncommon { --rarity: #4d79c7; } .rarity-rare { --rarity: #8262c7; } .rarity-epic { --rarity: #c65391; } .rarity-legendary { --rarity: #c89520; }
 .rarity-label { font: 10px 'DM Mono', monospace; text-transform: uppercase; letter-spacing: 1px; border-left: 3px solid var(--rarity); padding-left: 7px; }
 .collection-item img { display: block; width: 100%; height: 130px; object-fit: contain; margin: 12px 0; border-radius: 6px; background: #fff; }
 .collection-item h3 { font-size: 13px; line-height: 1.5; margin: 0 0 8px; overflow-wrap: anywhere; }
 .collection-item p { margin: auto 0 12px; font-size: 11px; color: var(--muted); }
 .collection-item .secondary-button { min-height: 38px; padding: 8px; font-size: 11px; width: 100%; }
+.item-count { position: absolute; top: 9px; right: 9px; z-index: 1; min-width: 30px; padding: 5px 8px; border-radius: 999px; background: var(--ink); color: #fffdf7; font: 700 11px 'DM Mono', monospace; text-align: center; box-shadow: 0 2px 8px #18251d30; }
+.item-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 7px; }
+.item-actions button { white-space: normal; line-height: 1.25; }
+.item-actions small { display: block; margin-top: 3px; font: 9px 'DM Mono', monospace; }
 .case-reel .collection-item { width: 170px; height: 204px; flex-shrink: 0; background: #eef0e6; }
 .case-reel .collection-item img { height: 93px; margin: 8px 0; }
 .case-reel .collection-item h3 { overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; font-size: 11px; margin: 0; }

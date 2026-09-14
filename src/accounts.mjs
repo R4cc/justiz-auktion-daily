@@ -15,6 +15,7 @@ export class AccountError extends Error {
 }
 const fail = (code, status) => { throw new AccountError(code, status); };
 const currentItemValue = item => ({ ...item, sellValue: tokenValue(item.price) });
+const collectibleIdentity = item => JSON.stringify([item.auctionId, item.title, item.image, item.price, item.rarity, tokenValue(item.price)]);
 const rewardRates = value => Object.fromEntries(Object.entries(DEFAULT_REWARDS).map(([key, fallback]) =>
   [key, Number.isSafeInteger(value?.[key]) && value[key] > 0 ? value[key] : fallback]));
 
@@ -327,6 +328,24 @@ export class Accounts {
         db.prepare('UPDATE users SET tokens = tokens + ? WHERE id = ?').run(item.sellValue, user.id);
       }
       return { sold: row.id, value: item.sellValue };
+    });
+  }
+  sellAll(user, id) {
+    return this.atomic(db => {
+      const selected = db.prepare('SELECT item FROM inventory WHERE id = ? AND user_id = ?').get(String(id), user.id);
+      if (!selected) fail('item_not_found', 404);
+      const identity = collectibleIdentity(JSON.parse(selected.item));
+      const rows = db.prepare('SELECT id, item FROM inventory WHERE user_id = ? AND sold_at IS NULL').all(user.id)
+        .filter(row => collectibleIdentity(JSON.parse(row.item)) === identity);
+      const value = rows.reduce((sum, row) => sum + currentItemValue(JSON.parse(row.item)).sellValue, 0);
+      const balance = db.prepare('SELECT tokens FROM users WHERE id = ?').get(user.id).tokens;
+      if (!Number.isSafeInteger(balance + value)) fail('token_balance_limit', 409);
+      if (rows.length) {
+        const markSold = db.prepare('UPDATE inventory SET sold_at = ? WHERE id = ? AND sold_at IS NULL');
+        for (const row of rows) markSold.run(this.now(), row.id);
+        db.prepare('UPDATE users SET tokens = tokens + ? WHERE id = ?').run(value, user.id);
+      }
+      return { sold: rows.map(row => row.id), value };
     });
   }
   startGame(user, mode, makeAuctions, rewards = DEFAULT_REWARDS) {
