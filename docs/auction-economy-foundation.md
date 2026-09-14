@@ -30,11 +30,12 @@ variables set, the live game behaves exactly as before.
 | Resale auctions | `src/resale.mjs` | Listings, escrowed bids, lazy close + settlement, item locking, seller payout |
 | Palette terminology | `src/palettes.mjs` | Palette view over the case catalog (compatibility layer) |
 | Palette definitions + editions | `src/palette-definitions.mjs` | Base/event registry, frozen themed editions, reference pricing, persisted catalog |
+| Primary palette auctions | `src/palette-auctions.mjs` | Sealed system-issued lots: creation, escrowed bidding, settlement (currency sink), winner-only reveal |
 | Public read APIs | `src/economy-api.mjs` | Flag-gated GET endpoints |
 | Frontend data access | `dist/economy.js` | `window.justizEconomy` helpers, no UI |
-| Tests | `test/market.test.mjs`, `test/news.test.mjs`, `test/resale.test.mjs`, `test/palettes.test.mjs`, `test/economy-api.test.mjs`, `test/simulation.test.mjs`, `test/palette-editions.test.mjs`, `test/acceptance.test.mjs` | full suite green (135 tests) |
+| Tests | `test/market.test.mjs`, `test/news.test.mjs`, `test/resale.test.mjs`, `test/palettes.test.mjs`, `test/economy-api.test.mjs`, `test/simulation.test.mjs`, `test/palette-editions.test.mjs`, `test/acceptance.test.mjs`, `test/palette-auctions.test.mjs` | full suite green (150 tests) |
 
-## 2. Database changes (all additive, `PRAGMA user_version` bumped 2 → 3 → 4 → 5 → 6 → 7; never lowered)
+## 2. Database changes (all additive, `PRAGMA user_version` bumped 2 → 3 → 4 → 5 → 6 → 7 → 8; never lowered)
 
 No existing table, column, or row was modified or deleted. New tables are
 created lazily by their owning modules (`CREATE TABLE IF NOT EXISTS` on first
@@ -87,6 +88,26 @@ documented lock checks.
   retained, migratedAt }`); written last inside the migrating transaction.
   Also: `news_events.palette_windows` (default `'[]'`) was added via an
   idempotent column-existence migration at marker 6.
+- `primary_palette_auctions` (`src/palette-auctions.mjs`) — `id TEXT PK`,
+  `creation_request_id TEXT NOT NULL UNIQUE`, `edition_id → palette_editions`,
+  `reserve INTEGER CHECK > 0`, `current_bid`, `current_bidder_id → users`,
+  `status CHECK IN ('active','ended')`, `started_at`/`ends_at INTEGER`
+  (exactly one hour apart), `closed_at`/`settled_at INTEGER NULL`,
+  `winner_id → users`, `valuation_at INTEGER`, `required_level INTEGER`,
+  `public_snapshot_json` (the frozen public view). Index
+  `primary_palette_auctions_active(status, ends_at)` serves the deadline
+  listing.
+- `primary_palette_rewards` — `(auction_id, position 0..2) PK`,
+  `inventory_id TEXT NOT NULL UNIQUE` (a **reserved** UUID, deliberately not
+  an inventory FK — the inventory rows do not exist until settlement),
+  `item_json` (the complete hidden reward snapshot frozen at creation).
+- `primary_palette_bids` — append-only bid history: `auction_id →
+  primary_palette_auctions`, `bidder_id → users`, `amount INTEGER CHECK > 0`,
+  `created_at INTEGER`; index `(auction_id, id)`.
+- `users.xp` — the ALTER migration the foundation claimed but never wrote was
+  finally added (marker 8): databases created before the economy foundation
+  gain `xp INTEGER NOT NULL DEFAULT 0`; existing users start at zero XP and
+  existing values are never touched. No XP earning exists yet.
 - `resale_auctions` (`src/resale.mjs`) — `id TEXT PK`, `seller_id → users`,
   `inventory_id → inventory` (**unique per active listing** via partial unique
   index), `start_price INTEGER`, `current_bid INTEGER`, `current_bidder_id`,
@@ -443,6 +464,94 @@ case editions and palette editions verbatim (no diverging rarity logic).
    rules. The feature is flag-gated and was never live, so this only affects
    development databases.
 
+### Primary palette auctions (sealed, system-issued)
+
+`src/palette-auctions.mjs` — domain functions only. Deliberately no shared
+framework with resale: primary auctions sell **system-issued sealed
+contents**, the winning payment is a **currency sink** (no seller is ever
+paid), and settlement mints exactly three inventory items. **There is no
+player-facing acquisition route yet** — creation is a trusted server-only
+operation, and nothing is wired into HTTP, the frontend, a scheduler, or
+automatic lot generation.
+
+- **Creation** (`createPaletteAuction(dataDir, {editionId, requestId},
+  {now, random})`, trusted/server-only). `requestId` is persistent and
+  globally unique (16..80 ASCII letters/digits/hyphens): a replay with the
+  same id returns the original lot unchanged — even after expiry, even with a
+  moved market — without repricing or redrawing; the same requestId with a
+  different editionId is `request_conflict` (409). The edition must be a
+  persisted, usable, in-window edition (`palette_edition_not_found` 404 /
+  `palette_edition_unavailable` 409 / `palette_edition_inactive` 409);
+  editions are loaded, never generated here. Every lot runs exactly **one
+  hour** and must fit entirely inside the edition window
+  (`palette_window_closes_early` 409 — auctions are never shortened at the
+  end of a window). The reserve is recomputed at creation with
+  `bundleReferencePricing` against the global unrounded category indexes
+  (frozen edition pricing is not trusted); a failing spread rejects the lot
+  (`insufficient_value_spread` 409). Reserve, `valuation_at`,
+  `required_level` and the public snapshot are frozen on the lot. Three
+  rewards are drawn **with replacement** from the frozen pool/weights via
+  `crypto.randomInt` (an injectable `random` exists for deterministic tests;
+  timestamps/public ids are never seeds), their complete hidden snapshots and
+  distinct reserved inventory UUIDs are persisted in the same transaction,
+  and **no inventory rows are created yet**.
+- **Bidding** (`bidOnPaletteAuction`). The bidder is read fresh from the
+  database (missing → `login_required` 401, banned → `account_banned` 403).
+  Bids are rejected at `now >= ends_at` (`palette_auction_ended` 409); first
+  bid ≥ reserve, later bids ≥ current+1 (`bid_too_low` 409). The frozen
+  `requiredLevel` gates bidding: levels derive from persisted `users.xp` with
+  threshold `100·(level−1)²` (levels 1..20, `levelForXp`), never from a
+  client-supplied level (`level_required` 403). Escrow accounting matches
+  resale semantics exactly — first bid debits in full, a different bidder
+  debits the new amount and refunds the prior holder atomically, the leader
+  raising pays only the difference, rejected bids change nothing — including
+  safe-integer overflow guards on refunds. No bid or auction cancellation
+  exists in this domain.
+- **Settlement** (`settlePaletteAuction`, one `BEGIN IMMEDIATE` transaction,
+  db-scoped internals, idempotent via the `settled_at` guard). Before the
+  deadline: `auction_still_active` 409. At/after: the lot closes and the
+  current bidder becomes the winner. **No bids** → settled, no inventory, no
+  token movement. **With bids** → escrow consistency and exactly three valid
+  rewards are verified, then the three reserved inventory rows are inserted
+  for the winner (plain INSERTs — a conflicting reserved id aborts and rolls
+  back everything; `INSERT OR IGNORE` is never used to hide conflicts). Items
+  retain their frozen `price`, `rarity`, `sellValue` and `marketCategory`
+  and gain palette provenance: `paletteAuctionId`, `paletteEditionId`,
+  `rewardPosition`, and `bundleCostTokens` — the **entire winning bid**, not
+  a per-item cost; no legacy `caseId`/`caseCost` fields are fabricated. The
+  winning escrow is consumed (sink); the winner is never charged again; the
+  winning bid row stays as history. Repeat settlement — including across
+  restarts — returns the same terminal state and mints nothing. Expired
+  unclaimed lots settle through explicit calls only (no batch scheduler).
+- **Accounting invariant** (test-enforced): before settlement, all user
+  balances plus the sum of `current_bid` over **unsettled** primary auctions
+  are conserved by every operation; a successful settlement reduces that sum
+  by exactly the winning bid; nothing else in this domain creates or
+  destroys tokens.
+- **Public surfaces.** `getPaletteAuction` settles its own due lot before
+  answering; `listPaletteAuctions` defaults to active unexpired lots with
+  bounded integer pagination. Responses are explicit allowlists (identity,
+  frozen story/pool display, `rewardCount`, `reserve`, `currentBid`,
+  `bidCount`, `requiredLevel`, status/timestamps, `winnerId`). They **never**
+  contain reward snapshots, selected source ids, reserved inventory ids,
+  randomness or selected-value totals — the candidate pool is public, the
+  drawn outcome is not, and an administrator is not entitled to it either.
+  `getPaletteAuctionRewards` authenticates fresh database state (banned
+  users out), refuses before the deadline (`rewards_unavailable` 409, no
+  details), settles on demand, and reveals the frozen snapshots **only to
+  the recorded winner** — everyone else (losers, admins, the no-bid case)
+  gets the same generic `palette_rewards_not_found` 404. Retrieval is
+  repeat-stable, unaffected by later resale/ownership transfer, and never
+  mints inventory or debits tokens.
+
+New error codes: `palette_edition_not_found` (404),
+`palette_edition_unavailable` (409), `palette_edition_inactive` (409),
+`palette_window_closes_early` (409), `insufficient_value_spread` (409),
+`palette_auction_not_found` (404), `palette_auction_ended` (409),
+`auction_still_active` (409), `level_required` (403),
+`rewards_unavailable` (409), `palette_rewards_not_found` (404),
+`palette_auction_inconsistent` (500, defensive corruption guard).
+
 ## 4. APIs added
 
 Public, read-only, flag-gated (`src/economy-api.mjs`, mounted in `server.mjs`
@@ -515,31 +624,35 @@ writes belong to the future simulation, not to clients.
 
 ## 6. Unfinished systems (explicitly out of scope here)
 
-- Palette generation and activation are **implemented** (base daily editions
-  plus news-driven event editions with frozen pools and fictional stories,
-  §3). Still missing downstream: automatic news generation and the auction
-  acquisition flow that consumes editions.
+- Palette generation, activation and the sealed primary-auction **domain**
+  are implemented (§3): creation, escrowed bidding, settlement and
+  winner-only reveal all work as library functions. **No player-facing
+  acquisition route exists yet** — creation is trusted server-only, and no
+  HTTP route, frontend page, scheduler or automatic lot generation exposes
+  it. Still missing downstream: automatic news generation and that route
+  layer.
 - Market fluctuation beyond news effects: no supply/demand drift, no
   scheduler-driven movement, no NPC reactions. The deterministic news-driven
   simulation (§3) is the only thing that moves indexes.
 - NPC bidders and market-driven bidding behavior.
 - Bidding UX, real-time updates (no websocket infrastructure exists).
-- XP curves, levels, level-gated content (`requiredLevel` on palettes is
-  metadata only; `users.xp` is a reserved column).
+- XP earning and balancing: level *checks* are live (threshold
+  `100·(level−1)²` from `users.xp`), but nothing awards XP yet and the curve
+  is not designed.
 - Storage Wars and businesses (do not build).
-- Settlement economics are **done** (escrow, refunds, payout, transfer — see
-  §3 and §7.5); what is still missing for later passes is XP awarding and a
-  real settlement scheduler.
+- Resale settlement economics are **done**; a real settlement scheduler is
+  still future work (reads settle lazily today).
 
 ## 7. Extension points for the next implementation
 
-1. **Palette acquisition (the next big TODO)** — the frozen editions exist
-   (`palette_editions`, served by `GET /api/palettes` with
-   `acquisitionMode: 'auction'`, `purchasable: false`) but nothing consumes
-   them. Primary auctions should compute and freeze their own reserve with
-   the §3 reference formula and the market at lot creation, award three
-   independent draws WITH replacement from the edition pool, and never touch
-   `cases/open`. Do not wire palette entries into the legacy case flow.
+1. **Palette acquisition — domain implemented, route missing.** Sealed
+   primary auctions exist as server functions (§3): lots freeze a recomputed
+   reserve, draw three hidden rewards, escrow bids, settle as a currency sink
+   and reveal to the winner only. The next pass is the exposure layer:
+   player-facing HTTP routes (list/detail/bid/reveal plus a trusted/admin
+   creation path), a settlement scheduler if lazy settlement is not enough,
+   and any automatic lot generation policy. The legacy `cases/open` flow
+   stays untouched; do not wire palette entries into it.
 2. **News-driven palette availability — implemented.** Event publications
    create frozen editions for their resolved windows; what could still be
    added later is automatic news generation and admin tooling for windows.
@@ -574,15 +687,19 @@ writes belong to the future simulation, not to clients.
 
 ## 8. TODOs
 
-- [ ] Palette acquisition flow (primary auctions consuming frozen editions;
-      see §7.1) and news authoring UI (the `admin/news` POST is API-only).
+- [ ] Player-facing primary-palette-auction routes (list/detail/bid/reveal
+      plus a trusted creation path) — the domain functions in
+      `src/palette-auctions.mjs` are ready but unwired; see §7.1. News
+      authoring UI is also still API-only.
 - [ ] Frontend pages for news/market/resales/palettes (data layers exist; no
       routes, no UI, no styles). Charts would read `marketHistory`; there is
       deliberately no client market-write endpoint.
 - [ ] XP awards on settlement and game rewards (design the curve first;
-      `settleListingRow` is the natural hook).
-- [ ] Scheduler that closes + settles due listings on a cadence (today reads
-      do it lazily via `settleDueListings`).
+      `settleListingRow` and primary palette settlement are the natural
+      hooks; level checks already read `users.xp`).
+- [ ] Scheduler that closes + settles due listings on a cadence (resale
+      reads settle lazily via `settleDueListings`; primary palette lots
+      settle on read or explicit call only).
 - [ ] Decide whether `Getränke` should split from `wine` (data-only change in
       `market.mjs`; the `wine-tax-seizure` palette would follow the mapping).
 - [ ] Weave `estimatedValueTokens` into inventory/resale surfaces when the

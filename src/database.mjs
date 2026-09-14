@@ -241,7 +241,7 @@ function openDatabase(dataDir) {
   // Bump the schema marker without ever lowering a newer one (a database
   // opened by a newer code version keeps its marker).
   const schemaVersion = database.prepare('PRAGMA user_version').get().user_version;
-  if (schemaVersion < 7) database.exec('PRAGMA user_version = 7');
+  if (schemaVersion < 8) database.exec('PRAGMA user_version = 8');
   migrateLegacyFiles(database, resolvedDataDir);
   openDatabases.set(resolvedDataDir, database);
   return database;

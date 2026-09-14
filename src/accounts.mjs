@@ -99,6 +99,12 @@ export class Accounts {
       `);
       const columns = db.prepare('PRAGMA table_info(users)').all().map(column => column.name);
       if (!columns.includes('banned')) db.exec('ALTER TABLE users ADD COLUMN banned INTEGER NOT NULL DEFAULT 0');
+      if (!columns.includes('xp')) {
+        // The reserved XP column was part of the CREATE TABLE but never ALTERed
+        // in, so databases created before the economy foundation lack it.
+        // Existing users start at zero XP; existing values are never touched.
+        db.exec('ALTER TABLE users ADD COLUMN xp INTEGER NOT NULL DEFAULT 0');
+      }
       if (!columns.includes('grants_seen_at')) {
         db.exec('ALTER TABLE users ADD COLUMN grants_seen_at INTEGER NOT NULL DEFAULT 0');
         // Grants that predate the migration stay unannounced.
