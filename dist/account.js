@@ -1,6 +1,11 @@
 let account = null, accountCatalog = null, accountItems = [], accountCodes = [], freshCodes = [];
 let accountFriends = { friends: [], date: '' }, accountAdmin = { playerCount: 0, users: [], grants: [] };
 let accountLeaderboard = { date: '', leaders: [] }, adminUserFilter = '';
+let accountAuctions = { query: '', page: 1, pages: 1, total: 0, auctions: [] }, auctionSearchTimer = null;
+const auctionReveal = document.createElement('dialog');
+auctionReveal.className = 'auction-reveal';
+auctionReveal.setAttribute('aria-labelledby', 'auction-detail-title');
+document.body.append(auctionReveal);
 let accountBusy = false, accountDailyRun = null, accountResult = null;
 let caseOpening = null;
 const caseReveal = document.createElement('dialog');
@@ -76,14 +81,14 @@ const accountReady = Promise.all([accountApi('me'), catalogReady]).then(([result
   if (typeof renderStart === 'function' && state.view === 'start' && location.pathname === '/') renderStart();
 }).catch(() => {});
 function showGamePage() {
-  caseReveal.close();
+  caseReveal.close(); auctionReveal.close();
   currentAccountPage = null; accountVisit++; pageLoaded = false;
   accountPage.hidden = true; document.querySelector('#app').hidden = false;
   if (location.pathname !== '/') history.pushState({}, '', '/');
   updateNavigation();
 }
 async function navigateAccountPage(path, push = true) {
-  caseReveal.close();
+  caseReveal.close(); auctionReveal.close();
   if (!accountPaths.includes(path)) { renderStart(); return; }
   if (push && location.pathname !== path) history.pushState({}, '', path);
   const visit = ++accountVisit;
@@ -111,9 +116,10 @@ async function navigateAccountPage(path, push = true) {
       const result = await accountApi('friends'); if (visit !== accountVisit || account?.id !== owner) return; accountFriends = result;
     }
     if (path === '/admin' && account?.admin) {
-      const [codes, admin] = await Promise.all([accountApi('codes'), accountApi('admin')]);
+      const auctionQuery = `admin/auctions?query=${encodeURIComponent(accountAuctions.query || '')}&page=${accountAuctions.page}`;
+      const [codes, admin, auctionPage] = await Promise.all([accountApi('codes'), accountApi('admin'), accountApi(auctionQuery)]);
       if (visit !== accountVisit || account?.id !== owner) return;
-      accountCodes = codes.codes; accountAdmin = admin;
+      accountCodes = codes.codes; accountAdmin = admin; accountAuctions = { query: accountAuctions.query || '', ...auctionPage };
     }
     if (visit !== accountVisit) return;
     pageLoaded = true; renderAccountPage(); accountContent.querySelector('h1')?.focus({ preventScroll: true });
@@ -224,6 +230,44 @@ function adminUserListMarkup() {
     filtered.length ? '' : t('No players match this search.', 'Keine Spieler gefunden.');
   return rows + (note ? `<p class="admin-count">${note}</p>` : '');
 }
+function auctionResultsMarkup() {
+  const rows = accountAuctions.auctions.map(auction => `<tr><td class="auction-cover">${auction.image ? `<img src="${accountEscape(auction.image)}" alt="" loading="lazy">` : ''}</td>
+    <td class="auction-title-cell"><strong>${accountEscape(auction.title)}</strong><span>${accountEscape(auction.category || '')} · #${accountEscape(auction.id)}</span></td>
+    <td>${auction.finalPrice != null ? euro(auction.finalPrice) : euro(auction.currentBid)}</td>
+    <td>${auction.endAt ? new Date(auction.endAt).toLocaleDateString(uiLocale()) : '—'}</td>
+    <td><button data-account="auction-detail" data-id="${accountEscape(auction.id)}">${t('Details', 'Details')}</button></td></tr>`).join('');
+  return `<p class="admin-count">${number(accountAuctions.total)} ${t('auctions', 'Auktionen')} · ${t('Page', 'Seite')} ${number(accountAuctions.page)} / ${number(accountAuctions.pages)}</p>
+    ${rows ? `<div class="auction-table-wrap"><table class="auction-table"><thead><tr><th scope="col" aria-label="${t('Image', 'Bild')}"></th><th scope="col">${t('Auction', 'Auktion')}</th><th scope="col">${t('Price', 'Preis')}</th><th scope="col">${t('Ends', 'Ende')}</th><th scope="col" aria-label="${t('Actions', 'Aktionen')}"></th></tr></thead><tbody>${rows}</tbody></table></div>` : `<p class="admin-count">${t('No auctions match this search.', 'Keine Auktionen gefunden.')}</p>`}
+    <div class="inventory-pages"><button data-account="auction-page" data-step="-1" ${accountAuctions.page <= 1 ? 'disabled' : ''}>← ${t('Previous', 'Zurück')}</button><span>${number(accountAuctions.page)} / ${number(accountAuctions.pages)}</span><button data-account="auction-page" data-step="1" ${accountAuctions.page >= accountAuctions.pages ? 'disabled' : ''}>${t('Next', 'Weiter')} →</button></div>`;
+}
+async function loadAuctionBrowser(visit) {
+  const result = await accountApi(`admin/auctions?query=${encodeURIComponent(accountAuctions.query || '')}&page=${accountAuctions.page}`);
+  if (visit !== accountVisit) return;
+  accountAuctions = { query: accountAuctions.query || '', ...result };
+  const node = accountContent.querySelector('#auction-results');
+  if (node) node.innerHTML = auctionResultsMarkup();
+}
+function renderAuctionDetail(auction) {
+  const facts = [
+    [t('Category', 'Kategorie'), auction.category],
+    [t('Start bid', 'Startgebot'), euro(auction.startBid)],
+    [t('Current bid', 'Aktuelles Gebot'), euro(auction.currentBid)],
+    [t('Final price', 'Endpreis'), auction.finalPrice != null ? euro(auction.finalPrice) : t('Still running', 'Läuft noch')],
+    [t('Bids', 'Gebote'), number(auction.bidCount)],
+    [t('Condition', 'Zustand'), auction.condition],
+    [t('Fulfillment', 'Versand'), auction.fulfillment],
+    [t('Location', 'Standort'), auction.location],
+    [t('Ends', 'Ende'), auction.endAt ? new Date(auction.endAt).toLocaleString(uiLocale()) : null],
+    [t('Captured', 'Erfasst'), auction.capturedAt ? new Date(auction.capturedAt).toLocaleString(uiLocale()) : null],
+    [t('Auction ID', 'Auktions-ID'), `#${auction.id}`]];
+  auctionReveal.innerHTML = `<div class="auction-reveal-content"><form method="dialog"><button class="dialog-close" aria-label="${t('Close', 'Schließen')}">×</button></form>
+    <p class="eyebrow">${t('AUCTION', 'AUKTION')}</p><h2 id="auction-detail-title">${accountEscape(auction.title)}</h2>
+    ${auction.image ? `<img class="auction-detail-cover" src="${accountEscape(auction.image)}" alt="">` : ''}
+    <dl class="auction-facts">${facts.filter(([, value]) => value !== null && value !== undefined && value !== '').map(([label, value]) => `<div><dt>${label}</dt><dd>${accountEscape(value)}</dd></div>`).join('')}</dl>
+    ${auction.description ? `<p class="auction-description">${accountEscape(auction.description)}</p>` : ''}
+    <div class="auction-reveal-actions">${auction.url ? `<a class="secondary-button" href="${accountEscape(auction.url)}" target="_blank" rel="noopener">${t('Open listing', 'Angebot öffnen')}</a>` : ''}<button class="text-button" data-account="close-auction" autofocus>${t('Close', 'Schließen')}</button></div></div>`;
+  auctionReveal.querySelector('[data-account="close-auction"]').focus({ preventScroll: true });
+}
 function renderAdmin() {
   accountContent.innerHTML = pageHeading(t('Admin desk.', 'Adminbereich.'), t('Manage players, grant tokens and invite your community.', 'Verwalte Spieler, verschenke Tokens und lade deine Community ein.'));
   if (!account?.admin) { accountContent.innerHTML += `<p class="collection-empty">${t('Log in with an admin account to access this page.', 'Melde dich mit einem Adminkonto an, um diese Seite zu nutzen.')}</p>`; return; }
@@ -233,6 +277,9 @@ function renderAdmin() {
     <h3>${t('Give all players tokens', 'Allen Spielern Tokens geben')}</h3><p>${t(`Give a custom amount to every existing account, including admins (${accountAdmin.playerCount} currently). Accounts registered afterwards will not receive this grant.`, `Gib jedem bestehenden Konto inklusive Admins einen Betrag deiner Wahl (aktuell ${accountAdmin.playerCount}). Später registrierte Konten erhalten diese Gutschrift nicht.`)}</p>
     <form id="grant-form" class="grant-form"><label>${t('Tokens per player', 'Tokens pro Spieler')}<input name="amount" type="number" min="1" max="1000000" step="1" value="100" required></label><button class="primary-button" type="submit">${t('Give tokens to all current players', 'Tokens an alle aktuellen Spieler geben')}</button><p class="account-error" role="alert"></p></form>
     <div class="grant-history">${accountAdmin.grants.map(grant => `<p>${new Date(grant.createdAt).toLocaleString(uiLocale())} · ${number(grant.amount)} ${t('tokens each', 'Tokens je Spieler')} · ${grant.recipients} ${t('players', 'Spieler')}</p>`).join('')}</div></section>
+    <section class="admin-section"><h2>${t('Auctions', 'Auktionen')}</h2><p>${t('Browse the full auction archive. Search by title, description, category or ID and open details for every record.', 'Durchsuche das gesamte Auktionsarchiv. Suche nach Titel, Beschreibung, Kategorie oder ID und öffne die Details jedes Eintrags.')}</p>
+    <div class="admin-toolbar"><label>${t('Search', 'Suche')}<input id="auction-search" type="search" autocomplete="off" placeholder="${t('Title, description, category or ID', 'Titel, Beschreibung, Kategorie oder ID')}" value="${accountEscape(accountAuctions.query)}"></label></div>
+    <div id="auction-results">${auctionResultsMarkup()}</div></section>
     <section class="admin-section"><h2>${t('Registration codes', 'Registrierungscodes')}</h2><p>${t('Each code allows one registration. Full codes are shown only just after creation.', 'Jeder Code erlaubt eine Registrierung. Vollständige Codes werden nur direkt nach dem Erstellen angezeigt.')}</p>
     <form id="code-form" class="code-form"><label>${t('Number of codes', 'Anzahl der Codes')}<input name="count" type="number" min="1" max="50" value="5" required></label><button class="primary-button" type="submit">${t('Create codes', 'Codes erstellen')}</button><p class="account-error" role="alert"></p></form>
     ${freshCodes.length ? `<label class="fresh-codes">${t('New codes — copy and save them now', 'Neue Codes — jetzt kopieren und aufbewahren')}<textarea readonly rows="${Math.min(10, freshCodes.length + 1)}">${freshCodes.join('\n')}</textarea></label>` : ''}
@@ -365,6 +412,12 @@ document.addEventListener('click', async event => {
       updateAccount(result.user);
       if (visit === accountVisit) { await navigateAccountPage('/admin', false); showToast(t(`Gave ${number(result.grant.amount)} tokens to ${result.grant.username}.`, `${result.grant.username} hat ${number(result.grant.amount)} Tokens erhalten.`)); }
     }
+    if (action === 'auction-detail') {
+      const result = await accountApi(`admin/auctions/${button.dataset.id}`);
+      if (visit === accountVisit) { renderAuctionDetail(result.auction); if (!auctionReveal.open) auctionReveal.showModal(); }
+    }
+    if (action === 'auction-page') { accountAuctions.page += Number(button.dataset.step); await loadAuctionBrowser(visit); }
+    if (action === 'close-auction') auctionReveal.close();
     if (action === 'ban-toggle') {
       const banned = button.dataset.banned !== 'true';
       const result = await accountApi('admin/ban', { userId: button.dataset.id, banned });
@@ -414,10 +467,16 @@ document.addEventListener('submit', async event => {
 });
 document.addEventListener('change', event => { if (event.target.id === 'rarity-filter') { accountFilter = event.target.value; accountInventoryPage = 0; renderAccountPage(); } });
 document.addEventListener('input', event => {
-  if (event.target.id !== 'user-search') return;
-  adminUserFilter = event.target.value;
-  const list = document.querySelector('#user-list');
-  if (list) list.innerHTML = adminUserListMarkup();
+  if (event.target.id === 'user-search') {
+    adminUserFilter = event.target.value;
+    const list = document.querySelector('#user-list');
+    if (list) list.innerHTML = adminUserListMarkup();
+  }
+  if (event.target.id === 'auction-search') {
+    accountAuctions.query = event.target.value; accountAuctions.page = 1;
+    clearTimeout(auctionSearchTimer);
+    auctionSearchTimer = setTimeout(() => loadAuctionBrowser(accountVisit), 300);
+  }
 });
 document.addEventListener('jg:language', () => {
   updateNavigation();

@@ -2,6 +2,32 @@ import { Accounts, AccountError } from './accounts.mjs';
 import { caseRewards, loadCaseCatalog, publicCaseCatalog, rotationDate } from './cases.mjs';
 import { readArchive } from './database.mjs';
 import { higherLowerDeck } from './higher-lower.mjs';
+import { auctionGallery } from './auction-images.mjs';
+
+const AUCTION_PAGE_SIZE = 25;
+
+function auctionBasics(auction) {
+  const gallery = auctionGallery(auction);
+  return { id: auction.id, title: auction.title, category: auction.category,
+    currentBid: auction.currentBid, finalPrice: auction.finalPrice ?? null,
+    endAt: auction.endAt || null, bidCount: auction.bidCount || 0,
+    image: gallery[0] || auction.image || null, imageCount: gallery.length };
+}
+
+function auctionDetail(auction) {
+  return { ...auctionBasics(auction), description: auction.description || '',
+    startBid: auction.startBid ?? 0, condition: auction.condition || null,
+    fulfillment: auction.fulfillment || null, location: auction.location || null,
+    url: auction.url || null, capturedAt: auction.capturedAt || null,
+    images: auctionGallery(auction), correctPrice: auction.finalPrice ?? auction.currentBid };
+}
+
+function searchAuctions(auctions, query) {
+  const needle = query.trim().toLowerCase();
+  if (!needle) return auctions;
+  return auctions.filter(auction => [auction.title, auction.description, auction.category, auction.id]
+    .some(value => String(value ?? '').toLowerCase().includes(needle)));
+}
 
 async function body(request) {
   if (!request.headers['content-type']?.startsWith('application/json')) throw new AccountError('json_required', 415);
@@ -45,6 +71,20 @@ export async function createAccountApi({ dataDir, dailyPayload, json, env = proc
           else if (route === 'friends') json(response, 200, accounts.friends(user));
           else if (route === 'codes') json(response, 200, { codes: accounts.listCodes(user) });
           else if (route === 'admin') json(response, 200, accounts.adminOverview(user));
+          else if (route === 'admin/auctions') {
+            if (!user.admin) throw new AccountError('forbidden', 403);
+            const matches = searchAuctions(readArchive(dataDir).auctions, url.searchParams.get('query') || '');
+            const pages = Math.max(1, Math.ceil(matches.length / AUCTION_PAGE_SIZE));
+            const page = Math.min(Math.max(1, Number(url.searchParams.get('page')) || 1), pages);
+            json(response, 200, { total: matches.length, page, pages, pageSize: AUCTION_PAGE_SIZE,
+              auctions: matches.slice((page - 1) * AUCTION_PAGE_SIZE, page * AUCTION_PAGE_SIZE).map(auctionBasics) });
+          }
+          else if (route.startsWith('admin/auctions/')) {
+            if (!user.admin) throw new AccountError('forbidden', 403);
+            const auction = readArchive(dataDir).auctions.find(entry => String(entry.id) === route.slice('admin/auctions/'.length));
+            if (!auction) throw new AccountError('auction_not_found', 404);
+            json(response, 200, { auction: auctionDetail(auction) });
+          }
           else throw new AccountError('not_found', 404);
         }
         return true;
