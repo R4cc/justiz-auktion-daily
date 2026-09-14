@@ -7,7 +7,7 @@ import { Accounts, STARTING_TOKENS } from '../src/accounts.mjs';
 import { caseRewards, loadCaseCatalog, RARITIES, tokenValue } from '../src/cases.mjs';
 import { closeDataStore, upsertAuctions, withDatabase } from '../src/database.mjs';
 import { saveNewsEvent, getNewsEvent } from '../src/news.mjs';
-import { loadPaletteCatalog, ensurePaletteEditionSchema } from '../src/palette-definitions.mjs';
+import { loadPaletteCatalog, ensurePaletteEditionSchema, bundleReferencePricing } from '../src/palette-definitions.mjs';
 import { CASE_WEIGHTS } from '../src/cases.mjs';
 
 const hour = 3600_000;
@@ -127,24 +127,32 @@ test('frozen editions carry three-reward metadata, all five tiers, weights and t
   assert.equal(payload.valuationAt, day);
   assert.equal(payload.definitionVersion, 1);
   // Recompute the reference formula from the frozen pool (index was 100 + a
-  // decaying +2 electronics effect at valuation time).
+  // decaying +2 electronics effect at valuation time). Expectations are
+  // BUNDLE expectations: rewardCount (3) times the single-draw sum, while
+  // min/max stay per-item.
   const marketIndex = 102; // +2 effect, zero elapsed decay at valuation
+  const rewardCount = payload.rewardCount;
+  assert.equal(rewardCount, 3);
   const totalWeight = CASE_WEIGHTS.reduce((a, b) => a + b, 0);
   const tierCounts = new Map();
   for (const item of payload.items) tierCounts.set(item.rarity, (tierCounts.get(item.rarity) || 0) + 1);
-  let e0 = 0, et = 0, min = Infinity, max = -Infinity;
+  let singleE0 = 0, singleEt = 0, min = Infinity, max = -Infinity;
   for (const item of payload.items) {
     const p = CASE_WEIGHTS[RARITIES.findIndex(rarity => rarity.id === item.rarity)] / totalWeight / tierCounts.get(item.rarity);
     const base = tokenValue(item.price);
-    e0 += p * base;
-    et += p * (base * marketIndex / 100);
+    singleE0 += p * base;
+    singleEt += p * (base * marketIndex / 100);
     min = Math.min(min, base * marketIndex / 100);
     max = Math.max(max, base * marketIndex / 100);
   }
+  const e0 = rewardCount * singleE0, et = rewardCount * singleEt;
   const reserve = Math.ceil(Math.max(.75 * e0 + .25 * et, et) / .85);
   assert.ok(Math.abs(payload.pricing.e0 - e0) < 1e-9);
   assert.ok(Math.abs(payload.pricing.et - et) < 1e-9);
+  assert.ok(Math.abs(payload.pricing.minMarketValue - min) < 1e-9);
+  assert.ok(Math.abs(payload.pricing.maxMarketValue - max) < 1e-9);
   assert.equal(payload.pricing.referenceReserve, reserve);
+  assert.equal(payload.pricingVersion, 2);
   assert.equal(entry.referenceReserve, reserve);
   assert.equal(entry.cost, reserve);
   // Every tier is populated, so within-tier probability is uniform by construction.
@@ -161,8 +169,8 @@ test('usable editions guarantee both loss and upside at the reference reserve', 
     const payload = JSON.parse(stored.payload_json);
     assert.ok(payload.available);
     assert.equal(payload.availabilityReason, null);
-    assert.ok(3 * payload.pricing.minMarketValue < payload.pricing.referenceReserve);
-    assert.ok(3 * payload.pricing.maxMarketValue > payload.pricing.referenceReserve);
+    assert.ok(payload.rewardCount * payload.pricing.minMarketValue < payload.pricing.referenceReserve);
+    assert.ok(payload.rewardCount * payload.pricing.maxMarketValue > payload.pricing.referenceReserve);
   }
 });
 
@@ -181,24 +189,26 @@ test('insufficient stock and insufficient value spread persist unavailable editi
   // The market effects of the publication still landed.
   assert.equal(withDatabase(dir, db => db.prepare('SELECT COUNT(*) AS count FROM market_effects').get().count), 1);
 
-  // Uniform prices give no spread: the edition freezes as unusable.
-  const uniform = [
-    ...themedStock(1000, 'Laptop Alpha', 'Elektronik', 50, 3),
-    ...themedStock(1100, 'Laptop Bravo', 'Elektronik', 50, 3),
-    ...themedStock(1200, 'Laptop Charlie', 'Elektronik', 50, 3),
-    ...themedStock(1300, 'Laptop Delta', 'Elektronik', 50, 3),
-    ...themedStock(1400, 'Laptop Echo', 'Elektronik', 50, 3),
-    ...themedStock(1500, 'Laptop Foxtrot', 'Elektronik', 50, 3)
-  ];
+  // Identical item values give no upside: the bundle reserve exceeds even a
+  // bundle of maximum-value items, so the edition freezes as unusable.
+  const uniform = ['Alpha', 'Bravo', 'Charlie', 'Delta', 'Echo', 'Foxtrot']
+    .map((name, index) => ({ id: 1000 + index, title: `Laptop ${name}`, category: 'Elektronik',
+      currentBid: 50, image: '/assets/electronics.jpg' }));
   const dir2 = await fixture(t, uniform);
   publish(dir2, 'flat', { marketEffects: [{ category: 'electronics', direction: 'down', magnitude: 1 }],
     paletteIds: ['electronics-smuggling'] }, day);
   const [flat] = editionRows(dir2, "id LIKE 'event:flat:%'");
   const flatPayload = JSON.parse(flat.payload_json);
   assert.ok(flatPayload.items.length >= 5);
+  assert.ok(flatPayload.items.every(item => item.price === 50));
   assert.equal(flatPayload.available, false);
   assert.equal(flatPayload.availabilityReason, 'insufficient_value_spread');
-  assert.equal(JSON.parse(flat.payload_json).pricing.spreadOk, false);
+  assert.equal(flatPayload.pricing.spreadOk, false);
+  assert.deepEqual(flatPayload.weights, [0, 0, 0, 0, 0]);
+  // The math that makes it unusable: E0 = Et = 3·50 = 150, reserve 177, and
+  // 3·max = 150 is NOT above 177.
+  assert.ok(Math.abs(flatPayload.pricing.e0 - 150) < 1e-9);
+  assert.equal(flatPayload.pricing.referenceReserve, 177);
 });
 
 test('editions are archive-order independent and immune to collector updates and restarts', async t => {
@@ -447,4 +457,212 @@ test('catalog revision follows included editions and their evaluated states', as
     loadPaletteCatalog(dir, { now: day + 3 * hour }).revision);
   // Expiry removes the edition: the revision returns to the base world's.
   assert.equal(loadPaletteCatalog(dir, { now: day + 5 * hour }).revision, base.revision);
+});
+
+// ---------------------------------------------------------------------------
+// Bundle reference pricing: independent, hand-calculated regression tests.
+// ---------------------------------------------------------------------------
+test('bundle reference pricing matches hand-calculated expectations and reserves', () => {
+  // One item per rarity; token values 10, 20, 50, 100, 1000; weights
+  // 5000/3500/1200/290/10 over a total of 10000.
+  const items = [
+    { rarity: 'common', price: 10 }, { rarity: 'uncommon', price: 20 },
+    { rarity: 'rare', price: 50 }, { rarity: 'epic', price: 100 },
+    { rarity: 'legendary', price: 1000 }
+  ];
+  // Single-draw neutral expectation: .5*10 + .35*20 + .12*50 + .029*100 + .001*1000 = 21.9.
+  const neutral = bundleReferencePricing(items, () => 100);
+  assert.ok(Math.abs(neutral.e0 - 65.7) < 1e-9);   // 3 * 21.9
+  assert.ok(Math.abs(neutral.et - 65.7) < 1e-9);
+  assert.equal(neutral.referenceReserve, 78);       // ceil(65.7 / .85)
+  assert.equal(neutral.spreadOk, true);             // 3*10 < 78 < 3*1000
+  const down = bundleReferencePricing(items, () => 80);
+  assert.ok(Math.abs(down.e0 - 65.7) < 1e-9);
+  assert.ok(Math.abs(down.et - 52.56) < 1e-9);      // 65.7 * .8
+  assert.equal(down.referenceReserve, 74);          // ceil((.75*65.7 + .25*52.56) / .85) = ceil(73.43)
+  const up = bundleReferencePricing(items, () => 120);
+  assert.ok(Math.abs(up.et - 78.84) < 1e-9);        // 65.7 * 1.2
+  assert.equal(up.referenceReserve, 93);            // ceil(78.84 / .85) = ceil(92.75)
+  // min/max stay PER-ITEM; the spread compares against the bundle multiple.
+  assert.ok(Math.abs(up.minMarketValue - 12) < 1e-9);
+  assert.ok(Math.abs(up.maxMarketValue - 1200) < 1e-9);
+  assert.equal(up.spreadOk, true);
+  // rewardCount is honored as a parameter, not a hardcoded literal.
+  const six = bundleReferencePricing(items, () => 100, 6);
+  assert.ok(Math.abs(six.e0 - 131.4) < 1e-9);
+  assert.equal(six.referenceReserve, 155);          // ceil(131.4 / .85)
+});
+
+// ---------------------------------------------------------------------------
+// Bundle-pricing migration for pre-correction (v1) stored editions.
+// ---------------------------------------------------------------------------
+const PRICING_MARKER = 'palette_bundle_pricing_v2';
+const DAY_MS = 86_400_000;
+// Five single-lot families, one per rarity, neutral token values 10..1000.
+const tieredItems = [
+  ['common', 10], ['uncommon', 20], ['rare', 50], ['epic', 100], ['legendary', 1000]
+].map(([rarity, price], index) => ({ auctionId: 100 + index, title: `Item ${rarity}`,
+  image: '/assets/electronics.jpg', price, familySize: 1, category: 'Elektronik',
+  rarity, sellValue: price, marketCategory: 'electronics' }));
+// What the buggy v1 writer stored: single-draw expectations (21.9/21.9), a
+// single-draw reserve (26), and spread evaluated with mixed 3*min/max bounds
+// against it — 3*10 = 30 < 26 is false, so the row froze unusable.
+const v1Pricing = { e0: 21.9, et: 21.9, referenceReserve: 26, minMarketValue: 10, maxMarketValue: 1000, spreadOk: false };
+
+function v1Edition({ id, paletteId, items, pricing, available, availabilityReason, weights }) {
+  const date = '2026-09-12';
+  return {
+    id, palette_id: paletteId, event_id: null, rotation_date: date,
+    starts_at: Date.parse(`${date}T00:00:00Z`), ends_at: Date.parse(`${date}T00:00:00Z`) + DAY_MS,
+    payload: {
+      paletteId, definitionVersion: 1, kind: 'base', name: 'Palette', nameDe: 'Palette', badge: 'X',
+      story: { title: 'Frozen story', body: 'Frozen body.', fictional: true },
+      allowedMarketCategories: ['electronics'], legacyTheme: 'electronics',
+      rewardCount: 3, requiredLevel: 1, items, weights, available, availabilityReason,
+      valuationAt: day, pricing
+    }
+  };
+}
+
+// Seed a pre-migration database: tables exist, the marker is absent, and the
+// given edition rows carry v1 (unversioned) payloads.
+function seedLegacyEditions(dir, editions) {
+  withDatabase(dir, db => {
+    db.prepare('DELETE FROM app_state WHERE key = ?').run(PRICING_MARKER);
+    const insert = db.prepare(`INSERT OR REPLACE INTO palette_editions
+      (id, palette_id, event_id, rotation_date, starts_at, ends_at, payload_json)
+      VALUES (?, ?, NULL, ?, ?, ?, ?)`);
+    for (const edition of editions) {
+      insert.run(edition.id, edition.palette_id, edition.rotation_date,
+        edition.starts_at, edition.ends_at, JSON.stringify(edition.payload));
+    }
+  });
+}
+const markerOf = dir => withDatabase(dir, db => {
+  const row = db.prepare('SELECT value_json FROM app_state WHERE key = ?').get(PRICING_MARKER);
+  return row ? JSON.parse(row.value_json) : null;
+});
+const payloadOf = (dir, id) => JSON.parse(editionRows(dir, 'id = ?', id)[0].payload_json);
+
+test('migration corrects v1 expectations exactly once and can re-enable a failed spread', async t => {
+  const dir = await fixture(t);
+  seedLegacyEditions(dir, [v1Edition({ id: 'base:electronics:2026-09-12', paletteId: 'electronics',
+    items: tieredItems, pricing: { ...v1Pricing }, available: false,
+    availabilityReason: 'insufficient_value_spread', weights: [0, 0, 0, 0, 0] })]);
+  const at = day + 6 * hour; // stays inside the seeded edition's UTC day
+  const catalog = loadPaletteCatalog(dir, { now: at });
+  const entry = catalog.palettes.find(palette => palette.editionId === 'base:electronics:2026-09-12');
+  // Corrected bundle math: 3*min = 30 < 78 < 3*max = 3000 — the frozen row
+  // that v1 underpriced into unavailability becomes usable.
+  assert.equal(entry.availability, 'available');
+  assert.equal(entry.available, true);
+  assert.equal(entry.cost, 78);
+  assert.equal(entry.referenceReserve, 78);
+  const payload = payloadOf(dir, 'base:electronics:2026-09-12');
+  assert.equal(payload.pricingVersion, 2);
+  assert.ok(Math.abs(payload.pricing.e0 - 65.7) < 1e-9);
+  assert.ok(Math.abs(payload.pricing.et - 65.7) < 1e-9);
+  assert.equal(payload.pricing.referenceReserve, 78);
+  assert.equal(payload.pricing.spreadOk, true);
+  assert.deepEqual(payload.weights, CASE_WEIGHTS);
+  assert.equal(payload.available, true);
+  assert.equal(payload.availabilityReason, null);
+  // Everything else is identical: pool, timestamps, story, identity.
+  assert.deepEqual(payload.items, tieredItems);
+  assert.equal(payload.valuationAt, day);
+  assert.equal(payload.definitionVersion, 1);
+  assert.equal(payload.rewardCount, 3);
+  assert.deepEqual(payload.story, { title: 'Frozen story', body: 'Frozen body.', fictional: true });
+  const [row] = editionRows(dir, 'id = ?', 'base:electronics:2026-09-12');
+  assert.equal(row.starts_at, Date.parse('2026-09-12T00:00:00Z'));
+  assert.equal(row.ends_at, Date.parse('2026-09-12T00:00:00Z') + DAY_MS);
+  // The marker was written last, with the corrected/retained counts.
+  assert.deepEqual(markerOf(dir), { corrected: 1, retained: 0, migratedAt: new Date(at).toISOString() });
+  // Reopening and rereading cannot multiply the expectations again.
+  closeDataStore(dir);
+  loadPaletteCatalog(dir, { now: day + 7 * hour });
+  const again = payloadOf(dir, 'base:electronics:2026-09-12');
+  assert.ok(Math.abs(again.pricing.e0 - 65.7) < 1e-9);
+  assert.ok(Math.abs(again.pricing.et - 65.7) < 1e-9);
+  assert.equal(again.pricing.referenceReserve, 78);
+  assert.equal(again.pricingVersion, 2);
+  assert.deepEqual(markerOf(dir), { corrected: 1, retained: 0, migratedAt: new Date(at).toISOString() });
+});
+
+test('migration retains null-pricing insufficient-stock rows as unavailable', async t => {
+  const dir = await fixture(t);
+  seedLegacyEditions(dir, [v1Edition({ id: 'base:wine:2026-09-12', paletteId: 'wine',
+    items: tieredItems.slice(0, 3), pricing: null, available: false,
+    availabilityReason: 'insufficient_stock', weights: [0, 0, 0, 0, 0] })]);
+  const catalog = loadPaletteCatalog(dir, { now: day + 6 * hour });
+  const entry = catalog.palettes.find(palette => palette.editionId === 'base:wine:2026-09-12');
+  assert.equal(entry.availability, 'restocking');
+  assert.equal(entry.available, false);
+  assert.equal(entry.cost, 0);
+  assert.equal(entry.referenceReserve, null);
+  const payload = payloadOf(dir, 'base:wine:2026-09-12');
+  assert.equal(payload.pricing, null);
+  assert.equal(payload.available, false);
+  assert.equal(payload.availabilityReason, 'insufficient_stock');
+  assert.deepEqual(payload.weights, [0, 0, 0, 0, 0]);
+  assert.equal(payload.pricingVersion, 2);
+  assert.deepEqual(payload.items, tieredItems.slice(0, 3));
+  assert.deepEqual(markerOf(dir), { corrected: 0, retained: 1, migratedAt: new Date(day + 6 * hour).toISOString() });
+});
+
+test('corrected historical pricing ignores later market and archive changes', async t => {
+  const dir = await fixture(t);
+  seedLegacyEditions(dir, [v1Edition({ id: 'base:electronics:2026-09-12', paletteId: 'electronics',
+    items: tieredItems, pricing: { ...v1Pricing }, available: false,
+    availabilityReason: 'insufficient_value_spread', weights: [0, 0, 0, 0, 0] })]);
+  loadPaletteCatalog(dir, { now: day }); // migration runs here
+  // After the correction, both the market and the archive change hard.
+  publish(dir, 'boom', { marketEffects: [{ category: 'electronics', direction: 'up', magnitude: 20 }] }, day + 2 * hour);
+  upsertAuctions(dir, [...stock, ...traps].map(lot => ({ ...lot, currentBid: lot.currentBid * 25 })));
+  const entry = loadPaletteCatalog(dir, { now: day + 3 * hour })
+    .palettes.find(palette => palette.editionId === 'base:electronics:2026-09-12');
+  assert.equal(entry.referenceReserve, 78);
+  assert.equal(entry.cost, 78);
+  const payload = payloadOf(dir, 'base:electronics:2026-09-12');
+  assert.ok(Math.abs(payload.pricing.e0 - 65.7) < 1e-9);
+  assert.ok(Math.abs(payload.pricing.et - 65.7) < 1e-9);
+  assert.equal(payload.valuationAt, day);
+  assert.deepEqual(payload.items, tieredItems);
+});
+
+test('a mid-migration failure rolls back every row and the marker', async t => {
+  const dir = await fixture(t);
+  seedLegacyEditions(dir, [
+    v1Edition({ id: 'base:electronics:2026-09-12', paletteId: 'electronics', items: tieredItems,
+      pricing: { ...v1Pricing }, available: false, availabilityReason: 'insufficient_value_spread', weights: [0, 0, 0, 0, 0] }),
+    v1Edition({ id: 'base:wine:2026-09-12', paletteId: 'wine', items: tieredItems.slice(0, 3),
+      pricing: null, available: false, availabilityReason: 'insufficient_stock', weights: [0, 0, 0, 0, 0] })
+  ]);
+  // Abort on the second corrected row (rows are processed in id order).
+  withDatabase(dir, db => db.exec(`CREATE TRIGGER sabotage_pricing BEFORE UPDATE ON palette_editions
+    WHEN NEW.id = 'base:wine:2026-09-12' BEGIN SELECT RAISE(ABORT, 'sabotaged'); END`));
+  assert.throws(() => loadPaletteCatalog(dir, { now: day }), /sabotaged/);
+  // Both rows are still untouched v1 state and the marker was not written.
+  const electronics = payloadOf(dir, 'base:electronics:2026-09-12');
+  assert.equal(electronics.pricingVersion, undefined);
+  assert.ok(Math.abs(electronics.pricing.e0 - 21.9) < 1e-9);
+  assert.equal(electronics.available, false);
+  assert.equal(markerOf(dir), null);
+  // Without the sabotage the same migration completes for both rows.
+  withDatabase(dir, db => db.exec('DROP TRIGGER sabotage_pricing'));
+  loadPaletteCatalog(dir, { now: day + hour });
+  assert.ok(Math.abs(payloadOf(dir, 'base:electronics:2026-09-12').pricing.e0 - 65.7) < 1e-9);
+  assert.equal(payloadOf(dir, 'base:wine:2026-09-12').pricingVersion, 2);
+  assert.deepEqual(markerOf(dir), { corrected: 1, retained: 1, migratedAt: new Date(day + hour).toISOString() });
+});
+
+test('repeated catalog reads reuse stored base editions without touching the archive', async t => {
+  const dir = await fixture(t);
+  const first = loadPaletteCatalog(dir, { now: day });
+  assert.equal(first.palettes.filter(palette => palette.kind === 'base').length, 8);
+  // With the archive gone entirely, a regenerating loader would fail; a
+  // reusing loader returns the frozen editions byte-for-byte.
+  withDatabase(dir, db => db.exec('DROP TABLE auctions'));
+  const second = loadPaletteCatalog(dir, { now: day });
+  assert.deepEqual(second, first);
 });

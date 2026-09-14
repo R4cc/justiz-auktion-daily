@@ -166,7 +166,7 @@ function ensureSimulation(db, now) {
   ensurePublicationSchema(db);
   ensureMarketSchema(db, now);
   ensureMarketEffectsSchema(db);
-  ensurePaletteEditionSchema(db);
+  ensurePaletteEditionSchema(db, now);
   if (simulationActivation(db) !== null) return;
   // Legacy published/archived news gets a 'legacy' receipt but no effects:
   // its placeholder payloads (fractional/null magnitudes) were never backed

@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import { AccountError } from './errors.mjs';
-import { transaction, withDatabase, readArchiveRows } from './database.mjs';
+import { transaction, withDatabase, readArchiveRows, getState, setState } from './database.mjs';
 import { auctionGallery } from './auction-images.mjs';
 import { auctionSelectionCategory, buildAuctionFamilies } from './auction-selection.mjs';
 import { buildEditionItems, caseRewards, loadCaseCatalog, matchesTheme, tokenValue,
@@ -20,6 +20,11 @@ import { ensureNewsSchema } from './news.mjs';
 // drawn in this package.
 const fail = (code, status) => { throw new AccountError(code, status); };
 export const REWARD_COUNT = 3;
+// Reference pricing units: expectations are BUNDLE expectations (rewardCount
+// draws), min/max stay PER-ITEM. v1 payloads mistakenly stored single-draw
+// expectations; v2 is the corrected bundle math (see migrateBundlePricing).
+export const PRICING_VERSION = 2;
+const BUNDLE_PRICING_MARKER = 'palette_bundle_pricing_v2';
 const DAY_MS = 86_400_000;
 const hour = 3_600_000;
 const MARKET_CATEGORY_IDS = new Set(['electronics', 'vehicles', 'wine', 'watches_jewelry', 'tools',
@@ -134,6 +139,9 @@ function eventEligibility(definition) {
 // Edition valuation reads the persisted market state, so the market schema is
 // ensured here too (lazy owning-module creation, same pattern as everywhere).
 // The news schema is ensured because edition rows reference news_events.
+// The bundle-pricing correction runs here too, before any read or creation
+// can expose mixed pricing versions; callers are already inside a
+// BEGIN IMMEDIATE transaction, so everything below is atomic with them.
 export function ensurePaletteEditionSchema(db, now = Date.now()) {
   ensureMarketSchema(db, now);
   ensureNewsSchema(db);
@@ -151,15 +159,68 @@ export function ensurePaletteEditionSchema(db, now = Date.now()) {
   db.exec(`CREATE UNIQUE INDEX IF NOT EXISTS palette_editions_rotation
     ON palette_editions(palette_id, rotation_date) WHERE event_id IS NULL`);
   db.exec(`CREATE UNIQUE INDEX IF NOT EXISTS palette_editions_event ON palette_editions(event_id, palette_id)`);
+  migrateBundlePricing(db, now);
+}
+
+// One-time correction of pre-acquisition reference metadata: v1 payloads
+// stored SINGLE-DRAW expectations while editions price a rewardCount-item
+// bundle. Stored e0/et are multiplied by the payload's rewardCount; reserve
+// and spread are recomputed purely from those corrected expectations and the
+// stored per-item minimum/maximum — never against today's market or archive.
+// Items, ids, rarity, story, windows, definitionVersion and valuationAt are
+// untouched; malformed pricing is rejected rather than silently replaced.
+// The durable marker is written last, making the migration exactly-once.
+function migrateBundlePricing(db, now) {
+  if (getState(db, BUNDLE_PRICING_MARKER, null)) return;
+  let corrected = 0, retained = 0;
+  const update = db.prepare('UPDATE palette_editions SET payload_json = ? WHERE id = ?');
+  for (const row of db.prepare('SELECT id, payload_json FROM palette_editions ORDER BY id').all()) {
+    let payload;
+    try { payload = JSON.parse(row.payload_json); } catch { payload = null; }
+    if (!payload || typeof payload !== 'object' || Array.isArray(payload)) fail('invalid_stored_pricing', 500);
+    if (payload.pricingVersion === PRICING_VERSION) continue;
+    const rewardCount = payload.rewardCount;
+    if (!Number.isSafeInteger(rewardCount) || rewardCount < 1 || !Array.isArray(payload.items)) fail('invalid_stored_pricing', 500);
+    if (payload.pricing == null) {
+      // Only a stock-shortage edition may lack pricing.
+      if (payload.availabilityReason !== 'insufficient_stock' || payload.items.length >= 5) fail('invalid_stored_pricing', 500);
+      payload.pricingVersion = PRICING_VERSION;
+      update.run(JSON.stringify(payload), row.id);
+      retained++;
+      continue;
+    }
+    const pricing = payload.pricing;
+    // A priced edition must carry usable stock and complete numeric inputs.
+    if (payload.items.length < 5) fail('invalid_stored_pricing', 500);
+    for (const field of ['e0', 'et', 'minMarketValue', 'maxMarketValue']) {
+      if (!Number.isFinite(pricing[field])) fail('invalid_stored_pricing', 500);
+    }
+    pricing.e0 = pricing.e0 * rewardCount;
+    pricing.et = pricing.et * rewardCount;
+    pricing.referenceReserve = Math.ceil(Math.max(.75 * pricing.e0 + .25 * pricing.et, pricing.et) / .85);
+    pricing.spreadOk = rewardCount * pricing.minMarketValue < pricing.referenceReserve
+      && rewardCount * pricing.maxMarketValue > pricing.referenceReserve;
+    payload.available = pricing.spreadOk;
+    payload.availabilityReason = pricing.spreadOk ? null : 'insufficient_value_spread';
+    payload.weights = pricing.spreadOk ? [...CASE_WEIGHTS] : CASE_WEIGHTS.map(() => 0);
+    payload.pricingVersion = PRICING_VERSION;
+    update.run(JSON.stringify(payload), row.id);
+    corrected++;
+  }
+  const at = new Date(now).toISOString();
+  setState(db, BUNDLE_PRICING_MARKER, { corrected, retained, migratedAt: at }, at);
 }
 
 // Reference pricing for a future three-item bundle (metadata only — no offer,
 // no purchase, no open). p(item) = tierWeight / totalWeight / tierItemCount;
-// E0 sums frozen base token values, Et sums unrounded market-adjusted values
-// captured once at generation time. referenceReserve =
-// ceil(max(0.75*E0 + 0.25*Et, Et) / 0.85). A usable edition needs both loss
-// and upside at the reserve: 3*min < reserve AND 3*max > reserve.
-function referencePricing(items, marketValueOf) {
+// E0 and Et are BUNDLE expectations: rewardCount times the single-draw
+// expectation over frozen base token values (E0) and unrounded market-adjusted
+// values captured once at generation time (Et). referenceReserve =
+// ceil(max(0.75*E0 + 0.25*Et, Et) / 0.85). minMarketValue/maxMarketValue stay
+// per-item; a usable edition needs both loss and upside at the reserve:
+// rewardCount*min < reserve AND rewardCount*max > reserve.
+// Exported as a pure helper for independent regression tests.
+export function bundleReferencePricing(items, marketIndexOf, rewardCount = REWARD_COUNT) {
   const totalWeight = CASE_WEIGHTS.reduce((sum, weight) => sum + weight, 0);
   const tierCounts = new Map();
   for (const item of items) tierCounts.set(item.rarity, (tierCounts.get(item.rarity) || 0) + 1);
@@ -168,15 +229,17 @@ function referencePricing(items, marketValueOf) {
     const tierWeight = CASE_WEIGHTS[RARITIES.findIndex(rarity => rarity.id === item.rarity)];
     const probability = tierWeight / totalWeight / tierCounts.get(item.rarity);
     const base = tokenValue(item.price);
-    const market = base * marketValueOf(item) / 100;
+    const market = base * marketIndexOf(item) / 100;
     e0 += probability * base;
     et += probability * market;
     min = Math.min(min, market);
     max = Math.max(max, market);
   }
+  e0 *= rewardCount;
+  et *= rewardCount;
   const referenceReserve = Math.ceil(Math.max(.75 * e0 + .25 * et, et) / .85);
   return { e0, et, referenceReserve, minMarketValue: min, maxMarketValue: max,
-    spreadOk: 3 * min < referenceReserve && 3 * max > referenceReserve };
+    spreadOk: rewardCount * min < referenceReserve && rewardCount * max > referenceReserve };
 }
 
 // Build one frozen edition payload from the archive behind `db` (db-scoped:
@@ -197,7 +260,9 @@ function buildEditionPayload(db, definition, { eventId = null, rotationDate = nu
     definition.kind === 'event' ? eventEligibility(definition) : null)
     .map(item => ({ ...item, marketCategory: marketCategoryForItem(item) }));
   const stockOk = items.length >= 5;
-  const pricing = stockOk ? referencePricing(items, item => marketIndexAt(db, item.marketCategory, now)) : null;
+  const pricing = stockOk
+    ? bundleReferencePricing(items, item => marketIndexAt(db, item.marketCategory, now), definition.rewardCount)
+    : null;
   const available = Boolean(pricing?.spreadOk);
   return {
     id: eventId !== null ? `event:${eventId}:${definition.id}` : `base:${definition.id}:${rotationDate}`,
@@ -209,7 +274,7 @@ function buildEditionPayload(db, definition, { eventId = null, rotationDate = nu
       rewardCount: definition.rewardCount, requiredLevel: definition.requiredLevel,
       items, weights: available ? [...CASE_WEIGHTS] : CASE_WEIGHTS.map(() => 0),
       available, availabilityReason: !stockOk ? 'insufficient_stock' : !available ? 'insufficient_value_spread' : null,
-      valuationAt: now, pricing: pricing && { ...pricing }
+      valuationAt: now, pricingVersion: PRICING_VERSION, pricing: pricing && { ...pricing }
     }
   };
 }
@@ -228,7 +293,7 @@ function storeEdition(db, edition) {
 // resolved event window. Themed stock shortage is a valid outcome — the
 // edition is persisted as unavailable and the publication still lands.
 export function createEventEditions(db, eventId, windows, now) {
-  ensurePaletteEditionSchema(db);
+  ensurePaletteEditionSchema(db, now);
   for (const window of windows) {
     const definition = paletteDefinition(window.paletteId);
     if (!definition || definition.kind !== 'event') fail('invalid_palette_windows');
@@ -240,13 +305,18 @@ export function createEventEditions(db, eventId, windows, now) {
 }
 
 // Db-scoped: freeze today's base editions (same stable ids as the legacy
-// cases) on first touch. Existing rows are never touched, so collector
-// updates during the day cannot reroll the offer.
+// cases) on first touch. An existing edition is reused directly — no archive
+// read, no payload generation — so stored editions survive even when the
+// archive later changes or becomes unavailable. INSERT OR IGNORE still guards
+// fresh rows against races.
 export function ensureBaseEditions(db, date, now) {
-  ensurePaletteEditionSchema(db);
+  ensurePaletteEditionSchema(db, now);
+  const exists = db.prepare('SELECT 1 FROM palette_editions WHERE id = ?');
   const startsAt = Date.parse(date);
   for (const definition of DEFINITIONS.values()) {
     if (definition.kind !== 'base') continue;
+    const id = `base:${definition.id}:${date}`;
+    if (exists.get(id)) continue;
     storeEdition(db, buildEditionPayload(db, definition, {
       rotationDate: date, startsAt, endsAt: startsAt + DAY_MS, now
     }));

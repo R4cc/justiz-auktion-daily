@@ -32,9 +32,9 @@ variables set, the live game behaves exactly as before.
 | Palette definitions + editions | `src/palette-definitions.mjs` | Base/event registry, frozen themed editions, reference pricing, persisted catalog |
 | Public read APIs | `src/economy-api.mjs` | Flag-gated GET endpoints |
 | Frontend data access | `dist/economy.js` | `window.justizEconomy` helpers, no UI |
-| Tests | `test/market.test.mjs`, `test/news.test.mjs`, `test/resale.test.mjs`, `test/palettes.test.mjs`, `test/economy-api.test.mjs`, `test/simulation.test.mjs`, `test/palette-editions.test.mjs`, `test/acceptance.test.mjs` | full suite green (129 tests) |
+| Tests | `test/market.test.mjs`, `test/news.test.mjs`, `test/resale.test.mjs`, `test/palettes.test.mjs`, `test/economy-api.test.mjs`, `test/simulation.test.mjs`, `test/palette-editions.test.mjs`, `test/acceptance.test.mjs` | full suite green (135 tests) |
 
-## 2. Database changes (all additive, `PRAGMA user_version` bumped 2 → 3 → 4 → 5 → 6; never lowered)
+## 2. Database changes (all additive, `PRAGMA user_version` bumped 2 → 3 → 4 → 5 → 6 → 7; never lowered)
 
 No existing table, column, or row was modified or deleted. New tables are
 created lazily by their owning modules (`CREATE TABLE IF NOT EXISTS` on first
@@ -82,6 +82,11 @@ documented lock checks.
   activation timestamp (`{ activatedAt, activatedAtMs }`). Presence switches
   reads to the computed simulation and makes the activation migration
   exactly-once.
+- `app_state['palette_bundle_pricing_v2']` — durable marker for the one-time
+  bundle-pricing correction of stored palette editions (`{ corrected,
+  retained, migratedAt }`); written last inside the migrating transaction.
+  Also: `news_events.palette_windows` (default `'[]'`) was added via an
+  idempotent column-existence migration at marker 6.
 - `resale_auctions` (`src/resale.mjs`) — `id TEXT PK`, `seller_id → users`,
   `inventory_id → inventory` (**unique per active listing** via partial unique
   index), `start_price INTEGER`, `current_bid INTEGER`, `current_bidder_id`,
@@ -309,15 +314,36 @@ case editions and palette editions verbatim (no diverging rarity logic).
   substituted and the edition is not regenerated later.
 - **Reference pricing (metadata only, no buy/open offer).** With
   `p(item) = tierWeight / totalWeight / tierItemCount`:
-  `E0 = 3·Σ p·baseValueTokens` over frozen base token values, `Et =
-  3·Σ p·unrounded market-adjusted values` (captured once at generation from
-  the persisted market state — never gated by feature flags), and
-  `referenceReserve = ceil(max(0.75·E0 + 0.25·Et, Et) / 0.85)`. A usable
-  edition requires `3·minItemMarketValue < referenceReserve <
-  3·maxItemMarketValue`; otherwise it freezes unavailable with
-  `availabilityReason: 'insufficient_value_spread'` so both loss and upside
-  remain possible. A future primary auction computes its own reserve with the
-  same formula and the market at lot creation.
+  `E0 = rewardCount·Σ p·baseValueTokens` over frozen base token values, `Et =
+  rewardCount·Σ p·unrounded market-adjusted values` (captured once at
+  generation from the persisted market state — never gated by feature
+  flags), and `referenceReserve = ceil(max(0.75·E0 + 0.25·Et, Et) / 0.85)`.
+  **Units:** stored `pricing.e0`/`pricing.et` are BUNDLE expectations
+  (`rewardCount` = 3 draws); `minMarketValue`/`maxMarketValue` stay PER-ITEM.
+  A usable edition requires `rewardCount·minItemMarketValue < referenceReserve
+  < rewardCount·maxItemMarketValue` (both loss and upside possible);
+  otherwise it freezes unavailable with `availabilityReason:
+  'insufficient_value_spread'`. Payloads carry `pricingVersion: 2` — v1
+  payloads (written before the correction) stored single-draw expectations by
+  mistake; see the migration below. A future primary auction computes its own
+  reserve with the same formula and the market at lot creation.
+- **Bundle-pricing migration (`palette_bundle_pricing_v2`).** One-time,
+  atomic, idempotent correction of pre-acquisition reference metadata,
+  running inside the same transaction as the first edition read/creation
+  after the upgrade (marker written last, so never rerun). For stored
+  unversioned rows: `e0`/`et` are multiplied by the payload's `rewardCount`,
+  and `referenceReserve`, `spreadOk`, `available`, `availabilityReason` and
+  `weights` are recomputed purely from those corrected expectations and the
+  stored per-item minimum/maximum — never against today's market or archive.
+  Rows with `insufficient_stock` (null pricing) retain that state. Items,
+  ids, rarity, story, windows, `definitionVersion` and `valuationAt` are
+  untouched; malformed pricing is rejected (`invalid_stored_pricing`, 500)
+  rather than silently replaced. This intentionally corrected reference
+  metadata before acquisition existed — there are no player payments to
+  adjust. Base editions are also no longer regenerated on every catalog
+  read: an existing edition row is reused directly (no archive access), so
+  stored editions survive even if the archive later disappears; INSERT OR
+  IGNORE still guards freshly generated rows.
 - **Availability.** Evaluated per request with one captured now:
   `scheduled` before `startsAt`, `expired` at/after `endsAt`, `restocking`
   inside the window with a frozen-unusable edition, `available` otherwise;
@@ -489,11 +515,10 @@ writes belong to the future simulation, not to clients.
 
 ## 6. Unfinished systems (explicitly out of scope here)
 
-- Palette generation from fictional seizure stories (today's cases are still
-  category-filtered archive rotations).
-- Palette activation is **implemented** (news windows + frozen event
-  editions). What is still missing downstream: automatic news generation and
-  the auction acquisition flow that consumes editions.
+- Palette generation and activation are **implemented** (base daily editions
+  plus news-driven event editions with frozen pools and fictional stories,
+  §3). Still missing downstream: automatic news generation and the auction
+  acquisition flow that consumes editions.
 - Market fluctuation beyond news effects: no supply/demand drift, no
   scheduler-driven movement, no NPC reactions. The deterministic news-driven
   simulation (§3) is the only thing that moves indexes.
@@ -668,3 +693,30 @@ deviations. The covered scenarios:
    `kind='legacy'` receipts (drafts receive none) but zero `market_effects`
    rows during the activation migration: electronics and wine stay exactly
    100 while the fresh publication's category moves to 105.
+
+## 11. Bundle-pricing validation (palette correction)
+
+Independent regression coverage for the corrected bundle units and the
+`palette_bundle_pricing_v2` migration, all in `test/palette-editions.test.mjs`:
+
+- **Hand-calculated pure fixture** (no production loop copied): one item per
+  rarity with token values 10/20/50/100/1000 against the exported
+  `bundleReferencePricing` helper. Single-draw neutral expectation 21.9;
+  three-item E0 = Et = 65.7 → reserve 78; at index 80 Et = 52.56 → reserve
+  74; at index 120 Et = 78.84 → reserve 93. min/max verified as per-item
+  (12/1200 at index 120), `rewardCount` honored as a parameter (6 draws →
+  131.4/155), tolerances for floats, exact integer reserves.
+- **Integration**: the public catalog formula test recomputes bundle
+  expectations from the frozen pool and asserts stored `pricing.e0`/`et`,
+  per-item min/max, `pricingVersion: 2`, and `cost = referenceReserve`.
+- **Migration**: v1 rows are corrected exactly once (21.9 → 65.7, reserve
+  26 → 78) with the marker `{corrected, retained, migratedAt}` written last;
+  reopen-and-reread cannot multiply again; a v1 row frozen unusable by the
+  mixed math becomes usable under corrected math; null-pricing
+  insufficient-stock rows stay unavailable (`restocking`); pools,
+  timestamps, story and identity are byte-identical; later market moves and
+  archive rewrites cannot alter corrected historical pricing; a sabotaged
+  mid-migration UPDATE rolls back every row and leaves the marker unwritten.
+- **No regeneration**: repeated catalog reads reuse stored base editions
+  without touching the archive — proven by dropping the `auctions` table
+  entirely and still reading the identical frozen catalog.
