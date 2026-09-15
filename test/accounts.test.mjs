@@ -293,7 +293,9 @@ test('rarity reflects price and uniqueness; case contents collapse duplicate fam
   assert.equal(itemRarity(1, 1).id, 'common');
   assert.equal(itemRarity(100000, 1).id, 'legendary');
   assert.notEqual(itemRarity(100, 1).id, itemRarity(100, 25).id);
-  const catalog = caseCatalog([...lots, { ...lots[0], id: 999 }]);
+  // Pin the rotation date: the daily per-tier offset must land on the merged
+  // family, which the real clock only happens to do on alternating days.
+  const catalog = caseCatalog([...lots, { ...lots[0], id: 999 }], Date.parse('2026-09-12T12:00:00Z'));
   const allItems = catalog.cases.flatMap(box => box.items);
   assert.ok(allItems.some(item => item.familySize === 2));
   for (const box of catalog.cases.filter(box => box.available)) {

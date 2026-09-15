@@ -32,7 +32,11 @@ export function createEconomyApi({ dataDir, json, flags = featureFlags() }) {
         return true;
       }
       if (flags.resales && url.pathname.startsWith('/api/resales/')) {
-        json(response, 200, { listing: getResale(dataDir, decodeURIComponent(url.pathname.slice('/api/resales/'.length))) });
+        const raw = url.pathname.slice('/api/resales/'.length);
+        // Malformed percent-encoding must 404 like any unknown id, not 500.
+        let id = raw;
+        try { id = decodeURIComponent(raw); } catch { /* keep raw */ }
+        json(response, 200, { listing: getResale(dataDir, id) });
         return true;
       }
     } catch (error) {

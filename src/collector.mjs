@@ -409,9 +409,7 @@ export function parseAuctionPage(
       text.match(
         /Auktion ID\s*(\d+)/i
       )?.[1] ||
-      url.match(
-        /-(\d{5,8})(?:\D|$)/
-      )?.[1]
+      auctionIdFromUrl(url)
     );
 
   if (!id) {
@@ -1024,6 +1022,42 @@ function splitSetCookieHeader(
   );
 }
 
+// Both standard deletion mechanisms must drop a cookie: Max-Age=0 and an
+// Expires date in the past. A stale cookie otherwise survives for the whole
+// listing session.
+function isExpiredCookieAttribute(
+  attribute
+) {
+  if (
+    /^\s*max-age\s*=\s*0\s*$/i
+      .test(
+        attribute
+      )
+  ) {
+    return true;
+  }
+
+  const expires =
+    /^\s*expires\s*=\s*(.+)\s*$/i
+      .exec(
+        attribute
+      );
+
+  if (!expires) {
+    return false;
+  }
+
+  const time =
+    Date.parse(
+      expires[1]
+    );
+
+  return (
+    Number.isFinite(time) &&
+    time <= Date.now()
+  );
+}
+
 function updateCookieJar(
   cookieJar,
   headers
@@ -1078,11 +1112,7 @@ function updateCookieJar(
 
     const expired =
       attributes.some(
-        attribute =>
-          /^\s*max-age\s*=\s*0\s*$/i
-            .test(
-              attribute
-            )
+        isExpiredCookieAttribute
       );
 
     if (expired) {
@@ -2153,10 +2183,19 @@ function listingHasNextLink(
 function auctionIdFromUrl(
   url
 ) {
+  // extractListingUrls anchors a listing URL on its LAST id-like digit group
+  // (the quote/[?#] tail forces backtracking there), so take that same group
+  // here instead of the first — slugs with several digit groups would
+  // otherwise be queued and stored under the wrong id. The lookahead keeps
+  // the separator unconsumed so adjacent groups both match.
+  const matches = [
+    ...String(url || '').matchAll(
+      /-(\d{5,8})(?=\D|$)/g
+    )
+  ];
+
   return Number(
-    url.match(
-      /-(\d{5,8})(?:\D|$)/
-    )?.[1]
+    matches[matches.length - 1]?.[1]
   ) ||
     null;
 }
@@ -2326,14 +2365,10 @@ export async function enqueueRollingDiscovery({
       )
     );
 
-  if (
-    !force &&
-    queue.tasks.length >
-      0
-  ) {
-    return queue;
-  }
-
+  // Only an in-flight discovery (a queued listing task) blocks a new one.
+  // Detail refresh tasks are independent and must not starve discovery:
+  // processRollingTask re-adds refresh tasks on every call, so gating on any
+  // pending task would defer a needsFullDiscovery migration scan forever.
   if (
     queue.tasks.some(
       task =>
@@ -2842,43 +2877,31 @@ export async function processRollingTask({
       const nextPage =
         pageIndex + 1;
 
-      let hasMore;
+      const pageLimit =
+        Math.max(
+          1,
+          Number(
+            task.maxPages
+          ) ||
+          DEFAULT_MAX_LISTING_PAGES
+        );
 
-      if (
-        Number.isFinite(
-          task.listingTarget
-        )
-      ) {
-        hasMore =
-          nextStart <
-          task.listingTarget;
-      } else {
-        const pageLimit =
-          Math.max(
-            1,
-            Number(
-              task.maxPages
-            ) ||
-            DEFAULT_MAX_LISTING_PAGES
-          );
+      const shortPage =
+        urls.length <
+        result.effectivePageSize;
 
-        const shortPage =
-          urls.length <
-          result.effectivePageSize;
-
-        hasMore =
-          newUrls.length > 0 &&
-          nextPage <
-            pageLimit &&
-          (
-            !task.stopOnShortPage ||
-            !shortPage ||
-            listingHasNextLink(
-              result.html,
-              nextStart
-            )
-          );
-      }
+      const hasMore =
+        newUrls.length > 0 &&
+        nextPage <
+          pageLimit &&
+        (
+          !task.stopOnShortPage ||
+          !shortPage ||
+          listingHasNextLink(
+            result.html,
+            nextStart
+          )
+        );
 
       if (hasMore) {
         addTasks(
@@ -2902,9 +2925,6 @@ export async function processRollingTask({
 
               stopOnShortPage:
                 task.stopOnShortPage,
-
-              listingTarget:
-                task.listingTarget,
 
               requestedPageSize,
 
@@ -3402,6 +3422,9 @@ export async function collectAuctions({
   let listingStart =
     0;
 
+  let failedPages =
+    0;
+
   for (
     let page = 0;
     page <
@@ -3422,6 +3445,9 @@ export async function collectAuctions({
           requestedPageSize:
             LISTING_PAGE_SIZE
         });
+
+      failedPages =
+        0;
 
       const urls =
         extractListingUrls(
@@ -3479,16 +3505,24 @@ export async function collectAuctions({
       listingStart =
         nextStart;
     } catch (error) {
+      failedPages += 1;
+
       logger.warn(
         `Listing page ${page + 1} failed: ${error.message}`
       );
 
-      listingStart +=
-        listingSession
-          .pageSizeSupported ===
-          true
-          ? LISTING_PAGE_SIZE
-          : LEGACY_LISTING_PAGE_SIZE;
+      // Retry the same start instead of skipping past it: advancing here
+      // silently dropped every listing of the failed page for the whole run,
+      // and the guessed increment desynced later offsets (e.g. when the very
+      // first request failed before the session knew the page size).
+      if (
+        failedPages >=
+        3
+      ) {
+        break;
+      }
+
+      page -= 1;
     }
   }
 

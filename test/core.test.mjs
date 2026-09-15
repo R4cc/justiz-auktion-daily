@@ -4,7 +4,7 @@ import { mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { censorCurrencyValues, gameNumber, scoreGuess, selectDailySet, selectRandomSet } from '../src/core.mjs';
-import { enqueueRollingDiscovery, extractListingUrls, parseAuctionPage, parseAuctionStart, processRollingTask } from '../src/collector.mjs';
+import { ROLLING_QUEUE_VERSION, collectAuctions, enqueueRollingDiscovery, extractListingUrls, parseAuctionPage, parseAuctionStart, processRollingTask } from '../src/collector.mjs';
 import { formatPublicStats } from '../src/public-stats.mjs';
 import {
   DATABASE_FILENAME,
@@ -17,7 +17,8 @@ import {
   readRandomUsage,
   recordRandomGame,
   saveDailyGame,
-  upsertAuctions
+  upsertAuctions,
+  writeQueue
 } from '../src/database.mjs';
 
 test('scoring uses a forgiving nonlinear curve', () => {
@@ -293,6 +294,65 @@ test('rolling collector preserves the request interval across restarts', async (
     closeDataStore(dataDir);
     await rm(dataDir, { recursive: true, force: true });
   }
+});
+
+test('full discovery is not starved by pending refresh tasks or a stale queue version', async () => {
+  const dataDir = await mkdtemp(path.join(tmpdir(), 'justizguessr-discovery-'));
+  try {
+    await writeFile(path.join(dataDir, 'auctions.json'), '{"auctions":[]}\n');
+    // A pending detail refresh task and a stale queue version (which sets
+    // needsFullDiscovery) must not defer the migration discovery forever:
+    // processRollingTask re-adds refresh tasks on every call, so gating on
+    // any pending task would starve listing discovery indefinitely.
+    writeQueue(dataDir, {
+      version: ROLLING_QUEUE_VERSION - 1,
+      needsFullDiscovery: true,
+      tasks: [{ kind: 'detail', url: 'https://www.justiz-auktion.de/X-210635', attempts: 0, notBefore: 0, priority: 1 }]
+    });
+    await enqueueRollingDiscovery({ dataDir, pages: 1, now: 1_000 });
+    const queue = readQueue(dataDir, {});
+    assert.equal(queue.needsFullDiscovery, false);
+    assert.equal(queue.version, ROLLING_QUEUE_VERSION);
+    assert.ok(queue.tasks.some(task => task.kind === 'listing'));
+  } finally {
+    closeDataStore(dataDir);
+    await rm(dataDir, { recursive: true, force: true });
+  }
+});
+
+test('batch collection retries a failed listing page instead of skipping its range', async () => {
+  const dataDir = await mkdtemp(path.join(tmpdir(), 'justizguessr-retry-'));
+  try {
+    await writeFile(path.join(dataDir, 'auctions.json'), '{"auctions":[]}\n');
+    const requested = [];
+    let calls = 0;
+    const fetchImpl = async url => {
+      calls += 1;
+      requested.push(String(url));
+      if (calls === 1) throw new Error('transient outage');
+      return new Response('<a href="/Werkzeugkoffer-210635">Details</a>', { status: 200, headers: { 'content-type': 'text/html' } });
+    };
+    await collectAuctions({ dataDir, fetchImpl, pages: 1, maxDetails: 0, logger: { info() {}, warn() {} } });
+    assert.equal(requested.length, 2);
+    assert.match(requested[0], /start=0/);
+    assert.match(requested[1], /start=0/); // same start retried, not skipped past
+  } finally {
+    closeDataStore(dataDir);
+    await rm(dataDir, { recursive: true, force: true });
+  }
+});
+
+test('auction ids come from the same last digit group the href extractor anchors on', () => {
+  const html = `<a href="/Koffer-Set-123456-210635">Details</a>`;
+  const [url] = extractListingUrls(html);
+  assert.ok(url, 'extractor accepts the listing URL');
+  const item = parseAuctionPage(`
+    <title>Koffer Set (#210635) | Justiz-Auktion</title>
+    <p>Startgebot: 3,00 €</p><p>Aktuelles Gebot: 21,00 €</p>
+    <p>Endet am: 22.09.2026 13:41:21</p><h3>Artikelbeschreibung</h3>
+    <p>Zustand: Gebraucht</p>
+  `, url);
+  assert.equal(item.id, 210635);
 });
 
 test('public stats expose aggregates without auction details or internal errors', () => {

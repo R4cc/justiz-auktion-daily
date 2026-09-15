@@ -223,7 +223,14 @@ function refreshMarketHistory(db, now, activationMs) {
     const insert = db.prepare('INSERT OR IGNORE INTO market_snapshots (category, index_value, captured_at) VALUES (?, ?, ?)');
     for (let boundary = start; boundary <= last; boundary += SNAPSHOT_INTERVAL_MS) {
       const capturedAt = new Date(boundary).toISOString();
-      for (const { id } of MARKET_CATEGORIES) insert.run(id, indexFromEffects(byCategory.get(id), boundary), capturedAt);
+      for (const { id } of MARKET_CATEGORIES) {
+        // Per-boundary activation filter: an effect loaded for the window may
+        // start after an earlier boundary, and effectContribution clamps such
+        // pre-start reads to full strength — the same rule as the live
+        // computeCategoryIndex (starts_at <= at) must hold retroactively.
+        const active = byCategory.get(id).filter(effect => effect.starts_at <= boundary);
+        insert.run(id, indexFromEffects(active, boundary), capturedAt);
+      }
     }
   }
   db.prepare('DELETE FROM market_snapshots WHERE captured_at < ?').run(new Date(now - SNAPSHOT_RETENTION_MS).toISOString());

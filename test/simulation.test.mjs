@@ -211,6 +211,27 @@ test('a database failure mid-publication leaves row, receipt and effects untouch
   assert.equal(rows(dir, 'SELECT COUNT(*) AS count FROM market_effects')[0].count, 2);
 });
 
+test('backfilled snapshots never apply an effect before its publication moment', async t => {
+  const dir = await fixture(t);
+  publish(dir, 'crash', [{ category: 'electronics', direction: 'down', magnitude: 15 }], day); // 12:30
+  // Published ten hours later, mid-backfill-window: a single read at +15h must
+  // reconstruct the whole grid without letting the future effect leak into
+  // earlier boundaries.
+  publish(dir, 'boom', [{ category: 'wine', direction: 'up', magnitude: 20 }], day + 10 * hour); // 22:30
+  const history = marketHistory(dir, 'wine', { now: day + 15 * hour, limit: 1000 });
+  // Boundaries 13:00..22:00 predate the publication and stay neutral; from
+  // 23:00 the effect decays on its original schedule.
+  assert.deepEqual(history.map(entry => entry.indexValue),
+    [118.75, 119.03, 119.31, 119.58, 119.86, ...Array.from({ length: 10 }, () => 100)]);
+  // Newest boundary is 03:00 (+14.5h); the first neutral one is 22:00 (+9.5h),
+  // the publication itself sits between them at 22:30, off the grid.
+  assert.equal(history[4].capturedAt, new Date(day + 10.5 * hour).toISOString());
+  assert.equal(history[5].capturedAt, new Date(day + 9.5 * hour).toISOString());
+  // The pre-existing effect decays identically either way.
+  const electronics = marketHistory(dir, 'electronics', { now: day + 15 * hour, limit: 1000 });
+  assert.equal(electronics[electronics.length - 1].indexValue, 85.1); // 13:00, 0.5h elapsed
+});
+
 test('arbitrary-time snapshots coexist with the hourly grid', async t => {
   const dir = await fixture(t);
   publish(dir, 'story', [{ category: 'wine', direction: 'up', magnitude: 10 }], day);
