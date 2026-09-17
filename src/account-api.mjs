@@ -5,6 +5,7 @@ import { higherLowerDeck } from './higher-lower.mjs';
 import { auctionGallery } from './auction-images.mjs';
 import { featureFlags } from './features.mjs';
 import { saveNewsEvent } from './news.mjs';
+import { bidOnPaletteAuction, createPaletteAuction, getPaletteAuctionRewards } from './palette-auctions.mjs';
 import { cancelListing, listItem, listingsByUser, placeBid } from './resale.mjs';
 
 const AUCTION_PAGE_SIZE = 25;
@@ -89,6 +90,15 @@ export async function createAccountApi({ dataDir, dailyPayload, json, env = proc
             if (!auction) throw new AccountError('auction_not_found', 404);
             json(response, 200, { auction: auctionDetail(auction) });
           }
+          else if (flags.paletteAuctions && route.startsWith('palette-auctions/') && route.endsWith('/rewards')) {
+            // Winner-only reveal; the domain owns every rule (deadline,
+            // settlement, non-winner genericity) — this branch only decodes
+            // the id safely, like the resale detail route.
+            const raw = route.slice('palette-auctions/'.length, -'/rewards'.length);
+            let id = raw;
+            try { id = decodeURIComponent(raw); } catch { /* keep raw */ }
+            json(response, 200, { reveal: getPaletteAuctionRewards(dataDir, user, id) });
+          }
           else throw new AccountError('not_found', 404);
         }
         return true;
@@ -125,6 +135,18 @@ export async function createAccountApi({ dataDir, dailyPayload, json, env = proc
       }
       else if (flags.resales && route === 'resale/bid') result = { listing: placeBid(dataDir, user, payload.id, payload.amount), user: accounts.profile(user) };
       else if (flags.resales && route === 'resale/cancel') result = { listing: cancelListing(dataDir, user, payload.id), user: accounts.profile(user) };
+      else if (flags.paletteAuctions && route === 'palette-auctions/bid') {
+        // Thin adapter: level gate, escrow, minimum bid, deadline and ban
+        // handling all live in the domain function.
+        result = { auction: bidOnPaletteAuction(dataDir, user, payload.id, payload.amount), user: accounts.profile(user) };
+      }
+      else if (flags.paletteAuctions && route === 'admin/palette-auctions') {
+        // Narrow test/operations surface for trusted lot creation. Only
+        // editionId and requestId reach the domain; callers cannot inject a
+        // reserve, rewards, duration, level, valuation, winner or seed.
+        if (!user.admin) throw new AccountError('forbidden', 403);
+        result = { auction: createPaletteAuction(dataDir, { editionId: payload.editionId, requestId: payload.requestId }) };
+      }
       else if (route === 'friends/request') {
         accounts.throttle(`friend-request:${user.id}`, 20);
         accounts.requestFriend(user, payload.username); result = accounts.friends(user);

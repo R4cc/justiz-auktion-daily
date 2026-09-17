@@ -6,6 +6,7 @@ import { scoreGuess } from './core.mjs';
 import { AccountError } from './errors.mjs';
 import { ensureResaleSchema, inventoryIsLocked, lockedInventoryIds } from './resale.mjs';
 import { marketCategoryForItem } from './market.mjs';
+import { progressionForXp } from './progression.mjs';
 
 export { AccountError };
 
@@ -269,7 +270,7 @@ export class Accounts {
   }
   profile(user) {
     return this.db(db => {
-      const row = db.prepare('SELECT id, username, admin, tokens, created_at, grants_seen_at FROM users WHERE id = ?').get(user.id);
+      const row = db.prepare('SELECT id, username, admin, tokens, xp, created_at, grants_seen_at FROM users WHERE id = ?').get(user.id);
       const reward = db.prepare(`SELECT daily_rewards.earned, account_games.mode, account_games.complete FROM daily_rewards
         JOIN account_games ON run_id = account_games.id WHERE daily_rewards.user_id = ? AND daily_rewards.date = ?`).get(user.id, day(this.now()));
       // Token gifts are consumed on read, so every grant is announced exactly once.
@@ -277,8 +278,10 @@ export class Accounts {
         ...db.prepare('SELECT amount, created_at FROM token_grants WHERE created_at > ? AND created_at >= ?').all(row.grants_seen_at, row.created_at)]
         .sort((left, right) => left.created_at - right.created_at).map(gift => ({ amount: gift.amount, createdAt: gift.created_at }));
       db.prepare('UPDATE users SET grants_seen_at = ? WHERE id = ?').run(this.now(), user.id);
-      const { created_at, grants_seen_at, ...publicRow } = row;
-      return { ...publicRow, ...this.summary(db, user.id), admin: Boolean(row.admin), reward: reward || null, gifts, date: day(this.now()) };
+      const { created_at, grants_seen_at, xp, ...publicRow } = row;
+      // Progression derives from the freshly read users.xp through the shared
+      // curve — no level arithmetic lives in this class.
+      return { ...publicRow, progression: progressionForXp(xp), ...this.summary(db, user.id), admin: Boolean(row.admin), reward: reward || null, gifts, date: day(this.now()) };
     });
   }
   summary(db, userId) {

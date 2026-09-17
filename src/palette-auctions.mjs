@@ -4,6 +4,11 @@ import { transaction, withDatabase } from './database.mjs';
 import { RARITIES } from './cases.mjs';
 import { marketIndexAt } from './market.mjs';
 import { bundleReferencePricing, ensurePaletteEditionSchema } from './palette-definitions.mjs';
+import { levelForXp } from './progression.mjs';
+
+// Re-exported for backwards compatibility with the pre-extraction imports;
+// the curve itself is owned by src/progression.mjs.
+export { levelForXp, XP_LEVEL_LIMIT } from './progression.mjs';
 
 // Sealed primary palette auctions: the system sells frozen palette editions
 // as sealed lots. This is deliberately NOT the resale domain and there is no
@@ -21,18 +26,12 @@ import { bundleReferencePricing, ensurePaletteEditionSchema } from './palette-de
 // Bidding escrow matches resale accounting exactly (first bid debits in
 // full, an outbid refunds the prior holder, the leader raising pays only the
 // difference), but implemented here standalone.
-// Not in this package: HTTP routes, schedulers/batch settlement, NPCs,
-// automatic lot generation, bid or auction cancellation.
+// HTTP exposure is a thin adapter over these functions: public reads in
+// economy-api.mjs, authenticated bid/reveal and admin creation in
+// account-api.mjs. Not in this package (or anywhere yet): schedulers/batch
+// settlement, NPCs, automatic lot generation, bid or auction cancellation.
 export const PALETTE_AUCTION_DURATION_MS = 3600_000;
-export const XP_LEVEL_LIMIT = 20;
 const fail = (code, status) => { throw new AccountError(code, status); };
-
-// Level thresholds: reaching level L requires xp >= 100·(L−1)², levels 1..20.
-export function levelForXp(xp) {
-  let level = 1;
-  while (level < XP_LEVEL_LIMIT && xp >= 100 * level * level) level++;
-  return level;
-}
 
 export function ensurePaletteAuctionSchema(db, now = Date.now()) {
   // Editions (and their market/news dependencies) must exist for the FK and

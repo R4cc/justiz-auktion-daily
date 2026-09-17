@@ -1,18 +1,24 @@
 # Auction Economy Foundation — Handoff Notes
 
 Status: **foundation + resale transactional core + deterministic market
-simulation + real palette editions**. This document describes the technical
-groundwork for turning the case-opening game into an auction-centric economy
-(Mystery Palettes, news events, a global market, player resale auctions,
-XP/levels, and later Storage Wars and businesses), including the resale-auction
+simulation + real palette editions + primary-auction HTTP exposure +
+progression read model**. This document describes the technical groundwork
+for turning the case-opening game into an auction-centric economy (Mystery
+Palettes, news events, a global market, player resale auctions, XP/levels,
+and later Storage Wars and businesses), including the resale-auction
 transactional foundation (**bid escrow, outbid refunds, settlement, seller
 payout, inventory ownership transfer**), the **durable news publication +
 deterministic global market simulation** (72h linearly decaying index-point
-effects, absolute per-category budget, hourly UTC snapshots), and **real
+effects, absolute per-category budget, hourly UTC snapshots), **real
 palette definitions with frozen themed editions and atomic news-driven
 availability** (base daily editions + event editions; reference pricing
-metadata). Auction acquisition (buying/opening palettes), NPCs, and XP remain
-intentionally **not** implemented. Every placeholder below is marked as such.
+metadata), and the **preparation pass** that extracted progression into its
+own module, exposed XP/level through the profile read model, wired the
+primary-palette-auction domain to feature-gated HTTP routes (public reads,
+authenticated bid/reveal, admin creation) and exposed market history
+read-only. Auction acquisition *gameplay* (automatic lot generation, NPC
+bidders, XP awards, UI) remains intentionally **not** implemented. Every
+placeholder below is marked as such.
 
 Everything shipped here is additive and flag-gated: with no environment
 variables set, the live game behaves exactly as before.
@@ -31,9 +37,10 @@ variables set, the live game behaves exactly as before.
 | Palette terminology | `src/palettes.mjs` | Palette view over the case catalog (compatibility layer) |
 | Palette definitions + editions | `src/palette-definitions.mjs` | Base/event registry, frozen themed editions, reference pricing, persisted catalog |
 | Primary palette auctions | `src/palette-auctions.mjs` | Sealed system-issued lots: creation, escrowed bidding, settlement (currency sink), winner-only reveal |
-| Public read APIs | `src/economy-api.mjs` | Flag-gated GET endpoints |
-| Frontend data access | `dist/economy.js` | `window.justizEconomy` helpers, no UI |
-| Tests | `test/market.test.mjs`, `test/news.test.mjs`, `test/resale.test.mjs`, `test/palettes.test.mjs`, `test/economy-api.test.mjs`, `test/simulation.test.mjs`, `test/palette-editions.test.mjs`, `test/acceptance.test.mjs`, `test/palette-auctions.test.mjs` | full suite green (150 tests) |
+| Progression reads | `src/progression.mjs` | Shared XP level curve (`levelForXp`) + defensive profile read model (`progressionForXp`); pure reads, no grants |
+| Public read APIs | `src/economy-api.mjs` | Flag-gated GET endpoints (news, market, market history, palettes, palette auctions, resales) |
+| Frontend data access | `dist/economy.js` | `window.justizEconomy` helpers (GETs + authenticated palette-auction calls via `account.js`), no UI |
+| Tests | `test/market.test.mjs`, `test/news.test.mjs`, `test/resale.test.mjs`, `test/palettes.test.mjs`, `test/economy-api.test.mjs`, `test/simulation.test.mjs`, `test/palette-editions.test.mjs`, `test/acceptance.test.mjs`, `test/palette-auctions.test.mjs`, `test/progression.test.mjs`, `test/palette-auction-api.test.mjs` | full suite green (166 tests) |
 
 ## 2. Database changes (all additive, `PRAGMA user_version` bumped 2 → 3 → 4 → 5 → 6 → 7 → 8; never lowered)
 
@@ -385,6 +392,29 @@ case editions and palette editions verbatim (no diverging rarity logic).
   weights are not serialized. Nothing here is wired into the legacy
   `cases/open` flow — no purchasing, no minting.
 
+### Progression (XP levels — shared read model)
+
+`src/progression.mjs` owns the level curve, extracted verbatim from the
+primary palette auction domain where it first shipped:
+
+- `XP_LEVEL_LIMIT = 20`; reaching level L requires `xp >= 100·(L−1)²`.
+- `levelForXp(xp)` — the unchanged curve function; `src/palette-auctions.mjs`
+  imports it (and re-exports both symbols for compatibility) instead of
+  owning it, so every future level-gated feature shares one definition.
+- `progressionForXp(xp)` — pure defensive read helper for profile/API
+  consumers: `{ xp, level, levelStartXp, nextLevelXp, xpIntoLevel,
+  xpNeededForNextLevel, progress }`. Non-number/non-finite/negative input
+  reads as zero XP, fractions floor; at level 20 `nextLevelXp` and
+  `xpNeededForNextLevel` are `null` and `progress` is exactly `1` — the
+  shape is never NaN/Infinity. No database access, no XP grants, no curve
+  changes: persisted `users.xp` stays the single source of truth.
+
+The authenticated profile (`GET /api/account/me`) exposes exactly this
+object as `user.progression` (raw `xp` is not additionally leaked; the
+number lives inside `progression`). XP leaderboards were deliberately not
+added. Boundary coverage (0, 99, 100, every threshold, 19→20, terminal,
+very large, invalid inputs) lives in `test/progression.test.mjs`.
+
 ### Resale auctions
 
 `src/resale.mjs` — plain functions in the `database.mjs`/`cases.mjs` style
@@ -469,10 +499,12 @@ case editions and palette editions verbatim (no diverging rarity logic).
 `src/palette-auctions.mjs` — domain functions only. Deliberately no shared
 framework with resale: primary auctions sell **system-issued sealed
 contents**, the winning payment is a **currency sink** (no seller is ever
-paid), and settlement mints exactly three inventory items. **There is no
-player-facing acquisition route yet** — creation is a trusted server-only
-operation, and nothing is wired into HTTP, the frontend, a scheduler, or
-automatic lot generation.
+paid), and settlement mints exactly three inventory items. The HTTP layer
+(§4) is a **thin adapter** over these functions behind
+`FEATURE_PALETTE_AUCTIONS` — public reads in `economy-api.mjs`,
+authenticated bid/reveal and admin-only creation in `account-api.mjs`; no
+auction business rule is duplicated in a route handler. Still unwired:
+automatic lot generation, schedulers, NPCs, and any UI.
 
 - **Creation** (`createPaletteAuction(dataDir, {editionId, requestId},
   {now, random})`, trusted/server-only). `requestId` is persistent and
@@ -561,13 +593,16 @@ before the account API; disabled routes fall through to 404):
 | --- | --- | --- |
 | `GET /api/news?limit=` | `FEATURE_NEWS` | `{ news: [NewsEvent…] }` (published only, newest first) |
 | `GET /api/market` | `FEATURE_MARKET` | `marketState()` |
+| `GET /api/market/:category/history?limit=` | `FEATURE_MARKET` | `{ category, history: [{ indexValue, capturedAt }…] }` — `marketHistory()` read-only; category validated by the domain (`unknown_category` 404), limit bounded 1..1000 by the domain, default 168 (hourly points, 7 days). Malformed paths that are not exactly `/api/market/<category>/history` fall through 404 |
 | `GET /api/palettes` | `FEATURE_PALETTES` | `publicPaletteCatalog()` |
+| `GET /api/palette-auctions?limit=&offset=` | `FEATURE_PALETTE_AUCTIONS` | `{ auctions: [...] }` — `listPaletteAuctions()` (active lots, domain bounds limit 1..200 / offset ≥ 0) |
+| `GET /api/palette-auctions/:id` | `FEATURE_PALETTE_AUCTIONS` | `{ auction }` — `getPaletteAuction()`; safe URL decoding (malformed encoding 404s like an unknown id); the domain's explicit public allowlist is the only serialization — no reward snapshots, reserved inventory ids, or randomness |
 | `GET /api/resales?limit=` | `FEATURE_RESALES` | `{ listings: [...] }` (active only) |
 | `GET /api/resales/:id` | `FEATURE_RESALES` | `{ listing }` incl. `bids` |
 
 Authenticated, under the existing account API conventions (session cookie,
 `x-requested-with: JUSTIZGUESSR` CSRF check, throttle), gated by
-`FEATURE_RESALES` / `FEATURE_NEWS`:
+`FEATURE_RESALES` / `FEATURE_NEWS` / `FEATURE_PALETTE_AUCTIONS`:
 
 | Endpoint | Purpose |
 | --- | --- |
@@ -576,6 +611,9 @@ Authenticated, under the existing account API conventions (session cookie,
 | `POST /api/account/resale/bid` | `{ id, amount }` → `{ listing, user }` |
 | `POST /api/account/resale/cancel` | `{ id }` → `{ listing, user }` |
 | `POST /api/account/admin/news` | Admin-only seed/update tool: `saveNewsEvent` body → `{ event }`. Publishing applies real market effects atomically; drafts stay free-form |
+| `POST /api/account/palette-auctions/bid` | `{ id, amount }` → `{ auction, user }` — thin adapter over `bidOnPaletteAuction`; the domain owns level gate, escrow, balance, minimum bid, deadline and ban handling; `user` is the refreshed profile (spendable balance after the escrow debit) |
+| `GET /api/account/palette-auctions/:id/rewards` | Winner-only reveal → `{ reveal }` — `getPaletteAuctionRewards()`; before deadline `rewards_unavailable` 409, non-winners (losers, admins, no-bid case) get the same generic `palette_rewards_not_found` 404, no admin bypass; safe id decoding |
+| `POST /api/account/admin/palette-auctions` | Admin-only test/operations surface: `{ editionId, requestId }` → `{ auction }` — `createPaletteAuction()` with its requestId idempotency; editionId + requestId are the only inputs, every other field (reserve, rewards, duration, level, valuation, winner, seed) is dropped at the route |
 
 Listing serialization (camelCase, matching project payload conventions):
 `{ id, sellerId, sellerUsername, inventoryId, item: { title, image, price,
@@ -616,43 +654,54 @@ writes belong to the future simulation, not to clients.
   summaries ignore it.
 - Feature flags default **off**, so the production surface is unchanged.
   Enable per system with `FEATURE_NEWS`, `FEATURE_MARKET`, `FEATURE_RESALES`,
-  `FEATURE_PALETTES` (`1/true/on/yes`).
-- Frontend: only `dist/economy.js` was added (a fetch helper exposing
-  `window.justizEconomy.{news,market,palettes,resales,resale}` that resolves
-  to `null` when a flag is off) plus bilingual error strings for the new error
-  codes in `account.js`. No pages, no redesign.
+  `FEATURE_PALETTES`, `FEATURE_PALETTE_AUCTIONS` (`1/true/on/yes`).
+  `FEATURE_PALETTES` and `FEATURE_PALETTE_AUCTIONS` are deliberately
+  distinct: the former is the catalog/read model only; the latter controls
+  actual primary-auction acquisition (public lot reads, authenticated
+  bid/reveal, admin creation). Enabling palettes alone never exposes
+  auctions (test-enforced).
+- Frontend: only `dist/economy.js` exists (a fetch helper exposing
+  `window.justizEconomy.{news,market,marketHistory,palettes,
+  paletteAuctions,paletteAuction,paletteAuctionBid,paletteAuctionRewards,
+  adminCreatePaletteAuction,resales,resale}`; the GET helpers resolve to
+  `null` when a flag is off) plus bilingual error strings for the new error
+  codes in `account.js`. The authenticated palette-auction helpers delegate
+  to `account.js`'s `accountApi` (`window.accountApi`) so the CSRF header,
+  cookie handling and the `AccountError` payload contract (rejected promise
+  with `error.code`) live in exactly one place. No pages, no redesign.
 
 ## 6. Unfinished systems (explicitly out of scope here)
 
-- Palette generation, activation and the sealed primary-auction **domain**
-  are implemented (§3): creation, escrowed bidding, settlement and
-  winner-only reveal all work as library functions. **No player-facing
-  acquisition route exists yet** — creation is trusted server-only, and no
-  HTTP route, frontend page, scheduler or automatic lot generation exposes
-  it. Still missing downstream: automatic news generation and that route
-  layer.
+- Palette generation, activation and the sealed primary-auction **domain
+  plus HTTP exposure** are implemented (§3, §4): creation, escrowed bidding,
+  settlement, winner-only reveal, public reads, the authenticated
+  bid/reveal routes and the admin creation route all work. Still missing:
+  **automatic lot generation / scheduling policy** (someone must call the
+  admin creation route for lots to exist) and every player-facing UI.
 - Market fluctuation beyond news effects: no supply/demand drift, no
   scheduler-driven movement, no NPC reactions. The deterministic news-driven
   simulation (§3) is the only thing that moves indexes.
 - NPC bidders and market-driven bidding behavior.
 - Bidding UX, real-time updates (no websocket infrastructure exists).
 - XP earning and balancing: level *checks* are live (threshold
-  `100·(level−1)²` from `users.xp`), but nothing awards XP yet and the curve
-  is not designed.
+  `100·(level−1)²` from `users.xp`, shared module in §3) and the profile
+  exposes `progression`, but nothing awards XP yet and the curve is not
+  designed.
 - Storage Wars and businesses (do not build).
 - Resale settlement economics are **done**; a real settlement scheduler is
   still future work (reads settle lazily today).
 
 ## 7. Extension points for the next implementation
 
-1. **Palette acquisition — domain implemented, route missing.** Sealed
-   primary auctions exist as server functions (§3): lots freeze a recomputed
+1. **Palette acquisition — domain and routes implemented; generation policy
+   missing.** Sealed primary auctions exist as server functions (§3) behind
+   `FEATURE_PALETTE_AUCTIONS` HTTP routes (§4): lots freeze a recomputed
    reserve, draw three hidden rewards, escrow bids, settle as a currency sink
-   and reveal to the winner only. The next pass is the exposure layer:
-   player-facing HTTP routes (list/detail/bid/reveal plus a trusted/admin
-   creation path), a settlement scheduler if lazy settlement is not enough,
-   and any automatic lot generation policy. The legacy `cases/open` flow
-   stays untouched; do not wire palette entries into it.
+   and reveal to the winner only; list/detail/bid/reveal and the admin
+   creation route are wired. The next pass decides **when and how lots
+   appear** (automatic generation / scheduling policy, NPCs driving demand),
+   plus a settlement scheduler if lazy settlement is not enough. The legacy
+   `cases/open` flow stays untouched; do not wire palette entries into it.
 2. **News-driven palette availability — implemented.** Event publications
    create frozen editions for their resolved windows; what could still be
    added later is automatic news generation and admin tooling for windows.
@@ -680,32 +729,78 @@ writes belong to the future simulation, not to clients.
    `settleListingRow` moves value and ownership, and both are idempotent
    under repeated invocation.
 6. **XP / levels** — write to `users.xp` from settlement and game rewards
-   (`accounts.answer` is where token rewards land today). Design the curve
-   later; expose via `accounts.profile` when needed.
+   (`accounts.answer` is where token rewards land today). Design the award
+   policy later; the read side is done (`src/progression.mjs` + the
+   profile's `progression` object, §3).
 7. **Storage Wars / businesses** — not started. The resale + market + palette
    foundations are the intended building blocks.
 
 ## 8. TODOs
 
-- [ ] Player-facing primary-palette-auction routes (list/detail/bid/reveal
-      plus a trusted creation path) — the domain functions in
-      `src/palette-auctions.mjs` are ready but unwired; see §7.1. News
-      authoring UI is also still API-only.
-- [ ] Frontend pages for news/market/resales/palettes (data layers exist; no
-      routes, no UI, no styles). Charts would read `marketHistory`; there is
-      deliberately no client market-write endpoint.
-- [ ] XP awards on settlement and game rewards (design the curve first;
-      `settleListingRow` and primary palette settlement are the natural
-      hooks; level checks already read `users.xp`).
-- [ ] Scheduler that closes + settles due listings on a cadence (resale
-      reads settle lazily via `settleDueListings`; primary palette lots
-      settle on read or explicit call only).
-- [ ] Decide whether `Getränke` should split from `wine` (data-only change in
-      `market.mjs`; the `wine-tax-seizure` palette would follow the mapping).
-- [ ] Weave `estimatedValueTokens` into inventory/resale surfaces when the
-      UI needs live valuations (read-only; do not rewrite stored item JSON).
-- [ ] Optional: expose feature flags through `compose.yml` env passthrough
-      when a system goes live.
+The backend surfaces for the economy are now stable (see "Next
+implementation pass" below); almost everything remaining is gameplay
+policy or frontend:
+
+1. [ ] **Automatic primary auction generation / scheduling policy** — lots
+   exist only through the admin creation route; decide when and how many
+   appear, and whether NPCs drive demand (see §7.1 and §7.4).
+2. [ ] **Main frontend economy experience** — pages, routes, styles for the
+   economy systems; data access is complete in `dist/economy.js`.
+3. [ ] **Mystery Palette bidding + reveal UX** — the bid/reveal routes and
+   helpers exist; no UI.
+4. [ ] **News feed UI** — `/api/news` exists; no page.
+5. [ ] **Market charts** — `/api/market` and
+   `/api/market/:category/history` exist; no chart.
+6. [ ] **Resale marketplace UI** — listing/bid/cancel routes exist; no page.
+7. [ ] **NPC bidders** — identities/personality, funding model, bidding
+   behavior (§7.4).
+8. [ ] **XP award policy and balance** — nothing awards XP yet; `users.xp`,
+   `src/progression.mjs` and the profile `progression` object are ready.
+9. [ ] **Gradual replacement of legacy case purchasing** — decide the
+   transition from `cases/open` to primary auctions; instant sell stays.
+10. [ ] **Scheduler/background processing where actually necessary** —
+    resale reads settle lazily via `settleDueListings`; primary lots settle
+    on read or explicit call only.
+11. [ ] Later: Storage Wars / businesses (do not build yet).
+
+Smaller: news authoring UI (API-only today), `Getränke` splitting from
+`wine` (data-only in `market.mjs`), weaving `estimatedValueTokens` into
+inventory/resale surfaces (read-only), and exposing feature flags through
+`compose.yml` env passthrough when a system goes live.
+
+## 8a. Next implementation pass
+
+Stable backend surfaces now available (all flag-gated, all tested):
+
+- `GET /api/news`, `GET /api/market`, `GET /api/market/:category/history`
+  (`FEATURE_NEWS` / `FEATURE_MARKET`).
+- `GET /api/palettes` (`FEATURE_PALETTES`): frozen edition catalog with
+  availability windows and `requiredLevel` metadata.
+- `GET /api/palette-auctions[/:id]`, `POST /api/account/palette-auctions/bid`,
+  `GET /api/account/palette-auctions/:id/rewards`,
+  `POST /api/account/admin/palette-auctions` (`FEATURE_PALETTE_AUCTIONS`) —
+  thin adapters; all rules live in `src/palette-auctions.mjs`.
+- Resale routes (`FEATURE_RESALES`) and the admin news route
+  (`FEATURE_NEWS`).
+- `GET /api/account/me` now exposes `user.progression`
+  (`{xp, level, levelStartXp, nextLevelXp, xpIntoLevel,
+  xpNeededForNextLevel, progress}`); `src/progression.mjs` is the shared
+  curve.
+- Frontend data helpers: `window.justizEconomy` (all GETs plus
+  authenticated bid/reveal/admin-create through `window.accountApi`).
+
+Main decisions the next (stronger) implementation still needs to make —
+deliberately left open by the preparation pass:
+
+- When and how many primary lots are generated, and from which editions
+  (automatic generation policy; the admin route is manual only).
+- Whether/when a settlement scheduler replaces lazy settlement.
+- NPC bidder design (identity, funding, bidding behavior) — none exists.
+- XP award policy and balance (nothing awards XP; the curve itself is
+  frozen at `100·(level−1)²`, levels 1..20).
+- How the legacy case shop is gradually replaced by auction acquisition
+  (both run in parallel today; `cases/open` is untouched).
+- Frontend structure for the economy pages (no routes/pages/styles exist).
 
 ## 9. Design decisions to reconsider before core mechanics
 
