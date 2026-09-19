@@ -122,10 +122,12 @@ function showGamePage() {
   updateNavigation();
 }
 async function navigateAccountPage(path, push = true) {
+  const destination = new URL(path, location.origin);
+  path = destination.pathname;
   caseReveal.close(); auctionReveal.close();
   window.economyUi?.stop();
   if (!accountPaths.includes(path)) { renderStart(); return; }
-  if (push && location.pathname !== path) history.pushState({}, '', path);
+  if (push && location.pathname + location.search !== destination.pathname + destination.search) history.pushState({}, '', destination.pathname + destination.search);
   const visit = ++accountVisit;
   currentAccountPage = path; pageLoaded = false;
   higherLowerRequest++; clearInterval(countdownTimer); state.view = 'account';
@@ -209,7 +211,7 @@ function rarityLabel(id) {
 function itemCard(item, controls = true) {
   const copies = item.copies || [item];
   const available = copies.find(copy => !copy.listed);
-  const resaleControls = `<button class="secondary-button" data-economy="list" data-id="${accountEscape(available?.id || item.id)}" ${available ? '' : 'disabled'}>${available ? t('List for auction', 'Zur Auktion anbieten') : t('Already listed', 'Bereits angeboten')}</button>`;
+  const resaleControls = `<button class="primary-button" data-economy="list" data-id="${accountEscape(available?.id || item.id)}" ${available ? '' : 'disabled'}>${available ? t('List for auction', 'Zur Auktion anbieten') : t('Already listed', 'Bereits angeboten')}</button>${economyFlags.market && item.marketCategory ? `<a href="/market?category=${encodeURIComponent(item.marketCategory)}" data-page>${t('Check market before selling', 'Markt vor dem Verkauf prüfen')} →</a>` : ''}<a href="/marketplace?view=mine" data-page>${t('Manage my listings', 'Meine Angebote verwalten')}</a>`;
   return `<article class="collection-item rarity-${accountEscape(item.rarity)}"><span class="rarity-label">${rarityLabel(item.rarity)}</span>${copies.length > 1 ? `<span class="item-count" aria-label="${copies.length} ${t('copies', 'Exemplare')}">×${copies.length}</span>` : ''}
     <img src="${accountEscape(item.image)}" alt="" loading="lazy"><h3>${accountEscape(item.title)}</h3><p>${t('Auction value', 'Auktionswert')} ${euro(item.price)}</p>${item.estimatedValueTokens == null ? '' : `<p>${t('Estimated market value', 'Geschätzter Marktwert')} · ${number(item.estimatedValueTokens)} ${t('tokens', 'Tokens')}</p>`}
     ${economyFlags.resales && controls ? resaleControls : controls ? copies.length > 1 ? `<div class="item-actions"><button class="secondary-button" data-account="sell" data-id="${accountEscape(copies[0].id)}">${t('Sell one', 'Eins verkaufen')}<small>+${number(item.sellValue)}</small></button><button class="secondary-button" data-account="sell-all" data-id="${accountEscape(copies[0].id)}">${t('Sell all', 'Alle verkaufen')}<small>+${number(item.sellValue * copies.length)}</small></button></div>` : `<button class="secondary-button" data-account="sell" data-id="${accountEscape(item.id)}">${t('Sell', 'Verkaufen')} · ${number(item.sellValue)} ${t('tokens', 'Tokens')}</button>` : `<span class="item-value">${number(item.sellValue)} ${t('tokens', 'Tokens')}</span>`}</article>`;
@@ -431,7 +433,7 @@ async function pullCase(visit) {
 document.addEventListener('click', event => {
   const link = event.target.closest('a[data-page]');
   if (!link || event.button !== 0 || event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) return;
-  event.preventDefault(); if (link.pathname === '/') renderStart(); else navigateAccountPage(link.pathname);
+  event.preventDefault(); if (link.pathname === '/') renderStart(); else navigateAccountPage(link.pathname + link.search);
 });
 window.addEventListener('popstate', () => { if (accountPaths.includes(location.pathname)) navigateAccountPage(location.pathname, false); else renderStart(); });
 document.addEventListener('click', async event => {

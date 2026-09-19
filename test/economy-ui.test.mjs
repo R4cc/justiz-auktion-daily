@@ -79,3 +79,29 @@ test('progression terminal state and all new routes remain in syntax verificatio
   const index = await readFile(new URL('../dist/index.html', import.meta.url), 'utf8');
   for (const route of ['/auctions', '/marketplace', '/market', '/news']) assert.ok(index.includes(`href="${route}"`));
 });
+
+test('market chart renders a single observation visibly and exposes readable history', () => {
+  const context = vm.createContext({ t: en => en, esc: String, number: String, uiLocale: () => 'en-GB', date: String, empty: String });
+  vm.runInContext(extract(uiSource, '  function chart(', '  function renderNews('), context);
+  const markup = vm.runInContext(`chart([{capturedAt:'2026-09-19T12:00:00Z',indexValue:107}])`, context);
+  assert.match(markup, /<circle/); assert.match(markup, /<table>/); assert.match(markup, /107/); assert.doesNotMatch(markup, /NaN/);
+});
+
+test('economy journey respects disabled features and marks the current page', () => {
+  const context = vm.createContext({ t: en => en, currentAccountPage: '/auctions', economyFlags: { paletteAuctions: true, resales: true } });
+  vm.runInContext(extract(uiSource, '  function journey(', '  function tabs('), context);
+  const markup = vm.runInContext('journey()', context);
+  assert.match(markup, /href="\/auctions" data-page aria-current="page"/);
+  assert.match(markup, /Resell/); assert.doesNotMatch(markup, /href="\/news"|href="\/market"/);
+});
+
+test('news connects affected categories and related palette IDs with encoded deep links', () => {
+  const context = vm.createContext({ accountContent: {}, t: en => en, esc: String, date: String, number: String,
+    pageHeading: () => '', journey: () => '', categoryName: String, paletteName: String, empty: String,
+    economyFlags: { paletteAuctions: true }, data: { news: [{ publishedAt: 'today', title: 'Story', body: 'Fiction',
+      marketEffects: [{ category: 'tools', direction: 'up', magnitude: 5 }], paletteIds: ['tools & finds'] }] } });
+  vm.runInContext(extract(uiSource, '  function renderNews(', "  document.addEventListener('click'"), context);
+  vm.runInContext('renderNews()', context);
+  assert.match(context.accountContent.innerHTML, /href="\/market\?category=tools"/);
+  assert.match(context.accountContent.innerHTML, /href="\/auctions\?palette=tools%20%26%20finds"/);
+});

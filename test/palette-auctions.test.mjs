@@ -29,7 +29,7 @@ async function fixture(t) {
   upsertAuctions(dir, stock);
   withDatabase(dir, db => ensurePaletteAuctionSchema(db, day));
   let now = day;
-  const service = new Accounts(dir, { now: () => now });
+  const service = new Accounts(dir, { flags: { resales: false }, now: () => now });
   await service.bootstrap('admin', password);
   const admin = service.user(await service.login({ username: 'admin', password }));
   const register = async username => service.user(await service.register({ username, password, code: service.codes(admin, 1)[0] }));
@@ -231,7 +231,7 @@ test('legacy users gain the missing users.xp column with zero XP and intact bala
   closeDataStore(dir);
   // Rewind to a pre-foundation schema: no xp column at all.
   withDatabase(dir, db => db.exec('ALTER TABLE users DROP COLUMN xp'));
-  const reopened = new Accounts(dir, { now: () => day });
+  const reopened = new Accounts(dir, { flags: { resales: false }, now: () => day });
   const columns = reopened.db(db => db.prepare('PRAGMA table_info(users)').all().map(column => column.name));
   assert.ok(columns.includes('xp'));
   assert.equal(reopened.db(db => db.prepare('SELECT xp FROM users WHERE id = ?').get(buyer.id).xp), 0);

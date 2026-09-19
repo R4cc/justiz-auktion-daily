@@ -23,7 +23,7 @@ const endsAfter = (base, hours) => new Date(base + hours * hour).toISOString();
 async function fixture(t) {
   const dir = await mkdtemp(path.join(os.tmpdir(), 'jg-resale-'));
   let now = day;
-  const service = new Accounts(dir, { now: () => now });
+  const service = new Accounts(dir, { flags: { resales: false }, now: () => now });
   await service.bootstrap('admin', password);
   const admin = service.user(await service.login({ username: 'admin', password }));
   const register = async username => service.user(await service.register({ username, password, code: service.codes(admin, 1)[0] }));
@@ -366,7 +366,7 @@ test('bids and settlement conserve tokens across a full lifecycle and survive re
   const settledAt = service.db(db => db.prepare('SELECT settled_at FROM resale_auctions WHERE id = ?').get(listing.id).settled_at);
   // Everything survives a restart, and settlement cannot run a second time.
   closeDataStore(dir);
-  const reopened = new Accounts(dir, { now: () => day + 4 * hour });
+  const reopened = new Accounts(dir, { flags: { resales: false }, now: () => day + 4 * hour });
   assert.deepEqual(settleDueListings(dir, { now: day + 4 * hour }), { settled: 0, failed: [] });
   assert.equal(reopened.profile(admin).tokens, tokensOf(service, admin));
   assert.equal(reopened.profile(bidder).tokens, tokensOf(service, bidder));

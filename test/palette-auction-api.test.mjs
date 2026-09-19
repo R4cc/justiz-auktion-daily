@@ -31,6 +31,7 @@ const allFlags = {
 };
 
 async function fixture(t, env = allFlags) {
+  env = { ...{ FEATURE_NEWS: 'false', FEATURE_MARKET: 'false', FEATURE_RESALES: 'false', FEATURE_PALETTES: 'false', FEATURE_PALETTE_AUCTIONS: 'false' }, ...env };
   const dir = await mkdtemp(path.join(os.tmpdir(), 'jg-palette-api-'));
   upsertAuctions(dir, stock);
   const json = (res, status, value) => { res.writeHead(status, { 'content-type': 'application/json' }); res.end(JSON.stringify(value)); };
@@ -75,12 +76,12 @@ const forceDue = (dir, auctionId) => withDatabase(dir, db =>
 const rows = (dir, sql, ...params) => withDatabase(dir, db => db.prepare(sql).all(...params));
 
 test('feature flag isolation: disabled routes fall through, palettes alone never enable auctions', async t => {
-  const handler = createEconomyApi({ dataDir: 'unused', json: () => {}, flags: featureFlags({}) });
+  const handler = createEconomyApi({ dataDir: 'unused', json: () => {}, flags: featureFlags({ FEATURE_NEWS: 'false', FEATURE_MARKET: 'false', FEATURE_RESALES: 'false', FEATURE_PALETTES: 'false', FEATURE_PALETTE_AUCTIONS: 'false' }) });
   for (const path of ['/api/palette-auctions', '/api/palette-auctions/abc']) {
     assert.equal(handler({ method: 'GET' }, null, new URL(path, 'http://localhost')), false);
   }
   // FEATURE_PALETTES on its own exposes the catalog but never auction reads.
-  const palettesOnly = createEconomyApi({ dataDir: 'unused', json: () => {}, flags: featureFlags({ FEATURE_PALETTES: '1' }) });
+  const palettesOnly = createEconomyApi({ dataDir: 'unused', json: () => {}, flags: featureFlags({ ...{ FEATURE_NEWS: 'false', FEATURE_MARKET: 'false', FEATURE_RESALES: 'false', FEATURE_PALETTES: 'false', FEATURE_PALETTE_AUCTIONS: 'false' }, FEATURE_PALETTES: '1' }) });
   assert.equal(palettesOnly({ method: 'GET' }, null, new URL('/api/palettes', 'http://localhost')), true);
   assert.equal(palettesOnly({ method: 'GET' }, null, new URL('/api/palette-auctions', 'http://localhost')), false);
   assert.equal(palettesOnly({ method: 'GET' }, null, new URL('/api/palette-auctions/x', 'http://localhost')), false);

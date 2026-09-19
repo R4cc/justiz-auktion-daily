@@ -308,7 +308,7 @@ test('automatic news tries alternate budgets and permanently skips a fully block
 
 test('runtime flag isolation, off no-op, startup timer unref and stop clears work', async t => {
   const f = await fixture(t);
-  assert.deepEqual(tickEconomy(f.dir, { now: day, flags: featureFlags({}) }), { failures: [] });
+  assert.deepEqual(tickEconomy(f.dir, { now: day, flags: featureFlags({ FEATURE_NEWS: 'false', FEATURE_MARKET: 'false', FEATURE_RESALES: 'false', FEATURE_PALETTES: 'false', FEATURE_PALETTE_AUCTIONS: 'false' }) }), { failures: [] });
   assert.equal(count(f, 'users'), 3);
   const primary = tickEconomy(f.dir, { now: day, flags: { paletteAuctions: true } });
   assert.deepEqual(primary.failures, []); assert.ok(primary.supply.auctions.length); assert.equal(count(f, 'users'), 3);

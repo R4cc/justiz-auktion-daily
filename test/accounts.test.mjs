@@ -15,7 +15,7 @@ const lots = Array.from({ length: 8 }, (_, i) => ({ id: i + 1, title: `Product $
 async function fixture(t) {
   const dir = await mkdtemp(path.join(os.tmpdir(), 'jg-accounts-'));
   let now = Date.parse('2026-09-12T12:00:00Z');
-  const service = new Accounts(dir, { now: () => now });
+  const service = new Accounts(dir, { flags: { resales: false }, now: () => now });
   await service.bootstrap('admin', password);
   const admin = service.user(await service.login({ username: 'admin', password }));
   const register = async username => service.user(await service.register({ username, password, code: service.codes(admin, 1)[0] }));

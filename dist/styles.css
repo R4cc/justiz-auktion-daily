@@ -143,6 +143,8 @@ button { color: inherit; }
 .auction-image-wrap { position: relative; min-width: 0; min-height: 0; background: #ebeae6; overflow: hidden; isolation: isolate; }
 .auction-image-backdrop { position: absolute; z-index: 0; inset: -24px; width: calc(100% + 48px); height: calc(100% + 48px); object-fit: cover; filter: blur(22px) saturate(.75); opacity: .22; transform: scale(1.06); }
 .auction-image { position: relative; z-index: 1; width: 100%; height: 100%; object-fit: contain; display: block; }
+@media (hover: hover) and (pointer: fine) { .auction-image { cursor: zoom-in; } }
+.auction-image-lens { position: absolute; z-index: 4; width: clamp(120px, 26vw, 190px); aspect-ratio: 1; border-radius: 50%; border: 3px solid rgba(255,255,255,.92); box-shadow: 0 12px 32px rgba(16,26,43,.32), inset 0 0 0 1px rgba(16,26,43,.12); background: #ebeae6 no-repeat; pointer-events: none; transform: translate(-50%, -50%); }
 .carousel-arrow { position: absolute; z-index: 3; top: 50%; transform: translateY(-50%); display: grid; place-items: center; width: 44px; height: 44px; padding: 0 0 4px; border: 1px solid var(--line); border-radius: 50%; background: rgba(255,255,255,.94); color: var(--ink); font-size: 2rem; cursor: pointer; box-shadow: 0 4px 16px rgba(16,26,43,.14); }
 .carousel-arrow:hover { background: var(--ink); color: white; }
 .carousel-arrow--previous { left: 12px; }
@@ -846,3 +848,32 @@ button:focus-visible, a:focus-visible { outline: 3px solid var(--red); outline-o
   .profile-stats strong { font-size: 17px; }
   .shop-balance { flex-wrap: wrap; }
 }
+
+/* Auction floor: paper tickets, sealed finds and an explicit player journey. */
+.economy-journey { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin: 24px 0; font-size: 12px; }
+.economy-journey a { padding: 12px; border: 1px solid var(--line); border-radius: 8px; color: var(--ink); text-decoration: none; }
+.economy-journey a[aria-current] { background: var(--ink); color: var(--paper); }
+.economy-journey b { font-family: 'DM Mono', monospace; margin-right: 6px; }
+.palette-win-banner, .market-guidance { padding: 24px; border: 1px solid var(--line); border-radius: 16px; background: #e8ebdd; margin: 24px 0; }
+.palette-win-banner { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 20px; border: 2px solid #b94c25; }
+.palette-win-banner h2 { margin: 8px 0; }
+.palette-seal { display: flex; gap: 10px; margin: 20px 0; }
+.palette-seal span { flex: 1; padding: 22px 8px; border: 1px dashed #747b66; background: #e8ebdd; border-radius: 8px; text-align: center; font: 14px 'DM Mono', monospace; }
+.palette-victory { text-align: center; padding: 24px 0; }
+.palette-victory h2 { font-size: clamp(28px, 5vw, 46px); }
+.reveal-steps { display: flex; justify-content: center; gap: 12px; margin: 20px; }
+.reveal-steps span { display: grid; place-items: center; width: 34px; height: 34px; border: 1px solid var(--line); border-radius: 50%; }
+.reveal-steps .is-current { background: var(--ink); color: var(--paper); }
+.economy-effects a { padding: 10px 12px; background: #e8ebdd; border-radius: 8px; font-size: 12px; }
+.market-guidance p { max-width: 75ch; line-height: 1.7; }
+.market-history-table { max-height: 280px; overflow: auto; }
+.market-history-table table { width: 100%; border-collapse: collapse; text-align: left; }
+.market-history-table th, .market-history-table td { padding: 10px; border-bottom: 1px solid var(--line); }
+.collection-item > a { display: block; margin: 12px 0 0; font-size: 12px; color: var(--ink); }
+.home-auction-ticket { display: grid; gap: 12px; padding: 22px; border: 2px solid var(--ink); border-radius: 12px; color: var(--ink); text-decoration: none; background: #e8ebdd; margin: 20px 0; }
+.home-auction-ticket strong { font-size: 24px; }
+.home-auction-ticket span:last-child { line-height: 1.6; font-size: 14px; }
+.economy-lot-body > button { width: 100%; }
+.economy-dialog summary { cursor: pointer; padding: 12px 0; font-weight: 800; }
+.economy-journey a:focus-visible, .economy-effects a:focus-visible, .home-auction-ticket:focus-visible { outline: 3px solid #bd4b25; outline-offset: 3px; }
+@media (max-width: 700px) { .economy-journey { gap: 6px; } .economy-journey > span { display: none; } .economy-journey a { flex: 1 1 40%; } .palette-win-banner .primary-button { width: 100%; } }

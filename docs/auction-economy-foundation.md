@@ -2,8 +2,7 @@
 
 Status: **first playable auction economy**. The existing transactional auction,
 market, edition and progression domains are retained. All five economy flags
-default off; the Compose file passes them through explicitly. No deployment or
-feature activation is performed by this change.
+default on; the Compose file passes them through explicitly. Explicit false values disable individual systems; an unset or empty variable enables it.
 
 ## Player loop and routes
 
@@ -268,3 +267,12 @@ Future work remains: **Storage Wars; businesses; storage, vehicles and logistics
 more sophisticated economy simulation if desired; optional real-time transport/
 WebSockets if later scale justifies it.** No fees, crafting, insurance,
 restoration, direct trades, real-money or premium-currency mechanics were added.
+
+## Player-facing UI update
+
+The auction journey connects news, market movement, palette wins, inventory and resale.
+News links filter auctions by palette ID and select the affected market category.
+These query links survive direct entry and browser history. Listing an item opens
+My listings immediately. Winners receive a sealed-palette introduction before the
+existing sequential reel. Market history includes visible sample points and a
+readable table; current indexes distinguish above/below normal in text.

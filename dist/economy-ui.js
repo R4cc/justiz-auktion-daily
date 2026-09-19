@@ -53,7 +53,8 @@ window.economyUi = (() => {
     else accountContent.querySelector('h1')?.focus({ preventScroll: true });
   });
   async function load(path, visit) {
-    tab = 'public'; data = {}; history = []; category = null;
+    const query = new URLSearchParams(location.search);
+    tab = query.get('view') === 'mine' ? 'mine' : 'public'; data = {}; history = []; category = query.get('category');
     if (!economyFlags[routes[path]]) return;
     await refresh(path, visit, false);
     if (visit !== accountVisit) return;
@@ -94,7 +95,7 @@ window.economyUi = (() => {
     if (session) updateAccount(session.user);
     data = next;
     if (path === '/market') {
-      category ||= data.categories[0]?.category;
+      if (!data.categories.some(c => c.category === category)) category = data.categories[0]?.category;
       await loadHistory(category, visit, false);
       if (request !== sequence || visit !== accountVisit) return;
     }
@@ -121,6 +122,10 @@ window.economyUi = (() => {
       }
     }
   }
+  function journey() {
+    const steps = [['/news', 'news', t('News', 'Nachrichten')], ['/market', 'market', t('Market moves', 'Marktbewegung')], ['/auctions', 'paletteAuctions', t('Win a palette', 'Palette gewinnen')], ['/inventory', 'paletteAuctions', t('Your finds', 'Deine Funde')], ['/marketplace', 'resales', t('Resell → tokens + XP', 'Verkaufen → Tokens + XP')]];
+    return `<nav class="economy-journey" aria-label="${t('Your auction journey', 'Dein Auktionsweg')}">${steps.filter(([, flag]) => economyFlags[flag]).map(([path, , label], i) => `<a href="${path}" data-page ${currentAccountPage === path ? 'aria-current="page"' : ''}><b>0${i + 1}</b> ${label}</a>`).join('<span aria-hidden="true">→</span>')}</nav>`;
+  }
   function tabs(primary) {
     return `<div class="economy-tabs" role="group" aria-label="${t('Auction view', 'Auktionsansicht')}">
       <button data-economy="tab" data-id="public" aria-pressed="${tab === 'public'}">${t('Live auctions', 'Laufende Auktionen')}</button>
@@ -140,7 +145,7 @@ window.economyUi = (() => {
     return `<article class="economy-lot"><div class="economy-lot-image">${image ? `<img src="${esc(image)}" alt="" loading="lazy">` : '<span aria-hidden="true">◇</span>'}
       <span class="economy-badge">${primary ? lot.kind === 'event' ? t('Limited event', 'Zeitlich begrenzt') : t('Mystery Palette', 'Mystery-Palette') : esc(categoryName(lot.item.marketCategory))}</span></div>
       <div class="economy-lot-body"><h2>${esc(primary ? name(lot) : lot.item.title)}</h2>
-      ${primary ? `<p class="economy-story">${esc(story(lot).body)}</p><p>${esc((lot.allowedMarketCategories || []).map(categoryName).join(' · ') || categoryName(null))}</p>
+      ${primary ? `<p class="economy-story">${esc(story(lot).body)}</p><div class="palette-seal" aria-hidden="true"><span>01 ◇</span><span>02 ◇</span><span>03 ◇</span></div><p class="earning-detail">${lot.items.length} ${t("possible finds · explore the auction", "mögliche Funde · Auktion entdecken")}</p><p>${esc((lot.allowedMarketCategories || []).map(categoryName).join(' · ') || categoryName(null))}</p>
         <p class="economy-level">${t('Required level', 'Benötigtes Level')} ${lot.requiredLevel} · ${account ? t('Your level', 'Dein Level') + ' ' + account.progression.level : t('Log in to bid', 'Zum Bieten anmelden')}</p>
         ${account && lot.status === 'active' ? `<p>${eligible ? t('Ready to bid', 'Bereit zum Bieten') : account.progression.level < lot.requiredLevel ? t('Earn more XP to unlock', 'Mit mehr XP freischalten') : t('Earn more tokens to bid', 'Mehr Tokens zum Bieten verdienen')}</p>` : ''}`
         : `<p>${t('Seller', 'Verkäufer')}: ${esc(lot.sellerUsername)}</p><p>${t('Estimated market value', 'Geschätzter Marktwert')}: ${tokens(lot.estimatedValueTokens)}</p>`}
@@ -161,10 +166,15 @@ window.economyUi = (() => {
     accountContent.innerHTML = pageHeading(primary ? t('A story. Three surprises.', 'Eine Geschichte. Drei Überraschungen.') : t('Every find finds a buyer.', 'Jeder Fund findet Käufer.'),
       primary ? t('Bid on a sealed Mystery Palette. Win it, then reveal three finds. Play Daily and sell items to unlock more.', 'Biete auf eine versiegelte Mystery-Palette. Gewinne und entdecke drei Funde. Spiele Daily und verkaufe Lose für höhere Level.')
         : t('Real finds, live bids. Sell one item at a time — up to 5 active listings.', 'Echte Funde, laufende Gebote. Verkaufe einzelne Lose — höchstens 5 aktive Angebote.'));
+    accountContent.innerHTML += journey();
+    const wins = primary ? (data.mine || []).filter(lot => lot.revealAvailable) : [];
+    if (wins.length && tab === 'public') accountContent.innerHTML += `<section class="palette-win-banner"><div><p class="eyebrow">${t('SOLD. TO YOU.', 'ZUSCHLAG. FÜR DICH.')}</p><h2>${t('Your treasures are waiting.', 'Deine Schätze warten.')}</h2></div><button class="primary-button" data-economy="tab" data-id="mine">${t('My wins', 'Meine Gewinne')} (${wins.length}) →</button></section>`;
     accountContent.innerHTML += `<div class="economy-wallet">${account ? `${tokens(account.tokens)} · ${t('Level', 'Level')} ${account.progression.level}` : `<a href="/login" data-page>${t('Log in to join the bidding', 'Zum Mitbieten anmelden')}</a>`}
       ${primary ? `<a href="/" data-page>${t('Play Daily → earn tokens + 150 XP', 'Daily spielen → Tokens + 150 XP')}</a>` : `<a href="/inventory" data-page>${t('List an item from inventory', 'Los aus dem Inventar anbieten')} →</a>`}</div>${tabs(primary)}`;
     if (tab === 'mine' && !account) { accountContent.innerHTML += loginNotice('profile'); return; }
-    const lots = data[tab === 'mine' ? 'mine' : 'lots'] || [];
+    const paletteFilter = primary && tab === 'public' ? new URLSearchParams(location.search).get('palette') : null;
+    const lots = (data[tab === 'mine' ? 'mine' : 'lots'] || []).filter(lot => !paletteFilter || lot.paletteId === paletteFilter);
+    if (paletteFilter) accountContent.innerHTML += `<p>${t('Related to your story', 'Passend zu deiner Geschichte')}: <strong>${esc(paletteName(paletteFilter))}</strong> <a href="/auctions" data-page>${t('Show all auctions', 'Alle Auktionen anzeigen')} →</a></p>`;
     accountContent.innerHTML += lots.length ? `<div class="economy-grid">${lots.map(lot => lotCard(lot, primary)).join('')}</div>` : empty(tab === 'mine' ? t('Your auction history will appear here after your first bid or listing.', 'Nach deinem ersten Gebot oder Angebot erscheint hier dein Verlauf.') : t('No auctions right now. New lots appear as editions become available.', 'Aktuell keine Auktionen. Neue Lose erscheinen, sobald Ausgaben verfügbar sind.'));
     if (tab === 'mine') accountContent.innerHTML += `<p class="earning-detail">${t('Showing up to 100 recent auctions, with active auctions first.', 'Bis zu 100 aktuelle Auktionen, laufende Auktionen zuerst.')}</p>`;
   }
@@ -175,7 +185,7 @@ window.economyUi = (() => {
     if (primary && account.progression.level < lot.requiredLevel) return `<p>${accountError('level_required')}</p>`;
     const min = lot.currentBid === null ? primary ? lot.reserve : lot.startPrice : lot.currentBid + 1;
     return `<form data-economy-form="${primary ? 'primary' : 'resale'}" data-id="${esc(lot.id)}" class="economy-form"><label>${t('Your bid in tokens', 'Dein Gebot in Tokens')}
-      <input name="amount" type="number" inputmode="numeric" min="${min}" step="1" value="${min}" required></label><p>${t('Your bid is held until you are outbid or the auction settles.', 'Dein Gebot wird bis zum Überbieten oder zur Abrechnung hinterlegt.')}</p>
+      <input name="amount" type="number" inputmode="numeric" min="${min}" step="1" value="${min}" required></label><p>${t('Available wallet balance', 'Verfügbares Guthaben')}: <strong>${tokens(account.tokens)}</strong></p><p>${t('Your bid is held until you are outbid or the auction settles.', 'Dein Gebot wird bis zum Überbieten oder zur Abrechnung hinterlegt.')}</p>
       <p class="account-error" role="alert"></p><button class="primary-button" type="submit">${t('Place bid', 'Gebot abgeben')}</button></form>`;
   }
   async function showLot(id, primary) {
@@ -204,14 +214,14 @@ window.economyUi = (() => {
     const [result, lot] = await Promise.all([api.paletteAuctionRewards(id), api.paletteAuction(id)]);
     if (visit !== accountVisit || owner !== account?.id || request !== dialogSequence) return;
     reveal = { ...result.reveal, pool: lot?.auction?.items || result.reveal.rewards.map(r => r.item) }; revealPosition = 0;
-    await revealNext();
+    openDialog(`<section class="palette-victory"><p class="eyebrow">${t('GOING, GOING… YOURS!', 'ZUM ERSTEN, ZUM ZWEITEN… DEINS!')}</p><h2 id="economy-dialog-title" tabindex="-1">${t('You won the palette.', 'Die Palette gehört dir.')}</h2><p>${esc(lot?.auction ? name(lot.auction) : '')}</p><div class="palette-seal" aria-hidden="true"><span>01 ◇</span><span>02 ◇</span><span>03 ◇</span></div><p>${t('Three sealed finds. One reveal at a time. Already safe in your inventory.', 'Drei versiegelte Funde. Einer nach dem anderen. Bereits sicher in deinem Inventar.')}</p><button class="primary-button" data-economy="next-reward">${t('Break the seal', 'Siegel öffnen')} →</button></section>`);
   }
   async function revealNext() {
     if (!reveal) return;
     const fixed = reveal, request = ++dialogSequence, visit = accountVisit;
     if (revealPosition >= fixed.rewards.length) { revealSummary(fixed); return; }
     const reward = fixed.rewards[revealPosition].item;
-    openDialog(`<p class="eyebrow">${t('YOUR SEALED PALETTE', 'DEINE VERSIEGELTE PALETTE')}</p><h2 id="economy-dialog-title" tabindex="-1">${t('Find', 'Fund')} ${revealPosition + 1} / 3</h2><div class="case-window" aria-hidden="true"><div class="case-marker"></div><div class="case-reel"></div></div><div class="palette-result" role="status">${t('The hammer is spinning…', 'Der Hammer kreist …')}</div>`);
+    openDialog(`<p class="eyebrow">${t('YOUR SEALED PALETTE', 'DEINE VERSIEGELTE PALETTE')}</p><h2 id="economy-dialog-title" tabindex="-1">${t('Find', 'Fund')} ${revealPosition + 1} / 3</h2><div class="reveal-steps" aria-hidden="true">${[0, 1, 2].map(i => `<span class="${i <= revealPosition ? "is-current" : ""}">${i < revealPosition ? "✓" : i + 1}</span>`).join("")}</div><div class="case-window" aria-hidden="true"><div class="case-marker"></div><div class="case-reel"></div></div><div class="palette-result" role="status">${t('The hammer is spinning…', 'Der Hammer kreist …')}</div>`);
     const valid = () => request === dialogSequence && visit === accountVisit && dialog.open && reveal === fixed;
     await spinCaseReel(dialog.querySelector('.case-reel'), dialog.querySelector('.case-window'), reward, fixed.pool, valid);
     if (!valid()) return;
@@ -231,25 +241,29 @@ window.economyUi = (() => {
     const request = ++historySequence;
     const result = await api.marketHistory(id);
     if (request !== historySequence || visit !== accountVisit || category !== id) return;
-    history = result?.history || [];
+    if (!result) throw new Error(t('History could not be loaded. Try selecting the category again.', 'Der Verlauf konnte nicht geladen werden. Wähle die Kategorie erneut.'));
+    history = result.history || [];
     if (repaint) renderMarket();
   }
   function renderMarket() {
     const categories = data.categories || [], selected = categories.find(c => c.category === category);
     accountContent.innerHTML = pageHeading(t('Read the market.', 'Lies den Markt.'), t('100 is neutral. Above 100 means stronger demand; below 100 means weaker demand. News moves the market and buyer valuations.', '100 ist neutral. Darüber ist die Nachfrage stärker, darunter schwächer. Nachrichten beeinflussen Markt und Käuferbewertungen.')) +
-      `<div class="market-categories">${categories.map(c => `<button data-economy="category" data-id="${c.category}" aria-pressed="${category === c.category}"><span>${esc(t(c.name, c.nameDe))}</span><strong>${number(c.currentIndex, 2)} ${c.currentIndex > 100 ? '↑' : c.currentIndex < 100 ? '↓' : '→'}</strong><small>${c.currentIndex >= 100 ? '+' : ''}${number(c.currentIndex - 100, 2)}% ${t('from neutral', 'zum Neutralwert')}</small><time>${date(c.updatedAt)}</time></button>`).join('')}</div>
-      <section class="market-chart"><h2>${esc(selected ? t(selected.name, selected.nameDe) : '')}</h2>${chart(history)}<p>${t('Hourly history · index points (70–130) · dashed line = neutral 100', 'Stündlicher Verlauf · Indexpunkte (70–130) · gestrichelte Linie = neutral 100')}</p></section>`;
+      journey() + `<section class="market-guidance"><h2>${t("Sell now or hold?", "Jetzt verkaufen oder behalten?")}</h2><p>${t("Above-normal markets support higher estimates. Below normal, waiting may help, but recovery is never guaranteed. Bids decide the final price.", "Über Normalwert steigen die Schätzwerte. Darunter kann Warten helfen, eine Erholung ist aber nie garantiert. Gebote bestimmen den Verkaufspreis.")}</p><a href="/inventory" data-page>${t("Check your finds", "Deine Funde prüfen")} →</a></section><div class="market-categories">${categories.map(c => `<button data-economy="category" data-id="${c.category}" aria-pressed="${category === c.category}"><span>${esc(t(c.name, c.nameDe))}</span><strong>${number(c.currentIndex, 2)} ${c.currentIndex > 100 ? '↑' : c.currentIndex < 100 ? '↓' : '→'}</strong><small>${c.currentIndex >= 100 ? '+' : ''}${number(c.currentIndex - 100, 2)}% ${c.currentIndex > 100 ? t('above normal', 'über Normalwert') : c.currentIndex < 100 ? t('below normal', 'unter Normalwert') : t('normal value', 'Normalwert')}</small><time>${date(c.updatedAt)}</time></button>`).join('')}</div>
+      <section class="market-chart"><h2>${esc(selected ? t(selected.name, selected.nameDe) : '')}</h2>${selected ? `<p><strong>${number(selected.currentIndex, 2)}</strong> · ${number(Math.abs(selected.currentIndex - 100), 2)}% ${selected.currentIndex > 100 ? t('above normal', 'über Normalwert') : selected.currentIndex < 100 ? t('below normal', 'unter Normalwert') : t('from normal', 'vom Normalwert')}</p>` : ''}${chart(history)}<p>${t('Hourly history · index points (70–130) · dashed line = neutral 100', 'Stündlicher Verlauf · Indexpunkte (70–130) · gestrichelte Linie = neutral 100')}</p></section>`;
+    const chartSection = accountContent.querySelector('.market-chart');
+    const categoryGrid = accountContent.querySelector('.market-categories');
+    if (chartSection && categoryGrid) accountContent.insertBefore(chartSection, categoryGrid);
   }
   function chart(points) {
     if (!points.length) return empty(t('History will appear as the simulated economy starts.', 'Der Verlauf erscheint mit dem Start der simulierten Wirtschaft.'));
     const sorted = [...points].reverse(), start = Date.parse(sorted[0].capturedAt), end = Date.parse(sorted.at(-1).capturedAt);
     const line = sorted.map(p => `${35 + 630 * (Date.parse(p.capturedAt) - start) / Math.max(1, end - start)},${220 - (p.indexValue - 70) / 60 * 200}`).join(' ');
-    return `<svg viewBox="0 0 700 260" role="img" aria-label="${t('Market index over time', 'Marktindex im Zeitverlauf')}"><text x="0" y="24">130</text><text x="0" y="124">100</text><text x="8" y="224">70</text><path d="M35 120H670" stroke="currentColor" stroke-dasharray="5 5" opacity=".35"/><polyline points="${line}" fill="none" stroke="currentColor" stroke-width="3"/><text x="35" y="250">${esc(new Date(start).toLocaleDateString(uiLocale()))}</text><text x="665" y="250" text-anchor="end">${esc(new Date(end).toLocaleDateString(uiLocale()))}</text></svg>`;
+    return `<svg viewBox="0 0 700 260" role="img" aria-label="${t('Market index over time', 'Marktindex im Zeitverlauf')}"><text x="0" y="24">130</text><text x="0" y="124">100</text><text x="8" y="224">70</text><path d="M35 120H670" stroke="currentColor" stroke-dasharray="5 5" opacity=".35"/><polyline points="${line}" fill="none" stroke="currentColor" stroke-width="3"/>${sorted.map(p => `<circle cx="${35 + 630 * (Date.parse(p.capturedAt) - start) / Math.max(1, end - start)}" cy="${220 - (p.indexValue - 70) / 60 * 200}" r="3" fill="currentColor"/>`).join("")}<text x="35" y="250">${esc(new Date(start).toLocaleDateString(uiLocale()))}</text><text x="665" y="250" text-anchor="end">${esc(new Date(end).toLocaleDateString(uiLocale()))}</text></svg><details><summary>${t("Read history as a table", "Verlauf als Tabelle lesen")}</summary><div class="market-history-table"><table><thead><tr><th>${t("Time", "Zeit")}</th><th>Index</th></tr></thead><tbody>${sorted.map(p => `<tr><td>${date(p.capturedAt)}</td><td>${number(p.indexValue, 2)}</td></tr>`).join("")}</tbody></table></div></details>`;
   }
   function renderNews() {
     accountContent.innerHTML = pageHeading(t('Dispatches from our world.', 'Nachrichten aus unserer Welt.'), t('Fictional stories from the JUSTIZGUESSR simulated economy. These are not real current events.', 'Fiktive Geschichten aus der simulierten JUSTIZGUESSR-Wirtschaft. Dies sind keine realen aktuellen Nachrichten.')) +
-      `<div class="economy-news">${(data.news || []).map(n => `<article><time>${date(n.publishedAt)}</time><h2>${esc(t(n.title, n.metadata?.titleDe || n.title))}</h2><p>${esc(t(n.body, n.metadata?.bodyDe || n.body))}</p><div class="economy-effects">${n.marketEffects.map(e => `<span>${categoryName(e.category)} ${e.direction === 'up' ? '↑ +' : '↓ −'}${number(e.magnitude)} ${t('points', 'Punkte')}</span>`).join('')}</div>
-      ${n.paletteIds.length && economyFlags.paletteAuctions ? `<p>${t('Associated palettes', 'Zugehörige Paletten')}: ${n.paletteIds.map(id => esc(paletteName(id))).join(', ')}</p><a href="/auctions" data-page>${t('Explore palette auctions', 'Palettenauktionen ansehen')} →</a>` : ''}</article>`).join('') || empty(t('The next world story is on its way.', 'Die nächste Geschichte aus der Spielwelt ist unterwegs.'))}</div>`;
+      journey() + `<div class="economy-news">${(data.news || []).map(n => `<article><time>${date(n.publishedAt)}</time><h2>${esc(t(n.title, n.metadata?.titleDe || n.title))}</h2><p>${esc(t(n.body, n.metadata?.bodyDe || n.body))}</p><div class="economy-effects">${n.marketEffects.map(e => `<a href="/market?category=${encodeURIComponent(e.category)}" data-page>${categoryName(e.category)} ${e.direction === 'up' ? '↑ +' : '↓ −'}${number(e.magnitude)} ${t('points', 'Punkte')}</a>`).join('')}</div>
+      ${n.paletteIds.length && economyFlags.paletteAuctions ? `<p>${t('Associated palettes', 'Zugehörige Paletten')}: ${n.paletteIds.map(id => `<a href="/auctions?palette=${encodeURIComponent(id)}" data-page>${esc(paletteName(id))} →</a>`).join(' · ')}</p><a href="/auctions" data-page>${t('Explore palette auctions', 'Palettenauktionen ansehen')} →</a>` : ''}</article>`).join('') || empty(t('The next world story is on its way.', 'Die nächste Geschichte aus der Spielwelt ist unterwegs.'))}</div>`;
   }
   document.addEventListener('click', async event => {
     const button = event.target.closest('[data-economy]');
@@ -259,8 +273,8 @@ window.economyUi = (() => {
     if (busy) return;
     const visit = accountVisit;
     try {
-      if (action === 'tab') { tab = id; render(); accountContent.querySelector(`[data-id="${id}"]`)?.focus(); }
-      if (action === 'category') { category = id; await loadHistory(id); accountContent.querySelector(`[data-id="${id}"]`)?.focus(); }
+      if (action === 'tab') { tab = id; const query = new URLSearchParams(location.search); query.set('view', id); window.history.replaceState({}, '', currentAccountPage + '?' + query); render(); accountContent.querySelector(`[data-id="${id}"]`)?.focus(); }
+      if (action === 'category') { category = id; window.history.replaceState({}, '', '/market?category=' + encodeURIComponent(id)); await loadHistory(id); accountContent.querySelector(`[data-id="${id}"]`)?.focus({ preventScroll: true }); }
       if (action === 'list') listingDialog(id);
       if (action === 'primary' || action === 'resale') await showLot(id, action === 'primary');
       if (action === 'reveal') { busy = true; await startReveal(id); }
@@ -287,7 +301,7 @@ window.economyUi = (() => {
         : type === 'primary' ? await api.paletteAuctionBid(id, amount) : await api.resaleBid(id, amount);
       if (visit !== accountVisit || account?.id !== owner) return;
       updateAccount(result.user); busy = false;
-      if (type === 'list') { dialog.close(); await navigateAccountPage('/marketplace'); }
+      if (type === 'list') { dialog.close(); await navigateAccountPage('/marketplace?view=mine'); }
       else {
         await refresh(currentAccountPage, visit, true);
         if (visit !== accountVisit || owner !== account?.id) return;

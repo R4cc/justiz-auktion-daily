@@ -118,7 +118,7 @@ test('daily editions survive archive updates and restarts; stale purchases fail 
   t.after(async () => { closeDataStore(dir); await rm(dir, { recursive: true, force: true }); });
   upsertAuctions(dir, stock);
   let now = day;
-  const service = new Accounts(dir, { now: () => now });
+  const service = new Accounts(dir, { flags: { resales: false }, now: () => now });
   const password = 'case-edition-test-password';
   await service.bootstrap('admin', password);
   const user = service.user(await service.login({ username: 'admin', password }));

@@ -106,6 +106,7 @@ function changeAuctionImage(direction) {
   const gallery = app.querySelector('.auction-image-wrap');
   if (!gallery || images.length < 2) return;
   galleryIndex = (galleryIndex + direction + images.length) % images.length;
+  hideMagnifier();
   gallery.querySelector('.auction-image').src = images[galleryIndex];
   gallery.querySelector('.auction-image').alt = `${auction.title} – ${t('Image', 'Bild')} ${galleryIndex + 1} ${t('of', 'von')} ${images.length}`;
   gallery.querySelector('.auction-image-backdrop').src = images[galleryIndex];
@@ -351,7 +352,7 @@ function renderStart() {
           <button class="secondary-button hl-start" type="button" data-action="higher-lower"><span>Higher or Lower <small>${t("Higher? Lower? Keep your streak alive.", "Höher? Niedriger? Halte deinen Lauf am Leben.")}</small></span><span aria-hidden="true">↑↓</span></button>
         </div>
         <p class="play-note">${t("Play as a guest or sign in to collect auction finds. No real money.", "Als Gast spielen oder mit Konto Auktionslose sammeln. Kein echtes Geld.")}</p>
-        <div class="how-strip" aria-label="${t("How to play", "Spielablauf")}"><span><b>01</b> ${t("Discover", "Entdecken")}</span><span><b>02</b> ${t("Guess", "Schätzen")}</span><span><b>03</b> ${t("Collect", "Abräumen")}</span></div>
+        ${economyFlags.paletteAuctions ? `<a class="home-auction-ticket" href="/auctions" data-page><span class="eyebrow">${t("THE AUCTION FLOOR IS OPEN", "DER AUKTIONSSAAL IST GEÖFFNET")}</span><strong>${t("One palette. Three surprises.", "Eine Palette. Drei Überraschungen.")}</strong><span>${t("Use your tokens. Bid, win and reveal your next finds.", "Nutze deine Tokens. Biete, gewinne und entdecke deine nächsten Funde.")} →</span></a>` : ""}<div class="how-strip" aria-label="${t("How to play", "Spielablauf")}"><span><b>01</b> ${t("Discover", "Entdecken")}</span><span><b>02</b> ${t("Guess", "Schätzen")}</span><span><b>03</b> ${t("Collect", "Abräumen")}</span></div>
       </div>
       <aside class="start-side" aria-label="${t("Daily statistics", "Tagesstatistik")}">
         <div class="auction-art" aria-hidden="true">
@@ -687,6 +688,64 @@ document.addEventListener('keydown', event => {
   if (event.target.closest('a, button, input, textarea, select')) return;
   event.preventDefault();
   nextRound();
+});
+
+// Magnifying glass: while the mouse rests on the round photo, a circular lens
+// follows the cursor and shows the hovered detail at higher magnification.
+const MAGNIFIER_ZOOM = 2.5;
+let magnifierLens = null;
+
+function hideMagnifier() {
+  magnifierLens?.remove();
+  magnifierLens = null;
+}
+
+document.addEventListener('pointermove', event => {
+  if (event.pointerType !== 'mouse' || !(event.target instanceof Element)) { hideMagnifier(); return; }
+  const wrap = event.target.closest('.auction-image-wrap');
+  // The lens tracks the photo itself, not the controls floating above it.
+  if (!wrap || event.target.closest('.carousel-arrow, .image-count, .category-tag, .time-tag')) { hideMagnifier(); return; }
+  const image = wrap.querySelector('.auction-image');
+  if (!image || !image.complete || !image.naturalWidth) { hideMagnifier(); return; }
+
+  // object-fit: contain letterboxes the photo, so map the cursor onto the
+  // actually drawn pixels before zooming.
+  const wrapRect = wrap.getBoundingClientRect();
+  const rect = image.getBoundingClientRect();
+  const fitScale = Math.min(rect.width / image.naturalWidth, rect.height / image.naturalHeight);
+  const drawnWidth = image.naturalWidth * fitScale;
+  const drawnHeight = image.naturalHeight * fitScale;
+  const relativeX = (event.clientX - rect.left - (rect.width - drawnWidth) / 2) / drawnWidth;
+  const relativeY = (event.clientY - rect.top - (rect.height - drawnHeight) / 2) / drawnHeight;
+  if (relativeX < 0 || relativeX > 1 || relativeY < 0 || relativeY > 1) { hideMagnifier(); return; }
+
+  if (!magnifierLens?.isConnected || magnifierLens.parentElement !== wrap) {
+    magnifierLens = document.createElement('div');
+    magnifierLens.className = 'auction-image-lens';
+    magnifierLens.setAttribute('aria-hidden', 'true');
+    wrap.appendChild(magnifierLens);
+    magnifierLens.dataset.size = String(magnifierLens.offsetWidth || 180);
+  }
+  const src = image.currentSrc || image.src;
+  if (magnifierLens.dataset.src !== src) {
+    magnifierLens.dataset.src = src;
+    magnifierLens.style.backgroundImage = `url("${src}")`;
+  }
+
+  const lensSize = Number(magnifierLens.dataset.size);
+  const zoomWidth = drawnWidth * MAGNIFIER_ZOOM;
+  const zoomHeight = drawnHeight * MAGNIFIER_ZOOM;
+  magnifierLens.style.backgroundSize = `${zoomWidth}px ${zoomHeight}px`;
+  magnifierLens.style.backgroundPosition = `${lensSize / 2 - relativeX * zoomWidth}px ${lensSize / 2 - relativeY * zoomHeight}px`;
+  magnifierLens.style.left = `${event.clientX - wrapRect.left}px`;
+  magnifierLens.style.top = `${event.clientY - wrapRect.top}px`;
+});
+document.addEventListener('pointerout', event => { if (!event.relatedTarget) hideMagnifier(); });
+window.addEventListener('blur', hideMagnifier);
+window.addEventListener('resize', hideMagnifier);
+// Native image dragging would interrupt the lens tracking mid-hover.
+document.addEventListener('dragstart', event => {
+  if (event.target instanceof Element && event.target.closest('.auction-image')) event.preventDefault();
 });
 
 if (accountPaths.includes(location.pathname)) navigateAccountPage(location.pathname, false); else renderStart();

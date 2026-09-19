@@ -19,6 +19,7 @@ const env = {
 };
 
 async function fixture(t, flags = env) {
+  flags = { ...{ FEATURE_NEWS: 'false', FEATURE_MARKET: 'false', FEATURE_RESALES: 'false', FEATURE_PALETTES: 'false', FEATURE_PALETTE_AUCTIONS: 'false' }, ...flags };
   const dir = await mkdtemp(path.join(os.tmpdir(), 'jg-economy-'));
   upsertAuctions(dir, lots);
   const json = (res, status, value) => { res.writeHead(status, { 'content-type': 'application/json' }); res.end(JSON.stringify(value)); };
@@ -45,7 +46,7 @@ const post = (base, route, value, cookie = '') => fetch(`${base}/api/account/${r
   headers: { 'content-type': 'application/json', 'x-requested-with': 'JUSTIZGUESSR', cookie }, body: JSON.stringify(value) });
 
 test('disabled feature flags fall through so unfinished systems stay invisible', () => {
-  const handler = createEconomyApi({ dataDir: 'unused', json: () => {}, flags: featureFlags({}) });
+  const handler = createEconomyApi({ dataDir: 'unused', json: () => {}, flags: featureFlags({ FEATURE_NEWS: 'false', FEATURE_MARKET: 'false', FEATURE_RESALES: 'false', FEATURE_PALETTES: 'false', FEATURE_PALETTE_AUCTIONS: 'false' }) });
   for (const path of ['/api/news', '/api/market', '/api/palettes', '/api/resales', '/api/resales/abc']) {
     assert.equal(handler({ method: 'GET' }, null, new URL(path, 'http://localhost')), false);
   }
