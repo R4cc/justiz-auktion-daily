@@ -791,6 +791,11 @@ button:focus-visible, a:focus-visible { outline: 3px solid var(--red); outline-o
 .economy-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 24px; margin: 24px 0; }
 .economy-lot { border: 1px solid var(--line); border-radius: 18px; background: #fffcf4; overflow: hidden; box-shadow: 0 4px 0 #12352a10; }
 .economy-lot-image { height: 180px; position: relative; background: #e8ebdd; display: grid; place-items: center; overflow: hidden; }
+.palette-artwork { display: grid; place-items: center; width: 100%; color: var(--ink); }
+.palette-artwork svg { display: block; width: min(100%, 360px); height: auto; }
+.economy-lot-image .palette-artwork svg { width: 200px; height: 170px; }
+.auction-room-media > .palette-artwork { flex: 1; min-height: 240px; }
+.palette-mystery-caption { text-align: center; font: 12px/1.6 'DM Mono', monospace; color: var(--muted); }
 .economy-lot-image img { display: block; width: 100%; height: 180px; min-height: 0; object-fit: contain; padding: 20px; }
 .economy-badge { position: absolute; bottom: 12px; left: 12px; padding: 6px 10px; border-radius: 6px; background: var(--ink); color: var(--paper); font: 11px 'DM Mono', monospace; }
 .economy-lot-body { padding: 22px; }

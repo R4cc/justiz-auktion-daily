@@ -88,10 +88,30 @@ test('auction detail uses media, story and bid-room columns with the bid form be
   assert.ok(markup.indexOf('auction-room-story') < markup.indexOf('auction-room-bidding'));
   assert.ok(markup.indexOf('data-live-history') < markup.indexOf('auction-bid-dock'));
   assert.match(markup, /Raise bid/);
-  assert.match(markup, /camera\.jpg/);
+  assert.doesNotMatch(markup, /camera\.jpg|Camera|Possible contents/);
+  assert.match(markup, /palette-artwork/);
+  assert.match(markup, /Sealed until your winning reveal/);
   assert.match(markup, /A mysterious customs lot/);
   assert.match(markup, /Customs warehouse bust/);
   assert.match(markup, /PARODY CASE/);
+});
+
+test('mystery cards never read candidate items and resale media keeps its item photo', () => {
+  const context = vm.createContext({ t: en => en, esc: String, account: null, data: {}, tab: 'public',
+    name: lot => lot.name, story: () => ({ shortDescription: 'Customs case', body: 'Sealed evidence.' }),
+    categoryName: String, bidFacts: () => '', status: () => 'Active' });
+  vm.runInContext(extract(uiSource, '  function paletteArtwork(', '  function auctionContents(')
+    + extract(uiSource, '  function lotCard(', '  function render('), context);
+  const lot = { paletteId: 'electronics', name: 'Mystery palette', currentBid: null, reserve: 100,
+    requiredLevel: 1, status: 'active', id: 'lot' };
+  Object.defineProperty(lot, 'items', { get() { throw new Error('Candidate items must not be read'); } });
+  context.lot = lot;
+  const markup = vm.runInContext('lotCard(lot, true) + auctionMedia(lot, true)', context);
+  assert.match(markup, /palette-artwork/);
+  assert.doesNotMatch(markup, /<img|Possible contents|possible finds/);
+  const resale = vm.runInContext(`auctionMedia({item:{title:'Camera',image:'/camera.jpg'}}, false)`, context);
+  assert.match(resale, /camera\.jpg/);
+  assert.match(resale, /Camera/);
 });
 
 test('palette reveal animates exactly one fixed server reward per continuation, then shows summary', async () => {

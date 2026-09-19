@@ -142,16 +142,16 @@ window.economyUi = (() => {
       <p>${lot.bidCount} ${t('bids', 'Gebote')} · ${countdown(lot.endsAt)}</p>`;
   }
   function lotCard(lot, primary) {
-    const image = primary ? lot.items[0]?.image : lot.item.image;
+    const image = primary ? null : lot.item.image;
     const participation = (data.mine || []).find(entry => entry.id === lot.id);
     const minimum = lot.currentBid === null ? lot.reserve : lot.currentBid + 1;
     const eligible = account && (account.progression?.level || 1) >= lot.requiredLevel
       && account.tokens + (participation?.leading ? lot.currentBid : 0) >= minimum;
     const mine = tab === 'mine';
-    return `<article class="economy-lot"><div class="economy-lot-image">${image ? `<img src="${esc(image)}" alt="" loading="lazy">` : '<span aria-hidden="true">◇</span>'}
+    return `<article class="economy-lot"><div class="economy-lot-image">${primary ? paletteArtwork(lot) : image ? `<img src="${esc(image)}" alt="" loading="lazy">` : '<span aria-hidden="true">◇</span>'}
       <span class="economy-badge">${primary ? lot.kind === 'event' ? t('Limited event', 'Zeitlich begrenzt') : t('Mystery Palette', 'Mystery-Palette') : esc(categoryName(lot.item.marketCategory))}</span></div>
       <div class="economy-lot-body"><h2>${esc(primary ? name(lot) : lot.item.title)}</h2>
-      ${primary ? `<div class="auction-story-badges"><p class="economy-incident">${esc(story(lot).shortDescription)}</p>${story(lot).parody ? `<p class="auction-parody-label">${t('PARODY CASE', 'PARODIE-FALL')}</p>` : ''}</div><p class="economy-story">${esc(story(lot).body)}</p><div class="palette-seal" aria-hidden="true"><span>01 ◇</span><span>02 ◇</span><span>03 ◇</span></div><p class="earning-detail">${lot.items.length} ${t("possible finds · explore the auction", "mögliche Funde · Auktion entdecken")}</p><p>${esc((lot.allowedMarketCategories || []).map(categoryName).join(' · ') || categoryName(null))}</p>
+      ${primary ? `<div class="auction-story-badges"><p class="economy-incident">${esc(story(lot).shortDescription)}</p>${story(lot).parody ? `<p class="auction-parody-label">${t('PARODY CASE', 'PARODIE-FALL')}</p>` : ''}</div><p class="economy-story">${esc(story(lot).body)}</p><div class="palette-seal" aria-hidden="true"><span>01 ◇</span><span>02 ◇</span><span>03 ◇</span></div><p class="earning-detail">${t("Three sealed finds · discover your story", "Drei versiegelte Funde · entdecke deine Geschichte")}</p><p>${esc((lot.allowedMarketCategories || []).map(categoryName).join(' · ') || categoryName(null))}</p>
         <p class="economy-level">${t('Required level', 'Benötigtes Level')} ${lot.requiredLevel} · ${account ? t('Your level', 'Dein Level') + ' ' + account.progression.level : t('Log in to bid', 'Zum Bieten anmelden')}</p>
         ${account && lot.status === 'active' ? `<p>${eligible ? t('Ready to bid', 'Bereit zum Bieten') : account.progression.level < lot.requiredLevel ? t('Earn more XP to unlock', 'Mit mehr XP freischalten') : t('Earn more tokens to bid', 'Mehr Tokens zum Bieten verdienen')}</p>` : ''}`
         : `<p>${t('Seller', 'Verkäufer')}: ${esc(lot.sellerUsername)}</p><p>${t('Estimated market value', 'Geschätzter Marktwert')}: ${tokens(lot.estimatedValueTokens)}</p>`}
@@ -193,16 +193,44 @@ window.economyUi = (() => {
       <span class="auction-bid-entry"><input name="amount" type="number" inputmode="numeric" min="${min}" step="1" value="${min}" required><button class="primary-button" type="submit">${hasBid ? t('Raise bid', 'Gebot erhöhen') : t('Place bid', 'Gebot abgeben')}</button></span></label><p>${t('Available wallet balance', 'Verfügbares Guthaben')}: <strong>${tokens(account.tokens)}</strong></p><p class="auction-escrow-note">${t('Your bid is held until you are outbid or the auction settles.', 'Dein Gebot wird bis zum Überbieten oder zur Abrechnung hinterlegt.')}</p>
       <p class="account-error" role="alert"></p></form>`;
   }
+  function paletteArtwork(lot) {
+    const themes = {
+      cars: 'vehicles', 'electronics-smuggling': 'electronics', 'wine-tax-seizure': 'wine',
+      schatzkiste: 'luxury', 'dealer-seizure': 'luxury', jewellery: 'luxury'
+    };
+    const theme = themes[lot.paletteId] || lot.paletteId || lot.type;
+    const symbols = {
+      vehicles: '<path d="m-27 7 5-20h44l5 20v15h-54zM-22-13l6-12h32l6 12M-27 7h54M-18 15h5m26 0h5"/><circle cx="-18" cy="26" r="4"/><circle cx="18" cy="26" r="4"/>',
+      electronics: '<rect x="-17" y="-29" width="34" height="58" rx="5"/><path d="M-6-21H6M-5 21H5m-8-31-6 13h12L3 14"/>',
+      wine: '<path d="M-7-29H7v17l9 11v28h-32V-1l9-11zM-7-21H7M-16 6h32M-16 18h32"/>',
+      tools: '<path d="m-22 27 29-29a17 17 0 0 0 21-21L17-12 7-22 18-33A17 17 0 0 0-3-12l-29 29z"/><circle cx="-22" cy="17" r="3"/>',
+      luxury: '<path d="m-29-10 12-15h34l12 15L0 29zM-29-10h58M-17-25l7 15L0 29l10-39 7-15M-10-10 0-25l10 15"/>',
+      collectibles: '<path d="m0-30 9 19 21 3-15 15 4 22L0 19l-19 10 4-22-15-15 21-3z"/>',
+      mixed: '<path d="M-23-13v-9h46v9M-30-13h60v39h-60zM-30-1h60M-7-5H7v10H-7z"/>'
+    };
+    const symbol = symbols[theme] || symbols.mixed;
+    return `<div class="palette-artwork"><svg viewBox="0 0 320 260" role="img" aria-label="${esc(t('Sealed mystery palette — theme illustration', 'Versiegelte Mystery-Palette — Themenillustration'))}" xmlns="http://www.w3.org/2000/svg">
+      <circle cx="160" cy="126" r="104" fill="currentColor" opacity=".06"/>
+      <g fill="none" stroke="currentColor" stroke-width="2" opacity=".3"><path d="M34 61h14m-7-7v14M269 190h14m-7-7v14M267 54l5 5-5 5-5-5z"/></g>
+      <path d="m62 87 98-43 98 43v123H62z" fill="var(--paper)" stroke="currentColor" stroke-width="3" stroke-linejoin="round"/>
+      <path d="M62 87h196M144 51v159h32V51M62 185h196" fill="none" stroke="currentColor" stroke-width="2" opacity=".3"/>
+      <path d="M51 214h218v12H51zM65 226v9m95-9v9m95-9v9" fill="var(--paper)" stroke="currentColor" stroke-width="3"/>
+      <rect x="112" y="99" width="96" height="83" rx="12" fill="var(--ink)"/>
+      <g transform="translate(160 140) scale(.85)" fill="none" stroke="var(--paper)" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">${symbol}</g>
+      <circle cx="247" cy="194" r="23" fill="#b94c25"/><path d="M239 190v-5a8 8 0 0 1 16 0v5m-18 0h20v15h-20z" fill="none" stroke="#fffdf7" stroke-width="2.5" stroke-linejoin="round"/>
+    </svg></div>`;
+  }
   function auctionMedia(lot, primary) {
-    const items = primary ? lot.items || [] : [lot.item];
+    if (primary) return `${paletteArtwork(lot)}<p class="palette-mystery-caption">${t('Sealed until your winning reveal.', 'Versiegelt bis zur Aufdeckung deines Gewinns.')}</p>`;
+    const items = [lot.item];
     const images = items.filter(item => item?.image);
     if (!images.length) return `<div class="auction-room-placeholder" aria-hidden="true">◇</div>`;
     const first = images[0];
     return `<figure class="auction-room-main-image"><img data-auction-main-image src="${esc(first.image)}" alt="${esc(first.title || '')}"><figcaption data-auction-caption>${esc(first.title || '')}</figcaption></figure>
-      ${images.length > 1 ? `<div class="auction-room-thumbs" role="group" aria-label="${t('Auction pictures', 'Auktionsbilder')}">${images.map((item, index) => `<button type="button" data-economy="gallery" data-src="${esc(item.image)}" data-alt="${esc(item.title || '')}" aria-pressed="${index === 0}" aria-label="${esc(item.title || t('Auction picture', 'Auktionsbild'))}"><img src="${esc(item.image)}" alt=""></button>`).join('')}</div>` : ''}`;
+      ${images.length > 1 ? `<div class="auction-room-thumbs" role="group" aria-label="${primary ? t('Sealed palette illustration', 'Illustration der versiegelten Palette') : t('Auction pictures', 'Auktionsbilder')}">${images.map((item, index) => `<button type="button" data-economy="gallery" data-src="${esc(item.image)}" data-alt="${esc(item.title || '')}" aria-pressed="${index === 0}" aria-label="${esc(item.title || t('Auction picture', 'Auktionsbild'))}"><img src="${esc(item.image)}" alt=""></button>`).join('')}</div>` : ''}`;
   }
   function auctionContents(lot) {
-    return `<details class="auction-room-contents"><summary>${t('Possible contents', 'Mögliche Inhalte')} · ${lot.items.length}</summary><p>${t('Three items are already sealed inside. Duplicates are possible. This list is not your result.', 'Drei Gegenstände sind bereits versiegelt. Doppelte Funde sind möglich. Diese Liste zeigt nicht deinen Gewinn.')}</p><ul>${lot.items.map(item => `<li><span>${esc(item.title)}</span><small>${esc(rarityLabel(item.rarity))}</small></li>`).join('')}</ul></details>`;
+    return `<p class="auction-room-contents">${t('Three mystery finds. Win the palette to reveal them one by one. Duplicates are possible.', 'Drei geheime Funde. Gewinne die Palette und decke sie einzeln auf. Doppelte Funde sind möglich.')}</p>`;
   }
   async function showLot(id, primary) {
     const request = ++dialogSequence, visit = accountVisit;
@@ -216,7 +244,7 @@ window.economyUi = (() => {
     detailId = id;
     const title = primary ? name(lot) : lot.item.title;
     const winAction = primary && lot.revealAvailable ? `<div class="auction-win-panel"><p class="eyebrow">${t('SOLD · TO YOU', 'ZUSCHLAG · FÜR DICH')}</p><h3>${t('You won this palette.', 'Du hast diese Palette gewonnen.')}</h3><div class="palette-seal" aria-hidden="true"><span>01 ◇</span><span>02 ◇</span><span>03 ◇</span></div><button class="primary-button" data-economy="reveal" data-id="${esc(lot.id)}">${t('Reveal three finds', 'Drei Funde aufdecken')} →</button></div>` : bidForm(lot, primary);
-    openDialog(`<div class="auction-room"><section class="auction-room-media" aria-label="${t('Auction pictures', 'Auktionsbilder')}">${auctionMedia(lot, primary)}</section>
+    openDialog(`<div class="auction-room"><section class="auction-room-media" aria-label="${primary ? t('Sealed palette illustration', 'Illustration der versiegelten Palette') : t('Auction pictures', 'Auktionsbilder')}">${auctionMedia(lot, primary)}</section>
       <section class="auction-room-story"><p class="eyebrow">${primary ? t('SEALED · THREE FINDS', 'VERSIEGELT · DREI FUNDE') : t('PLAYER MARKETPLACE', 'SPIELERMARKTPLATZ')}</p><h2 id="economy-dialog-title" tabindex="-1">${esc(title)}</h2>
       ${primary ? `<div class="auction-story-badges"><p class="auction-case-label">${esc(story(lot).shortDescription)}</p>${story(lot).parody ? `<p class="auction-parody-label">${t('PARODY CASE', 'PARODIE-FALL')}</p>` : ''}</div><h3>${esc(story(lot).title)}</h3><p>${esc(story(lot).body)}</p><p class="auction-room-meta">${t('Required level', 'Benötigtes Level')} <strong>${lot.requiredLevel}</strong><br>${esc((lot.allowedMarketCategories || []).map(categoryName).join(' · ') || categoryName(null))}</p>${auctionContents(lot)}` : `<p class="auction-room-meta">${t('Seller', 'Verkäufer')}: <strong>${esc(lot.sellerUsername)}</strong><br>${t('Auction value', 'Auktionswert')}: <strong>${euro(lot.item.price)}</strong><br>${t('Estimated market value', 'Geschätzter Marktwert')}: <strong>${tokens(lot.estimatedValueTokens)}</strong></p>`}
       </section><aside class="auction-room-bidding"><header><p class="eyebrow">${t('LIVE AUCTION', 'LIVE-AUKTION')}</p><h3>${t('Bid room', 'Bietraum')}</h3></header><div data-live-facts>${bidFacts(lot, primary)}</div>
