@@ -1,10 +1,5 @@
-// Shared player-progression reads: the XP level curve. The thresholds were
-// extracted verbatim from the primary palette auction domain, where they
-// first shipped — progression is broader than any one system, so the curve
-// lives here and palette auctions (and later every other level-gated
-// feature) import it. Pure reads only: persisted users.xp is the single
-// source of truth, nothing here grants XP or writes the database, and the
-// curve itself is frozen (no rebalancing happened in this extraction).
+// Shared, frozen XP curve and defensive profile read model. Earning and
+// durable receipts live in xp.mjs; this module remains pure.
 export const XP_LEVEL_LIMIT = 20;
 
 // Level thresholds: reaching level L requires xp >= 100·(L−1)², levels 1..20.

@@ -17,13 +17,19 @@ caseReveal.addEventListener('close', () => {
 });
 let accountSelectedCase = 'fundkiste', accountInventoryPage = 0, accountFilter = 'all';
 let currentAccountPage = null, accountVisit = 0, pageLoaded = false;
-const accountPaths = ['/shop', '/inventory', '/profile', '/login', '/register', '/admin', '/leaderboard'];
+const accountPaths = ['/auctions', '/marketplace', '/market', '/news', '/shop', '/inventory', '/profile', '/login', '/register', '/admin', '/leaderboard'];
 const accountPage = document.querySelector('#account-page');
 const accountContent = document.querySelector('#account-content');
 const accountEscape = value => String(value ?? '').replace(/[&<>"']/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[char]);
 
 function accountError(code) {
   const errors = {
+    listing_limit: t('You can have at most 5 active listings. Wait for one to end or cancel an unbid listing.', 'Du kannst höchstens 5 aktive Angebote haben. Warte auf ein Ende oder storniere ein Angebot ohne Gebote.'),
+    instant_sell_disabled: t('List this item on the marketplace to sell it.', 'Biete diesen Gegenstand auf dem Marktplatz an.'),
+    level_required: t('Your level is too low for this palette. Complete Daily games and sell items to earn XP.', 'Dein Level ist für diese Palette zu niedrig. Spiele Daily und verkaufe Gegenstände für XP.'),
+    palette_auction_ended: t('This auction has ended. Check My bids.', 'Diese Auktion ist beendet. Sieh unter Meine Gebote nach.'),
+    rewards_unavailable: t('Rewards become available after settlement.', 'Gewinne werden nach der Abrechnung verfügbar.'),
+    palette_rewards_not_found: t('Only the winner can reveal this palette.', 'Nur der Gewinner kann diese Palette aufdecken.'),
     invalid_username: t('Use 3–32 letters, numbers, underscores or hyphens.', 'Nutze 3–32 Buchstaben, Zahlen, Unterstriche oder Bindestriche.'),
     invalid_password: t('Passwords must contain 12–128 characters.', 'Das Passwort muss 12–128 Zeichen lang sein.'),
     invalid_login: t('Incorrect username or password.', 'Benutzername oder Passwort ist falsch.'),
@@ -72,10 +78,12 @@ async function accountApi(route, payload) {
   return result;
 }
 function updateNavigation() {
-  const labels = { '/': t('Play', 'Spielen'), '/shop': 'Shop', '/inventory': t('Inventory', 'Inventar'), '/leaderboard': t('Leaderboard', 'Rangliste'), '/profile': t('Profile', 'Profil'), '/admin': 'Admin' };
+  const labels = { '/': t('Play', 'Spielen'), '/shop': 'Shop', '/auctions': t('Auctions', 'Auktionen'), '/marketplace': t('Marketplace', 'Marktplatz'), '/market': t('Market', 'Markt'), '/news': t('News', 'Nachrichten'), '/inventory': t('Inventory', 'Inventar'), '/leaderboard': t('Leaderboard', 'Rangliste'), '/profile': t('Profile', 'Profil'), '/admin': 'Admin' };
   for (const link of document.querySelectorAll('.site-nav a')) {
     link.textContent = labels[link.getAttribute('href')];
     if (link.pathname === location.pathname) link.setAttribute('aria-current', 'page'); else link.removeAttribute('aria-current');
+    if (link.dataset.feature) link.hidden = !economyFlags[link.dataset.feature];
+    if (link.pathname === '/shop') link.hidden = Boolean(economyFlags.paletteAuctions);
     if (link.pathname === '/admin') link.hidden = !account?.admin;
   }
   const auth = document.querySelector('#header-auth');
@@ -100,12 +108,14 @@ function updateAccountCatalog(catalog) {
   renderStaticUi();
 }
 const catalogReady = accountApi('cases').then(updateAccountCatalog).catch(() => {});
-const accountReady = Promise.all([accountApi('me'), catalogReady]).then(([result]) => {
+const accountReady = Promise.all([accountApi('me'), catalogReady, economyReady]).then(([result]) => {
   updateAccount(result.user);
+  renderStaticUi();
   if (typeof renderStart === 'function' && state.view === 'start' && location.pathname === '/') renderStart();
 }).catch(() => {});
 function showGamePage() {
   caseReveal.close(); auctionReveal.close();
+  window.economyUi?.stop();
   currentAccountPage = null; accountVisit++; pageLoaded = false;
   accountPage.hidden = true; document.querySelector('#app').hidden = false;
   if (location.pathname !== '/') history.pushState({}, '', '/');
@@ -113,6 +123,7 @@ function showGamePage() {
 }
 async function navigateAccountPage(path, push = true) {
   caseReveal.close(); auctionReveal.close();
+  window.economyUi?.stop();
   if (!accountPaths.includes(path)) { renderStart(); return; }
   if (push && location.pathname !== path) history.pushState({}, '', path);
   const visit = ++accountVisit;
@@ -123,10 +134,20 @@ async function navigateAccountPage(path, push = true) {
   window.scrollTo({ top: 0, behavior: 'instant' });
   try {
     await accountReady;
+    if (visit !== accountVisit) return;
+    if (path === '/shop' && economyFlags.paletteAuctions) {
+      history.replaceState({}, '', '/auctions');
+      await navigateAccountPage('/auctions', false);
+      return;
+    }
     const session = await accountApi('me');
     if (visit !== accountVisit) return;
     updateAccount(session.user);
     const owner = account?.id;
+    if (window.economyUi?.isRoute(path)) {
+      await window.economyUi.load(path, visit);
+      if (visit !== accountVisit) return;
+    }
     if (path === '/shop' || (path === '/inventory' && account)) {
       const catalog = await accountApi('cases'); if (visit !== accountVisit) return; updateAccountCatalog(catalog);
     }
@@ -164,7 +185,8 @@ function accountValueMarkup() {
 function renderAccountPage() {
   if (!pageLoaded || !currentAccountPage) return;
   if (caseOpening === accountVisit && currentAccountPage === '/shop') return;
-  if (currentAccountPage === '/shop') renderShop();
+  if (window.economyUi?.isRoute(currentAccountPage)) window.economyUi.render();
+  else if (currentAccountPage === '/shop') renderShop();
   else if (currentAccountPage === '/inventory') renderInventory();
   else if (currentAccountPage === '/profile') renderProfile();
   else if (currentAccountPage === '/admin') renderAdmin();
@@ -186,9 +208,11 @@ function rarityLabel(id) {
 }
 function itemCard(item, controls = true) {
   const copies = item.copies || [item];
+  const available = copies.find(copy => !copy.listed);
+  const resaleControls = `<button class="secondary-button" data-economy="list" data-id="${accountEscape(available?.id || item.id)}" ${available ? '' : 'disabled'}>${available ? t('List for auction', 'Zur Auktion anbieten') : t('Already listed', 'Bereits angeboten')}</button>`;
   return `<article class="collection-item rarity-${accountEscape(item.rarity)}"><span class="rarity-label">${rarityLabel(item.rarity)}</span>${copies.length > 1 ? `<span class="item-count" aria-label="${copies.length} ${t('copies', 'Exemplare')}">×${copies.length}</span>` : ''}
-    <img src="${accountEscape(item.image)}" alt="" loading="lazy"><h3>${accountEscape(item.title)}</h3><p>${t('Auction value', 'Auktionswert')} ${euro(item.price)}</p>
-    ${controls ? copies.length > 1 ? `<div class="item-actions"><button class="secondary-button" data-account="sell" data-id="${accountEscape(copies[0].id)}">${t('Sell one', 'Eins verkaufen')}<small>+${number(item.sellValue)}</small></button><button class="secondary-button" data-account="sell-all" data-id="${accountEscape(copies[0].id)}">${t('Sell all', 'Alle verkaufen')}<small>+${number(item.sellValue * copies.length)}</small></button></div>` : `<button class="secondary-button" data-account="sell" data-id="${accountEscape(item.id)}">${t('Sell', 'Verkaufen')} · ${number(item.sellValue)} ${t('tokens', 'Tokens')}</button>` : `<span class="item-value">${number(item.sellValue)} ${t('tokens', 'Tokens')}</span>`}</article>`;
+    <img src="${accountEscape(item.image)}" alt="" loading="lazy"><h3>${accountEscape(item.title)}</h3><p>${t('Auction value', 'Auktionswert')} ${euro(item.price)}</p>${item.estimatedValueTokens == null ? '' : `<p>${t('Estimated market value', 'Geschätzter Marktwert')} · ${number(item.estimatedValueTokens)} ${t('tokens', 'Tokens')}</p>`}
+    ${economyFlags.resales && controls ? resaleControls : controls ? copies.length > 1 ? `<div class="item-actions"><button class="secondary-button" data-account="sell" data-id="${accountEscape(copies[0].id)}">${t('Sell one', 'Eins verkaufen')}<small>+${number(item.sellValue)}</small></button><button class="secondary-button" data-account="sell-all" data-id="${accountEscape(copies[0].id)}">${t('Sell all', 'Alle verkaufen')}<small>+${number(item.sellValue * copies.length)}</small></button></div>` : `<button class="secondary-button" data-account="sell" data-id="${accountEscape(item.id)}">${t('Sell', 'Verkaufen')} · ${number(item.sellValue)} ${t('tokens', 'Tokens')}</button>` : `<span class="item-value">${number(item.sellValue)} ${t('tokens', 'Tokens')}</span>`}</article>`;
 }
 function groupedInventory(items) {
   const groups = new Map();
@@ -204,8 +228,8 @@ function renderInventory() {
   if (!account) { accountContent.innerHTML += loginNotice('inventory'); return; }
   const filtered = groupedInventory(accountItems.filter(item => accountFilter === 'all' || item.rarity === accountFilter));
   accountInventoryPage = Math.min(accountInventoryPage, Math.max(0, Math.ceil(filtered.length / 24) - 1));
-  accountContent.innerHTML += accountValueMarkup() + `<div class="inventory-heading"><h2>${t('Collection', 'Sammlung')} <small>${accountItems.length} ${accountItems.length === 1 ? t('item', 'Los') : t('items', 'Lose')}</small></h2><label>${t('Rarity', 'Seltenheit')} <select id="rarity-filter"><option value="all">${t('All', 'Alle')}</option>${accountCatalog.rarities.map(rarity => `<option value="${rarity.id}" ${accountFilter === rarity.id ? 'selected' : ''}>${rarityLabel(rarity.id)}</option>`).join('')}</select></label></div>
-    ${filtered.length ? `<div class="inventory-grid">${filtered.slice(accountInventoryPage * 24, (accountInventoryPage + 1) * 24).map(item => itemCard(item)).join('')}</div><div class="inventory-pages"><button data-account="page" data-step="-1" ${accountInventoryPage ? '' : 'disabled'}>← ${t('Previous', 'Zurück')}</button><span>${accountInventoryPage + 1} / ${Math.ceil(filtered.length / 24)}</span><button data-account="page" data-step="1" ${(accountInventoryPage + 1) * 24 >= filtered.length ? 'disabled' : ''}>${t('Next', 'Weiter')} →</button></div>` : `<div class="collection-empty"><h2>${t('Your next find belongs here.', 'Hier wartet dein nächster Fund.')}</h2><p>${t('Open a case to start your collection, or try another rarity filter.', 'Öffne eine Kiste für deine Sammlung oder wähle einen anderen Seltenheitsfilter.')}</p><a class="primary-button" href="/shop" data-page>${t('Visit the shop', 'Zum Shop')} →</a></div>`}`;
+  accountContent.innerHTML += accountValueMarkup() + (economyFlags.resales ? `<p class="earning-detail">${t('Sell through the marketplace. Maximum 5 active listings.', 'Verkaufe auf dem Marktplatz. Höchstens 5 aktive Angebote.')}</p>` : '') + `<div class="inventory-heading"><h2>${t('Collection', 'Sammlung')} <small>${accountItems.length} ${accountItems.length === 1 ? t('item', 'Los') : t('items', 'Lose')}</small></h2><label>${t('Rarity', 'Seltenheit')} <select id="rarity-filter"><option value="all">${t('All', 'Alle')}</option>${accountCatalog.rarities.map(rarity => `<option value="${rarity.id}" ${accountFilter === rarity.id ? 'selected' : ''}>${rarityLabel(rarity.id)}</option>`).join('')}</select></label></div>
+    ${filtered.length ? `<div class="inventory-grid">${filtered.slice(accountInventoryPage * 24, (accountInventoryPage + 1) * 24).map(item => itemCard(item)).join('')}</div><div class="inventory-pages"><button data-account="page" data-step="-1" ${accountInventoryPage ? '' : 'disabled'}>← ${t('Previous', 'Zurück')}</button><span>${accountInventoryPage + 1} / ${Math.ceil(filtered.length / 24)}</span><button data-account="page" data-step="1" ${(accountInventoryPage + 1) * 24 >= filtered.length ? 'disabled' : ''}>${t('Next', 'Weiter')} →</button></div>` : `<div class="collection-empty"><h2>${t('Your next find belongs here.', 'Hier wartet dein nächster Fund.')}</h2><p>${economyFlags.paletteAuctions ? t('Win a Mystery Palette to start your collection, or try another rarity filter.', 'Gewinne eine Mystery-Palette oder wähle einen anderen Seltenheitsfilter.') : t('Open a case to start your collection, or try another rarity filter.', 'Öffne eine Kiste für deine Sammlung oder wähle einen anderen Seltenheitsfilter.')}</p><a class="primary-button" href="/shop" data-page>${economyFlags.paletteAuctions ? t('Browse auctions', 'Auktionen ansehen') : t('Visit the shop', 'Zum Shop')} →</a></div>`}`;
 }
 function dailyFriendLabel(daily) {
   if (daily.status === 'completed') return `${number(daily.score)} / ${number(5000)} ${t('pts', 'Pkt')}`;
@@ -228,7 +252,7 @@ function rewardBanner() { return `<p class="reward-note">${accountEscape(rewardN
 function renderProfile() {
   accountContent.innerHTML = pageHeading(account ? accountEscape(account.username) : t('Your profile.', 'Dein Profil.'), t('Your collection, your progress, your friends.', 'Deine Sammlung, dein Fortschritt, deine Freunde.'));
   if (!account) { accountContent.innerHTML += loginNotice('profile'); return; }
-  accountContent.innerHTML += accountValueMarkup() + `<div class="profile-stats"><div><span>TOKENS</span><strong>${number(account.tokens)}</strong></div><div><span>${t('TODAY’S DAILY', 'HEUTIGES DAILY')}</span><strong>${dailyFriendLabel(account.daily)}</strong></div><button class="secondary-button" data-account="logout">${t('Log out', 'Abmelden')}</button></div>${rewardBanner()}
+  accountContent.innerHTML += accountValueMarkup() + progressionMarkup(account.progression) + `<div class="profile-stats"><div><span>TOKENS</span><strong>${number(account.tokens)}</strong></div><div><span>${t('TODAY’S DAILY', 'HEUTIGES DAILY')}</span><strong>${dailyFriendLabel(account.daily)}</strong></div><button class="secondary-button" data-account="logout">${t('Log out', 'Abmelden')}</button></div>${rewardBanner()}
     <section class="profile-friends"><div class="friends-heading"><div><h2>${t('Friends', 'Freunde')}</h2><p>${t('Daily for', 'Daily vom')} ${accountFriends.date} · ${t('Resets at 00:00 UTC', 'Reset um 00:00 UTC')}</p></div><button data-account="refresh">${t('Refresh', 'Aktualisieren')}</button></div>${friendsMarkup()}</section>`;
 }
 function friendsMarkup() {
@@ -327,14 +351,14 @@ function renderShop() {
 }
 function resultMarkup() {
   return `<p class="rarity-label rarity-${accountResult.rarity}">${rarityLabel(accountResult.rarity)}</p><h2>${accountEscape(accountResult.title)}</h2><p>${accountResult.sold ? t('Sold. Tokens added to your balance.', 'Verkauft. Tokens gutgeschrieben.') : t('Your find is safe in your inventory.', 'Dein Fund liegt sicher im Inventar.')}</p>
-    ${accountResult.sold ? '' : `<button class="secondary-button" data-account="sell-result" data-id="${accountResult.id}">${t('Sell now', 'Sofort verkaufen')} · ${number(accountResult.sellValue)} ${t('tokens', 'Tokens')}</button>`}`;
+    ${accountResult.sold || economyFlags.resales ? '' : `<button class="secondary-button" data-account="sell-result" data-id="${accountResult.id}">${t('Sell now', 'Sofort verkaufen')} · ${number(accountResult.sellValue)} ${t('tokens', 'Tokens')}</button>`}`;
 }
 function tierCard(rarity) {
   return `<div class="case-tier rarity-${accountEscape(rarity)}"><span class="case-tier-symbol" aria-hidden="true">◇</span><span class="rarity-label">${rarityLabel(rarity)}</span></div>`;
 }
 function revealCaseItem() {
   const box = accountCatalog.cases.find(box => box.id === accountResult.caseId);
-  caseReveal.innerHTML = `<div class="case-reveal-content rarity-${accountEscape(accountResult.rarity)}"><p class="eyebrow">${t('YOUR FIND', 'DEIN FUND')}</p><h2 id="case-reveal-title">${accountEscape(accountResult.title)}</h2><img src="${accountEscape(accountResult.image)}" alt=""><p class="rarity-label">${rarityLabel(accountResult.rarity)}</p><p>${t('Auction value', 'Auktionswert')} ${euro(accountResult.price)}</p><p role="status">${accountResult.sold ? t('Sold. Tokens added to your balance.', 'Verkauft. Tokens gutgeschrieben.') : t('Your find is safe in your inventory.', 'Dein Fund liegt sicher im Inventar.')}</p><div class="case-reveal-actions">${accountResult.sold ? '' : `<button class="secondary-button" data-account="sell-result" data-id="${accountEscape(accountResult.id)}">${t('Sell now', 'Sofort verkaufen')} · ${number(accountResult.sellValue)} ${t('tokens', 'Tokens')}</button>`}<button class="primary-button" data-account="pull" ${!account || account.tokens < box.cost || !box.available ? 'disabled' : ''}>${t('Open another case', 'Weitere Kiste öffnen')} · ${number(box.cost)} ${t('tokens', 'Tokens')}</button><button class="text-button" data-account="close-reveal" autofocus>${accountResult.sold ? t('Close', 'Schließen') : t('Keep item', 'Behalten')}</button></div></div>`;
+  caseReveal.innerHTML = `<div class="case-reveal-content rarity-${accountEscape(accountResult.rarity)}"><p class="eyebrow">${t('YOUR FIND', 'DEIN FUND')}</p><h2 id="case-reveal-title">${accountEscape(accountResult.title)}</h2><img src="${accountEscape(accountResult.image)}" alt=""><p class="rarity-label">${rarityLabel(accountResult.rarity)}</p><p>${t('Auction value', 'Auktionswert')} ${euro(accountResult.price)}</p><p role="status">${accountResult.sold ? t('Sold. Tokens added to your balance.', 'Verkauft. Tokens gutgeschrieben.') : t('Your find is safe in your inventory.', 'Dein Fund liegt sicher im Inventar.')}</p><div class="case-reveal-actions">${accountResult.sold || economyFlags.resales ? '' : `<button class="secondary-button" data-account="sell-result" data-id="${accountEscape(accountResult.id)}">${t('Sell now', 'Sofort verkaufen')} · ${number(accountResult.sellValue)} ${t('tokens', 'Tokens')}</button>`}<button class="primary-button" data-account="pull" ${!account || account.tokens < box.cost || !box.available ? 'disabled' : ''}>${t('Open another case', 'Weitere Kiste öffnen')} · ${number(box.cost)} ${t('tokens', 'Tokens')}</button><button class="text-button" data-account="close-reveal" autofocus>${accountResult.sold ? t('Close', 'Schließen') : t('Keep item', 'Behalten')}</button></div></div>`;
   if (!caseReveal.open) caseReveal.showModal();
   caseReveal.querySelector('[data-account="close-reveal"]').focus({ preventScroll: true });
 }
@@ -348,8 +372,34 @@ async function accountGameAnswer(run, position, answer) {
   const owner = account?.id, result = await accountApi('games/answer', { id: run.id, position, answer });
   if (account?.id !== owner) throw new Error(t('Your account changed. Please start again.', 'Das Konto wurde gewechselt. Bitte starte erneut.'));
   updateAccount(result.user);
-  if (result.run.complete && result.run.earned) showToast(t(`+${result.run.earned} tokens! Your next case is waiting.`, `+${result.run.earned} Tokens! Deine nächste Kiste wartet.`));
+  if (result.run.complete && result.run.earned) showToast(economyFlags.paletteAuctions
+    ? t(`+${result.run.earned} tokens! Explore the auctions.`, `+${result.run.earned} Tokens! Entdecke die Auktionen.`)
+    : t(`+${result.run.earned} tokens! Your next case is waiting.`, `+${result.run.earned} Tokens! Deine nächste Kiste wartet.`));
   return result.run;
+}
+async function spinCaseReel(reel, viewport, item, pool, isCurrent) {
+  const winnerIndex = 28 + Math.floor(Math.random() * 12);
+  const cards = Array.from({ length: 42 }, (_, index) => index === winnerIndex ? item : pool[Math.floor(Math.random() * pool.length)]);
+  reel.innerHTML = cards.map(item => tierCard(item.rarity)).join('');
+  const pause = ms => new Promise(resolve => setTimeout(resolve, ms));
+  const width = reel.children[0].getBoundingClientRect().width;
+  const landingBias = width * (0.25 + Math.random() * 0.5);
+  const landingAt = index => index * (width + 12) + landingBias - viewport.clientWidth / 2;
+  if (matchMedia('(prefers-reduced-motion: reduce)').matches) {
+    // Jump the full reel between centered stops, simulating a wheel without interpolation.
+    const tierDelays = [80, 90, 110, 140, 180, 240, 320, 420, 540, 680, 820, 1000];
+    for (let step = 0; step < tierDelays.length; step++) {
+      if (!isCurrent() || !reel.isConnected) return;
+      reel.style.transform = `translateX(${-landingAt(Math.round(winnerIndex * (step + 1) / tierDelays.length))}px)`;
+      await pause(tierDelays[step]);
+    }
+    reel.style.transform = `translateX(${-landingAt(winnerIndex)}px)`;
+  } else {
+  const animation = reel.animate([{ transform: 'translateX(0)' }, { transform: `translateX(${-landingAt(winnerIndex)}px)` }], { duration: 4600 + Math.round(Math.random() * 900), easing: 'cubic-bezier(.12,.72,.12,1)', fill: 'forwards' });
+  await animation.finished;
+  }
+  if (!isCurrent() || !reel.isConnected) return;
+  (reel.children[winnerIndex] || reel.children[0]).classList.add('is-pulled');
 }
 async function pullCase(visit) {
   if (!account) return;
@@ -367,28 +417,9 @@ async function pullCase(visit) {
   try {
   const reel = accountContent.querySelector('.case-reel'), viewport = accountContent.querySelector('.case-window'), resultNode = accountContent.querySelector('.case-result');
   resultNode.innerHTML = `<h2>${t('The hammer is spinning…', 'Der Hammer kreist …')}</h2><p>${t('Revealing your find.', 'Dein Fund wird aufgedeckt.')}</p>`;
-  const winnerIndex = 28 + Math.floor(Math.random() * 12);
-  const cards = Array.from({ length: 42 }, (_, index) => index === winnerIndex ? result.item : box.items[Math.floor(Math.random() * box.items.length)]);
-  reel.innerHTML = cards.map(item => tierCard(item.rarity)).join('');
-  const pause = ms => new Promise(resolve => setTimeout(resolve, ms));
-  const width = reel.children[0].getBoundingClientRect().width;
-  const landingBias = width * (0.25 + Math.random() * 0.5);
-  const landingAt = index => index * (width + 12) + landingBias - viewport.clientWidth / 2;
-  if (matchMedia('(prefers-reduced-motion: reduce)').matches) {
-    // Jump the full reel between centered stops, simulating a wheel without interpolation.
-    const tierDelays = [80, 90, 110, 140, 180, 240, 320, 420, 540, 680, 820, 1000];
-    for (let step = 0; step < tierDelays.length; step++) {
-      if (visit !== accountVisit || !reel.isConnected) return;
-      reel.style.transform = `translateX(${-landingAt(Math.round(winnerIndex * (step + 1) / tierDelays.length))}px)`;
-      await pause(tierDelays[step]);
-    }
-    reel.style.transform = `translateX(${-landingAt(winnerIndex)}px)`;
-  } else {
-  const animation = reel.animate([{ transform: 'translateX(0)' }, { transform: `translateX(${-landingAt(winnerIndex)}px)` }], { duration: 4600 + Math.round(Math.random() * 900), easing: 'cubic-bezier(.12,.72,.12,1)', fill: 'forwards' });
-  await animation.finished;
-  }
+  await spinCaseReel(reel, viewport, result.item, box.items, () => visit === accountVisit && account?.id === owner);
   if (visit !== accountVisit || !reel.isConnected) return;
-  (reel.children[winnerIndex] || reel.children[0]).classList.add('is-pulled');
+  const pause = ms => new Promise(resolve => setTimeout(resolve, ms));
   resultNode.innerHTML = `<h2>${rarityLabel(result.item.rarity)}</h2><p>${t('Opening your find…', 'Dein Fund wird enthüllt …')}</p>`;
   await pause(750);
   if (visit !== accountVisit || !reel.isConnected || account?.id !== owner) return;

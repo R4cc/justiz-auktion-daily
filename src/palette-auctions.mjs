@@ -28,8 +28,8 @@ export { levelForXp, XP_LEVEL_LIMIT } from './progression.mjs';
 // difference), but implemented here standalone.
 // HTTP exposure is a thin adapter over these functions: public reads in
 // economy-api.mjs, authenticated bid/reveal and admin creation in
-// account-api.mjs. Not in this package (or anywhere yet): schedulers/batch
-// settlement, NPCs, automatic lot generation, bid or auction cancellation.
+// account-api.mjs. The runtime supplies and settles lots. NPCs never bid here;
+// bid and auction cancellation remain deliberately unsupported.
 export const PALETTE_AUCTION_DURATION_MS = 3600_000;
 const fail = (code, status) => { throw new AccountError(code, status); };
 
@@ -127,7 +127,7 @@ function drawReward(items, weights, random) {
 // Trusted, server-only lot creation. Deterministic on (requestId): a replay
 // returns the original lot unchanged — same draws, same reserve — even after
 // expiry; a conflicting editionId for the same requestId is rejected.
-export function createPaletteAuction(dataDir, { editionId, requestId }, { now = Date.now(), random = randomInt } = {}) {
+export function createPaletteAuction(dataDir, { editionId, requestId }, { now = Date.now(), random = randomInt, automaticSupply = false } = {}) {
   if (typeof requestId !== 'string' || !/^[a-zA-Z0-9-]{16,80}$/.test(requestId)) fail('invalid_request', 400);
   if (typeof editionId !== 'string' || !editionId) fail('invalid_request', 400);
   return withDatabase(dataDir, db => transaction(db, () => {
@@ -137,6 +137,11 @@ export function createPaletteAuction(dataDir, { editionId, requestId }, { now = 
       if (existing.edition_id !== editionId) fail('request_conflict', 409);
       return serializePublicAuction(db, existing);
     }
+    // Runtime-only policy checked under the same write lock as creation.
+    if (automaticSupply && (db.prepare(`SELECT COUNT(*) AS count FROM primary_palette_auctions
+      WHERE status = 'active' AND ends_at > ?`).get(now).count >= 6
+      || db.prepare(`SELECT 1 FROM primary_palette_auctions WHERE edition_id = ? AND status = 'active'
+        AND ends_at > ?`).get(editionId, now))) return null;
     const edition = db.prepare('SELECT * FROM palette_editions WHERE id = ?').get(editionId);
     if (!edition) fail('palette_edition_not_found', 404);
     const payload = JSON.parse(edition.payload_json);
@@ -177,8 +182,9 @@ export function createPaletteAuction(dataDir, { editionId, requestId }, { now = 
 }
 
 function currentUser(db, userId) {
-  const account = db.prepare('SELECT tokens, xp, banned FROM users WHERE id = ?').get(userId);
+  const account = db.prepare('SELECT tokens, xp, banned, npc FROM users WHERE id = ?').get(userId);
   if (!account) fail('login_required', 401);
+  if (account.npc) fail('forbidden', 403);
   if (account.banned) fail('account_banned', 403);
   return account;
 }
@@ -296,6 +302,42 @@ export function listPaletteAuctions(dataDir, { now = Date.now(), limit = 50, off
       .all(now, Math.max(1, Math.min(200, Math.floor(limit) || 50)), Math.max(0, Math.floor(offset) || 0))
       .map(row => serializePublicAuction(db, row));
   });
+}
+
+export function settleDuePaletteAuctions(dataDir, { now = Date.now(), limit = 100 } = {}) {
+  const ids = withDatabase(dataDir, db => {
+    ensurePaletteAuctionSchema(db, now);
+    return db.prepare(`SELECT id FROM primary_palette_auctions WHERE settled_at IS NULL AND ends_at <= ?
+      ORDER BY ends_at, id LIMIT ?`).all(now, Math.max(1, Math.min(1000, Math.floor(limit) || 100)));
+  });
+  let settled = 0;
+  const failed = [];
+  for (const { id } of ids) {
+    try { settlePaletteAuction(dataDir, id, { now }); settled++; }
+    catch (error) { if (!(error instanceof AccountError)) throw error; failed.push(id); }
+  }
+  return { settled, failed };
+}
+
+// Database-backed discovery, including lots that have left the public list.
+// Only the winner-only rewards function serializes selected rewards.
+export function paletteAuctionsByUser(dataDir, user, { now = Date.now(), limit = 50, offset = 0 } = {}) {
+  return withDatabase(dataDir, db => transaction(db, () => {
+    ensurePaletteAuctionSchema(db, now);
+    currentUser(db, user.id);
+    const rows = db.prepare(`SELECT a.*, MAX(b.amount) AS highest_bid
+      FROM primary_palette_auctions a JOIN primary_palette_bids b ON b.auction_id = a.id
+      WHERE b.bidder_id = ? GROUP BY a.id
+      ORDER BY (a.ends_at > ?) DESC, a.ends_at DESC, a.id LIMIT ? OFFSET ?`)
+      .all(user.id, now, Math.max(1, Math.min(100, Math.floor(limit) || 50)), Number.isFinite(offset) ? Math.max(0, Math.floor(offset)) : 0);
+    return rows.map(row => {
+      const auction = now >= row.ends_at ? settleAuctionRow(db, row, now) : row;
+      const won = auction.winner_id === user.id;
+      return { ...serializePublicAuction(db, auction), highestBid: row.highest_bid,
+        leading: auction.status === 'active' && auction.current_bidder_id === user.id,
+        led: true, won, revealAvailable: won && auction.settled_at !== null };
+    });
+  }));
 }
 
 // Winner-only reveal of the sealed rewards. Authenticates against fresh

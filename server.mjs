@@ -1,6 +1,7 @@
 import { auctionGallery } from './src/auction-images.mjs';
 import { createAccountApi } from './src/account-api.mjs';
 import { createEconomyApi } from './src/economy-api.mjs';
+import { startEconomyRuntime } from './src/economy-runtime.mjs';
 import { higherLowerDeck } from './src/higher-lower.mjs';
 import {
   createServer
@@ -905,6 +906,7 @@ await maybeScheduleDiscovery({
 const accountApi = await createAccountApi({ dataDir, dailyPayload, json });
 
 const economyApi = createEconomyApi({ dataDir, json });
+const stopEconomyRuntime = startEconomyRuntime(dataDir);
 
 const server =
   createServer(
@@ -927,7 +929,7 @@ const server =
 
         if (await accountApi(request, response, url)) return;
 
-        if (['GET', 'HEAD'].includes(request.method) && ['/shop', '/inventory', '/profile', '/login', '/register', '/admin', '/leaderboard'].includes(url.pathname)) {
+        if (['GET', 'HEAD'].includes(request.method) && ['/auctions', '/marketplace', '/market', '/news', '/shop', '/inventory', '/profile', '/login', '/register', '/admin', '/leaderboard'].includes(url.pathname)) {
           await sendFile(request, response, publicDir, '/index.html', 'no-cache');
           return;
         }
@@ -1225,6 +1227,7 @@ scheduleUtcRollover();
 function shutdown(
   signal
 ) {
+  stopEconomyRuntime();
   shuttingDown =
     true;
 

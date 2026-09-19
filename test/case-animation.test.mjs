@@ -4,7 +4,7 @@ import { readFile } from 'node:fs/promises';
 import vm from 'node:vm';
 
 const source = await readFile(new URL('../dist/account.js', import.meta.url), 'utf8');
-const pullSource = source.slice(source.indexOf('async function pullCase('), source.indexOf("document.addEventListener('click'", source.indexOf('async function pullCase(')));
+const pullSource = source.slice(source.indexOf('async function spinCaseReel('), source.indexOf("document.addEventListener('click'", source.indexOf('async function pullCase(')));
 const tierSource = source.slice(source.indexOf('function tierCard('), source.indexOf('function revealCaseItem('));
 const flush = () => new Promise(resolve => setImmediate(resolve));
 

@@ -330,10 +330,17 @@ export function marketHistory(dataDir, category, { now = Date.now(), limit = 100
 // Pure valuation helper for future economy features: an item's estimated
 // token value is its base token value scaled by its category's current index.
 // Reads only — item.price, item.sellValue, rarity and inventory JSON are never
-// rewritten, and this estimate is not yet woven into inventory/resale APIs.
+// rewritten. Inventory, resale and NPC read models all use this helper.
 export function estimatedValueTokens(item, indexes = {}) {
   const category = marketCategoryForItem(item);
   const index = Number.isFinite(Number(indexes?.[category])) ? Number(indexes[category]) : DEFAULT_MARKET_INDEX;
   const baseValueTokens = tokenValue(item?.price ?? 0);
   return Math.max(1, Math.round(baseValueTokens * index / 100));
+}
+
+// Db-scoped read model, safe inside economic transactions; no history writes.
+export function marketIndexes(db, now = Date.now()) {
+  ensureMarketSchema(db, now);
+  ensureMarketEffectsSchema(db);
+  return Object.fromEntries(MARKET_CATEGORIES.map(({ id }) => [id, marketIndexAt(db, id, now)]));
 }

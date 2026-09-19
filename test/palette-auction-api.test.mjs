@@ -277,3 +277,32 @@ test('authenticated profile exposes the shared progression read model', async t 
   // No raw xp leaks outside the progression object.
   assert.equal('xp' in progressed.user, false);
 });
+
+
+test('authenticated My bids endpoint discovers a settled win without revealing rewards', async t => {
+  const { dir, base, post, adminCookie, register, createLot } = await fixture(t);
+  const player = await register('Historian');
+  const lot = await createLot(adminCookie, 'history-api-lot-00001');
+  withDatabase(dir, db => db.prepare('UPDATE users SET tokens = 100000 WHERE id = ?').run(player.user.id));
+  assert.equal((await fetch(base + '/api/account/palette-auctions')).status, 401);
+  assert.equal((await post('palette-auctions/bid', { id: lot.id, amount: lot.reserve }, player.cookie)).status, 200);
+  const getMine = cookie => fetch(base + '/api/account/palette-auctions?limit=1', { headers: { cookie } }).then(r => r.json());
+  const active = await getMine(player.cookie);
+  assert.equal(active.auctions[0].leading, true);
+  assert.equal(active.auctions[0].revealAvailable, false);
+  assert.equal((await getMine(adminCookie)).auctions.length, 0);
+  forceDue(dir, lot.id);
+  const ended = await getMine(player.cookie);
+  assert.equal(ended.auctions[0].won, true);
+  assert.equal(ended.auctions[0].revealAvailable, true);
+  assert.doesNotMatch(JSON.stringify(ended), /"rewards"|inventoryId|item_json/);
+  const reveal = await fetch(base + '/api/account/palette-auctions/' + lot.id + '/rewards', { headers: { cookie: player.cookie } }).then(r => r.json());
+  assert.equal(reveal.reveal.rewards.length, 3);
+});
+
+test('features discovery and participation history preserve independent flags', async t => {
+  const { base, adminCookie } = await fixture(t, { ADMIN_USERNAME: 'admin', ADMIN_PASSWORD: password, FEATURE_RESALES: 'true' });
+  const result = await fetch(base + '/api/features').then(r => r.json());
+  assert.deepEqual(result.features, { news: false, market: false, resales: true, palettes: false, paletteAuctions: false });
+  assert.equal((await fetch(base + '/api/account/palette-auctions', { headers: { cookie: adminCookie } })).status, 404);
+});

@@ -16,6 +16,10 @@ export function createEconomyApi({ dataDir, json, flags = featureFlags() }) {
   return (request, response, url) => {
     if (request.method !== 'GET' || !url.pathname.startsWith('/api/')) return false;
     try {
+      if (url.pathname === '/api/features') {
+        json(response, 200, { features: Object.fromEntries(Object.keys(featureFlags({})).map(key => [key, Boolean(flags[key])])) });
+        return true;
+      }
       if (flags.news && url.pathname === '/api/news') {
         json(response, 200, { news: listPublishedNews(dataDir, { limit: limited(url.searchParams.get('limit'), 20, 100) }) });
         return true;

@@ -5,7 +5,7 @@ import { higherLowerDeck } from './higher-lower.mjs';
 import { auctionGallery } from './auction-images.mjs';
 import { featureFlags } from './features.mjs';
 import { saveNewsEvent } from './news.mjs';
-import { bidOnPaletteAuction, createPaletteAuction, getPaletteAuctionRewards } from './palette-auctions.mjs';
+import { bidOnPaletteAuction, createPaletteAuction, getPaletteAuctionRewards, paletteAuctionsByUser } from './palette-auctions.mjs';
 import { cancelListing, listItem, listingsByUser, placeBid } from './resale.mjs';
 
 const AUCTION_PAGE_SIZE = 25;
@@ -50,7 +50,7 @@ async function body(request) {
 }
 
 export async function createAccountApi({ dataDir, dailyPayload, json, env = process.env, flags = featureFlags(env) }) {
-  const accounts = new Accounts(dataDir);
+  const accounts = new Accounts(dataDir, { flags });
   await accounts.bootstrap(env.ADMIN_USERNAME, env.ADMIN_PASSWORD);
   const secure = env.COOKIE_SECURE !== 'false' && (env.COOKIE_SECURE === 'true' || env.NODE_ENV === 'production');
   const cookie = token => `jg_session=${token}; Path=/; HttpOnly; SameSite=Strict; Max-Age=${token ? 2592000 : 0}${secure ? '; Secure' : ''}`;
@@ -73,6 +73,7 @@ export async function createAccountApi({ dataDir, dailyPayload, json, env = proc
           if (!user) throw new AccountError('login_required', 401);
           if (route === 'inventory') json(response, 200, { items: accounts.inventory(user) });
           else if (route === 'resale/listings' && flags.resales) json(response, 200, { listings: listingsByUser(dataDir, user.id) });
+          else if (route === 'palette-auctions' && flags.paletteAuctions) json(response, 200, { auctions: paletteAuctionsByUser(dataDir, user, { limit: Number(url.searchParams.get('limit')) || 50, offset: Number(url.searchParams.get('offset')) || 0 }) });
           else if (route === 'friends') json(response, 200, accounts.friends(user));
           else if (route === 'codes') json(response, 200, { codes: accounts.listCodes(user) });
           else if (route === 'admin') json(response, 200, accounts.adminOverview(user));

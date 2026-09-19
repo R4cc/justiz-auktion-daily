@@ -1,6 +1,6 @@
 // Data access for the flag-gated auction-economy systems (news, market,
 // palettes, resale auctions, primary palette auctions). This is
-// infrastructure only — no UI ships yet. Disabled systems return 404 from
+// shared by the player-facing economy pages. Disabled systems return 404 from
 // the server; the GET helpers resolve to null so future pages can render
 // empty states instead of errors.
 async function economyGet(url) {
@@ -19,6 +19,12 @@ const accountCall = (route, payload) => {
   return window.accountApi(route, payload);
 };
 window.justizEconomy = {
+  features: () => economyGet('/api/features'),
+  myPaletteAuctions: (limit = 50, offset = 0) => accountCall(`palette-auctions?limit=${limit}&offset=${offset}`),
+  myListings: () => accountCall('resale/listings'),
+  listItem: payload => accountCall('resale/listings', payload),
+  resaleBid: (id, amount) => accountCall('resale/bid', { id, amount }),
+  cancelListing: id => accountCall('resale/cancel', { id }),
   news: (limit = 20) => economyGet(`/api/news?limit=${Number(limit) || 20}`),
   market: () => economyGet('/api/market'),
   marketHistory: (category, limit = 168) =>
@@ -33,3 +39,6 @@ window.justizEconomy = {
   resales: (limit = 50) => economyGet(`/api/resales?limit=${Number(limit) || 50}`),
   resale: id => economyGet(`/api/resales/${encodeURIComponent(id)}`)
 };
+
+let economyFlags = {};
+const economyReady = window.justizEconomy.features().then(result => { economyFlags = result?.features || {}; });

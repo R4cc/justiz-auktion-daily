@@ -6,6 +6,9 @@ import { scoreGuess } from './core.mjs';
 import { AccountError } from './errors.mjs';
 import { ensureResaleSchema, inventoryIsLocked, lockedInventoryIds } from './resale.mjs';
 import { marketCategoryForItem } from './market.mjs';
+import { awardXp, ensureXpSchema } from './xp.mjs';
+import { featureFlags } from './features.mjs';
+import { estimatedValueTokens, marketIndexes } from './market.mjs';
 import { progressionForXp } from './progression.mjs';
 
 export { AccountError };
@@ -40,9 +43,10 @@ async function passwordMatches(password, stored) {
 }
 
 export class Accounts {
-  constructor(dataDir, { now = Date.now } = {}) {
+  constructor(dataDir, { now = Date.now, flags = featureFlags() } = {}) {
     this.dataDir = dataDir;
     this.now = now;
+    this.flags = flags;
     this.db(db => {
       db.exec(`
       CREATE TABLE IF NOT EXISTS users (
@@ -99,6 +103,8 @@ export class Accounts {
       ) STRICT;
       `);
       const columns = db.prepare('PRAGMA table_info(users)').all().map(column => column.name);
+      if (!columns.includes('npc')) db.exec('ALTER TABLE users ADD COLUMN npc INTEGER NOT NULL DEFAULT 0');
+      ensureXpSchema(db);
       if (!columns.includes('banned')) db.exec('ALTER TABLE users ADD COLUMN banned INTEGER NOT NULL DEFAULT 0');
       if (!columns.includes('xp')) {
         // The reserved XP column was part of the CREATE TABLE but never ALTERed
@@ -145,6 +151,7 @@ export class Accounts {
     });
   }
   session(db, userId) {
+    if (!db.prepare('SELECT 1 FROM users WHERE id = ? AND npc = 0 AND banned = 0').get(userId)) fail('invalid_login', 401);
     const token = randomBytes(32).toString('hex');
     db.prepare('DELETE FROM account_sessions WHERE expires <= ?').run(this.now());
     // Bound sessions per account without discarding the newly issued session.
@@ -156,7 +163,7 @@ export class Accounts {
   user(token) {
     if (!token || !/^[a-f0-9]{64}$/.test(token)) return null;
     return this.db(db => db.prepare(`SELECT users.* FROM users JOIN account_sessions ON users.id = user_id
-      WHERE hash = ? AND expires > ? AND banned = 0`).get(digest(token), this.now())) || null;
+      WHERE hash = ? AND expires > ? AND banned = 0 AND npc = 0`).get(digest(token), this.now())) || null;
   }
   logout(token) { this.db(db => db.prepare('DELETE FROM account_sessions WHERE hash = ?').run(digest(token || ''))); }
   async register({ username, password, code }) {
@@ -181,6 +188,7 @@ export class Accounts {
     credentials(username, password);
     this.throttle(`login:${username.toLowerCase()}`, 15);
     const row = this.db(db => db.prepare('SELECT * FROM users WHERE username = ?').get(username));
+    if (row?.npc) fail('invalid_login', 401);
     const stored = row?.password_hash || `${'0'.repeat(32)}:${'0'.repeat(128)}`;
     if (!await passwordMatches(password, stored) || !row) fail('invalid_login', 401);
     if (row.banned) fail('account_banned', 403);
@@ -207,8 +215,8 @@ export class Accounts {
   adminOverview(user) {
     if (!user.admin) fail('forbidden', 403);
     return this.db(db => ({
-      playerCount: db.prepare('SELECT COUNT(*) AS count FROM users').get().count,
-      users: db.prepare('SELECT id, username, admin, banned, tokens FROM users ORDER BY username COLLATE NOCASE').all()
+      playerCount: db.prepare('SELECT COUNT(*) AS count FROM users WHERE npc = 0').get().count,
+      users: db.prepare('SELECT id, username, admin, banned, tokens FROM users WHERE npc = 0 ORDER BY username COLLATE NOCASE').all()
         .map(row => ({ ...row, admin: Boolean(row.admin), banned: Boolean(row.banned) })),
       grants: db.prepare('SELECT amount, recipients, created_at AS createdAt FROM token_grants ORDER BY created_at DESC, rowid DESC LIMIT 20').all()
     }));
@@ -217,7 +225,7 @@ export class Accounts {
     if (!user.admin) fail('forbidden', 403);
     if (typeof banned !== 'boolean') fail('invalid_ban_state');
     return this.atomic(db => {
-      const target = db.prepare('SELECT id, username, admin FROM users WHERE id = ?').get(String(userId));
+      const target = db.prepare('SELECT id, username, admin FROM users WHERE id = ? AND npc = 0').get(String(userId));
       if (!target) fail('user_not_found', 404);
       // Admins are the recovery path for mistakes; they can never lock each other out.
       if (target.admin) fail('ban_admin', 403);
@@ -237,10 +245,10 @@ export class Accounts {
         if (previous.amount !== amount) fail('request_conflict', 409);
         return { ...previous };
       }
-      const highest = db.prepare('SELECT MAX(tokens) AS tokens FROM users').get().tokens || 0;
+      const highest = db.prepare('SELECT MAX(tokens) AS tokens FROM users WHERE npc = 0').get().tokens || 0;
       if (!Number.isSafeInteger(highest + amount)) fail('token_balance_limit', 409);
       // One transaction snapshots the recipients at execution time. No grant is applied at registration.
-      const recipients = db.prepare('UPDATE users SET tokens = tokens + ?').run(amount).changes;
+      const recipients = db.prepare('UPDATE users SET tokens = tokens + ? WHERE npc = 0').run(amount).changes;
       const createdAt = this.now();
       db.prepare('INSERT INTO token_grants VALUES (?, ?, ?, ?, ?)').run(user.id, requestId, amount, recipients, createdAt);
       return { amount, recipients, createdAt };
@@ -259,7 +267,7 @@ export class Accounts {
         if (previous.userId !== userId || previous.amount !== amount) fail('request_conflict', 409);
         return { ...previous };
       }
-      const target = db.prepare('SELECT id, username, tokens FROM users WHERE id = ?').get(userId);
+      const target = db.prepare('SELECT id, username, tokens FROM users WHERE id = ? AND npc = 0').get(userId);
       if (!target) fail('user_not_found', 404);
       if (!Number.isSafeInteger(target.tokens + amount)) fail('token_balance_limit', 409);
       db.prepare('UPDATE users SET tokens = tokens + ? WHERE id = ?').run(amount, target.id);
@@ -303,7 +311,7 @@ export class Accounts {
       const players = db.prepare(`SELECT u.id, u.username,
         COALESCE((SELECT SUM(CAST(ROUND(json_extract(i.item, '$.price') * 100) AS INTEGER))
           FROM inventory i WHERE i.user_id = u.id AND i.sold_at IS NULL), 0) AS cents
-        FROM users u WHERE u.banned = 0 ORDER BY cents DESC, u.username COLLATE NOCASE LIMIT 100`).all();
+        FROM users u WHERE u.banned = 0 AND u.npc = 0 ORDER BY cents DESC, u.username COLLATE NOCASE LIMIT 100`).all();
       const scores = new Map();
       for (const row of db.prepare(`SELECT user_id, payload FROM account_games WHERE date = ? AND mode = 'daily' AND complete = 1`)
         .all(day(this.now()))) {
@@ -318,7 +326,7 @@ export class Accounts {
     return this.db(db => {
       const rows = db.prepare(`SELECT u.id, u.username, f.requested_by, f.accepted FROM friendships f
         JOIN users u ON u.id = CASE WHEN f.user_a = ? THEN f.user_b ELSE f.user_a END
-        WHERE f.user_a = ? OR f.user_b = ? ORDER BY u.username COLLATE NOCASE`).all(user.id, user.id, user.id);
+        WHERE u.npc = 0 AND (f.user_a = ? OR f.user_b = ?) ORDER BY u.username COLLATE NOCASE`).all(user.id, user.id, user.id);
       return { date: day(this.now()), friends: rows.map(row => ({ id: row.id, username: row.username,
         status: row.accepted ? 'accepted' : row.requested_by === user.id ? 'outgoing' : 'incoming',
         ...(row.accepted ? this.summary(db, row.id) : {}) })) };
@@ -327,7 +335,7 @@ export class Accounts {
   requestFriend(user, username) {
     if (typeof username !== 'string' || !/^[a-zA-Z0-9_-]{3,32}$/.test(username.trim())) fail('invalid_username');
     return this.atomic(db => {
-      const target = db.prepare('SELECT id FROM users WHERE username = ?').get(username.trim());
+      const target = db.prepare('SELECT id FROM users WHERE username = ? AND npc = 0').get(username.trim());
       if (!target) fail('user_not_found', 404);
       if (target.id === user.id) fail('friend_self');
       const pair = [user.id, target.id].sort();
@@ -343,7 +351,7 @@ export class Accounts {
   acceptFriend(user, friendId) {
     const pair = [user.id, String(friendId)].sort();
     this.atomic(db => {
-      const result = db.prepare('UPDATE friendships SET accepted = 1 WHERE user_a = ? AND user_b = ? AND requested_by != ?')
+      const result = db.prepare('UPDATE friendships SET accepted = 1 WHERE user_a = ? AND user_b = ? AND requested_by != ? AND NOT EXISTS (SELECT 1 FROM users WHERE npc = 1 AND id IN (user_a, user_b))')
         .run(...pair, user.id);
       if (!result.changes) fail('friend_request_not_found', 404);
     });
@@ -353,8 +361,13 @@ export class Accounts {
     this.db(db => db.prepare('DELETE FROM friendships WHERE user_a = ? AND user_b = ?').run(...pair));
   }
   inventory(user) {
-    return this.db(db => db.prepare('SELECT id, item, created_at FROM inventory WHERE user_id = ? AND sold_at IS NULL ORDER BY created_at DESC, id')
-      .all(user.id).map(row => ({ ...currentItemValue(JSON.parse(row.item)), id: row.id, createdAt: row.created_at })));
+    return this.db(db => {
+      const indexes = this.flags.resales || this.flags.market ? marketIndexes(db, this.now()) : null;
+      const locked = lockedInventoryIds(db);
+      return db.prepare('SELECT id, item, created_at FROM inventory WHERE user_id = ? AND sold_at IS NULL ORDER BY created_at DESC, id')
+      .all(user.id).map(row => ({ ...currentItemValue(JSON.parse(row.item)), id: row.id, createdAt: row.created_at,
+        ...(indexes ? { estimatedValueTokens: estimatedValueTokens(JSON.parse(row.item), indexes), listed: locked.has(row.id) } : {}) }));
+    });
   }
   openCase(user, catalog, caseId, requestId, revision = catalog.revision) {
     if (typeof requestId !== 'string' || !/^[a-zA-Z0-9-]{16,80}$/.test(requestId)) fail('invalid_request');
@@ -380,6 +393,7 @@ export class Accounts {
     });
   }
   sell(user, id) {
+    if (this.flags.resales) fail('instant_sell_disabled', 409);
     return this.atomic(db => {
       const row = db.prepare('SELECT * FROM inventory WHERE id = ? AND user_id = ?').get(String(id), user.id);
       if (!row) fail('item_not_found', 404);
@@ -395,6 +409,7 @@ export class Accounts {
     });
   }
   sellAll(user, id) {
+    if (this.flags.resales) fail('instant_sell_disabled', 409);
     return this.atomic(db => {
       const selected = db.prepare('SELECT item FROM inventory WHERE id = ? AND user_id = ?').get(String(id), user.id);
       if (!selected) fail('item_not_found', 404);
@@ -470,6 +485,7 @@ export class Accounts {
         db.prepare('UPDATE users SET tokens = tokens + ? WHERE id = ?').run(run.earned, user.id);
         db.prepare('UPDATE daily_rewards SET earned = ? WHERE user_id = ? AND date = ?').run(run.earned, user.id, run.date);
       }
+      if (run.complete && run.mode === 'daily') awardXp(db, user.id, 'daily', run.id, 150, this.now());
       db.prepare('UPDATE account_games SET complete = ?, payload = ? WHERE id = ?').run(Number(run.complete), JSON.stringify(run), run.id);
       return this.publicGame(run);
     });

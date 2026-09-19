@@ -99,7 +99,7 @@ test('economy endpoints expose news, global market, palettes and resale listings
   const detail = await (await fetch(`${base}/api/resales/${listing.listing.id}`)).json();
   assert.equal(detail.listing.item.marketCategory, 'tools');
   assert.deepEqual(detail.listing.bids, []);
-  assert.equal((await (await post(base, 'inventory/sell', { id: opened.item.id }, cookie)).json()).error, 'item_listed');
+  assert.equal((await (await post(base, 'inventory/sell', { id: opened.item.id }, cookie)).json()).error, 'instant_sell_disabled');
   assert.equal((await fetch(`${base}/api/account/resale/listings`)).status, 401);
   assert.equal((await post(base, 'resale/listings', { inventoryId: opened.item.id, startPrice: 40, endsAt })).status, 401);
   const own = await (await fetch(`${base}/api/account/resale/listings`, { headers: { cookie } })).json();
@@ -133,4 +133,20 @@ test('publication registers market effects even while the market endpoint is hid
   assert.equal(news.event.status, 'published');
   const state = marketState(dir);
   assert.equal(state.categories.find(category => category.category === 'wine').currentIndex, 106);
+});
+
+
+test('both instant-sell HTTP paths reject unlisted items with resales enabled, legacy mode still sells', async t => {
+  for (const enabled of [true, false]) {
+    const { base } = await fixture(t, { ADMIN_USERNAME: 'admin', ADMIN_PASSWORD: password, FEATURE_RESALES: enabled ? '1' : '0' });
+    const login = await post(base, 'login', { username: 'admin', password });
+    const cookie = login.headers.get('set-cookie');
+    const catalog = await fetch(base + '/api/account/cases').then(r => r.json());
+    const opened = await post(base, 'cases/open', { caseId: 'fundkiste', requestId: 'instant-guard-00001', revision: catalog.revision }, cookie).then(r => r.json());
+    for (const route of ['inventory/sell', 'inventory/sell-all']) {
+      const response = await post(base, route, { id: opened.item.id }, cookie);
+      assert.equal(response.status, enabled ? 409 : 200);
+      if (enabled) assert.equal((await response.json()).error, 'instant_sell_disabled');
+    }
+  }
 });

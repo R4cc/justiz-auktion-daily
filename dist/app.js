@@ -557,7 +557,7 @@ function renderResults() {
         ${AUCTIONS.map((auction, index) => resultRow(auction, state.answers[index], index)).join('')}
       </div>
       <div class="results-actions">
-        ${account && gameMode === 'daily' ? `<a class="secondary-button" href="/shop" data-page>Shop ◈</a>` : ''}
+        ${account && gameMode === 'daily' ? `<a class="secondary-button" href="/shop" data-page>${economyFlags.paletteAuctions ? t('Auctions', 'Auktionen') : 'Shop'} ◈</a>` : ''}
         ${gameMode === 'random' ? `<button class="primary-button" type="button" data-action="random">${t('New random round', 'Neue Zufallsrunde')} <span class="button-arrow">↻</span></button>` : ''}
         <button class="${gameMode === 'random' ? 'secondary' : 'primary'}-button" type="button" data-action="share">${t("Share result", "Ergebnis teilen")} <span class="button-arrow">↗</span></button>
         <button class="secondary-button" type="button" data-action="copy">${t("Copy text", "Text kopieren")}</button>
