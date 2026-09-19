@@ -1,4 +1,4 @@
-// Data access for the flag-gated auction-economy systems (news, market,
+// Data access for the flag-gated auction-economy systems (market,
 // palettes, resale auctions, primary palette auctions). This is
 // shared by the player-facing economy pages. Disabled systems return 404 from
 // the server; the GET helpers resolve to null so future pages can render
@@ -25,7 +25,6 @@ window.justizEconomy = {
   listItem: payload => accountCall('resale/listings', payload),
   resaleBid: (id, amount) => accountCall('resale/bid', { id, amount }),
   cancelListing: id => accountCall('resale/cancel', { id }),
-  news: (limit = 20) => economyGet(`/api/news?limit=${Number(limit) || 20}`),
   market: () => economyGet('/api/market'),
   marketHistory: (category, limit = 168) =>
     economyGet(`/api/market/${encodeURIComponent(category)}/history?limit=${Number(limit) || 168}`),

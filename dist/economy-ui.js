@@ -9,7 +9,7 @@ function progressionMarkup(p) {
 
 window.economyUi = (() => {
   const api = window.justizEconomy, esc = accountEscape;
-  const routes = { '/auctions': 'paletteAuctions', '/marketplace': 'resales', '/market': 'market', '/news': 'news' };
+  const routes = { '/auctions': 'paletteAuctions', '/marketplace': 'resales', '/market': 'market' };
   const dialog = document.createElement('dialog');
   dialog.className = 'economy-dialog'; dialog.setAttribute('aria-labelledby', 'economy-dialog-title');
   document.body.append(dialog);
@@ -34,15 +34,23 @@ window.economyUi = (() => {
   const countdown = end => `<time class="economy-countdown" data-economy-end="${end}" datetime="${new Date(end).toISOString()}" aria-live="off">${remaining(end)}</time>`;
   const empty = text => `<p class="collection-empty">${text}</p>`;
   const status = lot => lot.status === 'cancelled' ? t('Cancelled', 'Storniert') : lot.status === 'active' ? t('Active', 'Aktiv') : lot.winnerId ? t('Sold', 'Verkauft') : t('Unsold', 'Nicht verkauft');
-  const bidHistory = bids => bids.map(bid => `<li><strong>${esc(bid.bidderUsername)}</strong> ${tokens(bid.amount)} <time>${date(bid.createdAt)}</time></li>`).join('') || `<li>${t('No bids yet', 'Noch keine Gebote')}</li>`;
-  const story = lot => ({ title: t(lot.story?.title || name(lot), lot.story?.titleDe || name(lot)),
-    body: t(lot.story?.body || '', lot.story?.bodyDe || paletteStoryDe(lot.paletteId)) });
+  const bidHistory = bids => [...(bids || [])].sort((a, b) => a.createdAt - b.createdAt || String(a.id).localeCompare(String(b.id)))
+    .map(bid => {
+      const mine = account?.id === bid.bidderId;
+      return `<li class="auction-chat-message${mine ? ' is-mine' : ''}"><div class="auction-chat-bubble"><span>${mine ? t('You', 'Du') : esc(bid.bidderUsername)}</span><strong>${tokens(bid.amount)}</strong><time>${date(bid.createdAt)}</time></div></li>`;
+    }).join('') || `<li class="auction-chat-empty">${t('No bids yet. Be the first to raise the paddle.', 'Noch keine Gebote. Hebe als Erste:r die Bieterkelle.')}</li>`;
+  const story = lot => ({ title: immersiveCopy(t(lot.story?.title || name(lot), lot.story?.titleDe || name(lot))),
+    body: immersiveCopy(t(lot.story?.body || '', lot.story?.bodyDe || paletteStoryDe(lot.paletteId))),
+    shortDescription: immersiveCopy(t(lot.story?.shortDescription || paletteIncident(lot.paletteId),
+      lot.story?.shortDescriptionDe || paletteIncident(lot.paletteId))),
+    parody: lot.story?.parody === true });
   function stop() {
     clearInterval(timer); clearInterval(clockTimer); sequence++; historySequence++; dialogSequence++;
     detailId = null; reveal = null; dialog.close(); busy = false;
   }
   function openDialog(markup) {
     if (!dialog.open) returnFocus = document.activeElement;
+    dialog.classList.toggle('economy-dialog--auction', markup.includes('class="auction-room"'));
     dialog.innerHTML = `<div class="economy-dialog-content"><button class="dialog-close" data-economy="close" aria-label="${t('Close', 'Schließen')}">×</button>${markup}</div>`;
     if (!dialog.open) dialog.showModal();
     dialog.querySelector('h2')?.focus({ preventScroll: true });
@@ -78,10 +86,7 @@ window.economyUi = (() => {
     } else if (path === '/market') {
       next = await api.market();
       if (!next) throw new Error(t('Market is unavailable.', 'Markt ist nicht verfügbar.'));
-    } else {
-      next = await api.news();
-      if (!next) throw new Error(t('News is unavailable.', 'Nachrichten sind nicht verfügbar.'));
-    }
+    } else return;
     const detailRequest = dialogSequence, currentDetail = detailId;
     const detail = currentDetail && dialog.open
       ? path === '/auctions' ? (await api.paletteAuction(currentDetail))?.auction : (await api.resale(currentDetail))?.listing : null;
@@ -110,10 +115,15 @@ window.economyUi = (() => {
       const facts = dialog.querySelector('[data-live-facts]');
       if (lot && facts) facts.innerHTML = bidFacts(lot, path === '/auctions');
       const historyNode = dialog.querySelector('[data-live-history]');
-      if (lot?.bids && historyNode) historyNode.innerHTML = bidHistory(lot.bids);
+      if (lot?.bids && historyNode) {
+        const followLatest = historyNode.scrollHeight - historyNode.scrollTop - historyNode.clientHeight < 40;
+        historyNode.innerHTML = bidHistory(lot.bids);
+        if (followLatest) historyNode.scrollTop = historyNode.scrollHeight;
+      }
       const bidInput = dialog.querySelector('input[name="amount"]');
       if (lot && bidInput) {
         bidInput.min = String(lot.currentBid === null ? lot.reserve ?? lot.startPrice : lot.currentBid + 1);
+        if (document.activeElement !== bidInput && Number(bidInput.value) < Number(bidInput.min)) bidInput.value = bidInput.min;
         if (lot.status !== 'active' || lot.endsAt <= Date.now()) {
           const form = bidInput.closest('form');
           form.querySelector('button[type="submit"]').disabled = true;
@@ -121,10 +131,6 @@ window.economyUi = (() => {
         }
       }
     }
-  }
-  function journey() {
-    const steps = [['/news', 'news', t('News', 'Nachrichten')], ['/market', 'market', t('Market moves', 'Marktbewegung')], ['/auctions', 'paletteAuctions', t('Win a palette', 'Palette gewinnen')], ['/inventory', 'paletteAuctions', t('Your finds', 'Deine Funde')], ['/marketplace', 'resales', t('Resell → tokens + XP', 'Verkaufen → Tokens + XP')]];
-    return `<nav class="economy-journey" aria-label="${t('Your auction journey', 'Dein Auktionsweg')}">${steps.filter(([, flag]) => economyFlags[flag]).map(([path, , label], i) => `<a href="${path}" data-page ${currentAccountPage === path ? 'aria-current="page"' : ''}><b>0${i + 1}</b> ${label}</a>`).join('<span aria-hidden="true">→</span>')}</nav>`;
   }
   function tabs(primary) {
     return `<div class="economy-tabs" role="group" aria-label="${t('Auction view', 'Auktionsansicht')}">
@@ -145,28 +151,26 @@ window.economyUi = (() => {
     return `<article class="economy-lot"><div class="economy-lot-image">${image ? `<img src="${esc(image)}" alt="" loading="lazy">` : '<span aria-hidden="true">◇</span>'}
       <span class="economy-badge">${primary ? lot.kind === 'event' ? t('Limited event', 'Zeitlich begrenzt') : t('Mystery Palette', 'Mystery-Palette') : esc(categoryName(lot.item.marketCategory))}</span></div>
       <div class="economy-lot-body"><h2>${esc(primary ? name(lot) : lot.item.title)}</h2>
-      ${primary ? `<p class="economy-story">${esc(story(lot).body)}</p><div class="palette-seal" aria-hidden="true"><span>01 ◇</span><span>02 ◇</span><span>03 ◇</span></div><p class="earning-detail">${lot.items.length} ${t("possible finds · explore the auction", "mögliche Funde · Auktion entdecken")}</p><p>${esc((lot.allowedMarketCategories || []).map(categoryName).join(' · ') || categoryName(null))}</p>
+      ${primary ? `<div class="auction-story-badges"><p class="economy-incident">${esc(story(lot).shortDescription)}</p>${story(lot).parody ? `<p class="auction-parody-label">${t('PARODY CASE', 'PARODIE-FALL')}</p>` : ''}</div><p class="economy-story">${esc(story(lot).body)}</p><div class="palette-seal" aria-hidden="true"><span>01 ◇</span><span>02 ◇</span><span>03 ◇</span></div><p class="earning-detail">${lot.items.length} ${t("possible finds · explore the auction", "mögliche Funde · Auktion entdecken")}</p><p>${esc((lot.allowedMarketCategories || []).map(categoryName).join(' · ') || categoryName(null))}</p>
         <p class="economy-level">${t('Required level', 'Benötigtes Level')} ${lot.requiredLevel} · ${account ? t('Your level', 'Dein Level') + ' ' + account.progression.level : t('Log in to bid', 'Zum Bieten anmelden')}</p>
         ${account && lot.status === 'active' ? `<p>${eligible ? t('Ready to bid', 'Bereit zum Bieten') : account.progression.level < lot.requiredLevel ? t('Earn more XP to unlock', 'Mit mehr XP freischalten') : t('Earn more tokens to bid', 'Mehr Tokens zum Bieten verdienen')}</p>` : ''}`
         : `<p>${t('Seller', 'Verkäufer')}: ${esc(lot.sellerUsername)}</p><p>${t('Estimated market value', 'Geschätzter Marktwert')}: ${tokens(lot.estimatedValueTokens)}</p>`}
       ${bidFacts(lot, primary)}
       ${mine ? `<p class="economy-outcome">${primary ? lot.status === 'active' ? lot.leading ? t('You lead', 'Du führst') : t('Outbid', 'Überboten') : lot.won ? t('Won!', 'Gewonnen!') : t('Lost', 'Verloren') : status(lot)}${primary ? ` · ${t('Your highest bid', 'Dein Höchstgebot')}: ${tokens(lot.highestBid)}` : lot.winnerId ? ` · ${t('Final sale', 'Verkaufspreis')}: ${tokens(lot.currentBid)}` : ''}</p>` : ''}
-      <button class="${primary && lot.revealAvailable ? 'primary-button' : 'secondary-button'}" data-economy="${primary && lot.revealAvailable ? 'reveal' : primary ? 'primary' : 'resale'}" data-id="${esc(lot.id)}">${primary && lot.revealAvailable ? t('Reveal three finds', 'Drei Funde aufdecken') : primary && !eligible ? t('Explore palette', 'Palette ansehen') : t('View auction', 'Auktion ansehen')} →</button>
+      <button class="${primary && lot.revealAvailable ? 'primary-button' : 'secondary-button'}" data-economy="${primary ? 'primary' : 'resale'}" data-id="${esc(lot.id)}">${primary && lot.revealAvailable ? t('View winning palette', 'Gewonnene Palette ansehen') : primary && !eligible ? t('Explore palette', 'Palette ansehen') : t('View auction', 'Auktion ansehen')} →</button>
       ${!primary && mine && lot.status === 'active' && !lot.bidCount ? `<button class="text-button" data-economy="cancel" data-id="${esc(lot.id)}">${t('Cancel listing', 'Angebot stornieren')}</button>` : ''}</div></article>`;
   }
   function render() {
     const path = currentAccountPage;
     if (!economyFlags[routes[path]]) {
-      accountContent.innerHTML = pageHeading(t('Coming later.', 'Kommt später.'), t('This part of the world is not open yet.', 'Dieser Teil der Spielwelt ist noch nicht geöffnet.')) + `<a href="/shop" data-page>${t('Visit the shop', 'Zum Shop')}</a>`;
+      accountContent.innerHTML = pageHeading(t('Coming later.', 'Kommt später.'), t('This section is not open yet.', 'Dieser Bereich ist noch nicht geöffnet.')) + `<a href="/shop" data-page>${t('Visit the shop', 'Zum Shop')}</a>`;
       return;
     }
     if (path === '/market') { renderMarket(); return; }
-    if (path === '/news') { renderNews(); return; }
     const primary = path === '/auctions';
     accountContent.innerHTML = pageHeading(primary ? t('A story. Three surprises.', 'Eine Geschichte. Drei Überraschungen.') : t('Every find finds a buyer.', 'Jeder Fund findet Käufer.'),
       primary ? t('Bid on a sealed Mystery Palette. Win it, then reveal three finds. Play Daily and sell items to unlock more.', 'Biete auf eine versiegelte Mystery-Palette. Gewinne und entdecke drei Funde. Spiele Daily und verkaufe Lose für höhere Level.')
         : t('Real finds, live bids. Sell one item at a time — up to 5 active listings.', 'Echte Funde, laufende Gebote. Verkaufe einzelne Lose — höchstens 5 aktive Angebote.'));
-    accountContent.innerHTML += journey();
     const wins = primary ? (data.mine || []).filter(lot => lot.revealAvailable) : [];
     if (wins.length && tab === 'public') accountContent.innerHTML += `<section class="palette-win-banner"><div><p class="eyebrow">${t('SOLD. TO YOU.', 'ZUSCHLAG. FÜR DICH.')}</p><h2>${t('Your treasures are waiting.', 'Deine Schätze warten.')}</h2></div><button class="primary-button" data-economy="tab" data-id="mine">${t('My wins', 'Meine Gewinne')} (${wins.length}) →</button></section>`;
     accountContent.innerHTML += `<div class="economy-wallet">${account ? `${tokens(account.tokens)} · ${t('Level', 'Level')} ${account.progression.level}` : `<a href="/login" data-page>${t('Log in to join the bidding', 'Zum Mitbieten anmelden')}</a>`}
@@ -184,9 +188,21 @@ window.economyUi = (() => {
     if (!primary && lot.sellerId === account.id) return `<p>${t('This is your listing.', 'Dies ist dein Angebot.')}</p>`;
     if (primary && account.progression.level < lot.requiredLevel) return `<p>${accountError('level_required')}</p>`;
     const min = lot.currentBid === null ? primary ? lot.reserve : lot.startPrice : lot.currentBid + 1;
-    return `<form data-economy-form="${primary ? 'primary' : 'resale'}" data-id="${esc(lot.id)}" class="economy-form"><label>${t('Your bid in tokens', 'Dein Gebot in Tokens')}
-      <input name="amount" type="number" inputmode="numeric" min="${min}" step="1" value="${min}" required></label><p>${t('Available wallet balance', 'Verfügbares Guthaben')}: <strong>${tokens(account.tokens)}</strong></p><p>${t('Your bid is held until you are outbid or the auction settles.', 'Dein Gebot wird bis zum Überbieten oder zur Abrechnung hinterlegt.')}</p>
-      <p class="account-error" role="alert"></p><button class="primary-button" type="submit">${t('Place bid', 'Gebot abgeben')}</button></form>`;
+    const hasBid = lot.currentBid !== null;
+    return `<form data-economy-form="${primary ? 'primary' : 'resale'}" data-id="${esc(lot.id)}" class="economy-form auction-bid-form"><label>${t('Your bid in tokens', 'Dein Gebot in Tokens')}
+      <span class="auction-bid-entry"><input name="amount" type="number" inputmode="numeric" min="${min}" step="1" value="${min}" required><button class="primary-button" type="submit">${hasBid ? t('Raise bid', 'Gebot erhöhen') : t('Place bid', 'Gebot abgeben')}</button></span></label><p>${t('Available wallet balance', 'Verfügbares Guthaben')}: <strong>${tokens(account.tokens)}</strong></p><p class="auction-escrow-note">${t('Your bid is held until you are outbid or the auction settles.', 'Dein Gebot wird bis zum Überbieten oder zur Abrechnung hinterlegt.')}</p>
+      <p class="account-error" role="alert"></p></form>`;
+  }
+  function auctionMedia(lot, primary) {
+    const items = primary ? lot.items || [] : [lot.item];
+    const images = items.filter(item => item?.image);
+    if (!images.length) return `<div class="auction-room-placeholder" aria-hidden="true">◇</div>`;
+    const first = images[0];
+    return `<figure class="auction-room-main-image"><img data-auction-main-image src="${esc(first.image)}" alt="${esc(first.title || '')}"><figcaption data-auction-caption>${esc(first.title || '')}</figcaption></figure>
+      ${images.length > 1 ? `<div class="auction-room-thumbs" role="group" aria-label="${t('Auction pictures', 'Auktionsbilder')}">${images.map((item, index) => `<button type="button" data-economy="gallery" data-src="${esc(item.image)}" data-alt="${esc(item.title || '')}" aria-pressed="${index === 0}" aria-label="${esc(item.title || t('Auction picture', 'Auktionsbild'))}"><img src="${esc(item.image)}" alt=""></button>`).join('')}</div>` : ''}`;
+  }
+  function auctionContents(lot) {
+    return `<details class="auction-room-contents"><summary>${t('Possible contents', 'Mögliche Inhalte')} · ${lot.items.length}</summary><p>${t('Three items are already sealed inside. Duplicates are possible. This list is not your result.', 'Drei Gegenstände sind bereits versiegelt. Doppelte Funde sind möglich. Diese Liste zeigt nicht deinen Gewinn.')}</p><ul>${lot.items.map(item => `<li><span>${esc(item.title)}</span><small>${esc(rarityLabel(item.rarity))}</small></li>`).join('')}</ul></details>`;
   }
   async function showLot(id, primary) {
     const request = ++dialogSequence, visit = accountVisit;
@@ -194,12 +210,19 @@ window.economyUi = (() => {
     if (request !== dialogSequence || visit !== accountVisit) return;
     const lot = primary ? result?.auction : result?.listing;
     if (!lot) throw new Error(accountError('auction_not_found'));
+    const participation = primary ? (data.mine || []).find(entry => entry.id === lot.id) : null;
+    if (participation) Object.assign(lot, { won: participation.won, leading: participation.leading,
+      highestBid: participation.highestBid, revealAvailable: participation.revealAvailable });
     detailId = id;
-    openDialog(`<p class="eyebrow">${primary ? t('SEALED · THREE FINDS', 'VERSIEGELT · DREI FUNDE') : t('PLAYER MARKETPLACE', 'SPIELERMARKTPLATZ')}</p><h2 id="economy-dialog-title" tabindex="-1">${esc(primary ? name(lot) : lot.item.title)}</h2>
-      ${primary ? `<h3>${esc(story(lot).title)}</h3><p>${esc(story(lot).body)}</p><p>${t('Fictional JUSTIZGUESSR story', 'Fiktive JUSTIZGUESSR-Geschichte')} · ${t('Required level', 'Benötigtes Level')} ${lot.requiredLevel}</p>` : `<img class="auction-detail-cover" src="${esc(lot.item.image || '')}" alt=""><p>${t('Seller', 'Verkäufer')}: ${esc(lot.sellerUsername)}</p><p>${t('Auction value', 'Auktionswert')}: ${euro(lot.item.price)} · ${t('Estimated market value', 'Geschätzter Marktwert')}: ${tokens(lot.estimatedValueTokens)}</p>`}
-      <div data-live-facts>${bidFacts(lot, primary)}</div>${bidForm(lot, primary)}
-      ${primary ? `<details><summary>${t('Possible contents · rarities from common to legendary', 'Mögliche Inhalte · gewöhnlich bis legendär')}</summary><p>${t('Three items are already sealed inside. Duplicates are possible. The pool below is not your result.', 'Drei Gegenstände sind bereits versiegelt. Doppelte Funde sind möglich. Dieser Pool zeigt nicht deinen Gewinn.')}</p><div class="inventory-grid">${lot.items.map(item => itemCard({ ...item, sellValue: Math.max(1, Math.round(item.price)) }, false)).join('')}</div></details>`
-      : `<h3>${t('Bid history', 'Gebotsverlauf')}</h3><ol class="economy-history" data-live-history>${bidHistory(lot.bids)}</ol>`}`);
+    const title = primary ? name(lot) : lot.item.title;
+    const winAction = primary && lot.revealAvailable ? `<div class="auction-win-panel"><p class="eyebrow">${t('SOLD · TO YOU', 'ZUSCHLAG · FÜR DICH')}</p><h3>${t('You won this palette.', 'Du hast diese Palette gewonnen.')}</h3><div class="palette-seal" aria-hidden="true"><span>01 ◇</span><span>02 ◇</span><span>03 ◇</span></div><button class="primary-button" data-economy="reveal" data-id="${esc(lot.id)}">${t('Reveal three finds', 'Drei Funde aufdecken')} →</button></div>` : bidForm(lot, primary);
+    openDialog(`<div class="auction-room"><section class="auction-room-media" aria-label="${t('Auction pictures', 'Auktionsbilder')}">${auctionMedia(lot, primary)}</section>
+      <section class="auction-room-story"><p class="eyebrow">${primary ? t('SEALED · THREE FINDS', 'VERSIEGELT · DREI FUNDE') : t('PLAYER MARKETPLACE', 'SPIELERMARKTPLATZ')}</p><h2 id="economy-dialog-title" tabindex="-1">${esc(title)}</h2>
+      ${primary ? `<div class="auction-story-badges"><p class="auction-case-label">${esc(story(lot).shortDescription)}</p>${story(lot).parody ? `<p class="auction-parody-label">${t('PARODY CASE', 'PARODIE-FALL')}</p>` : ''}</div><h3>${esc(story(lot).title)}</h3><p>${esc(story(lot).body)}</p><p class="auction-room-meta">${t('Required level', 'Benötigtes Level')} <strong>${lot.requiredLevel}</strong><br>${esc((lot.allowedMarketCategories || []).map(categoryName).join(' · ') || categoryName(null))}</p>${auctionContents(lot)}` : `<p class="auction-room-meta">${t('Seller', 'Verkäufer')}: <strong>${esc(lot.sellerUsername)}</strong><br>${t('Auction value', 'Auktionswert')}: <strong>${euro(lot.item.price)}</strong><br>${t('Estimated market value', 'Geschätzter Marktwert')}: <strong>${tokens(lot.estimatedValueTokens)}</strong></p>`}
+      </section><aside class="auction-room-bidding"><header><p class="eyebrow">${t('LIVE AUCTION', 'LIVE-AUKTION')}</p><h3>${t('Bid room', 'Bietraum')}</h3></header><div data-live-facts>${bidFacts(lot, primary)}</div>
+      <ol class="auction-chat" data-live-history role="log" aria-label="${t('Bid history', 'Gebotsverlauf')}">${bidHistory(lot.bids)}</ol><div class="auction-bid-dock">${winAction}</div></aside></div>`);
+    const historyNode = dialog.querySelector('[data-live-history]');
+    if (historyNode) historyNode.scrollTop = historyNode.scrollHeight;
   }
   function listingDialog(id) {
     const item = accountItems.find(entry => entry.id === id);
@@ -214,7 +237,7 @@ window.economyUi = (() => {
     const [result, lot] = await Promise.all([api.paletteAuctionRewards(id), api.paletteAuction(id)]);
     if (visit !== accountVisit || owner !== account?.id || request !== dialogSequence) return;
     reveal = { ...result.reveal, pool: lot?.auction?.items || result.reveal.rewards.map(r => r.item) }; revealPosition = 0;
-    openDialog(`<section class="palette-victory"><p class="eyebrow">${t('GOING, GOING… YOURS!', 'ZUM ERSTEN, ZUM ZWEITEN… DEINS!')}</p><h2 id="economy-dialog-title" tabindex="-1">${t('You won the palette.', 'Die Palette gehört dir.')}</h2><p>${esc(lot?.auction ? name(lot.auction) : '')}</p><div class="palette-seal" aria-hidden="true"><span>01 ◇</span><span>02 ◇</span><span>03 ◇</span></div><p>${t('Three sealed finds. One reveal at a time. Already safe in your inventory.', 'Drei versiegelte Funde. Einer nach dem anderen. Bereits sicher in deinem Inventar.')}</p><button class="primary-button" data-economy="next-reward">${t('Break the seal', 'Siegel öffnen')} →</button></section>`);
+    await revealNext();
   }
   async function revealNext() {
     if (!reveal) return;
@@ -247,29 +270,31 @@ window.economyUi = (() => {
   }
   function renderMarket() {
     const categories = data.categories || [], selected = categories.find(c => c.category === category);
-    accountContent.innerHTML = pageHeading(t('Read the market.', 'Lies den Markt.'), t('100 is neutral. Above 100 means stronger demand; below 100 means weaker demand. News moves the market and buyer valuations.', '100 ist neutral. Darüber ist die Nachfrage stärker, darunter schwächer. Nachrichten beeinflussen Markt und Käuferbewertungen.')) +
-      journey() + `<section class="market-guidance"><h2>${t("Sell now or hold?", "Jetzt verkaufen oder behalten?")}</h2><p>${t("Above-normal markets support higher estimates. Below normal, waiting may help, but recovery is never guaranteed. Bids decide the final price.", "Über Normalwert steigen die Schätzwerte. Darunter kann Warten helfen, eine Erholung ist aber nie garantiert. Gebote bestimmen den Verkaufspreis.")}</p><a href="/inventory" data-page>${t("Check your finds", "Deine Funde prüfen")} →</a></section><div class="market-categories">${categories.map(c => `<button data-economy="category" data-id="${c.category}" aria-pressed="${category === c.category}"><span>${esc(t(c.name, c.nameDe))}</span><strong>${number(c.currentIndex, 2)} ${c.currentIndex > 100 ? '↑' : c.currentIndex < 100 ? '↓' : '→'}</strong><small>${c.currentIndex >= 100 ? '+' : ''}${number(c.currentIndex - 100, 2)}% ${c.currentIndex > 100 ? t('above normal', 'über Normalwert') : c.currentIndex < 100 ? t('below normal', 'unter Normalwert') : t('normal value', 'Normalwert')}</small><time>${date(c.updatedAt)}</time></button>`).join('')}</div>
+    accountContent.innerHTML = pageHeading(t('Read the market.', 'Lies den Markt.'), t('100 is neutral. Above 100 means stronger demand; below 100 means weaker demand. Market movement changes buyer valuations.', '100 ist neutral. Darüber ist die Nachfrage stärker, darunter schwächer. Marktbewegungen verändern Käuferbewertungen.')) +
+      `<section class="market-guidance"><h2>${t("Sell now or hold?", "Jetzt verkaufen oder behalten?")}</h2><p>${t("Above-normal markets support higher estimates. Below normal, waiting may help, but recovery is never guaranteed. Bids decide the final price.", "Über Normalwert steigen die Schätzwerte. Darunter kann Warten helfen, eine Erholung ist aber nie garantiert. Gebote bestimmen den Verkaufspreis.")}</p><a href="/inventory" data-page>${t("Check your finds", "Deine Funde prüfen")} →</a></section><div class="market-categories">${categories.map(c => `<button data-economy="category" data-id="${c.category}" aria-pressed="${category === c.category}"><span>${esc(t(c.name, c.nameDe))}</span><strong>${number(c.currentIndex, 2)} ${c.currentIndex > 100 ? '↑' : c.currentIndex < 100 ? '↓' : '→'}</strong><small>${c.currentIndex >= 100 ? '+' : ''}${number(c.currentIndex - 100, 2)}% ${c.currentIndex > 100 ? t('above normal', 'über Normalwert') : c.currentIndex < 100 ? t('below normal', 'unter Normalwert') : t('normal value', 'Normalwert')}</small><time>${date(c.updatedAt)}</time></button>`).join('')}</div>
       <section class="market-chart"><h2>${esc(selected ? t(selected.name, selected.nameDe) : '')}</h2>${selected ? `<p><strong>${number(selected.currentIndex, 2)}</strong> · ${number(Math.abs(selected.currentIndex - 100), 2)}% ${selected.currentIndex > 100 ? t('above normal', 'über Normalwert') : selected.currentIndex < 100 ? t('below normal', 'unter Normalwert') : t('from normal', 'vom Normalwert')}</p>` : ''}${chart(history)}<p>${t('Hourly history · index points (70–130) · dashed line = neutral 100', 'Stündlicher Verlauf · Indexpunkte (70–130) · gestrichelte Linie = neutral 100')}</p></section>`;
     const chartSection = accountContent.querySelector('.market-chart');
     const categoryGrid = accountContent.querySelector('.market-categories');
     if (chartSection && categoryGrid) accountContent.insertBefore(chartSection, categoryGrid);
   }
   function chart(points) {
-    if (!points.length) return empty(t('History will appear as the simulated economy starts.', 'Der Verlauf erscheint mit dem Start der simulierten Wirtschaft.'));
+    if (!points.length) return empty(t('History will appear as the market starts collecting data.', 'Der Verlauf erscheint, sobald der Markt Daten sammelt.'));
     const sorted = [...points].reverse(), start = Date.parse(sorted[0].capturedAt), end = Date.parse(sorted.at(-1).capturedAt);
     const line = sorted.map(p => `${35 + 630 * (Date.parse(p.capturedAt) - start) / Math.max(1, end - start)},${220 - (p.indexValue - 70) / 60 * 200}`).join(' ');
     return `<svg viewBox="0 0 700 260" role="img" aria-label="${t('Market index over time', 'Marktindex im Zeitverlauf')}"><text x="0" y="24">130</text><text x="0" y="124">100</text><text x="8" y="224">70</text><path d="M35 120H670" stroke="currentColor" stroke-dasharray="5 5" opacity=".35"/><polyline points="${line}" fill="none" stroke="currentColor" stroke-width="3"/>${sorted.map(p => `<circle cx="${35 + 630 * (Date.parse(p.capturedAt) - start) / Math.max(1, end - start)}" cy="${220 - (p.indexValue - 70) / 60 * 200}" r="3" fill="currentColor"/>`).join("")}<text x="35" y="250">${esc(new Date(start).toLocaleDateString(uiLocale()))}</text><text x="665" y="250" text-anchor="end">${esc(new Date(end).toLocaleDateString(uiLocale()))}</text></svg><details><summary>${t("Read history as a table", "Verlauf als Tabelle lesen")}</summary><div class="market-history-table"><table><thead><tr><th>${t("Time", "Zeit")}</th><th>Index</th></tr></thead><tbody>${sorted.map(p => `<tr><td>${date(p.capturedAt)}</td><td>${number(p.indexValue, 2)}</td></tr>`).join("")}</tbody></table></div></details>`;
-  }
-  function renderNews() {
-    accountContent.innerHTML = pageHeading(t('Dispatches from our world.', 'Nachrichten aus unserer Welt.'), t('Fictional stories from the JUSTIZGUESSR simulated economy. These are not real current events.', 'Fiktive Geschichten aus der simulierten JUSTIZGUESSR-Wirtschaft. Dies sind keine realen aktuellen Nachrichten.')) +
-      journey() + `<div class="economy-news">${(data.news || []).map(n => `<article><time>${date(n.publishedAt)}</time><h2>${esc(t(n.title, n.metadata?.titleDe || n.title))}</h2><p>${esc(t(n.body, n.metadata?.bodyDe || n.body))}</p><div class="economy-effects">${n.marketEffects.map(e => `<a href="/market?category=${encodeURIComponent(e.category)}" data-page>${categoryName(e.category)} ${e.direction === 'up' ? '↑ +' : '↓ −'}${number(e.magnitude)} ${t('points', 'Punkte')}</a>`).join('')}</div>
-      ${n.paletteIds.length && economyFlags.paletteAuctions ? `<p>${t('Associated palettes', 'Zugehörige Paletten')}: ${n.paletteIds.map(id => `<a href="/auctions?palette=${encodeURIComponent(id)}" data-page>${esc(paletteName(id))} →</a>`).join(' · ')}</p><a href="/auctions" data-page>${t('Explore palette auctions', 'Palettenauktionen ansehen')} →</a>` : ''}</article>`).join('') || empty(t('The next world story is on its way.', 'Die nächste Geschichte aus der Spielwelt ist unterwegs.'))}</div>`;
   }
   document.addEventListener('click', async event => {
     const button = event.target.closest('[data-economy]');
     if (!button) return;
     const action = button.dataset.economy, id = button.dataset.id;
     if (action === 'close') { dialog.close(); return; }
+    if (action === 'gallery') {
+      const image = dialog.querySelector('[data-auction-main-image]'), caption = dialog.querySelector('[data-auction-caption]');
+      if (image) { image.src = button.dataset.src; image.alt = button.dataset.alt; }
+      if (caption) caption.textContent = button.dataset.alt;
+      dialog.querySelectorAll('[data-economy="gallery"]').forEach(entry => entry.setAttribute('aria-pressed', String(entry === button)));
+      return;
+    }
     if (busy) return;
     const visit = accountVisit;
     try {

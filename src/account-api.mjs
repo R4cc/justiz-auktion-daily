@@ -7,6 +7,7 @@ import { featureFlags } from './features.mjs';
 import { saveNewsEvent } from './news.mjs';
 import { bidOnPaletteAuction, createPaletteAuction, getPaletteAuctionRewards, paletteAuctionsByUser } from './palette-auctions.mjs';
 import { cancelListing, listItem, listingsByUser, placeBid } from './resale.mjs';
+import { maskLeaderboard } from './username-privacy.mjs';
 
 const AUCTION_PAGE_SIZE = 25;
 
@@ -68,7 +69,11 @@ export async function createAccountApi({ dataDir, dailyPayload, json, env = proc
       if (request.method === 'GET') {
         if (route === 'me') json(response, 200, { user: user ? accounts.profile(user) : null });
         else if (route === 'cases') json(response, 200, publicCaseCatalog(getCatalog()));
-        else if (route === 'leaderboard') json(response, 200, accounts.leaderboard());
+        else if (route === 'leaderboard') {
+          // Public page: only signed-in viewers get uncensored names.
+          const board = accounts.leaderboard();
+          json(response, 200, user ? board : maskLeaderboard(board));
+        }
         else {
           if (!user) throw new AccountError('login_required', 401);
           if (route === 'inventory') json(response, 200, { items: accounts.inventory(user) });
@@ -127,6 +132,7 @@ export async function createAccountApi({ dataDir, dailyPayload, json, env = proc
       else if (route === 'admin/grant-tokens') result = { grant: accounts.grantTokens(user, payload.amount, payload.requestId), user: accounts.profile(user) };
       else if (route === 'admin/grant-user-tokens') result = { grant: accounts.grantUserTokens(user, payload.userId, payload.amount, payload.requestId), user: accounts.profile(user) };
       else if (route === 'admin/ban') result = { ban: accounts.banUser(user, payload.userId, payload.banned) };
+      else if (route === 'admin/reset-economy') result = { reset: accounts.resetEconomy(user, payload.confirmation), user: accounts.profile(user) };
       else if (route === 'admin/news' && flags.news) {
         if (!user.admin) throw new AccountError('forbidden', 403);
         result = { event: saveNewsEvent(dataDir, payload) };

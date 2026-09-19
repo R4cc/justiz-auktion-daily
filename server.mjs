@@ -929,7 +929,7 @@ const server =
 
         if (await accountApi(request, response, url)) return;
 
-        if (['GET', 'HEAD'].includes(request.method) && ['/auctions', '/marketplace', '/market', '/news', '/shop', '/inventory', '/profile', '/login', '/register', '/admin', '/leaderboard'].includes(url.pathname)) {
+        if (['GET', 'HEAD'].includes(request.method) && ['/auctions', '/marketplace', '/market', '/shop', '/inventory', '/profile', '/login', '/register', '/admin', '/leaderboard'].includes(url.pathname)) {
           await sendFile(request, response, publicDir, '/index.html', 'no-cache');
           return;
         }

@@ -7,18 +7,31 @@ import { tickNpcBuyers } from './npc-buyers.mjs';
 import { tickWorldNews } from './world-news.mjs';
 import { AccountError } from './errors.mjs';
 
+// One one-hour auction every three hours leaves a real gap between drops.
+// The bucket-derived request id makes restarts and concurrent runtimes safe:
+// the current window can create at most one auction and older windows are
+// never backfilled.
+export const PALETTE_DROP_PERIOD_MS = 3 * 3600_000;
+
 export function supplyPaletteAuctions(dataDir, { now = Date.now() } = {}) {
   const catalog = loadPaletteCatalog(dataDir, { now });
   const editions = catalog.palettes.filter(p => p.availability === 'available' && p.endsAt >= now + 3600_000)
-    .sort((a, b) => (a.kind === 'event' ? 0 : 1) - (b.kind === 'event' ? 0 : 1)
-      || (a.editionId < b.editionId ? -1 : a.editionId > b.editionId ? 1 : 0));
+    .sort((a, b) => a.editionId < b.editionId ? -1 : a.editionId > b.editionId ? 1 : 0);
   const created = [], skipped = [];
-  for (const edition of editions) {
-    const requestId = createHash('sha256').update(`primary:${edition.editionId}:${Math.floor(now / 3600_000)}`).digest('hex');
+  if (!editions.length) return { auctions: created, skipped };
+  const bucket = Math.floor(now / PALETTE_DROP_PERIOD_MS);
+  const selection = parseInt(createHash('sha256').update(`palette-drop:${bucket}`).digest('hex').slice(0, 8), 16);
+  // Try the remaining editions if the selected theme temporarily lacks a
+  // viable value spread. A bucket still creates no more than one auction.
+  for (let offset = 0; offset < editions.length; offset++) {
+    const edition = editions[(selection + offset) % editions.length];
+    const requestId = createHash('sha256').update(`palette-drop:${bucket}`).digest('hex');
     try {
       const auction = createPaletteAuction(dataDir, { editionId: edition.editionId, requestId }, { now, automaticSupply: true });
       if (auction) created.push(auction.id);
+      break;
     } catch (error) {
+      if (error instanceof AccountError && error.message === 'request_conflict') continue;
       if (!(error instanceof AccountError) || error.message !== 'insufficient_value_spread') throw error;
       skipped.push(edition.editionId);
     }

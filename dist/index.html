@@ -10,7 +10,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
-    <link rel="stylesheet" href="/styles.css?v=20260919-2" />
+    <link rel="stylesheet" href="/styles.css?v=20260919-8" />
   </head>
   <body>
     <div class="paper-noise" aria-hidden="true"></div>
@@ -24,19 +24,23 @@
         <button class="icon-button" type="button" data-action="help" aria-label="Game rules">?</button>
       </div>
       <nav class="site-nav" aria-label="Main navigation">
-        <a href="/" data-page>Play</a><a href="/auctions" data-feature="paletteAuctions" data-page hidden>Auctions</a><a href="/marketplace" data-feature="resales" data-page hidden>Marketplace</a><a href="/market" data-feature="market" data-page hidden>Market</a><a href="/news" data-feature="news" data-page hidden>News</a><a href="/inventory" data-page>Inventory</a><a href="/shop" data-page>Shop</a><a href="/leaderboard" data-page>Leaderboard</a><a href="/profile" data-page>Profile</a><a href="/admin" data-page hidden>Admin</a>
+        <a href="/" data-page>Play</a><a href="/auctions" data-feature="paletteAuctions" data-page hidden>Auctions</a><a href="/marketplace" data-feature="resales" data-page hidden>Marketplace</a><a href="/market" data-feature="market" data-page hidden>Market</a><a href="/inventory" data-page>Inventory</a><a href="/shop" data-page>Shop</a><a href="/leaderboard" data-page>Leaderboard</a><a href="/profile" data-page>Profile</a><a href="/admin" data-page hidden>Admin</a>
       </nav>
       <a id="header-auth" class="account-button" href="/login" data-page>Log in / Register</a>
     </header>
     <main id="app" aria-live="polite"></main>
     <main id="account-page" class="account-page" hidden><div id="account-content"></div></main>
+    <footer class="site-disclaimer">
+      <p lang="en">JUSTIZGUESSR is a fictional game. Its stories, markets, Mystery Palettes, tokens, collectibles and player auctions are simulated. No real money is used, and no ownership of real auction goods is transferred.</p>
+      <p lang="de">JUSTIZGUESSR ist ein fiktives Spiel. Geschichten, Märkte, Mystery-Paletten, Tokens, Sammelobjekte und Spielerauktionen sind simuliert. Es wird kein echtes Geld verwendet und kein Eigentum an echten Auktionswaren übertragen.</p>
+    </footer>
     <dialog id="help-dialog" class="help-dialog"></dialog>
     <div id="toast" class="toast" role="status" aria-live="polite"></div>
-    <script src="/i18n.js?v=20260912-2" defer></script>
-    <script src="/economy.js?v=20260917-1" defer></script>
-    <script src="/account.js?v=20260919-2" defer></script>
-    <script src="/economy-ui.js?v=20260919-2" defer></script>
-    <script src="/higher-lower.js?v=20260912-3" defer></script>
-    <script src="/app.js?v=20260919-2" defer></script>
+    <script src="/i18n.js?v=20260919-4" defer></script>
+    <script src="/economy.js?v=20260919-2" defer></script>
+    <script src="/account.js?v=20260919-4" defer></script>
+    <script src="/economy-ui.js?v=20260919-8" defer></script>
+    <script src="/higher-lower.js?v=20260919-4" defer></script>
+    <script src="/app.js?v=20260919-3" defer></script>
   </body>
 </html>

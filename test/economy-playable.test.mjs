@@ -11,8 +11,8 @@ import { loadPaletteCatalog } from '../src/palette-definitions.mjs';
 import { bidOnPaletteAuction, getPaletteAuctionRewards, listPaletteAuctions,
   paletteAuctionsByUser, settleDuePaletteAuctions } from '../src/palette-auctions.mjs';
 import { cancelListing, getResale, listItem, placeBid, settleAuction } from '../src/resale.mjs';
-import { NPC_BALANCE, NPC_BUYERS, npcValuation, seedNpcBuyers, tickNpcBuyers } from '../src/npc-buyers.mjs';
-import { supplyPaletteAuctions, tickEconomy, startEconomyRuntime } from '../src/economy-runtime.mjs';
+import { NPC_BALANCE, NPC_BUYERS, NPC_COHORT_SIZE, npcValuation, seedNpcBuyers, tickNpcBuyers } from '../src/npc-buyers.mjs';
+import { PALETTE_DROP_PERIOD_MS, supplyPaletteAuctions, tickEconomy, startEconomyRuntime } from '../src/economy-runtime.mjs';
 import { getNewsEvent, saveNewsEvent } from '../src/news.mjs';
 import { setMarketIndex } from '../src/market.mjs';
 import { tickWorldNews, WORLD_NEWS_PERIOD_MS, WORLD_SCENARIOS } from '../src/world-news.mjs';
@@ -50,22 +50,43 @@ const count = (f, table) => f.sql(`SELECT COUNT(*) AS n FROM ${table}`)[0].n;
 const balance = (f, id) => f.sql('SELECT tokens FROM users WHERE id = ?', id)[0].tokens;
 const xp = (f, id = 'seller') => f.accounts.profile(f.user(id)).progression.xp;
 
-test('automatic supply uses six persisted editions, prioritizes events and survives restart', async t => {
+test('automatic supply creates one palette per three-hour window and survives restart', async t => {
   const f = await fixture(t);
   saveNewsEvent(f.dir, { id: 'fixture-event', title: 'Fiction', body: 'Fiction', status: 'published', paletteIds: ['electronics-smuggling'] }, { now: day });
   supplyPaletteAuctions(f.dir, { now: day });
   const lots = listPaletteAuctions(f.dir, { now: day });
-  assert.equal(lots.length, 6); assert.ok(lots.some(l => l.kind === 'event'));
-  assert.equal(new Set(lots.map(l => l.editionId)).size, 6);
+  assert.equal(lots.length, 1);
   const ids = lots.map(l => l.id).sort(), rewards = f.sql('SELECT * FROM primary_palette_rewards');
   supplyPaletteAuctions(f.dir, { now: day + 30_000 }); closeDataStore(f.dir);
   supplyPaletteAuctions(f.dir, { now: day + 45_000 });
   assert.deepEqual(listPaletteAuctions(f.dir, { now: day + 45_000 }).map(l => l.id).sort(), ids);
   assert.deepEqual(f.sql('SELECT * FROM primary_palette_rewards'), rewards);
-  assert.equal(settleDuePaletteAuctions(f.dir, { now: day + hour }).settled, 6);
+  assert.equal(settleDuePaletteAuctions(f.dir, { now: day + hour }).settled, 1);
   assert.equal(settleDuePaletteAuctions(f.dir, { now: day + hour }).settled, 0);
-  supplyPaletteAuctions(f.dir, { now: day + hour }); assert.equal(count(f, 'primary_palette_auctions'), 12);
+  supplyPaletteAuctions(f.dir, { now: day + hour }); assert.equal(count(f, 'primary_palette_auctions'), 1);
+  supplyPaletteAuctions(f.dir, { now: day + PALETTE_DROP_PERIOD_MS });
+  assert.equal(count(f, 'primary_palette_auctions'), 2);
   assert.equal(count(f, 'inventory'), 0);
+});
+
+test('economy reset removes primary and resale auction state but keeps the shared world catalog', async t => {
+  const f = await fixture(t);
+  supplyPaletteAuctions(f.dir, { now: day });
+  const palette = listPaletteAuctions(f.dir, { now: day })[0];
+  bidOnPaletteAuction(f.dir, f.user('buyer'), palette.id, palette.reserve, { now: day });
+  f.listing('reset-resale-item');
+  const editions = count(f, 'palette_editions');
+
+  const reset = f.accounts.resetEconomy(f.user('seller'), 'RESET ECONOMY');
+  assert.equal(reset.paletteAuctionCount, 1); assert.equal(reset.resaleCount, 1);
+  assert.equal(count(f, 'primary_palette_auctions'), 0);
+  assert.equal(count(f, 'primary_palette_rewards'), 0);
+  assert.equal(count(f, 'primary_palette_bids'), 0);
+  assert.equal(count(f, 'resale_auctions'), 0); assert.equal(count(f, 'inventory'), 0);
+  assert.equal(count(f, 'palette_editions'), editions);
+  assert.ok(f.sql('SELECT tokens, xp FROM users WHERE npc = 0').every(row => row.tokens === 1000 && row.xp === 0));
+  supplyPaletteAuctions(f.dir, { now: day });
+  assert.ok(count(f, 'primary_palette_auctions') > 0);
 });
 
 test('supply skips unavailable editions and windows shorter than a complete hour', async t => {
@@ -221,7 +242,7 @@ test('market materially changes NPC interest and WTP with bounded deterministic 
   assert.deepEqual(high, npcValuation(item, { electronics: 130 }, npc, 'same'));
   for (const buyer of NPC_BUYERS) for (const unit of [() => 0, () => .999]) {
     const value = npcValuation(item, { electronics: 100 }, buyer, 'a', unit);
-    assert.ok(value.maxBid >= 700 && value.maxBid <= 1150);
+    assert.ok(value.maxBid >= 700 && value.maxBid <= 1250);
   }
 });
 
@@ -229,7 +250,7 @@ test('NPC interest is frozen across ticks/restarts and no bid happens before its
   const f = await fixture(t); f.listing('demand');
   assert.equal(tickNpcBuyers(f.dir, { now: day, unit: () => 0 }).bids, 0);
   const interest = f.sql('SELECT * FROM resale_npc_interest ORDER BY npc_id');
-  assert.equal(interest.length, 12); assert.equal(count(f, 'resale_bids'), 0);
+  assert.equal(interest.length, NPC_COHORT_SIZE); assert.equal(count(f, 'resale_bids'), 0);
   setMarketIndex(f.dir, 'tools', 130, { now: day }); closeDataStore(f.dir);
   tickNpcBuyers(f.dir, { now: day + 1000, unit: () => .99 });
   assert.deepEqual(f.sql('SELECT * FROM resale_npc_interest ORDER BY npc_id'), interest);
@@ -244,16 +265,17 @@ test('NPC bids use human escrow/refunds, react to outbids, win ownership and pay
   tickNpcBuyers(f.dir, { now: day + 45_000 });
   const first = getResale(f.dir, lot.id, { now: day + 45_000 });
   assert.ok(first.currentBidderId.startsWith('npc-')); assert.ok(first.bids[0].bidderUsername);
-  assert.equal(balance(f, first.currentBidderId), NPC_BALANCE - 1);
-  placeBid(f.dir, f.user('buyer'), lot.id, 2, { now: day + 46_000 });
+  assert.equal(balance(f, first.currentBidderId), NPC_BALANCE - first.currentBid);
+  const humanBid = first.currentBid + 1;
+  placeBid(f.dir, f.user('buyer'), lot.id, humanBid, { now: day + 46_000 });
   assert.equal(balance(f, first.currentBidderId), NPC_BALANCE);
   tickNpcBuyers(f.dir, { now: day + 90_000 });
   const second = getResale(f.dir, lot.id, { now: day + 90_000 });
-  assert.equal(second.currentBid, 3); assert.equal(balance(f, 'buyer'), 100000);
+  assert.ok(second.currentBid > humanBid); assert.equal(balance(f, 'buyer'), 100000);
   const sold = settleAuction(f.dir, lot.id, { now: day + 300000 });
   assert.ok(sold.winnerId.startsWith('npc-'));
   assert.equal(f.sql('SELECT user_id FROM inventory WHERE id = ?', 'npc-win')[0].user_id, sold.winnerId);
-  assert.equal(xp(f), resaleXp(3)); assert.equal(balance(f, 'seller'), 100003);
+  assert.equal(xp(f), resaleXp(sold.currentBid)); assert.equal(balance(f, 'seller'), 100000 + sold.currentBid);
   closeDataStore(f.dir); settleAuction(f.dir, lot.id, { now: day + hour });
   assert.equal(xp(f), 10); assert.equal(count(f, 'inventory'), 1);
 });
@@ -313,7 +335,7 @@ test('runtime flag isolation, off no-op, startup timer unref and stop clears wor
   const primary = tickEconomy(f.dir, { now: day, flags: { paletteAuctions: true } });
   assert.deepEqual(primary.failures, []); assert.ok(primary.supply.auctions.length); assert.equal(count(f, 'users'), 3);
   const resale = tickEconomy(f.dir, { now: day, flags: { resales: true } });
-  assert.deepEqual(resale.failures, []); assert.equal(count(f, 'users'), 15);
+  assert.deepEqual(resale.failures, []); assert.equal(count(f, 'users'), 3 + NPC_BUYERS.length);
   assert.equal(count(f, 'news_events'), 0);
   const news = tickEconomy(f.dir, { now: day, flags: { news: true } });
   assert.deepEqual(news.failures, []); assert.equal(count(f, 'news_events'), 1);

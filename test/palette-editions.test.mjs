@@ -71,6 +71,7 @@ test('palette definitions cover the eight legacy cases plus three gated event pa
   for (const palette of catalog.palettes) {
     assert.equal(palette.story.fictional, true);
     assert.ok(palette.story.title.length > 3 && palette.story.body.length > 20);
+    assert.ok(palette.story.shortDescription.length > 3 && palette.story.shortDescriptionDe.length > 3);
     assert.equal(palette.rewardCount, 3);
     assert.equal(palette.purchasable, false);
     assert.equal(palette.acquisitionMode, 'auction');

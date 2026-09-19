@@ -8,8 +8,8 @@ default on; the Compose file passes them through explicitly. Explicit false valu
 
 Daily → tokens and 150 XP → sealed Mystery Palette auction → three fixed rewards
 → inventory → player resale marketplace → human/NPC buyers → seller tokens and XP.
-News moves the existing global indexes, which influence current item estimates
-and the demand of newly initialized NPC buyers.
+Persisted market effects influence current item estimates and the demand of
+newly initialized NPC buyers. Automatic news publication is dormant.
 
 - `/auctions`: active lots, candidate pools, level/affordability information,
   bidding, and **My bids** (active and recent ended participation).
@@ -20,8 +20,6 @@ and the demand of newly initialized NPC buyers.
   grouped and the next available copy can be listed.
 - `/market`: all category indexes, deviation from neutral 100, update timestamps,
   category selection and native SVG hourly-history chart.
-- `/news`: explicitly fictional game-world feed, readable market effects and
-  links to associated palette auctions.
 - `/profile`: XP, level, progress and remaining XP; level 20 is terminal.
 - `/shop`: compatibility alias to Auctions when primary auctions are enabled;
   otherwise the original case shop. Daily gameplay is otherwise unchanged.
@@ -35,7 +33,7 @@ restore focus, polling preserves bid form input, and countdowns use aria-live=of
 
 Auctions and marketplace poll every 12 seconds while the document is visible.
 Navigation cancels timers and invalidates pending responses. Requests are guarded
-by visit, request and account identity. Market/news use the same visibility-aware
+by visit, request and account identity. Market uses the same visibility-aware
 refresh cadence. No WebSockets or chart dependencies.
 
 ## Flags and compatibility
@@ -45,13 +43,12 @@ refresh cadence. No WebSockets or chart dependencies.
 | `FEATURE_PALETTE_AUCTIONS` | Primary reads, participation history, bid/reveal/admin-create, Auctions UI, automatic supply and settlement |
 | `FEATURE_RESALES` | Resale routes/UI, listing cap, NPC runtime, resale settlement, instant-sell rejection |
 | `FEATURE_MARKET` | Public market/history routes and Market UI |
-| `FEATURE_NEWS` | Public news/admin publication routes, News UI, automatic world news |
 | `FEATURE_PALETTES` | Persisted palette catalog HTTP route only |
 
-Flags remain independent. News can create effects/editions while market/palette
-HTTP reads are disabled. Primary supply can persist/use editions without exposing
-the palette catalog endpoint. Resales use global valuations without enabling the
-Market page. No global all-or-nothing flag was added.
+News is hard-disabled in normal feature discovery and runtime configuration;
+its backend tables and domain code remain dormant. Primary supply can persist/use
+editions without exposing the palette catalog endpoint. Resales use global
+valuations without enabling the Market page.
 
 With resales enabled, `Accounts.sell` and `sellAll` reject with
 `instant_sell_disabled` (409), including HTTP callers. Inventory and legacy case
@@ -69,18 +66,19 @@ precedes runtime startup in `server.mjs`.
 
 - First tick after 1 second, then every 30 seconds via an unref'ed timeout.
 - Shutdown clears the timer. All flags off creates no timer and performs no work.
-- Each enabled system is isolated: news failure cannot block primary/resale
-  settlement. Failures are reported to the server log without hidden rewards.
+- Each enabled system is isolated: primary and resale failures cannot block the
+  other settlement branch. Failures are reported without hidden rewards.
 - Primary and resale sweeps run before supply/NPC bidding. Existing lazy
   settlement remains as a correctness fallback for reads.
 - Primary sweep: bounded 100 by default (maximum 1000), independent transaction
   per lot; corrupt domain state is reported and other lots can settle.
 
-Primary supply targets **6 active global lots**. It loads/persists current base
-editions using the existing catalog and considers only available frozen editions
-whose window fits a complete **one-hour** auction. Event editions precede base
-editions; edition ID supplies stable tie ordering. One active automatic lot per
-edition. Fewer eligible editions means fewer lots, without category substitution.
+Primary supply creates **one global lot per three-hour UTC bucket**. Each lot
+runs for one hour, leaving a gap between normal drops. It loads/persists current
+base editions and considers only available frozen editions whose window fits the
+complete auction. A bucket-derived request ID prevents duplicates across ticks,
+restarts and concurrent runtimes; past buckets are never backfilled. At most one
+automatically supplied palette may be active at once.
 
 Every creation calls `createPaletteAuction`. A trusted `automaticSupply` option
 checks global count and active edition under that domain's write transaction,
@@ -90,6 +88,14 @@ The unique creation receipt prevents restart rerolls and repeated generation in
 the same slot. The next UTC-hour slot may replace an expired lot. Availability,
 spread validation, frozen reserve formula, weights, duration and 3 draws remain
 owned by the existing domain. Rewards still use cryptographic randomness.
+
+Each new lot also selects one story from a 100-case bilingual pool and freezes
+it in the public snapshot. The pool contains 90 general cases using invented
+people, places and organisations, plus 10 clearly labelled Austrian parody
+cases. Every theme has nine general cases and one parody, keeping the parody
+share at ten percent for category-specific palettes too. Selection is a stable
+hash of request ID, palette ID and definition version, so a creation replay or
+restart keeps the exact story. Bidder cameo names are never used in event copy.
 
 ## Primary history and winner reveal
 
@@ -148,11 +154,15 @@ resale settlement. Failed transactions roll all changes back.
 
 ## NPC buyers and resale accounting
 
-`src/npc-buyers.mjs` defines 12 fictional persistent buyers with fixed IDs,
-display names, preferred categories, willingness and 45–90 second timing.
-Registry names contain spaces, outside the human-registration username alphabet.
-Each account is seeded once with **1,000,000,000 tokens**, representing external
-consumer demand. Repeated seeds never refill balances or reset inventory.
+`src/npc-roster.mjs` defines exactly 800 persistent buyers with stable IDs and
+unique display names: 640 German/Austrian profiles (80%) and 160 wider
+European/English profiles. The roster includes 12 legacy identities and ten
+playful named characters alongside deterministic generated names. Every profile
+has preferred categories, willingness, aggressiveness, cheapness, patience,
+collector status and timing. Registry names contain spaces, outside the
+human-registration username alphabet. Each account is seeded once with
+**1,000,000,000 tokens**, representing external consumer demand. Repeated seeds
+insert only missing identities and never refill balances or reset inventory.
 
 NPCs cannot log in, receive sessions, bid on primary palettes, or create resale
 listings. Session lookup independently excludes them. Friends, human leaderboards,
@@ -161,19 +171,22 @@ individual admin token grants exclude them. Their names appear naturally in
 resale bid history, without AI badges. Won items stay in NPC inventory and leave
 the human resale market.
 
-On the first runtime observation of a listing, all 12 interest decisions are
-persisted in one transaction, including inactive decisions. The existing
+On the first runtime observation of a listing, a deterministic 16-person cohort
+is selected from the full roster. Its interest decisions are persisted in one
+transaction, including inactive decisions. The existing
 `estimatedValueTokens(item, currentIndexes)` supplies value; preference,
-personality and a deterministic ±0.05 variation bound ordinary WTP to
+aggressiveness, collector status and a deterministic ±0.05 variation bound ordinary WTP to
 0.70–1.15 times that estimate. One collector can reach 1.25 for preferred items.
 Interest probability uses preference times `(index / 100)^3`, bounded 0.05–0.92.
 Both interest probability and WTP therefore respond materially to market indexes.
 Once initialized, max_bid and interest remain frozen through market changes,
 page refreshes and restarts. New listings reflect newer market state.
 
-Scheduled buyers bid the current minimum, never jump straight to WTP, wait
-before bidding, react when outbid below WTP, and shorten their scheduling delay
-to 30 seconds in the last two minutes. A database-backed guard inside `placeBid`
+Scheduled buyers wait according to patience and aggressiveness, then either add
+the minimum one-token increment according to cheapness or make a bounded jump
+toward WTP according to aggressiveness. They react when outbid below WTP and
+shorten their personality-based delay in the last two minutes. No NPC jumps
+straight to WTP. A database-backed guard inside `placeBid`
 allows at most one NPC bid per listing per 30 seconds, including replayed ticks
 and parallel runtimes. At most 200 unseen listings initialize and 1000 due
 interest rows are considered per tick. All actual bids use `placeBid`:
@@ -185,7 +198,7 @@ Resale domain enforces **5 active listings per human** after closing due
 listings; cancelled, ended and settled lots do not count. Sixth listing returns
 `listing_limit` (409). Backend duration support remains 1 minute–30 days.
 
-## Market and news contracts retained
+## Market contracts and dormant news backend
 
 Global market is computed from persisted news effects. Each signed effect
 contributes `delta * clamp(1 - elapsed / 72h, 0, 1)`. Index is
@@ -202,18 +215,19 @@ public usernames. Item price, sellValue and frozen reward JSON are never updated
 for market valuation. Historical auction values and current token estimates have
 separate labels in the UI.
 
-`src/world-news.mjs` contains 10 predefined bilingual fictional scenarios:
+`src/world-news.mjs` retains 10 predefined bilingual scenarios for possible
+future use:
 electronics seizure, dealer seizure, wine-tax seizure, chip shortage, poor wine
 harvest, collector trend, workshop clearance, cycling festival, jewellery sale
 and book festival. No external service or LLM is called.
 
-One global event per **12-hour UTC bucket**. Deterministic selection starts at
+The dormant implementation supports one event per **12-hour UTC bucket**. Deterministic selection starts at
 bucket modulo scenario count, then tries alternatives in stable order if budgets
 are exhausted. `saveNewsEvent` remains the publication authority and owns all
 budget checks, market effects, receipts and frozen event editions. Magnitudes
 are 5–9 points. Associated event editions last 48 hours. Durable IDs prevent
-republication across restart. No past buckets are backfilled. If every scenario
-fails the budget, a durable skip receipt prevents retrying that bucket later.
+republication across restart. It is not called by the normal runtime, and no News
+page or normal News feature flag is exposed.
 
 ## HTTP and data helpers
 
@@ -229,7 +243,7 @@ Existing routes reused:
 - `/api/palette-auctions[/:id]`, account `/palette-auctions/bid`,
   `/palette-auctions/:id/rewards`, admin `/palette-auctions`.
 - `/api/resales[/:id]`, account `/resale/listings`, `/resale/bid`, `/resale/cancel`.
-- `/api/market`, `/api/market/:category/history`, `/api/news`, `/api/palettes`.
+- `/api/market`, `/api/market/:category/history`, `/api/palettes`.
 - Account `/me`, `/inventory`, Daily start/answer, legacy cases/sells.
 
 Authenticated mutations retain the existing CSRF header/session handling.
@@ -256,10 +270,10 @@ Frontend helper/sequence contracts are covered in `test/economy-ui.test.mjs`.
 
 Browser validation uses a temporary local SQLite fixture, separate from live
 player data. It covers mobile/desktop layout, My bids → sequential reveal →
-inventory, listing creation, primary bidding, market/news, EN/DE and profile.
+inventory, listing creation, primary bidding, market, EN/DE and profile.
 
 Intentional limits: recent history is bounded, supply needs sufficient archived
-stock and windows, persisted NPC valuations do not track later news on that same
+stock and windows, persisted NPC valuations do not track later market changes on that same
 listing, and polling means updates can lag one interval. No production rollout
 or sustained-load benchmark is part of this implementation.
 
@@ -270,9 +284,22 @@ restoration, direct trades, real-money or premium-currency mechanics were added.
 
 ## Player-facing UI update
 
-The auction journey connects news, market movement, palette wins, inventory and resale.
-News links filter auctions by palette ID and select the affected market category.
-These query links survive direct entry and browser history. Listing an item opens
+The economy pages connect market movement, palette wins, inventory and resale.
+Listing an item opens
 My listings immediately. Winners receive a sealed-palette introduction before the
 existing sequential reel. Market history includes visible sample points and a
 readable table; current indexes distinguish above/below normal in text.
+
+## Economy reset
+
+The admin page includes an explicit, phrase-confirmed economy reset. It runs in
+one database transaction and restores every human account to 1,000 tokens and
+0 XP while deleting inventories, account game runs and rewards, case-opening
+receipts, token-grant history, XP receipts, resale auctions and primary palette
+auctions. Runtime-owned NPC accounts are removed and recreated normally.
+
+Authentication and social identity are outside the reset boundary: user ids,
+usernames, password hashes, active session tokens, registration codes, bans,
+admin roles and friendships remain unchanged. News, market history, palette
+editions, case rotations and the source auction archive are also retained. Each
+completed reset writes a small audit row shown on the admin page.

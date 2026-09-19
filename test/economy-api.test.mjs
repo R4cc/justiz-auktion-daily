@@ -6,6 +6,7 @@ import path from 'node:path';
 import { createServer } from 'node:http';
 import { createAccountApi } from '../src/account-api.mjs';
 import { createEconomyApi } from '../src/economy-api.mjs';
+import { maskListing, maskUsername } from '../src/username-privacy.mjs';
 import { marketState } from '../src/market.mjs';
 import { featureFlags } from '../src/features.mjs';
 import { closeDataStore, upsertAuctions } from '../src/database.mjs';
@@ -23,8 +24,9 @@ async function fixture(t, flags = env) {
   const dir = await mkdtemp(path.join(os.tmpdir(), 'jg-economy-'));
   upsertAuctions(dir, lots);
   const json = (res, status, value) => { res.writeHead(status, { 'content-type': 'application/json' }); res.end(JSON.stringify(value)); };
-  const economyApi = createEconomyApi({ dataDir: dir, json, flags: featureFlags(flags) });
-  const accountApi = await createAccountApi({ dataDir: dir, dailyPayload: async () => ({ auctions: lots.slice(0, 5) }), json, env: flags });
+  const testFlags = { ...featureFlags(flags), news: flags.FEATURE_NEWS === '1' };
+  const economyApi = createEconomyApi({ dataDir: dir, json, flags: testFlags });
+  const accountApi = await createAccountApi({ dataDir: dir, dailyPayload: async () => ({ auctions: lots.slice(0, 5) }), json, env: flags, flags: testFlags });
   const server = createServer(async (req, res) => {
     const url = new URL(req.url, 'http://localhost');
     if (await economyApi(req, res, url)) return;
@@ -100,6 +102,10 @@ test('economy endpoints expose news, global market, palettes and resale listings
   const detail = await (await fetch(`${base}/api/resales/${listing.listing.id}`)).json();
   assert.equal(detail.listing.item.marketCategory, 'tools');
   assert.deepEqual(detail.listing.bids, []);
+  // Guests only ever see censored seller names; sessions see the real ones.
+  assert.equal((await (await fetch(`${base}/api/resales`)).json()).listings[0].sellerUsername, 'ad****');
+  assert.equal((await (await fetch(`${base}/api/resales/${listing.listing.id}`)).json()).listing.sellerUsername, 'ad****');
+  assert.equal((await (await fetch(`${base}/api/resales`, { headers: { cookie } })).json()).listings[0].sellerUsername, 'admin');
   assert.equal((await (await post(base, 'inventory/sell', { id: opened.item.id }, cookie)).json()).error, 'instant_sell_disabled');
   assert.equal((await fetch(`${base}/api/account/resale/listings`)).status, 401);
   assert.equal((await post(base, 'resale/listings', { inventoryId: opened.item.id, startPrice: 40, endsAt })).status, 401);
@@ -107,6 +113,41 @@ test('economy endpoints expose news, global market, palettes and resale listings
   assert.deepEqual(own.listings.map(row => row.id), [listing.listing.id]);
   assert.equal((await (await post(base, 'resale/cancel', { id: listing.listing.id }, cookie)).json()).listing.status, 'cancelled');
   assert.equal((await fetch(`${base}/api/resales/missing`)).status, 404);
+});
+
+test('marketplace bidder names are censored for guests and full for signed-in players', async t => {
+  const { base } = await fixture(t);
+  const endsAt = new Date(Date.now() + 3600_000).toISOString();
+  const login = await post(base, 'login', { username: 'admin', password });
+  const cookie = login.headers.get('set-cookie');
+  const code = (await (await post(base, 'codes', { count: 1 }, cookie)).json()).codes[0];
+  const join = await post(base, 'register', { username: 'Bidder01', password: 'economy-bidder-password-123', code });
+  assert.equal(join.status, 200);
+  const bidderCookie = join.headers.get('set-cookie');
+  const catalogResponse = await (await fetch(`${base}/api/account/cases`)).json();
+  const opened = await (await post(base, 'cases/open', { caseId: 'fundkiste', requestId: 'economy-open-000002',
+    revision: catalogResponse.revision }, cookie)).json();
+  const listing = await (await post(base, 'resale/listings', { inventoryId: opened.item.id, startPrice: 5, endsAt }, cookie)).json();
+  const bid = await (await post(base, 'resale/bid', { id: listing.listing.id, amount: 7 }, bidderCookie)).json();
+  assert.equal(bid.listing.currentBid, 7);
+  const guest = await (await fetch(`${base}/api/resales/${listing.listing.id}`)).json();
+  assert.equal(guest.listing.sellerUsername, 'ad****');
+  assert.deepEqual(guest.listing.bids.map(row => row.bidderUsername), ['Bi****']);
+  const signedIn = await (await fetch(`${base}/api/resales/${listing.listing.id}`, { headers: { cookie: bidderCookie } })).json();
+  assert.equal(signedIn.listing.sellerUsername, 'admin');
+  assert.deepEqual(signedIn.listing.bids.map(row => row.bidderUsername), ['Bidder01']);
+});
+
+test('username censoring keeps a short prefix and never reveals short names whole', () => {
+  assert.equal(maskUsername('admin'), 'ad****');
+  assert.equal(maskUsername('mira fund'), 'mi****');
+  assert.equal(maskUsername('bob'), 'b****');
+  assert.equal(maskUsername('jo'), 'j****');
+  assert.equal(maskUsername('x'), '****');
+  assert.equal(maskUsername(null), null);
+  assert.deepEqual(maskListing({ id: 1, sellerUsername: 'admin', bids: [{ amount: 7, bidderUsername: 'mira fund' }] }),
+    { id: 1, sellerUsername: 'ad****', bids: [{ amount: 7, bidderUsername: 'mi****' }] });
+  assert.equal(maskListing({ id: 2, sellerUsername: null }).sellerUsername, null);
 });
 
 test('account api hides resale routes entirely while the resales flag is off', async t => {

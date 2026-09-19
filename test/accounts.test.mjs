@@ -8,6 +8,7 @@ import { Accounts, STARTING_TOKENS } from '../src/accounts.mjs';
 import { caseCatalog, publicCaseCatalog, itemRarity, drawItem } from '../src/cases.mjs';
 import { closeDataStore, upsertAuctions } from '../src/database.mjs';
 import { createAccountApi } from '../src/account-api.mjs';
+import { listItem } from '../src/resale.mjs';
 
 const password = 'test-only-password-123';
 const lots = Array.from({ length: 8 }, (_, i) => ({ id: i + 1, title: `Product ${i + 100}`,
@@ -382,6 +383,42 @@ test('single-user grants reject non-admins, missing users and invalid values', a
   assert.equal(service.profile(player).tokens, STARTING_TOKENS);
 });
 
+test('admin economy reset clears player progress and auctions while preserving accounts, sessions and friends', async t => {
+  const { service, admin, dir } = await fixture(t);
+  const code = service.codes(admin, 1)[0];
+  const session = await service.register({ username: 'ResetPlayer', password, code });
+  const player = service.user(session);
+  service.requestFriend(admin, player.username); service.acceptFriend(player, admin.id);
+  service.grantUserTokens(admin, player.id, 5000, 'reset-player-grant-0001');
+  const catalog = caseCatalog(lots);
+  const item = service.openCase(player, catalog, 'fundkiste', 'reset-case-open-0001');
+  listItem(dir, player, { inventoryId: item.id, startPrice: 10, endsAt: new Date(Date.now() + 120000).toISOString() });
+  const run = service.startGame(player, 'daily', () => lots.slice(0, 5));
+  for (let i = 0; i < 5; i++) service.answer(player, run.id, i, lots[i].actualBid);
+  const sessionsBefore = service.db(db => db.prepare('SELECT COUNT(*) AS count FROM account_sessions').get().count);
+
+  assert.throws(() => service.resetEconomy(player, 'RESET ECONOMY'), { status: 403 });
+  assert.throws(() => service.resetEconomy(admin, 'reset economy'), /invalid_reset_confirmation/);
+  service.db(db => db.exec(`CREATE TRIGGER stop_economy_reset BEFORE UPDATE OF tokens ON users
+    BEGIN SELECT RAISE(ABORT, 'reset fault'); END`));
+  assert.throws(() => service.resetEconomy(admin, 'RESET ECONOMY'), /reset fault/);
+  assert.equal(service.inventory(player).length, 1);
+  assert.equal(service.db(db => db.prepare('SELECT COUNT(*) AS count FROM resale_auctions').get().count), 1);
+  service.db(db => db.exec('DROP TRIGGER stop_economy_reset'));
+  const reset = service.resetEconomy(admin, 'RESET ECONOMY');
+  assert.equal(reset.playerCount, 2); assert.equal(reset.inventoryCount, 1);
+  assert.equal(reset.gameCount, 1); assert.equal(reset.resaleCount, 1);
+  assert.equal(service.user(session).id, player.id);
+  assert.equal(service.db(db => db.prepare('SELECT COUNT(*) AS count FROM account_sessions').get().count), sessionsBefore);
+  assert.equal(service.profile(player).tokens, STARTING_TOKENS);
+  assert.equal(service.profile(player).progression.xp, 0);
+  assert.equal(service.profile(player).daily.status, 'not_started');
+  assert.equal(service.inventory(player).length, 0);
+  assert.equal(service.friends(player).friends[0].status, 'accepted');
+  assert.equal(service.db(db => db.prepare('SELECT COUNT(*) AS count FROM resale_auctions').get().count), 0);
+  assert.equal(service.adminOverview(admin).lastReset.inventoryCount, 1);
+});
+
 test('public case editions expose their prices and contents without draw probabilities', () => {
   const catalog = publicCaseCatalog(caseCatalog(lots));
   assert.deepEqual(catalog.cases.slice(0, 2).map(box => box.name), ['Seized Goods Case', 'Contraband Case']);
@@ -410,13 +447,16 @@ test('HTTP API enforces authentication, CSRF headers, admin permissions and sess
   assert.equal(publicCatalog.cases[0].name, 'Seized Goods Case');
   assert.doesNotMatch(JSON.stringify(publicCatalog), /"(?:odds|weights|chance)":/);
   const publicBoard = await (await fetch(base + 'leaderboard')).json();
-  assert.ok(Array.isArray(publicBoard.leaders) && publicBoard.leaders.some(row => row.username === 'admin'));
+  assert.ok(Array.isArray(publicBoard.leaders) && publicBoard.leaders.some(row => row.username === 'ad****'));
+  assert.ok(publicBoard.leaders.every(row => row.username !== 'admin'));
   assert.equal((await post('login', { username: 'admin', password }, '', { 'x-requested-with': '' })).status, 403);
   assert.equal((await post('login', { username: 'admin', password }, '', { 'sec-fetch-site': 'cross-site' })).status, 403);
   const response = await post('login', { username: 'admin', password });
   assert.equal(response.status, 200);
   const cookie = response.headers.get('set-cookie');
   assert.match(cookie, /HttpOnly; SameSite=Strict/); assert.match(cookie, /Secure/);
+  const signedInBoard = await (await fetch(base + 'leaderboard', { headers: { cookie } })).json();
+  assert.ok(signedInBoard.leaders.some(row => row.username === 'admin'));
   const profile = await response.json();
   assert.ok(!JSON.stringify(profile).includes('password'));
   assert.equal(profile.user.tokens, STARTING_TOKENS);
@@ -486,6 +526,15 @@ test('HTTP API enforces authentication, CSRF headers, admin permissions and sess
   assert.deepEqual(rewarded.rewards, publicCatalog.rewards);
   for (let i = 0; i < 5; i++) rewarded = (await (await post('games/answer', { id: rewarded.id, position: i, answer: lots[i].actualBid }, playerCookie)).json()).run;
   assert.equal(rewarded.earned, publicCatalog.rewards.daily);
+  assert.equal((await post('admin/reset-economy', { confirmation: 'RESET ECONOMY' }, playerCookie)).status, 403);
+  assert.equal((await post('admin/reset-economy', { confirmation: 'wrong' }, cookie)).status, 400);
+  const reset = await (await post('admin/reset-economy', { confirmation: 'RESET ECONOMY' }, cookie)).json();
+  assert.equal(reset.reset.playerCount, 3);
+  assert.equal(reset.user.tokens, STARTING_TOKENS);
+  const stillLoggedIn = await (await fetch(base + 'me', { headers: { cookie: playerCookie } })).json();
+  assert.equal(stillLoggedIn.user.id, player.id);
+  assert.equal(stillLoggedIn.user.tokens, STARTING_TOKENS);
+  assert.equal(stillLoggedIn.user.progression.xp, 0);
   assert.equal((await post('logout', {}, playerCookie)).status, 200);
   assert.equal((await (await fetch(base + 'me', { headers: { cookie: playerCookie } })).json()).user, null);
   assert.equal((await post('login', { username: 'admin', password: 'x'.repeat(9000) })).status, 413);

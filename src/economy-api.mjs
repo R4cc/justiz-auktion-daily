@@ -5,14 +5,24 @@ import { listPublishedNews } from './news.mjs';
 import { listResales, getResale } from './resale.mjs';
 import { getPaletteAuction, listPaletteAuctions } from './palette-auctions.mjs';
 import { AccountError } from './errors.mjs';
+import { Accounts } from './accounts.mjs';
+import { maskListing } from './username-privacy.mjs';
 
 // Read-only public endpoints for the flag-gated economy foundation.
 // Every route is off until its feature flag is enabled; disabled routes fall
 // through (404) so unfinished systems never surface to normal players.
-export function createEconomyApi({ dataDir, json, flags = featureFlags() }) {
+export function createEconomyApi({ dataDir, json, flags = featureFlags(), accounts = null }) {
   const limited = (value, fallback, max) => Math.min(Math.max(Number(value) || fallback, 1), max);
   // Malformed percent-encoding must 404 like any unknown id, not 500.
   const decoded = raw => { try { return decodeURIComponent(raw); } catch { return raw; } };
+  let sessionAccounts = accounts;
+  // Resale listings and bid history carry usernames; signed-in viewers see
+  // them in full, everyone else gets the censored prefix.
+  const signedIn = request => {
+    sessionAccounts ||= new Accounts(dataDir, { flags });
+    const token = request.headers.cookie?.split(';').map(part => part.trim()).find(part => part.startsWith('jg_session='))?.slice(11);
+    return Boolean(sessionAccounts.user(token));
+  };
   return (request, response, url) => {
     if (request.method !== 'GET' || !url.pathname.startsWith('/api/')) return false;
     try {
@@ -58,11 +68,13 @@ export function createEconomyApi({ dataDir, json, flags = featureFlags() }) {
         return true;
       }
       if (flags.resales && url.pathname === '/api/resales') {
-        json(response, 200, { listings: listResales(dataDir, { limit: limited(url.searchParams.get('limit'), 50, 200) }) });
+        const listings = listResales(dataDir, { limit: limited(url.searchParams.get('limit'), 50, 200) });
+        json(response, 200, { listings: signedIn(request) ? listings : listings.map(maskListing) });
         return true;
       }
       if (flags.resales && url.pathname.startsWith('/api/resales/')) {
-        json(response, 200, { listing: getResale(dataDir, decoded(url.pathname.slice('/api/resales/'.length))) });
+        const listing = getResale(dataDir, decoded(url.pathname.slice('/api/resales/'.length)));
+        json(response, 200, { listing: signedIn(request) ? listing : maskListing(listing) });
         return true;
       }
     } catch (error) {

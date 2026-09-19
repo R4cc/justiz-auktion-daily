@@ -4,6 +4,7 @@ import { transaction, withDatabase } from './database.mjs';
 import { RARITIES } from './cases.mjs';
 import { marketIndexAt } from './market.mjs';
 import { bundleReferencePricing, ensurePaletteEditionSchema } from './palette-definitions.mjs';
+import { paletteStoryForAuction } from './palette-stories.mjs';
 import { levelForXp } from './progression.mjs';
 
 // Re-exported for backwards compatibility with the pre-extraction imports;
@@ -76,11 +77,11 @@ export function ensurePaletteAuctionSchema(db, now = Date.now()) {
 // The frozen public view of a lot. Explicit allowlist: the candidate pool is
 // public, the drawn outcome never is. No reserved inventory ids, no reward
 // snapshots, no randomness, no private payload fields.
-function publicSnapshot(payload) {
+function publicSnapshot(payload, auctionStory = payload.story) {
   return {
     paletteId: payload.paletteId, name: payload.name, nameDe: payload.nameDe,
     badge: payload.badge, kind: payload.kind, type: payload.legacyTheme,
-    story: payload.story, allowedMarketCategories: payload.allowedMarketCategories ?? null,
+    story: auctionStory, allowedMarketCategories: payload.allowedMarketCategories ?? null,
     rewardCount: payload.rewardCount,
     items: payload.items.map(item => ({ auctionId: item.auctionId, title: item.title,
       image: item.image || null, price: item.price, familySize: item.familySize,
@@ -88,7 +89,7 @@ function publicSnapshot(payload) {
   };
 }
 
-function serializePublicAuction(db, row) {
+function serializePublicAuction(db, row, { bids = false } = {}) {
   const snapshot = JSON.parse(row.public_snapshot_json);
   const bidCount = db.prepare('SELECT COUNT(*) AS count FROM primary_palette_bids WHERE auction_id = ?').get(row.id).count;
   return {
@@ -100,7 +101,11 @@ function serializePublicAuction(db, row) {
     reserve: row.reserve, currentBid: row.current_bid, bidCount,
     requiredLevel: row.required_level, status: row.status,
     startedAt: row.started_at, endsAt: row.ends_at, closedAt: row.closed_at || null,
-    settledAt: row.settled_at || null, winnerId: row.winner_id || null
+    settledAt: row.settled_at || null, winnerId: row.winner_id || null,
+    ...(bids ? { bids: db.prepare(`SELECT b.id, b.amount, b.created_at AS createdAt,
+      u.id AS bidderId, u.username AS bidderUsername
+      FROM primary_palette_bids b JOIN users u ON u.id = b.bidder_id
+      WHERE b.auction_id = ? ORDER BY b.created_at ASC, b.id ASC`).all(row.id) } : {})
   };
 }
 
@@ -139,7 +144,7 @@ export function createPaletteAuction(dataDir, { editionId, requestId }, { now = 
     }
     // Runtime-only policy checked under the same write lock as creation.
     if (automaticSupply && (db.prepare(`SELECT COUNT(*) AS count FROM primary_palette_auctions
-      WHERE status = 'active' AND ends_at > ?`).get(now).count >= 6
+      WHERE status = 'active' AND ends_at > ?`).get(now).count >= 1
       || db.prepare(`SELECT 1 FROM primary_palette_auctions WHERE edition_id = ? AND status = 'active'
         AND ends_at > ?`).get(editionId, now))) return null;
     const edition = db.prepare('SELECT * FROM palette_editions WHERE id = ?').get(editionId);
@@ -159,12 +164,13 @@ export function createPaletteAuction(dataDir, { editionId, requestId }, { now = 
     const reserve = pricing.referenceReserve;
     if (!Number.isSafeInteger(reserve) || reserve < 1) fail('palette_auction_inconsistent', 500);
     const auctionId = randomUUID();
+    const auctionStory = paletteStoryForAuction(payload, requestId);
     db.prepare(`INSERT INTO primary_palette_auctions
       (id, creation_request_id, edition_id, reserve, current_bid, current_bidder_id, status,
        started_at, ends_at, valuation_at, required_level, public_snapshot_json)
       VALUES (?, ?, ?, ?, NULL, NULL, 'active', ?, ?, ?, ?, ?)`)
       .run(auctionId, requestId, editionId, reserve, now, endsAt, now,
-        payload.requiredLevel, JSON.stringify(publicSnapshot(payload)));
+        payload.requiredLevel, JSON.stringify(publicSnapshot(payload, auctionStory)));
     // Draw the three sealed rewards now, with replacement, and reserve their
     // inventory UUIDs. Nothing is minted yet and none of this is public.
     const insertReward = db.prepare(`INSERT INTO primary_palette_rewards
@@ -285,10 +291,10 @@ export function getPaletteAuction(dataDir, auctionId, { now = Date.now() } = {})
     const row = loadAuction(db, auctionId);
     return row.settled_at === null && now >= row.ends_at;
   });
-  if (due) return settlePaletteAuction(dataDir, auctionId, { now });
+  if (due) settlePaletteAuction(dataDir, auctionId, { now });
   return withDatabase(dataDir, db => {
     ensurePaletteAuctionSchema(db, now);
-    return serializePublicAuction(db, loadAuction(db, auctionId));
+    return serializePublicAuction(db, loadAuction(db, auctionId), { bids: true });
   });
 }
 

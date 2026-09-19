@@ -351,7 +351,7 @@ function renderStart() {
           <button class="secondary-button random-button" type="button" data-action="random">${t("Start a free game", "Freies Spiel starten")} <span aria-hidden="true">↻</span></button>
           <button class="secondary-button hl-start" type="button" data-action="higher-lower"><span>Higher or Lower <small>${t("Higher? Lower? Keep your streak alive.", "Höher? Niedriger? Halte deinen Lauf am Leben.")}</small></span><span aria-hidden="true">↑↓</span></button>
         </div>
-        <p class="play-note">${t("Play as a guest or sign in to collect auction finds. No real money.", "Als Gast spielen oder mit Konto Auktionslose sammeln. Kein echtes Geld.")}</p>
+        <p class="play-note">${t("Play as a guest or sign in to collect auction finds.", "Als Gast spielen oder mit Konto Auktionslose sammeln.")}</p>
         ${economyFlags.paletteAuctions ? `<a class="home-auction-ticket" href="/auctions" data-page><span class="eyebrow">${t("THE AUCTION FLOOR IS OPEN", "DER AUKTIONSSAAL IST GEÖFFNET")}</span><strong>${t("One palette. Three surprises.", "Eine Palette. Drei Überraschungen.")}</strong><span>${t("Use your tokens. Bid, win and reveal your next finds.", "Nutze deine Tokens. Biete, gewinne und entdecke deine nächsten Funde.")} →</span></a>` : ""}<div class="how-strip" aria-label="${t("How to play", "Spielablauf")}"><span><b>01</b> ${t("Discover", "Entdecken")}</span><span><b>02</b> ${t("Guess", "Schätzen")}</span><span><b>03</b> ${t("Collect", "Abräumen")}</span></div>
       </div>
       <aside class="start-side" aria-label="${t("Daily statistics", "Tagesstatistik")}">

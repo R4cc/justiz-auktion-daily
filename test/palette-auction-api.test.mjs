@@ -35,8 +35,9 @@ async function fixture(t, env = allFlags) {
   const dir = await mkdtemp(path.join(os.tmpdir(), 'jg-palette-api-'));
   upsertAuctions(dir, stock);
   const json = (res, status, value) => { res.writeHead(status, { 'content-type': 'application/json' }); res.end(JSON.stringify(value)); };
-  const economyApi = createEconomyApi({ dataDir: dir, json, flags: featureFlags(env) });
-  const accountApi = await createAccountApi({ dataDir: dir, dailyPayload: async () => ({ auctions: stock.slice(0, 5) }), json, env });
+  const testFlags = { ...featureFlags(env), news: env.FEATURE_NEWS === '1' };
+  const economyApi = createEconomyApi({ dataDir: dir, json, flags: testFlags });
+  const accountApi = await createAccountApi({ dataDir: dir, dailyPayload: async () => ({ auctions: stock.slice(0, 5) }), json, env, flags: testFlags });
   const server = createServer(async (req, res) => {
     const url = new URL(req.url, 'http://localhost');
     if (await economyApi(req, res, url)) return;
@@ -106,7 +107,9 @@ test('public list and detail expose only the allowlisted auction representation'
   assert.deepEqual(new Set(list.auctions.map(auction => auction.id)), new Set([first.id, second.id]));
   const detail = await (await fetch(`${base}/api/palette-auctions/${first.id}`)).json();
   assert.equal(detail.auction.id, first.id);
-  assert.deepEqual(Object.keys(detail.auction).sort(), ['allowedMarketCategories', 'badge', 'bidCount', 'closedAt',
+  assert.deepEqual(detail.auction.bids, []);
+  assert.ok(list.auctions.every(auction => !Object.hasOwn(auction, 'bids')));
+  assert.deepEqual(Object.keys(detail.auction).sort(), ['allowedMarketCategories', 'badge', 'bidCount', 'bids', 'closedAt',
     'currentBid', 'editionId', 'endsAt', 'id', 'items', 'kind', 'name', 'nameDe', 'paletteId',
     'requiredLevel', 'reserve', 'rewardCount', 'settledAt', 'startedAt', 'status', 'story', 'type', 'winnerId']);
   // Hidden draws never leak: reserved inventory UUIDs and reward payloads.

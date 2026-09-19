@@ -6,6 +6,7 @@ import vm from 'node:vm';
 const accountSource = await readFile(new URL('../dist/account.js', import.meta.url), 'utf8');
 const uiSource = await readFile(new URL('../dist/economy-ui.js', import.meta.url), 'utf8');
 const dataSource = await readFile(new URL('../dist/economy.js', import.meta.url), 'utf8');
+const i18nSource = await readFile(new URL('../dist/i18n.js', import.meta.url), 'utf8');
 const extract = (source, from, to) => source.slice(source.indexOf(from), source.indexOf(to, source.indexOf(from)));
 
 test('economy helpers use authenticated history/list/bid/cancel contracts and safe encoded IDs', async () => {
@@ -41,6 +42,58 @@ test('resale inventory and legacy reward markup never render instant-sell button
   assert.match(listed, /disabled/); assert.match(listed, /Already listed/);
 });
 
+test('auction bid history is chronological and marks the signed-in player as chat bubbles', () => {
+  const context = vm.createContext({ account: { id: 'mine' }, t: en => en, esc: String,
+    tokens: value => `${value} tokens`, date: String });
+  vm.runInContext(extract(uiSource, '  const bidHistory =', '  const story ='), context);
+  const markup = vm.runInContext(`bidHistory([
+    {id:'2', bidderId:'other', bidderUsername:'Rival', amount:120, createdAt:20},
+    {id:'1', bidderId:'mine', bidderUsername:'Player', amount:100, createdAt:10}
+  ])`, context);
+  assert.ok(markup.indexOf('100 tokens') < markup.indexOf('120 tokens'));
+  assert.match(markup, /auction-chat-message is-mine/);
+  assert.match(markup, />You</);
+  assert.match(markup, />Rival</);
+});
+
+test('legacy story copy moves fiction notices into the single site disclaimer', () => {
+  const context = vm.createContext({});
+  vm.runInContext(extract(i18nSource, 'function immersiveCopy(', 'function uiLocale('), context);
+  assert.equal(vm.runInContext(`immersiveCopy('Fiction: In fictional Grayfield, an invented warehouse opens.')`, context),
+    'In Grayfield, a warehouse opens.');
+  assert.equal(vm.runInContext(`immersiveCopy('Fiction: the lot comes from an imagined seizure.')`, context),
+    'The lot comes from a seizure.');
+  assert.equal(vm.runInContext(`immersiveCopy('Im fiktiven Grayfield öffnet eine erfundene Werkstatt.')`, context),
+    'In Grayfield öffnet eine Werkstatt.');
+});
+
+test('auction detail uses media, story and bid-room columns with the bid form below the log', async () => {
+  let markup = '';
+  const lot = { id: 'lot', name: 'Palette', story: { parody: true }, items: [{ title: 'Camera', image: '/camera.jpg', rarity: 'rare' }],
+    currentBid: 120, currentBidderId: 'mine', bidCount: 2, reserve: 100, requiredLevel: 1,
+    allowedMarketCategories: ['electronics'], status: 'active', endsAt: Date.now() + 60_000,
+    bids: [{ id: 'b', bidderId: 'mine', bidderUsername: 'Player', amount: 120, createdAt: 1 }] };
+  const context = vm.createContext({
+    account: { id: 'mine', tokens: 500, progression: { level: 2 } }, data: { mine: [] }, dialogSequence: 0,
+    accountVisit: 1, detailId: null, api: { paletteAuction: async () => ({ auction: lot }) },
+    t: en => en, esc: String, tokens: value => `${value} tokens`, name: value => value.name,
+    story: () => ({ title: 'The story', body: 'A mysterious customs lot.', shortDescription: 'Customs warehouse bust', parody: true }), categoryName: String,
+    rarityLabel: String, euro: String, accountError: String, status: () => 'Active',
+    bidFacts: () => '<div>120 tokens</div>', bidHistory: () => '<li>bid bubble</li>',
+    openDialog: value => { markup = value; }, dialog: { querySelector: () => ({ scrollTop: 0, scrollHeight: 100 }) }
+  });
+  vm.runInContext(extract(uiSource, '  function bidForm(', '  function listingDialog('), context);
+  await vm.runInContext(`showLot('lot', true)`, context);
+  assert.ok(markup.indexOf('auction-room-media') < markup.indexOf('auction-room-story'));
+  assert.ok(markup.indexOf('auction-room-story') < markup.indexOf('auction-room-bidding'));
+  assert.ok(markup.indexOf('data-live-history') < markup.indexOf('auction-bid-dock'));
+  assert.match(markup, /Raise bid/);
+  assert.match(markup, /camera\.jpg/);
+  assert.match(markup, /A mysterious customs lot/);
+  assert.match(markup, /Customs warehouse bust/);
+  assert.match(markup, /PARODY CASE/);
+});
+
 test('palette reveal animates exactly one fixed server reward per continuation, then shows summary', async () => {
   const rewards = ['first', 'second', 'third'].map(title => ({ item: { title, rarity: 'common', price: 100 } }));
   const animations = [], statuses = [], summaries = [];
@@ -71,37 +124,21 @@ test('closing or navigating during palette animation suppresses the pending item
   assert.equal(writes, 0); assert.equal(context.revealPosition, 0);
 });
 
-test('progression terminal state and all new routes remain in syntax verification', async () => {
+test('progression terminal state and active economy routes remain in syntax verification', async () => {
   const context = vm.createContext({ t: en => en, number: String });
   vm.runInContext(uiSource.slice(0, uiSource.indexOf('window.economyUi')), context);
   const terminal = vm.runInContext('progressionMarkup({level:20,xp:36100,nextLevelXp:null,progress:1})', context);
   assert.match(terminal, /Level 20 reached/); assert.doesNotMatch(terminal, /NaN/);
   const index = await readFile(new URL('../dist/index.html', import.meta.url), 'utf8');
-  for (const route of ['/auctions', '/marketplace', '/market', '/news']) assert.ok(index.includes(`href="${route}"`));
+  for (const route of ['/auctions', '/marketplace', '/market']) assert.ok(index.includes(`href="${route}"`));
+  assert.ok(!index.includes('href="/news"'));
+  assert.match(index, /JUSTIZGUESSR is a fictional game/);
+  assert.match(index, /No real money is used/);
 });
 
 test('market chart renders a single observation visibly and exposes readable history', () => {
   const context = vm.createContext({ t: en => en, esc: String, number: String, uiLocale: () => 'en-GB', date: String, empty: String });
-  vm.runInContext(extract(uiSource, '  function chart(', '  function renderNews('), context);
+  vm.runInContext(extract(uiSource, '  function chart(', "  document.addEventListener('click'"), context);
   const markup = vm.runInContext(`chart([{capturedAt:'2026-09-19T12:00:00Z',indexValue:107}])`, context);
   assert.match(markup, /<circle/); assert.match(markup, /<table>/); assert.match(markup, /107/); assert.doesNotMatch(markup, /NaN/);
-});
-
-test('economy journey respects disabled features and marks the current page', () => {
-  const context = vm.createContext({ t: en => en, currentAccountPage: '/auctions', economyFlags: { paletteAuctions: true, resales: true } });
-  vm.runInContext(extract(uiSource, '  function journey(', '  function tabs('), context);
-  const markup = vm.runInContext('journey()', context);
-  assert.match(markup, /href="\/auctions" data-page aria-current="page"/);
-  assert.match(markup, /Resell/); assert.doesNotMatch(markup, /href="\/news"|href="\/market"/);
-});
-
-test('news connects affected categories and related palette IDs with encoded deep links', () => {
-  const context = vm.createContext({ accountContent: {}, t: en => en, esc: String, date: String, number: String,
-    pageHeading: () => '', journey: () => '', categoryName: String, paletteName: String, empty: String,
-    economyFlags: { paletteAuctions: true }, data: { news: [{ publishedAt: 'today', title: 'Story', body: 'Fiction',
-      marketEffects: [{ category: 'tools', direction: 'up', magnitude: 5 }], paletteIds: ['tools & finds'] }] } });
-  vm.runInContext(extract(uiSource, '  function renderNews(', "  document.addEventListener('click'"), context);
-  vm.runInContext('renderNews()', context);
-  assert.match(context.accountContent.innerHTML, /href="\/market\?category=tools"/);
-  assert.match(context.accountContent.innerHTML, /href="\/auctions\?palette=tools%20%26%20finds"/);
 });

@@ -1,5 +1,5 @@
 let account = null, accountCatalog = null, accountItems = [], accountCodes = [], freshCodes = [];
-let accountFriends = { friends: [], date: '' }, accountAdmin = { playerCount: 0, users: [], grants: [] };
+let accountFriends = { friends: [], date: '' }, accountAdmin = { playerCount: 0, users: [], grants: [], lastReset: null };
 let accountLeaderboard = { date: '', leaders: [] }, adminUserFilter = '';
 let accountAuctions = { query: '', page: 1, pages: 1, total: 0, auctions: [] }, auctionSearchTimer = null;
 const auctionReveal = document.createElement('dialog');
@@ -17,7 +17,7 @@ caseReveal.addEventListener('close', () => {
 });
 let accountSelectedCase = 'fundkiste', accountInventoryPage = 0, accountFilter = 'all';
 let currentAccountPage = null, accountVisit = 0, pageLoaded = false;
-const accountPaths = ['/auctions', '/marketplace', '/market', '/news', '/shop', '/inventory', '/profile', '/login', '/register', '/admin', '/leaderboard'];
+const accountPaths = ['/auctions', '/marketplace', '/market', '/shop', '/inventory', '/profile', '/login', '/register', '/admin', '/leaderboard'];
 const accountPage = document.querySelector('#account-page');
 const accountContent = document.querySelector('#account-content');
 const accountEscape = value => String(value ?? '').replace(/[&<>"']/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[char]);
@@ -51,6 +51,7 @@ function accountError(code) {
     invalid_grant_amount: t('Enter a whole number from 1 to 1,000,000 tokens.', 'Gib eine ganze Zahl von 1 bis 1.000.000 Tokens ein.'),
     invalid_grant_user: t('Choose a user to receive the tokens.', 'Wähle einen Benutzer aus, der die Tokens erhalten soll.'),
     request_conflict: t('This request was already used with different values.', 'Diese Anfrage wurde bereits mit anderen Werten verwendet.'),
+    invalid_reset_confirmation: t('Type RESET ECONOMY exactly to confirm.', 'Gib zur Bestätigung exakt RESET ECONOMY ein.'),
     account_banned: t('This account has been banned.', 'Dieses Konto wurde gesperrt.'),
     item_listed: t('This item is listed in a resale auction.', 'Dieser Gegenstand ist in einer Verkaufsauktion gelistet.'),
     item_sold: t('This item has already been sold.', 'Dieser Gegenstand wurde bereits verkauft.'),
@@ -78,7 +79,7 @@ async function accountApi(route, payload) {
   return result;
 }
 function updateNavigation() {
-  const labels = { '/': t('Play', 'Spielen'), '/shop': 'Shop', '/auctions': t('Auctions', 'Auktionen'), '/marketplace': t('Marketplace', 'Marktplatz'), '/market': t('Market', 'Markt'), '/news': t('News', 'Nachrichten'), '/inventory': t('Inventory', 'Inventar'), '/leaderboard': t('Leaderboard', 'Rangliste'), '/profile': t('Profile', 'Profil'), '/admin': 'Admin' };
+  const labels = { '/': t('Play', 'Spielen'), '/shop': 'Shop', '/auctions': t('Auctions', 'Auktionen'), '/marketplace': t('Marketplace', 'Marktplatz'), '/market': t('Market', 'Markt'), '/inventory': t('Inventory', 'Inventar'), '/leaderboard': t('Leaderboard', 'Rangliste'), '/profile': t('Profile', 'Profil'), '/admin': 'Admin' };
   for (const link of document.querySelectorAll('.site-nav a')) {
     link.textContent = labels[link.getAttribute('href')];
     if (link.pathname === location.pathname) link.setAttribute('aria-current', 'page'); else link.removeAttribute('aria-current');
@@ -333,7 +334,11 @@ function renderAdmin() {
     <section class="admin-section"><h2>${t('Registration codes', 'Registrierungscodes')}</h2><p>${t('Each code allows one registration. Full codes are shown only just after creation.', 'Jeder Code erlaubt eine Registrierung. Vollständige Codes werden nur direkt nach dem Erstellen angezeigt.')}</p>
     <form id="code-form" class="code-form"><label>${t('Number of codes', 'Anzahl der Codes')}<input name="count" type="number" min="1" max="50" value="5" required></label><button class="primary-button" type="submit">${t('Create codes', 'Codes erstellen')}</button><p class="account-error" role="alert"></p></form>
     ${freshCodes.length ? `<label class="fresh-codes">${t('New codes — copy and save them now', 'Neue Codes — jetzt kopieren und aufbewahren')}<textarea readonly rows="${Math.min(10, freshCodes.length + 1)}">${freshCodes.join('\n')}</textarea></label>` : ''}
-    <div class="code-list">${accountCodes.map(code => `<div><code>…${accountEscape(code.label)}</code><span>${code.used_at !== null ? t('Used', 'Verwendet') : code.revoked ? t('Revoked', 'Widerrufen') : t('Available', 'Verfügbar')}</span>${code.used_at === null && !code.revoked ? `<button data-account="revoke" data-id="${code.id}">${t('Revoke', 'Widerrufen')}</button>` : ''}</div>`).join('') || `<p>${t('No codes created yet.', 'Noch keine Codes erstellt.')}</p>`}</div></section>`;
+    <div class="code-list">${accountCodes.map(code => `<div><code>…${accountEscape(code.label)}</code><span>${code.used_at !== null ? t('Used', 'Verwendet') : code.revoked ? t('Revoked', 'Widerrufen') : t('Available', 'Verfügbar')}</span>${code.used_at === null && !code.revoked ? `<button data-account="revoke" data-id="${code.id}">${t('Revoke', 'Widerrufen')}</button>` : ''}</div>`).join('') || `<p>${t('No codes created yet.', 'Noch keine Codes erstellt.')}</p>`}</div></section>
+    <section class="admin-section economy-reset"><p class="eyebrow">${t('DANGER ZONE', 'GEFAHRENBEREICH')}</p><h2>${t('Reset the player economy', 'Spielerwirtschaft zurücksetzen')}</h2>
+    <p>${t('Every human account returns to 1,000 tokens and 0 XP. Inventories, game progress, rewards, grants, bids and both auction histories are deleted. Usernames, passwords, active login sessions, registration codes, bans, admin roles and friendships stay intact.', 'Jedes menschliche Konto wird auf 1.000 Tokens und 0 XP gesetzt. Inventare, Spielfortschritt, Belohnungen, Gutschriften, Gebote und beide Auktionsverläufe werden gelöscht. Benutzernamen, Passwörter, aktive Anmeldungen, Registrierungscodes, Sperren, Adminrollen und Freundschaften bleiben erhalten.')}</p>
+    ${accountAdmin.lastReset ? `<p class="reset-history">${t('Last reset', 'Letzter Reset')}: ${new Date(accountAdmin.lastReset.createdAt).toLocaleString(uiLocale())} · ${number(accountAdmin.lastReset.playerCount)} ${t('accounts', 'Konten')} · ${number(accountAdmin.lastReset.inventoryCount)} ${t('items removed', 'Gegenstände entfernt')}</p>` : ''}
+    <form id="reset-economy-form" class="reset-economy-form"><label>${t('Type RESET ECONOMY to confirm', 'Zur Bestätigung RESET ECONOMY eingeben')}<input name="confirmation" required autocomplete="off" spellcheck="false" pattern="RESET ECONOMY"></label><button class="danger-button" type="submit">${t('Reset economy for every player', 'Wirtschaft für alle Spieler zurücksetzen')}</button><p class="account-error" role="alert"></p></form></section>`;
 }
 function renderShop() {
   const box = accountCatalog.cases.find(box => box.id === accountSelectedCase) || accountCatalog.cases[0];
@@ -495,7 +500,7 @@ document.addEventListener('click', async event => {
   }
 });
 document.addEventListener('submit', async event => {
-  if (!event.target.matches('#account-form, #code-form, #friend-form, #grant-form')) return;
+  if (!event.target.matches('#account-form, #code-form, #friend-form, #grant-form, #reset-economy-form')) return;
   event.preventDefault(); if (accountBusy) return; accountBusy = true;
   const visit = accountVisit, form = event.target, page = currentAccountPage, button = form.querySelector('button[type="submit"]'); button.disabled = true;
   try {
@@ -515,6 +520,14 @@ document.addEventListener('submit', async event => {
       try { localStorage.removeItem(key); } catch {}
       updateAccount(result.user);
       if (visit === accountVisit) { await navigateAccountPage('/admin', false); showToast(t(`Gave ${number(result.grant.amount)} tokens each to ${result.grant.recipients} existing players.`, `${result.grant.recipients} bestehende Spieler haben je ${number(result.grant.amount)} Tokens erhalten.`)); }
+    } else if (form.id === 'reset-economy-form') {
+      const result = await accountApi('admin/reset-economy', { confirmation: data.confirmation });
+      updateAccount(result.user); accountDailyRun = null; higherLowerRequest++; higherLowerRun = null;
+      accountResult = null; accountItems = [];
+      if (visit === accountVisit) {
+        await navigateAccountPage('/admin', false);
+        showToast(t(`Economy reset for ${number(result.reset.playerCount)} accounts. Logins are unchanged.`, `Wirtschaft für ${number(result.reset.playerCount)} Konten zurückgesetzt. Anmeldungen bleiben unverändert.`));
+      }
     } else {
       const result = await accountApi('codes', { count: Number(data.count) });
       if (visit === accountVisit) { freshCodes = result.codes; await navigateAccountPage('/admin', false); }

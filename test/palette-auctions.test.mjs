@@ -104,6 +104,9 @@ test('creation replays by requestId across restart without repricing or rerollin
   const edition = baseEdition(dir);
   const first = createPaletteAuction(dir, { editionId: edition.editionId, requestId: 'primary-lot-00000002' },
     { now: at(), random: alwaysFirst });
+  assert.equal(first.story.fictional, true);
+  assert.equal(typeof first.story.parody, 'boolean');
+  assert.ok(first.story.title && first.story.titleDe && first.story.body && first.story.bodyDe);
   const rewardsBefore = rows(dir, 'SELECT inventory_id, item_json FROM primary_palette_rewards ORDER BY position');
   closeDataStore(dir);
   // Replay long after expiry, with a market that has moved in between.
@@ -197,6 +200,9 @@ test('bidding escrows like resale: first bid, outbid refund, raise difference, r
   const after = getPaletteAuction(dir, lot.id, { now: day + 4000 });
   assert.equal(after.currentBid, reserve + 100);
   assert.equal(after.bidCount, 3);
+  assert.deepEqual(after.bids.map(bid => [bid.amount, bid.bidderId, bid.bidderUsername]), [
+    [reserve, bidder.id, 'Bidder'], [reserve + 40, bidder.id, 'Bidder'], [reserve + 100, rival.id, 'Rival']
+  ]);
   // Exact deadline behavior: the last instant still accepts a valid bid, at
   // the deadline the lot rejects everything.
   bidOnPaletteAuction(dir, bidder, lot.id, reserve + 101, { now: day + hour - 1 });
@@ -373,7 +379,7 @@ test('public serializers never expose selected rewards, reserved ids or hidden v
   assert.ok(detail.items.length >= 5);
   assert.ok(detail.items.some(item => item.title === drawn.title));
   // Explicit allowlist: no stray fields beyond the public contract.
-  assert.deepEqual(Object.keys(detail).sort(), ['allowedMarketCategories', 'badge', 'bidCount', 'closedAt',
+  assert.deepEqual(Object.keys(detail).sort(), ['allowedMarketCategories', 'badge', 'bidCount', 'bids', 'closedAt',
     'currentBid', 'editionId', 'endsAt', 'id', 'items', 'kind', 'name', 'nameDe', 'paletteId',
     'requiredLevel', 'reserve', 'rewardCount', 'settledAt', 'startedAt', 'status', 'story', 'type', 'winnerId']);
 });

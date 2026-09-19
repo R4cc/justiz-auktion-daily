@@ -30,9 +30,11 @@ const hour = 3_600_000;
 const MARKET_CATEGORY_IDS = new Set(['electronics', 'vehicles', 'wine', 'watches_jewelry', 'tools',
   'collectibles', 'household', 'luxury_goods', 'bicycles', 'books_media', 'fashion', 'cosmetics',
   'sport_leisure', 'other']);
-// The story a palette tells is explicitly fictional; it must never assert
-// that the real source auction's owner committed a crime.
-const story = (title, body) => ({ title, body, fictional: true });
+// The incident label gives the auction room a short, scannable premise while
+// the longer story supplies atmosphere. The marker stays internal and is not
+// repeated in player-facing copy.
+const story = (title, body, shortDescription, shortDescriptionDe) =>
+  ({ title, body, shortDescription, shortDescriptionDe, fictional: true });
 
 // allowedMarketCategories: null means unrestricted (mixed/premium base themes).
 // requiredLevel is metadata until progression enforcement exists; base
@@ -41,55 +43,67 @@ const BASE_DEFINITIONS = [
   { id: 'fundkiste', name: 'Seized Goods Palette', nameDe: 'Fundpalette', badge: 'JG',
     allowedMarketCategories: null, legacyTheme: 'mixed',
     story: story('The Harbor Warehouse Clearance',
-      'In the fictional town of Bauthaven, harbor customs clear a warehouse of unclaimed mixed goods. Everything in this palette belongs to that one invented seizure story.') },
+      'In Bauthaven, harbor customs clear a warehouse of unclaimed mixed goods. Everything in this palette belongs to that one seizure story.',
+      'Customs warehouse bust', 'Zollrazzia im Hafenlager') },
   { id: 'schatzkiste', name: 'Contraband Palette', nameDe: 'Konterband-Palette', badge: 'JG+',
     allowedMarketCategories: null, legacyTheme: 'premium',
     story: story('The Vault Nobody Claimed',
-      'A fictional bank vault in Altstadt-Kolding is emptied after its lease expires. High-value odds and ends from that invented clearance fill this palette.') },
+      'A bank vault in Altstadt-Kolding is emptied after its lease expires. High-value odds and ends from the clearance fill this palette.',
+      'Unclaimed vault clearance', 'Räumung eines herrenlosen Tresors') },
   { id: 'cars', name: 'Car Palette', nameDe: 'Auto-Palette', badge: 'CAR',
     allowedMarketCategories: ['vehicles'], legacyTheme: 'cars',
     story: story('The Impound Yard Sale',
-      'The invented impound yard of Nordhafen auctions complete fictional passenger cars only — no parts, no motorcycles, just whole vehicles from one imagined clearance.') },
+      'The Nordhafen impound yard auctions complete passenger cars only — no parts, no motorcycles, just whole vehicles from one clearance.',
+      'Police impound clearance', 'Räumung eines Polizeiverwahrplatzes') },
   { id: 'wine', name: 'Wine Palette', nameDe: 'Wein-Palette', badge: 'VIN',
     allowedMarketCategories: ['wine'], legacyTheme: 'wine',
     story: story('The Vineyard Cellar Release',
-      'A fictional vineyard cellar is released after its invented owner emigrated. Wine bottles only — the story deliberately keeps spirits out of this palette.') },
+      'A vineyard cellar is released after its owner emigrated. Wine bottles only — the story deliberately keeps spirits out of this palette.',
+      'Seized vineyard cellar', 'Beschlagnahmter Weinkeller') },
   { id: 'electronics', name: 'Electronics Palette', nameDe: 'Elektronik-Palette', badge: 'ELEC',
     allowedMarketCategories: ['electronics'], legacyTheme: 'electronics',
     story: story('The Returned Freight Pallet',
-      'A fictional freight forwarder liquidates a pallet of returned consumer electronics from an imaginary warehouse in Grayfield.') },
+      'A freight forwarder liquidates a pallet of returned consumer electronics from a warehouse in Grayfield.',
+      'Freight warehouse bust', 'Razzia im Frachtlager') },
   { id: 'tools', name: 'Tool Palette', nameDe: 'Werkzeug-Palette', badge: 'TOOL',
     allowedMarketCategories: ['tools'], legacyTheme: 'tools',
     story: story('The Closed Workshop Auction',
-      'When the invented toolmaker Brackwald & Söhne closes its fictional workshop, the complete tool wall enters one seized-collection story.') },
+      'When toolmaker Brackwald & Söhne closes its workshop, the complete tool wall enters one seized-collection story.',
+      'Illegal workshop bust', 'Razzia in illegaler Werkstatt') },
   { id: 'jewellery', name: 'Jewellery Palette', nameDe: 'Schmuck-Palette', badge: 'GEM',
     allowedMarketCategories: ['watches_jewelry'], legacyTheme: 'jewellery',
     story: story('The Pawnshop Back Room',
-      'The back room of a fictional pawnshop in Silberbruch is inventoried into one palette of watches and jewellery from an imagined seizure.') },
+      'The back room of a pawnshop in Silberbruch is inventoried into one palette of watches and jewellery from a seizure.',
+      'Pawnshop seizure', 'Pfandhaus-Beschlagnahme') },
   { id: 'collectibles', name: 'Collector Palette', nameDe: 'Sammler-Palette', badge: 'RARE',
     allowedMarketCategories: ['collectibles'], legacyTheme: 'collectibles',
     story: story('The Attic Collection',
-      'An invented attic in Kirschau yields a lifetime collection of figurines, coins and models — one fictional seizure, one palette.') }
+      'An attic in Kirschau yields a lifetime collection of figurines, coins and models — one seizure, one palette.',
+      'Estate attic clearance', 'Dachboden aus Nachlassauflösung') }
 ];
 const EVENT_DEFINITIONS = [
   { id: 'electronics-smuggling', name: 'Smuggled Electronics', nameDe: 'Geschmuggelte Elektronik', badge: 'SMUG',
     allowedMarketCategories: ['electronics'], legacyTheme: null, requiredLevel: 3,
     story: story('The Grayfield Container Check',
-      'Fiction: customs officers in Grayfield open a misdeclared container and find consumer electronics instead of machine parts. The seized fictional goods appear as this event palette.') },
+      'Customs officers in Grayfield open a misdeclared container and find consumer electronics instead of machine parts. The seized goods appear as this event palette.',
+      'Electronics smuggling bust', 'Razzia gegen Elektronikschmuggel') },
   { id: 'dealer-seizure', name: 'Dealer Seizure', nameDe: 'Händlerbeschlagnahme', badge: 'DEAL',
     allowedMarketCategories: ['vehicles', 'electronics', 'watches_jewelry', 'luxury_goods'], legacyTheme: null, requiredLevel: 5,
     story: story('The Kanalley & Co. Files',
-      'Fiction: the invented dealership Kanalley & Co. collapses and investigators seal the lot — cars, electronics, watches and luxury goods from one imagined seizure.') },
+      'The dealership Kanalley & Co. collapses and investigators seal the lot — cars, electronics, watches and luxury goods from one seizure.',
+      'Dealer fraud bust', 'Razzia wegen Händlerbetrugs') },
   { id: 'wine-tax-seizure', name: 'Wine Tax Seizure', nameDe: 'Weinsteuerbeschlagnahme', badge: 'TAX',
     allowedMarketCategories: ['wine', 'collectibles'], legacyTheme: null, requiredLevel: 8,
     story: story('The Untaxed Cellars',
-      'Fiction: tax investigators in Weißbrunn uncork an untaxed import scheme. Confiscated wine and cellar collectibles from the invented case form this palette.') }
+      'Tax investigators in Weißbrunn uncork an untaxed import scheme. Confiscated wine and cellar collectibles from the case form this palette.',
+      'Wine tax bust', 'Razzia wegen Weinsteuerbetrugs') }
 ];
 
 function validateDefinition(definition) {
   const categories = definition.allowedMarketCategories ?? [];
   if (!/^[a-z0-9-]{3,60}$/.test(definition.id) || !definition.name || !definition.nameDe || !definition.badge
     || definition.story?.fictional !== true || !definition.story?.title || !definition.story?.body
+    || !definition.story?.shortDescription || !definition.story?.shortDescriptionDe
     || new Set(categories).size !== categories.length || !categories.every(id => MARKET_CATEGORY_IDS.has(id))
     || !Number.isInteger(definition.requiredLevel) || definition.requiredLevel < 1
     || definition.rewardCount !== REWARD_COUNT || !Number.isInteger(definition.version)) {

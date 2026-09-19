@@ -101,6 +101,13 @@ export class Accounts {
         user_id TEXT NOT NULL REFERENCES users(id), amount INTEGER NOT NULL CHECK(amount > 0),
         created_at INTEGER NOT NULL, PRIMARY KEY(admin_id, request_id)
       ) STRICT;
+      CREATE TABLE IF NOT EXISTS economy_resets (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        admin_id TEXT NOT NULL REFERENCES users(id), created_at INTEGER NOT NULL,
+        player_count INTEGER NOT NULL, inventory_count INTEGER NOT NULL,
+        game_count INTEGER NOT NULL, resale_count INTEGER NOT NULL,
+        palette_auction_count INTEGER NOT NULL
+      ) STRICT;
       `);
       const columns = db.prepare('PRAGMA table_info(users)').all().map(column => column.name);
       if (!columns.includes('npc')) db.exec('ALTER TABLE users ADD COLUMN npc INTEGER NOT NULL DEFAULT 0');
@@ -218,8 +225,46 @@ export class Accounts {
       playerCount: db.prepare('SELECT COUNT(*) AS count FROM users WHERE npc = 0').get().count,
       users: db.prepare('SELECT id, username, admin, banned, tokens FROM users WHERE npc = 0 ORDER BY username COLLATE NOCASE').all()
         .map(row => ({ ...row, admin: Boolean(row.admin), banned: Boolean(row.banned) })),
-      grants: db.prepare('SELECT amount, recipients, created_at AS createdAt FROM token_grants ORDER BY created_at DESC, rowid DESC LIMIT 20').all()
+      grants: db.prepare('SELECT amount, recipients, created_at AS createdAt FROM token_grants ORDER BY created_at DESC, rowid DESC LIMIT 20').all(),
+      lastReset: db.prepare(`SELECT created_at AS createdAt, player_count AS playerCount,
+        inventory_count AS inventoryCount, game_count AS gameCount,
+        resale_count AS resaleCount, palette_auction_count AS paletteAuctionCount
+        FROM economy_resets ORDER BY id DESC LIMIT 1`).get() || null
     }));
+  }
+  resetEconomy(user, confirmation) {
+    if (!user.admin) fail('forbidden', 403);
+    if (confirmation !== 'RESET ECONOMY') fail('invalid_reset_confirmation');
+    return this.atomic(db => {
+      const hasTable = name => Boolean(db.prepare(`SELECT 1 FROM sqlite_schema WHERE type = 'table' AND name = ?`).get(name));
+      const count = name => hasTable(name) ? db.prepare(`SELECT COUNT(*) AS count FROM ${name}`).get().count : 0;
+      const result = {
+        playerCount: db.prepare('SELECT COUNT(*) AS count FROM users WHERE npc = 0').get().count,
+        inventoryCount: count('inventory'), gameCount: count('account_games'),
+        resaleCount: count('resale_auctions'), paletteAuctionCount: count('primary_palette_auctions'),
+        createdAt: this.now()
+      };
+
+      // Auction state goes first so escrow and inventory locks disappear in the
+      // same transaction that restores balances. Authentication/social tables,
+      // registration codes, passwords, bans and account_sessions are untouched.
+      for (const table of ['resale_npc_interest', 'resale_bids', 'resale_auctions',
+        'primary_palette_bids', 'primary_palette_rewards', 'primary_palette_auctions',
+        'daily_rewards', 'xp_events', 'case_openings', 'inventory', 'account_games',
+        'user_token_grants', 'token_grants']) {
+        if (hasTable(table)) db.prepare(`DELETE FROM ${table}`).run();
+      }
+      // NPCs are runtime-owned and are recreated with their full configured
+      // balance. Human ids and every login/session credential stay stable.
+      db.prepare('DELETE FROM users WHERE npc = 1').run();
+      db.prepare('UPDATE users SET tokens = ?, xp = 0, grants_seen_at = ? WHERE npc = 0')
+        .run(STARTING_TOKENS, result.createdAt);
+      db.prepare(`INSERT INTO economy_resets
+        (admin_id, created_at, player_count, inventory_count, game_count, resale_count, palette_auction_count)
+        VALUES (?, ?, ?, ?, ?, ?, ?)`).run(user.id, result.createdAt, result.playerCount,
+        result.inventoryCount, result.gameCount, result.resaleCount, result.paletteAuctionCount);
+      return result;
+    });
   }
   banUser(user, userId, banned) {
     if (!user.admin) fail('forbidden', 403);

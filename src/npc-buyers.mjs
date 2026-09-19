@@ -3,25 +3,20 @@ import { transaction, withDatabase } from './database.mjs';
 import { estimatedValueTokens, marketCategoryForItem, marketIndexes } from './market.mjs';
 import { ensureResaleSchema, placeBid } from './resale.mjs';
 import { AccountError } from './errors.mjs';
+export { NPC_BUYERS, SPECIAL_NPC_BUYERS } from './npc-roster.mjs';
+import { NPC_BUYERS } from './npc-roster.mjs';
 
 export const NPC_BALANCE = 1_000_000_000;
-export const NPC_BUYERS = [
-  ['mira', 'Mira_Fund', ['electronics', 'household'], 1.00, 45],
-  ['oskar', 'Oskar_Werk', ['tools', 'bicycles'], .97, 60],
-  ['lena', 'Lena_Keller', ['wine'], 1.06, 90],
-  ['bruno', 'Bruno_Motor', ['vehicles'], 1.02, 75],
-  ['ida', 'Ida_Silber', ['watches_jewelry', 'luxury_goods'], 1.04, 60],
-  ['theo', 'Theo_Sammler', ['collectibles', 'books_media'], 1.12, 90],
-  ['nora', 'Nora_Atelier', ['fashion', 'cosmetics'], .98, 45],
-  ['emil', 'Emil_Garten', ['household', 'tools'], .95, 75],
-  ['alma', 'Alma_Sport', ['sport_leisure', 'bicycles'], 1.02, 60],
-  ['finn', 'Finn_Flohmarkt', ['other', 'books_media'], .92, 90],
-  ['rosa', 'Rosa_Raritaet', ['collectibles', 'wine'], 1.03, 45],
-  ['paul', 'Paul_Fundus', ['electronics', 'vehicles'], .96, 75]
-].map(([id, username, categories, willingness, delaySeconds]) =>
-  ({ id: `npc-${id}`, username, categories, willingness, delaySeconds, collector: id === 'theo' }));
+export const NPC_COHORT_SIZE = 16;
 
 export const deterministicUnit = key => createHash('sha256').update(key).digest().readUInt32BE(0) / 2 ** 32;
+
+export function npcCohort(auctionId, size = NPC_COHORT_SIZE) {
+  return NPC_BUYERS.map(npc => ({ npc, score: deterministicUnit(`${auctionId}:${npc.id}:cohort`) }))
+    .sort((a, b) => a.score - b.score || a.npc.id.localeCompare(b.npc.id))
+    .slice(0, Math.max(1, Math.min(NPC_BUYERS.length, Math.floor(size) || NPC_COHORT_SIZE)))
+    .map(entry => entry.npc);
+}
 
 export function ensureNpcSchema(db) {
   db.exec(`CREATE TABLE IF NOT EXISTS resale_npc_interest (
@@ -39,7 +34,8 @@ export function seedNpcBuyers(dataDir, { now = Date.now() } = {}) {
     // before seeding nobody can reserve a registry name. No password can log in.
     const insert = db.prepare(`INSERT OR IGNORE INTO users
       (id, username, password_hash, npc, tokens, created_at) VALUES (?, ?, 'disabled', 1, ?, ?)`);
-    for (const npc of NPC_BUYERS) insert.run(npc.id, npc.username.replaceAll('_', ' '), NPC_BALANCE, now);
+    const existing = new Set(db.prepare('SELECT id FROM users WHERE npc = 1').all().map(row => row.id));
+    for (const npc of NPC_BUYERS) if (!existing.has(npc.id)) insert.run(npc.id, npc.username, NPC_BALANCE, now);
   }));
 }
 
@@ -49,9 +45,20 @@ export function npcValuation(item, indexes, npc, auctionId, unit = deterministic
   const variation = (unit(`${auctionId}:${npc.id}:value`) - .5) * .10;
   const cap = npc.collector && preferred ? 1.25 : 1.15;
   const multiplier = Math.max(.70, Math.min(cap, npc.willingness + (preferred ? .08 : -.12) + variation));
-  const probability = Math.max(.05, Math.min(.92, (preferred ? .64 : .20) * (index / 100) ** 3));
+  const personality = .62 + npc.aggressiveness * .58 + (npc.collector && preferred ? .12 : 0);
+  const probability = Math.max(.05, Math.min(.94, (preferred ? .58 : .18) * personality * (index / 100) ** 3));
   return { maxBid: Math.max(1, Math.round(estimatedValueTokens(item, indexes) * multiplier)),
     interested: unit(`${auctionId}:${npc.id}:interest`) < probability, probability };
+}
+
+export function npcBidAmount(interest, npc, now, unit = deterministicUnit) {
+  const minimum = interest.current_bid === null ? interest.start_price : interest.current_bid + 1;
+  const headroom = interest.max_bid - minimum;
+  if (headroom <= 0 || unit(`${interest.auction_id}:${npc.id}:${interest.current_bid}:cheap`) < npc.cheapness) return minimum;
+  const pressure = .015 + npc.aggressiveness * .11 + (interest.ends_at - now <= 120_000 ? .05 : 0);
+  const maximumJump = Math.max(1, Math.min(headroom, Math.round(interest.max_bid * pressure)));
+  const jump = 1 + Math.floor(unit(`${interest.auction_id}:${npc.id}:${interest.current_bid}:jump`) * maximumJump);
+  return Math.min(interest.max_bid, minimum + jump);
 }
 
 export function tickNpcBuyers(dataDir, { now = Date.now(), unit = deterministicUnit } = {}) {
@@ -63,7 +70,7 @@ export function tickNpcBuyers(dataDir, { now = Date.now(), unit = deterministicU
       (SELECT 1 FROM resale_npc_interest n WHERE n.auction_id = a.id) ORDER BY a.started_at, a.id LIMIT 200`).all(now);
     const insert = db.prepare(`INSERT OR IGNORE INTO resale_npc_interest
       (auction_id, npc_id, max_bid, next_bid_at, created_at, active) VALUES (?, ?, ?, ?, ?, ?)`);
-    for (const row of auctions) for (const npc of NPC_BUYERS) {
+    for (const row of auctions) for (const npc of npcCohort(row.id)) {
       const value = npcValuation(JSON.parse(row.item), indexes, npc, row.id, unit);
       insert.run(row.id, npc.id, value.maxBid, now + npc.delaySeconds * 1000, now, Number(value.interested));
     }
@@ -81,7 +88,8 @@ export function tickNpcBuyers(dataDir, { now = Date.now(), unit = deterministicU
     const npc = NPC_BUYERS.find(entry => entry.id === interest.npc_id);
     if (!npc) continue;
     const minimum = interest.current_bid === null ? interest.start_price : interest.current_bid + 1;
-    const delay = interest.ends_at - now <= 120_000 ? 30_000 : npc.delaySeconds * 1000;
+    const lastMinuteDelay = Math.round(10_000 + npc.patience * 20_000 + (1 - npc.aggressiveness) * 10_000);
+    const delay = interest.ends_at - now <= 120_000 ? lastMinuteDelay : npc.delaySeconds * 1000;
     if (minimum > interest.max_bid) {
       withDatabase(dataDir, db => db.prepare('UPDATE resale_npc_interest SET active = 0 WHERE auction_id = ? AND npc_id = ?')
         .run(interest.auction_id, npc.id));
@@ -89,7 +97,7 @@ export function tickNpcBuyers(dataDir, { now = Date.now(), unit = deterministicU
     }
     if (interest.current_bidder_id !== npc.id) {
       try {
-        placeBid(dataDir, npc, interest.auction_id, minimum, { now });
+        placeBid(dataDir, npc, interest.auction_id, npcBidAmount(interest, npc, now, unit), { now });
         bids++; touched.add(interest.auction_id);
         withDatabase(dataDir, db => db.prepare('UPDATE resale_npc_interest SET last_bid_at = ? WHERE auction_id = ? AND npc_id = ?')
           .run(now, interest.auction_id, npc.id));
