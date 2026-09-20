@@ -722,6 +722,11 @@ document.addEventListener('click', event => {
   if (action === 'home') renderStart();
   if (action === 'help') helpDialog.showModal();
 });
+// A click on the dark area around any open modal (the backdrop targets the
+// dialog element itself) closes it — the standard close flows stay intact.
+document.addEventListener('click', event => {
+  if (event.target instanceof HTMLDialogElement && event.target.open) event.target.close();
+});
 
 document.addEventListener('keydown', event => {
   if (event.target.closest('dialog')) return;
