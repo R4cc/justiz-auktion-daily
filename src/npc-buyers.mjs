@@ -143,7 +143,7 @@ export function tickPaletteBuyers(dataDir, { now = Date.now(), unit = determinis
   const indexes = withDatabase(dataDir, db => marketIndexes(db, now));
   const lots = withDatabase(dataDir, db => {
     ensurePaletteAuctionSchema(db, now);
-    return db.prepare(`SELECT id, reserve, current_bid, ends_at, public_snapshot_json
+    return db.prepare(`SELECT id, reserve, current_bid, current_bidder_id, ends_at, public_snapshot_json
       FROM primary_palette_auctions WHERE status = 'active' AND ends_at > ?
       ORDER BY ends_at, id LIMIT 50`).all(now);
   });
@@ -151,6 +151,9 @@ export function tickPaletteBuyers(dataDir, { now = Date.now(), unit = determinis
   for (const lot of lots) {
     const cohort = npcCohort(lot.id, 4);
     const npc = cohort[slot % cohort.length];
+    // A slot can be evaluated several times by the runtime. The selected NPC
+    // waits for a rival instead of repeatedly raising its own standing bid.
+    if (lot.current_bidder_id === npc.id) continue;
     if (unit(`${lot.id}:${npc.id}:${slot}:palette-showup`) >= .5) continue;
     const { maxBid } = paletteBidCeiling(JSON.parse(lot.public_snapshot_json), indexes, npc, lot.id, unit);
     const minimum = lot.current_bid ?? lot.reserve;
@@ -163,7 +166,7 @@ export function tickPaletteBuyers(dataDir, { now = Date.now(), unit = determinis
       bidOnPaletteAuction(dataDir, npc, lot.id, Math.min(maxBid, minimum + jump), { now, npc: true });
       bids++;
     } catch (error) {
-      if (!(error instanceof AccountError) || !['bid_too_low', 'palette_auction_ended', 'insufficient_tokens'].includes(error.message)) throw error;
+      if (!(error instanceof AccountError) || !['bid_too_low', 'palette_auction_ended', 'insufficient_tokens', 'npc_self_outbid'].includes(error.message)) throw error;
     }
   }
   return { bids };

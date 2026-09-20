@@ -123,6 +123,14 @@ test('NPC buyers chase hot-market palettes and fall silent when the market cools
   assert.ok(bid.amount >= lot.reserve);
   assert.ok(bid.bidder_id.startsWith('npc-'));
   assert.equal(balance(f, bid.bidder_id), NPC_BALANCE - bid.amount);
+  // Re-evaluating the same five-minute slot must not let the chosen NPC bid
+  // against itself, even if the runtime runs every few seconds.
+  const bidsInSlot = count(f, 'primary_palette_bids');
+  assert.equal(tickPaletteBuyers(f.dir, { now: day + 60_000, unit }).bids, 0);
+  assert.equal(count(f, 'primary_palette_bids'), bidsInSlot);
+  assert.throws(() => bidOnPaletteAuction(f.dir, { id: bid.bidder_id }, lot.id, bid.amount + 1,
+    { now: day + 90_000, npc: true }), /npc_self_outbid/);
+  assert.equal(count(f, 'primary_palette_bids'), bidsInSlot);
   // A cold market drops every ceiling below the standing bid: silence.
   let coldCalls = 0;
   tickMarketDrift(f.dir, { now: day + 2 * hour, random: () => { coldCalls++; return coldCalls === 1 ? .999999 : coldCalls === 2 ? .1 : 0; } });
@@ -132,7 +140,7 @@ test('NPC buyers chase hot-market palettes and fall silent when the market cools
   // A recovered market resumes bidding; the player-facing API still rejects NPCs.
   let warmCalls = 0;
   tickMarketDrift(f.dir, { now: day + 4 * hour, random: () => { warmCalls++; return warmCalls === 1 ? .999999 : warmCalls === 2 ? .9 : 0; } });
-  assert.ok(tickPaletteBuyers(f.dir, { now: day + 4 * hour + 60_000, unit }).bids >= 1);
+  assert.ok(tickPaletteBuyers(f.dir, { now: day + 4 * hour + 6 * 60_000, unit }).bids >= 1);
   assert.throws(() => bidOnPaletteAuction(f.dir, { id: bid.bidder_id }, lot.id, bid.amount + 1, { now: day + 4 * hour + 90_000 }), /forbidden/);
 });
 
@@ -310,6 +318,9 @@ test('NPC bids use human escrow/refunds, react to outbids, win ownership and pay
   const first = getResale(f.dir, lot.id, { now: day + 45_000 });
   assert.ok(first.currentBidderId.startsWith('npc-')); assert.ok(first.bids[0].bidderUsername);
   assert.equal(balance(f, first.currentBidderId), NPC_BALANCE - first.currentBid);
+  assert.throws(() => placeBid(f.dir, { id: first.currentBidderId }, lot.id, first.currentBid + 1,
+    { now: day + 75_001 }), /npc_self_outbid/);
+  assert.equal(getResale(f.dir, lot.id, { now: day + 75_001 }).bids.length, 1);
   const humanBid = first.currentBid + 1;
   placeBid(f.dir, f.user('buyer'), lot.id, humanBid, { now: day + 46_000 });
   assert.equal(balance(f, first.currentBidderId), NPC_BALANCE);

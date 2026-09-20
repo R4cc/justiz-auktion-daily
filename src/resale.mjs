@@ -181,6 +181,7 @@ export function placeBid(dataDir, user, auctionId, amount, { now = Date.now() } 
     if (amount < minimum) fail('bid_too_low', 409);
     const bidder = db.prepare('SELECT npc FROM users WHERE id = ? AND banned = 0').get(user.id);
     if (!bidder) fail('login_required', 401);
+    if (bidder.npc && row.current_bidder_id === user.id) fail('npc_self_outbid', 409);
     // Persistent timing guard, inside the economic write lock. Replaying a
     // runtime tick (or running two processes) cannot cause a bidding burst.
     if (bidder.npc && db.prepare(`SELECT 1 FROM resale_bids b JOIN users u ON u.id = b.bidder_id

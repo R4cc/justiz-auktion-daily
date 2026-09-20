@@ -228,6 +228,11 @@ export function bidOnPaletteAuction(dataDir, user, auctionId, amount, { now = Da
     // persisted users.xp, never from a client-supplied level. Trusted NPC
     // bids skip the gate — house buyers are never level-locked.
     if (!npc && levelForXp(account.xp) < row.required_level) fail('level_required', 403);
+    // Humans may deliberately raise their own maximum. Runtime-controlled
+    // bidders must wait for somebody else so repeated ticks cannot fabricate
+    // a bidding war against themselves. This check lives inside the write
+    // transaction so concurrent runtimes are covered as well.
+    if (npc && row.current_bidder_id === user.id) fail('npc_self_outbid', 409);
     const minimum = row.current_bid === null ? row.reserve : row.current_bid + 1;
     if (amount < minimum) fail('bid_too_low', 409);
     // Escrow accounting, identical in semantics to resale: the leader raising
