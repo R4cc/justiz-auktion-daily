@@ -87,6 +87,9 @@ let state = { view: 'start', round: 0, answers: [], scoreVersion: SCORE_VERSION 
 let dailyLoadPromise = Promise.resolve();
 let galleryAuction = null;
 let galleryIndex = 0;
+const GUESS_TIME_LIMIT = 25_000;
+let guessTimer = null;
+let guessDeadline = 0;
 
 function auctionImages(auction) {
   return [...new Set([auction.image, ...(Array.isArray(auction.images) ? auction.images : [])]
@@ -313,7 +316,8 @@ async function startGame() {
   if (accountDailyRun) {
     AUCTIONS = accountDailyRun.auctions;
     const answers = accountDailyRun.answers.map((guess, index) => ({ guess,
-      score: scoreGuess(guess, AUCTIONS[index].actualBid), error: currentError(guess, AUCTIONS[index].actualBid) }));
+      score: scoreGuess(guess, AUCTIONS[index].actualBid),
+      error: guess === null ? null : currentError(guess, AUCTIONS[index].actualBid) }));
     state = { view: accountDailyRun.complete ? 'results' : 'game', round: Math.max(0, answers.length - 1), answers, scoreVersion: SCORE_VERSION };
     if (accountDailyRun.complete) finishGame(); else renderRound();
     return;
@@ -336,6 +340,7 @@ function renderStart() {
   higherLowerRequest++;
   window.scrollTo({ top: 0, behavior: 'instant' });
   clearInterval(countdownTimer);
+  stopGuessTimer();
   state.view = 'start';
   const saved = getTodayRecord();
   const playerStats = stats();
@@ -382,6 +387,7 @@ function renderStart() {
 
 function renderRound() {
   clearInterval(countdownTimer);
+  stopGuessTimer();
   const auction = AUCTIONS[state.round];
   const images = auctionImages(auction);
   if (galleryAuction !== auction) {
@@ -393,6 +399,7 @@ function renderRound() {
   const runningScore = state.answers.reduce((sum, item) => sum + item.score, 0);
   app.innerHTML = `
     <section class="game-shell">
+      ${answer ? '' : `<div class="guess-timer" data-guess-timer role="progressbar" aria-label="${t("Time left for your guess", "Restzeit für deinen Tipp")}" aria-valuemin="0" aria-valuemax="100" aria-valuenow="100"><span class="guess-timer-fill" data-guess-timer-fill></span></div>`}
       <div class="game-topline">
         <span class="round-count">${t("LOT", "LOS")} ${String(state.round + 1).padStart(2, '0')} / 05<small>${gameMode === 'random' ? t("FREE PLAY", "FREIES SPIEL") : t("DAILY AUCTION", "TAGESAUKTION")}</small></span>
         <div class="lot-progress" aria-label="${state.answers.length} ${t('of 5 auctions guessed', 'von 5 Auktionen geschätzt')}">${Array.from({ length: 5 }, (_, index) => `<span class="lot-step${state.answers[index] ? ' is-complete' : index === state.round ? ' is-current' : ''}" aria-hidden="true">${state.answers[index] ? '✓' : String(index + 1).padStart(2, '0')}</span>`).join('')}</div>
@@ -431,6 +438,7 @@ function renderRound() {
     }
   }, 30000);
   window.scrollTo({ top: 0, behavior: 'instant' });
+  if (!answer) startGuessTimer();
   setTimeout(() => document.querySelector(answer ? '[data-action="next"]' : '#price-input')?.focus({ preventScroll: true }), 50);
 }
 
@@ -442,30 +450,33 @@ function guessMarkup(ended = false) {
         <div class="input-wrap"><span class="currency">€</span><input id="price-input" class="price-input" inputmode="decimal" autocomplete="off" placeholder="0" /></div>
         <button class="submit-guess" type="submit">${t("Submit guess", "Tipp abgeben")} <span aria-hidden="true">↗</span></button>
       </div>
-      <p class="input-hint">${t("Your guess is not a real bid.", "Dein Tipp ist kein echtes Gebot.")} <span>Enter ↵</span></p>
+      <p class="input-hint">${t("Your guess is not a real bid.", "Dein Tipp ist kein echtes Gebot.")} · ${t("One guess per 25 seconds", "Ein Tipp pro 25 Sekunden")} <span>Enter ↵</span></p>
     </form>`;
 }
 
 function revealMarkup(auction, answer) {
   const level = accuracy(answer.score);
-  const difference = auction.actualBid - answer.guess;
+  const timedOut = answer.guess === null;
+  const difference = timedOut ? 0 : auction.actualBid - answer.guess;
   const sign = difference > 0 ? '+' : difference < 0 ? '−' : '';
   const arrow = difference > 0 ? '↗' : difference < 0 ? '↘' : '●';
   const relationship = difference > 0 ? t("higher", "höher") : difference < 0 ? t("lower", "niedriger") : t("exactly the same", "genau gleich");
+  const differenceLabel = timedOut ? t('No guess in time', 'Kein Tipp rechtzeitig abgegeben') : `${t('The actual bid is', 'Das echte Gebot ist')} ${relationship}; ${t('difference', 'Abweichung')} ${number(answer.error, 1)} ${t('percent', 'Prozent')}`;
+  const message = timedOut ? t("Time ran out before you entered a bid.", "Die Zeit lief ab, bevor du ein Gebot eingegeben hast.") : level.message;
   return `
     <div class="reveal-panel reveal-${level.className}">
       <div class="result-feedback">
         <span class="feedback-icon" aria-hidden="true">${level.icon}</span>
-        <span><strong>${level.label}</strong>${level.message ? `<small>${level.message}</small>` : ''}</span>
+        <span><strong>${level.label}</strong>${message ? `<small>${message}</small>` : ''}</span>
       </div>
       <div class="bid-comparison">
         <div class="bid-value">
           <span>${t("YOUR GUESS", "DEIN TIPP")}</span>
-          <strong>${euro(answer.guess)}</strong>
+          <strong>${timedOut ? '—' : euro(answer.guess)}</strong>
         </div>
-        <div class="difference-indicator ${level.className}" aria-label="${t('The actual bid is', 'Das echte Gebot ist')} ${relationship}; ${t('difference', 'Abweichung')} ${number(answer.error, 1)} ${t('percent', 'Prozent')}">
-          <strong>${sign}${number(answer.error, 1)} %</strong>
-          <span aria-hidden="true">${arrow}</span>
+        <div class="difference-indicator ${level.className}" aria-label="${differenceLabel}">
+          <strong>${timedOut ? '—' : `${sign}${number(answer.error, 1)} %`}</strong>
+          <span aria-hidden="true">${timedOut ? '' : arrow}</span>
         </div>
         <div class="bid-value bid-value--actual">
           <span>${t("ACTUAL BID", "ECHTES GEBOT")}</span>
@@ -484,7 +495,60 @@ function revealMarkup(auction, answer) {
     </div>`;
 }
 
+function stopGuessTimer() {
+  if (guessTimer) { clearInterval(guessTimer); guessTimer = null; }
+}
+
+// The bar only drains visually — no seconds are shown. The deadline is
+// absolute, so background-tab throttling cannot extend a round.
+function startGuessTimer() {
+  stopGuessTimer();
+  const bar = document.querySelector('[data-guess-timer]');
+  if (!bar) return;
+  const fill = bar.querySelector('[data-guess-timer-fill]');
+  guessDeadline = Date.now() + GUESS_TIME_LIMIT;
+  const tick = () => {
+    if (state.view !== 'game' || state.answers[state.round] || !document.querySelector('#guess-form')) { stopGuessTimer(); return; }
+    const fraction = Math.max(0, guessDeadline - Date.now()) / GUESS_TIME_LIMIT;
+    fill.style.width = `${fraction * 100}%`;
+    bar.classList.toggle('is-low', fraction <= 0.2);
+    bar.setAttribute('aria-valuenow', String(Math.round(fraction * 100)));
+    if (fraction <= 0) { stopGuessTimer(); expireGuess(); }
+  };
+  guessTimer = setInterval(tick, 200);
+  tick();
+}
+
+function expireGuess() {
+  if (dailySubmitting || state.answers[state.round] || state.view !== 'game') return;
+  const raw = document.querySelector('#price-input')?.value.trim().replace(/\s/g, '').replace(',', '.') || '';
+  const guess = Number(raw);
+  // A typed value counts even after the clock ran out; an empty box scores zero.
+  applyGuess(raw && Number.isFinite(guess) && guess >= 0 ? guess : null);
+}
+
 let dailySubmitting = false;
+async function applyGuess(guess) {
+  if (dailySubmitting || state.answers[state.round]) return;
+  const currentState = state;
+  dailySubmitting = true;
+  stopGuessTimer();
+  const button = document.querySelector('#guess-form button[type="submit"]');
+  if (button) button.disabled = true;
+  try {
+  if (gameMode === 'daily' && accountDailyRun) accountDailyRun = await accountGameAnswer(accountDailyRun, state.round, guess);
+  if (state !== currentState || state.view !== 'game') return;
+  const actual = AUCTIONS[state.round].actualBid;
+  const score = scoreGuess(guess, actual);
+  const isExact = guess !== null && Math.round(guess * 100) === Math.round(actual * 100);
+  state.answers[state.round] = { guess, score, error: guess === null ? null : currentError(guess, actual) };
+  saveProgress();
+  renderRound();
+  if (isExact) requestAnimationFrame(launchConfetti);
+  } catch (error) { showToast(error.message); if (state === currentState && state.view === 'game' && !state.answers[state.round]) startGuessTimer(); }
+  finally { dailySubmitting = false; if (button?.isConnected) button.disabled = false; }
+}
+
 async function submitGuess(form) {
   if (dailySubmitting || state.answers[state.round]) return;
   const raw = form.querySelector('#price-input').value.trim().replace(/\s/g, '').replace(',', '.');
@@ -493,22 +557,7 @@ async function submitGuess(form) {
     showToast(t("Please enter a valid euro amount.", "Bitte gib einen gültigen Eurobetrag ein."));
     return;
   }
-  dailySubmitting = true;
-  const currentState = state;
-  const button = form.querySelector('button[type="submit"]');
-  button.disabled = true;
-  try {
-  if (gameMode === 'daily' && accountDailyRun) accountDailyRun = await accountGameAnswer(accountDailyRun, state.round, guess);
-  if (state !== currentState || state.view !== 'game') return;
-  const actual = AUCTIONS[state.round].actualBid;
-  const score = scoreGuess(guess, actual);
-  const isExact = Math.round(guess * 100) === Math.round(actual * 100);
-  state.answers[state.round] = { guess, score, error: currentError(guess, actual) };
-  saveProgress();
-  renderRound();
-  if (isExact) requestAnimationFrame(launchConfetti);
-  } catch (error) { showToast(error.message); }
-  finally { dailySubmitting = false; button.disabled = false; }
+  await applyGuess(guess);
 }
 
 function nextRound() {
@@ -536,8 +585,10 @@ function finishGame() {
 function renderResults() {
   window.scrollTo({ top: 0, behavior: 'instant' });
   clearInterval(countdownTimer);
+  stopGuessTimer();
   const total = state.answers.reduce((sum, item) => sum + item.score, 0);
-  const averageError = state.answers.reduce((sum, item) => sum + item.error, 0) / state.answers.length;
+  const scoredErrors = state.answers.filter(item => Number.isFinite(item.error));
+  const averageError = scoredErrors.length ? scoredErrors.reduce((sum, item) => sum + item.error, 0) / scoredErrors.length : null;
   const bestIndex = state.answers.reduce((best, item, index, items) => item.score > items[best].score ? index : best, 0);
   const playerStats = stats();
   const completedAuctions = AUCTIONS.filter(auction => !auction.endAt || Date.parse(auction.endAt) <= Date.now()).length;
@@ -549,7 +600,7 @@ function renderResults() {
       </div>
       <div class="result-stats">
         <div class="result-stat"><span>${t("BEST ROUND", "BESTE RUNDE")}</span><strong>${state.answers[bestIndex].score} ${t("pts", "Pkt")}</strong></div>
-        <div class="result-stat"><span>${t("AVG. DIFFERENCE", "Ø ABWEICHUNG")}</span><strong>${number(averageError, 1)} %</strong></div>
+        <div class="result-stat"><span>${t("AVG. DIFFERENCE", "Ø ABWEICHUNG")}</span><strong>${averageError === null ? '—' : `${number(averageError, 1)} %`}</strong></div>
         ${gameMode === 'random'
           ? `<div class="result-stat"><span>${t("ENDED AUCTIONS", "BEENDETE AUKTIONEN")}</span><strong>${completedAuctions} / 5</strong></div>`
           : `<div class="result-stat"><span>${t("CURRENT STREAK", "AKTUELLER STREAK")}</span><strong>${playerStats.streak ? `🔥 ${dayLabel(playerStats.streak)}` : '—'}</strong></div>`}
@@ -574,9 +625,9 @@ function resultRow(auction, answer, index) {
     <div class="result-row">
       <img class="result-thumb" src="${auction.image}" alt="" />
       <a class="result-name result-auction-link" href="${auction.url}" target="_blank" rel="noreferrer"><strong>${index + 1}. ${auction.title}</strong><span>${t(`OPEN AUCTION #${auction.id}`, `AUKTION #${auction.id} ÖFFNEN`)} ↗</span></a>
-      <div class="result-cell"><strong>${euro(answer.guess)}</strong><span>${t("YOUR GUESS", "DEIN TIPP")}</span></div>
+      <div class="result-cell"><strong>${answer.guess === null ? '—' : euro(answer.guess)}</strong><span>${t("YOUR GUESS", "DEIN TIPP")}</span></div>
       <div class="result-cell"><strong>${euro(auction.actualBid)}</strong><span>${t("BID", "GEBOT")}</span></div>
-      <div class="result-cell"><strong>${number(answer.error, 1)} %</strong><span>${t("DIFFERENCE", "ABWEICHUNG")}</span></div>
+      <div class="result-cell"><strong>${answer.error === null ? '—' : `${number(answer.error, 1)} %`}</strong><span>${t("DIFFERENCE", "ABWEICHUNG")}</span></div>
       <div class="result-points"><span class="accuracy-square ${level.className}"></span><strong>${answer.score}</strong></div>
     </div>`;
 }

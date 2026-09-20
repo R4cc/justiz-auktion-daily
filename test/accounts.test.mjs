@@ -5,6 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { createServer } from 'node:http';
 import { Accounts, STARTING_TOKENS } from '../src/accounts.mjs';
+import { scoreGuess } from '../src/core.mjs';
 import { caseCatalog, publicCaseCatalog, itemRarity, drawItem } from '../src/cases.mjs';
 import { closeDataStore, upsertAuctions } from '../src/database.mjs';
 import { createAccountApi } from '../src/account-api.mjs';
@@ -203,6 +204,26 @@ test('daily rewards are once per account per UTC day across modes, survive repla
   for (let i = 0; i < 7; i++) result = service.answer(admin, fresh.id, i, 'higher');
   assert.equal(result.earned, 140);
   assert.equal(service.profile(admin).tokens, STARTING_TOKENS + 240);
+});
+
+test('a timed-out guess is recorded as null, scores zero and still completes the daily run', async t => {
+  const { service, admin, nextDay } = await fixture(t);
+  let run = service.startGame(admin, 'daily', () => lots.slice(0, 5));
+  run = service.answer(admin, run.id, 0, null);
+  assert.equal(run.answers[0], null);
+  assert.equal(service.answer(admin, run.id, 0, null).answers[0], null);
+  assert.throws(() => service.answer(admin, run.id, 0, 10), /answer_conflict/);
+  for (let i = 1; i < 5; i++) run = service.answer(admin, run.id, i, lots[i].actualBid);
+  assert.equal(run.complete, true);
+  assert.equal(run.earned, 100);
+  assert.equal(service.profile(admin).daily.score,
+    [1, 2, 3, 4].reduce((sum, i) => sum + scoreGuess(lots[i].actualBid, lots[i].actualBid), 0));
+  const hl = service.startGame(admin, 'higher-lower', () => lots);
+  assert.throws(() => service.answer(admin, hl.id, 0, null), /invalid_guess/);
+  nextDay();
+  let replay = service.startGame(admin, 'daily', () => lots.slice(0, 5));
+  for (let i = 0; i < 5; i++) replay = service.answer(admin, replay.id, i, i % 2 ? null : 10);
+  assert.equal(replay.complete, true);
 });
 
 test('game rewards freeze the current case-priced schedule for each run', async t => {

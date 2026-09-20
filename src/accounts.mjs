@@ -509,8 +509,12 @@ export class Accounts {
       }
       if (run.complete) fail('game_complete', 409);
       if (run.mode === 'daily') {
-        if (typeof answer !== 'number' || !Number.isFinite(answer) || answer < 0 || answer > 1e12) fail('invalid_guess');
-        run.answers.push(answer);
+        // null records a round whose 25-second guess clock expired with an
+        // empty box: it counts toward completion but scores zero everywhere,
+        // because scoreGuess treats non-finite guesses as 0.
+        const timedOut = answer === null;
+        if (!timedOut && (typeof answer !== 'number' || !Number.isFinite(answer) || answer < 0 || answer > 1e12)) fail('invalid_guess');
+        run.answers.push(timedOut ? null : answer);
         run.complete = run.answers.length === 5;
       } else {
         if (!['higher', 'lower'].includes(answer)) fail('invalid_guess');
