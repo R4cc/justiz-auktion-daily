@@ -803,6 +803,8 @@ button:focus-visible, a:focus-visible { outline: 3px solid var(--red); outline-o
 .inventory-heading h2 { font-size: 22px; margin: 0; }
 .economy-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 24px; margin: 24px 0; }
 .economy-lot { border: 1px solid var(--line); border-radius: 18px; background: #fffcf4; overflow: hidden; box-shadow: 0 4px 0 #12352a10; }
+.economy-lot.is-leading { border: 2px solid var(--green); box-shadow: 0 4px 0 #38b26d33; }
+.economy-lot.is-outbid { border: 2px solid var(--red); box-shadow: 0 4px 0 #ce461f33; }
 .economy-lot-image { height: 180px; position: relative; background: #e8ebdd; display: grid; place-items: center; overflow: hidden; }
 .palette-artwork { display: grid; place-items: center; width: 100%; color: var(--ink); }
 .palette-artwork svg { display: block; width: min(100%, 360px); height: auto; }

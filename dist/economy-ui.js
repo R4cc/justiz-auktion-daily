@@ -143,13 +143,18 @@ window.economyUi = (() => {
     const eligible = account && (account.progression?.level || 1) >= lot.requiredLevel
       && account.tokens + (participation?.leading ? lot.currentBid : 0) >= minimum;
     const mine = tab === 'mine';
-    return `<article class="economy-lot"><div class="economy-lot-image">${primary ? paletteArtwork(lot) : image ? `<img src="${esc(image)}" alt="" loading="lazy">` : '<span aria-hidden="true">◇</span>'}
+    // Green border while the player leads (or has won), red while overbid.
+    const borderState = !mine && primary && participation
+      ? participation.leading || (participation.won && lot.status !== 'active') ? ' is-leading'
+        : lot.status === 'active' ? ' is-outbid' : ''
+      : '';
+    return `<article class="economy-lot${borderState}"><div class="economy-lot-image">${primary ? paletteArtwork(lot) : image ? `<img src="${esc(image)}" alt="" loading="lazy">` : '<span aria-hidden="true">◇</span>'}
       ${primary ? '' : `<span class="economy-badge">${esc(categoryName(lot.item.marketCategory))}</span>`}</div>
       <div class="economy-lot-body"><h2>${esc(primary ? name(lot) : lot.item.title)}</h2>
       ${primary ? `<div class="palette-seal" aria-hidden="true"><span>01 ◇</span><span>02 ◇</span><span>03 ◇</span></div>`
         : `<p>${t('Seller', 'Verkäufer')}: ${esc(lot.sellerUsername)}</p><p>${t('Estimated market value', 'Geschätzter Marktwert')}: ${justizEuro(lot.estimatedValueTokens)}</p>`}
       ${bidFacts(lot, primary)}
-      ${mine ? `<p class="economy-outcome">${primary ? lot.status === 'active' ? lot.leading ? t('You lead', 'Du führst') : t('Outbid', 'Überboten') : lot.won ? t('Won!', 'Gewonnen!') : t('Lost', 'Verloren') : status(lot)}${primary ? ` · ${t('Your highest bid', 'Dein Höchstgebot')}: ${justizEuro(lot.highestBid)}` : lot.winnerId ? ` · ${t('Final sale', 'Verkaufspreis')}: ${justizEuro(lot.currentBid)}` : ''}</p>` : ''}
+      ${mine || (primary && participation) ? `<p class="economy-outcome">${primary ? lot.status === 'active' ? lot.leading ? t('You lead', 'Du führst') : t('Outbid', 'Überboten') : lot.won ? t('Won!', 'Gewonnen!') : t('Lost', 'Verloren') : status(lot)}${primary ? ` · ${t('Your highest bid', 'Dein Höchstgebot')}: ${justizEuro(lot.highestBid)}` : lot.winnerId ? ` · ${t('Final sale', 'Verkaufspreis')}: ${justizEuro(lot.currentBid)}` : ''}</p>` : ''}
       <button class="${primary && lot.revealAvailable ? 'primary-button' : 'secondary-button'}" data-economy="${primary ? 'primary' : 'resale'}" data-id="${esc(lot.id)}">${primary && lot.revealAvailable ? t('View winning palette', 'Gewonnene Palette ansehen') : primary && !eligible ? t('Explore palette', 'Palette ansehen') : t('View auction', 'Auktion ansehen')} →</button>
       ${!primary && mine && lot.status === 'active' && !lot.bidCount ? `<button class="text-button" data-economy="cancel" data-id="${esc(lot.id)}">${t('Cancel listing', 'Angebot stornieren')}</button>` : ''}</div></article>`;
   }
@@ -172,7 +177,21 @@ window.economyUi = (() => {
     const paletteFilter = primary && tab === 'public' ? new URLSearchParams(location.search).get('palette') : null;
     const lots = (data[tab === 'mine' ? 'mine' : 'lots'] || []).filter(lot => !paletteFilter || lot.paletteId === paletteFilter);
     if (paletteFilter) accountContent.innerHTML += `<p>${t('Related to your story', 'Passend zu deiner Geschichte')}: <strong>${esc(paletteName(paletteFilter))}</strong> <a href="/auctions" data-page>${t('Show all auctions', 'Alle Auktionen anzeigen')} →</a></p>`;
-    accountContent.innerHTML += lots.length ? `<div class="economy-grid">${lots.map(lot => lotCard(lot, primary)).join('')}</div>` : empty(tab === 'mine' ? t('Your auction history will appear here after your first bid or listing.', 'Nach deinem ersten Gebot oder Angebot erscheint hier dein Verlauf.') : t('No auctions right now. New lots appear as editions become available.', 'Aktuell keine Auktionen. Neue Lose erscheinen, sobald Ausgaben verfügbar sind.'));
+    let orderedLots = lots;
+    let hasPinned = false;
+    if (primary && tab === 'public' && !paletteFilter) {
+      // Pin the player's live participations and won-but-unopened palettes to
+      // the top; a won palette leaves the pinned group once it is revealed.
+      const mineById = new Map((data.mine || []).map(entry => [entry.id, entry]));
+      const pinned = [], rest = [];
+      for (const lot of lots) (mineById.has(lot.id) ? pinned : rest).push(mineById.get(lot.id) ?? lot);
+      orderedLots = [...wins, ...pinned, ...rest];
+      hasPinned = wins.length > 0 || pinned.length > 0;
+    }
+    if (orderedLots.length) {
+      if (hasPinned) accountContent.innerHTML += `<p class="eyebrow">${t('Your live bids and wins', 'Deine Gebote und Gewinne')}</p>`;
+      accountContent.innerHTML += `<div class="economy-grid">${orderedLots.map(lot => lotCard(lot, primary)).join('')}</div>`;
+    } else accountContent.innerHTML += empty(tab === 'mine' ? t('Your auction history will appear here after your first bid or listing.', 'Nach deinem ersten Gebot oder Angebot erscheint hier dein Verlauf.') : t('No auctions right now. New lots appear as editions become available.', 'Aktuell keine Auktionen. Neue Lose erscheinen, sobald Ausgaben verfügbar sind.'));
     if (tab === 'mine') accountContent.innerHTML += infoTip(t('Shows up to 100 recent auctions, with active auctions first.', 'Zeigt bis zu 100 aktuelle Auktionen, laufende Auktionen zuerst.'), t('History limits', 'Verlaufslimit'));
   }
   function bidForm(lot, primary) {

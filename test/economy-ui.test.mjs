@@ -61,6 +61,44 @@ test('inventory cards show the market value with a delta badge when the market i
   assert.doesNotMatch(unpriced, /market-delta/);
 });
 
+test('lot cards mark leading bids green and overbid red on the public board', () => {
+  const context = vm.createContext({ economyFlags: { paletteAuctions: true }, account: null, tab: 'public',
+    data: { mine: [] }, t: en => en, esc: String, name: lot => lot.name, status: () => 'Active',
+    justizEuro: value => `J€ ${value}`, bidFacts: () => '', paletteArtwork: () => '<div class="palette-artwork"></div>',
+    categoryName: () => 'Other' });
+  vm.runInContext(extract(uiSource, '  function lotCard(', '  function render('), context);
+  vm.runInContext(`data = { mine: [{ id: 'l1', leading: true }, { id: 'l2', leading: false }] }`, context);
+  const lead = vm.runInContext(`lotCard({ id: 'l1', name: 'Lead', status: 'active', leading: true }, true)`, context);
+  assert.match(lead, /economy-lot is-leading/);
+  assert.match(lead, /You lead/);
+  const outbid = vm.runInContext(`lotCard({ id: 'l2', name: 'Outbid', status: 'active', leading: false }, true)`, context);
+  assert.match(outbid, /economy-lot is-outbid/);
+  assert.match(outbid, /Outbid/);
+  const unplayed = vm.runInContext(`lotCard({ id: 'l3', name: 'Unplayed', status: 'active' }, true)`, context);
+  assert.doesNotMatch(unplayed, /is-leading|is-outbid|economy-outcome/);
+});
+
+test('live auctions pin bids and won-unopened palettes to the top of the board', () => {
+  const won = { id: 'won', status: 'ended', won: true, revealAvailable: true, highestBid: 30, name: 'Won', paletteId: 'fundkiste', reserve: 10, currentBid: 30, bidCount: 2, requiredLevel: 1 };
+  const leadMine = { id: 'lead', status: 'active', leading: true, revealAvailable: false, highestBid: 12, name: 'Lead', paletteId: 'fundkiste', reserve: 10, currentBid: 12, bidCount: 1, requiredLevel: 1 };
+  const outbidMine = { id: 'outbid', status: 'active', leading: false, revealAvailable: false, highestBid: 5, name: 'Outbid', paletteId: 'fundkiste', reserve: 10, currentBid: 9, bidCount: 2, requiredLevel: 1 };
+  const publicLot = id => ({ id, status: 'active', name: id, paletteId: 'fundkiste', reserve: 10, currentBid: null, bidCount: 0, requiredLevel: 1 });
+  const context = vm.createContext({ economyFlags: { paletteAuctions: true }, account: null, accountContent: { innerHTML: '' },
+    currentAccountPage: '/auctions', tab: 'public', routes: { '/auctions': 'paletteAuctions' }, location: { search: '' },
+    data: { lots: [publicLot('plain'), publicLot('lead'), publicLot('outbid'), publicLot('other')], mine: [won, leadMine, outbidMine] },
+    t: en => en, number: String, esc: String, justizEuro: value => `J€ ${value}`, paletteName: String,
+    pageHeading: heading => `<h>${heading}</h>`, tabs: () => '', empty: text => `[${text}]`, loginNotice: () => '',
+    URLSearchParams, infoTip: text => `<span class="info-tip">${text}</span>`,
+    lotCard: lot => `<article data-id="${lot.id}" data-reveal="${!!lot.revealAvailable}"></article>` });
+  vm.runInContext(extract(uiSource, '  function render(', '  function bidForm('), context);
+  vm.runInContext('render()', context);
+  const html = context.accountContent.innerHTML;
+  const order = [...html.matchAll(/<article data-id="([^"]+)"/g)].map(match => match[1]);
+  assert.deepEqual(order, ['won', 'lead', 'outbid', 'plain', 'other']);
+  assert.match(html, /Your live bids and wins/);
+  assert.match(html, /data-reveal="true"/);
+});
+
 test('auction bid history is chronological and marks the signed-in player as chat bubbles', () => {
   const context = vm.createContext({ account: { id: 'mine' }, t: en => en, esc: String,
     justizEuro: value => `J€ ${value}`, date: String });
@@ -211,6 +249,9 @@ test('progression terminal state and active economy routes remain in syntax veri
   const index = await readFile(new URL('../dist/index.html', import.meta.url), 'utf8');
   for (const route of ['/auctions', '/marketplace', '/market']) assert.ok(index.includes(`href="${route}"`));
   assert.ok(!index.includes('href="/news"'));
+  assert.match(index, /class="nav-group"[\s\S]*href="\/"[\s\S]*href="\/inventory"[\s\S]*class="nav-group nav-group-account"[\s\S]*href="\/leaderboard"[\s\S]*id="header-auth"[\s\S]*href="\/admin"/);
+  assert.match(index, /class="sidebar-toggle"[\s\S]*aria-controls="site-menu"[\s\S]*aria-expanded="false"/);
+  assert.match(index, /id="notification-button"[\s\S]*class="notification-badge"[\s\S]*id="notification-panel"[\s\S]*id="notification-toasts"/);
   assert.match(index, /JUSTIZGUESSR is a fictional game/);
   assert.match(index, /No real money is used/);
 });
