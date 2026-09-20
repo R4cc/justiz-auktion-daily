@@ -94,7 +94,7 @@ function updateNavigation() {
   }
   const auth = document.querySelector('#header-auth');
   auth.href = account ? '/profile' : '/login';
-  auth.textContent = account ? `${account.username} · ${justizEuro(account.tokens)}` : t('Log in / Register', 'Anmelden / Registrieren');
+  auth.textContent = account ? account.username : t('Log in / Register', 'Anmelden / Registrieren');
   if (auth.pathname === location.pathname) auth.setAttribute('aria-current', 'page'); else auth.removeAttribute('aria-current');
   document.querySelector('[data-nav-label="play"]').textContent = t('Play', 'Spielen');
   document.querySelector('[data-nav-label="account"]').textContent = t('Account', 'Konto');
@@ -256,6 +256,14 @@ async function navigateAccountPage(path, push = true) {
 function pageHeading(title, text) {
   return `<header class="collection-heading"><div class="collection-heading-line"><h1 tabindex="-1">${title}</h1>${text ? infoTip(text) : ''}</div></header>`;
 }
+function economyOverviewMarkup() {
+  if (!account) return '';
+  return `<section class="economy-overview" aria-label="${t('Economy overview', 'Wirtschaftsübersicht')}">
+    <div class="economy-overview-primary"><span>${t('AVAILABLE J€', 'VERFÜGBARE J€')}</span><strong>${justizEuro(account.tokens)}</strong></div>
+    <div><span>${t('ACTIVE BIDS', 'AKTIVE GEBOTE')}</span><strong>${number(account.activeBids || 0)}</strong></div>
+    <div><span>${t('INVENTORY VALUE', 'INVENTARWERT')}</span><strong>${justizEuro(account.inventoryMarketValue || 0)}</strong></div>
+  </section>`;
+}
 function loginNotice(subject) {
   return `<section class="collection-empty"><span aria-hidden="true">◇</span><h2>${t(`Log in to view your ${subject}.`, subject === 'inventory' ? 'Melde dich an, um dein Inventar zu sehen.' : 'Melde dich an, um dein Profil zu sehen.')}</h2><a class="primary-button" href="/login" data-page>${t('Log in', 'Anmelden')}</a></section>`;
 }
@@ -310,7 +318,7 @@ function groupedInventory(items) {
   return [...groups.values()];
 }
 function renderInventory() {
-  accountContent.innerHTML = pageHeading(t('Inventory', 'Inventar'), t('List items on the marketplace or keep them in your collection.', 'Biete Gegenstände auf dem Marktplatz an oder behalte sie in deiner Sammlung.'));
+  accountContent.innerHTML = pageHeading(t('Inventory', 'Inventar'), t('List items on the marketplace or keep them in your collection.', 'Biete Gegenstände auf dem Marktplatz an oder behalte sie in deiner Sammlung.')) + economyOverviewMarkup();
   if (!account) { accountContent.innerHTML += loginNotice('inventory'); return; }
   const filtered = groupedInventory(accountItems.filter(item => accountFilter === 'all' || item.rarity === accountFilter));
   accountInventoryPage = Math.min(accountInventoryPage, Math.max(0, Math.ceil(filtered.length / 24) - 1));

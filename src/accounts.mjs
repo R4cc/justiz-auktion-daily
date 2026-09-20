@@ -347,11 +347,26 @@ export class Accounts {
     const game = db.prepare(`SELECT payload FROM account_games WHERE user_id = ? AND date = ? AND mode = 'daily'
       ORDER BY rowid DESC LIMIT 1`).get(userId, day(this.now()));
     const run = game ? JSON.parse(game.payload) : null;
+    const indexes = marketIndexes(db, this.now());
+    const inventoryMarketValue = db.prepare(`SELECT item FROM inventory WHERE user_id = ? AND sold_at IS NULL`)
+      .all(userId).reduce((total, row) => total + estimatedValueTokens(currentItemValue(JSON.parse(row.item)), indexes), 0);
+    const hasTable = name => Boolean(db.prepare(`SELECT 1 FROM sqlite_schema WHERE type = 'table' AND name = ?`).get(name));
+    let activeBids = 0;
+    if (hasTable('primary_palette_auctions') && hasTable('primary_palette_bids')) {
+      activeBids += db.prepare(`SELECT COUNT(*) AS count FROM primary_palette_auctions a
+        WHERE a.status = 'active' AND a.ends_at > ? AND EXISTS
+        (SELECT 1 FROM primary_palette_bids b WHERE b.auction_id = a.id AND b.bidder_id = ?)`).get(this.now(), userId).count;
+    }
+    if (hasTable('resale_auctions') && hasTable('resale_bids')) {
+      activeBids += db.prepare(`SELECT COUNT(*) AS count FROM resale_auctions a
+        WHERE a.status = 'active' AND a.ends_at > ? AND EXISTS
+        (SELECT 1 FROM resale_bids b WHERE b.auction_id = a.id AND b.bidder_id = ?)`).get(this.now(), userId).count;
+    }
     const daily = { status: run?.complete ? 'completed' : run?.answers.length ? 'in_progress' : 'not_started',
       completedRounds: run?.answers.length || 0,
       score: run?.complete ? run.answers.reduce((total, guess, i) => total + scoreGuess(guess, run.auctions[i].actualBid), 0) : null };
     return { inventoryValueEur: inventory.cents / 100, accountValueEur: inventory.cents / 100,
-      itemCount: inventory.itemCount, daily };
+      inventoryMarketValue, activeBids, itemCount: inventory.itemCount, daily };
   }
   leaderboard() {
     return this.db(db => {

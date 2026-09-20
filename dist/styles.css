@@ -820,8 +820,15 @@ button:focus-visible, a:focus-visible { outline: 3px solid var(--red); outline-o
 .economy-bid strong { font-size: 22px; }
 .economy-bid span, .economy-countdown { font: 12px 'DM Mono', monospace; }
 .economy-outcome { font-weight: 800; color: #bb491d; }
-.economy-wallet { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 16px; padding: 20px 24px; background: #e8ebdd; border-radius: 12px; font-weight: 800; }
-.economy-wallet a, .economy-news a { color: var(--ink); }
+.economy-overview { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); margin: 0 0 30px; overflow: hidden; border: 1px solid var(--line); border-radius: 14px; background: #fffcf4; box-shadow: 0 5px 0 #183e360c; }
+.economy-overview > div { display: grid; min-width: 0; gap: 7px; padding: 20px 24px; border-left: 1px solid var(--line); }
+.economy-overview > div:first-child { border-left: 0; }
+.economy-overview span { color: var(--muted); font: 700 10px/1.2 'DM Mono', monospace; letter-spacing: .1em; }
+.economy-overview strong { overflow: hidden; color: var(--ink); font-size: clamp(20px, 2.4vw, 30px); line-height: 1.1; text-overflow: ellipsis; white-space: nowrap; }
+.economy-overview .economy-overview-primary { background: var(--ink); }
+.economy-overview .economy-overview-primary span { color: #d4ddd4; }
+.economy-overview .economy-overview-primary strong { color: var(--paper); }
+.economy-news a { color: var(--ink); }
 .economy-tabs { display: flex; gap: 8px; margin: 26px 0; }
 .economy-tabs button, .market-categories button { border: 1px solid var(--line); border-radius: 10px; background: transparent; padding: 12px 18px; color: var(--ink); cursor: pointer; font: inherit; font-weight: 700; }
 .economy-tabs [aria-pressed="true"], .market-categories [aria-pressed="true"] { background: var(--ink); color: var(--paper); }
@@ -930,7 +937,7 @@ button:focus-visible, a:focus-visible { outline: 3px solid var(--red); outline-o
   .market-categories { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .economy-dialog-content { padding: 22px; }
   .economy-dialog .inventory-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .economy-wallet { padding: 18px; }
+  .economy-overview > div { padding: 17px 18px; }
   .auction-room { grid-template-columns: 1fr; }
   .auction-room-media { padding: 22px; }
   .auction-room-main-image { min-height: 220px; }
@@ -999,6 +1006,9 @@ button:focus-visible, a:focus-visible { outline: 3px solid var(--red); outline-o
 @media (max-width: 700px) {
   .economy-tabs { flex-wrap: wrap; }
   .my-bids-board { padding: 18px; }
+  .economy-overview { grid-template-columns: 1fr; }
+  .economy-overview > div { border-left: 0; border-top: 1px solid var(--line); }
+  .economy-overview > div:first-child { border-top: 0; }
 }
 
 /* Primary navigation: catalogue sidebar on wide screens, drawer on small screens. */

@@ -150,6 +150,7 @@ test('My bids discovers won and lost lots, settles due rewards once and keeps hi
   const lot = listPaletteAuctions(f.dir, { now: day })[0];
   bidOnPaletteAuction(f.dir, f.user('seller'), lot.id, lot.reserve, { now: day });
   bidOnPaletteAuction(f.dir, f.user('buyer'), lot.id, lot.reserve + 1, { now: day });
+  assert.equal(f.accounts.profile(f.user('buyer')).activeBids, 1);
   const mine = paletteAuctionsByUser(f.dir, f.user('buyer'), { now: day });
   assert.equal(mine[0].leading, true); assert.equal(mine[0].highestBid, lot.reserve + 1);
   assert.equal(mine[0].revealAvailable, false);

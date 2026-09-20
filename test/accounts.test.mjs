@@ -67,6 +67,8 @@ test('account and friend euro values count retained copies, exclude sold items a
   const catalog = caseCatalog(lots.slice(0, 5).map(item => ({ ...item, currentBid: 123.45 })));
   const item = service.openCase(admin, catalog, 'fundkiste', 'value-request-0001');
   assert.equal(service.profile(admin).accountValueEur, 123.45);
+  assert.equal(service.profile(admin).inventoryMarketValue, 123);
+  assert.equal(service.profile(admin).activeBids, 0);
   nextDay();
   assert.equal(service.friends(friend).friends[0].daily.score, null);
   assert.equal(service.friends(friend).friends[0].daily.status, 'not_started');

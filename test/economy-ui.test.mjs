@@ -61,6 +61,20 @@ test('inventory cards show the market value with a delta badge when the market i
   assert.doesNotMatch(unpriced, /market-delta/);
 });
 
+test('economy overview prominently shows J€, active bids and inventory value', () => {
+  const context = vm.createContext({ account: { tokens: 1319, activeBids: 3, inventoryMarketValue: 2840 },
+    t: en => en, number: String, justizEuro: value => `J€ ${value}` });
+  vm.runInContext(extract(accountSource, 'function economyOverviewMarkup(', 'function loginNotice('), context);
+  const markup = vm.runInContext('economyOverviewMarkup()', context);
+  assert.match(markup, /economy-overview-primary/);
+  assert.match(markup, /AVAILABLE J€/);
+  assert.match(markup, /J€ 1319/);
+  assert.match(markup, /ACTIVE BIDS[\s\S]*>3</);
+  assert.match(markup, /INVENTORY VALUE[\s\S]*J€ 2840/);
+  assert.match(accountSource, /renderInventory\(\)[\s\S]*economyOverviewMarkup\(\)/);
+  assert.equal((uiSource.match(/economyOverviewMarkup\(\)/g) || []).length, 2);
+});
+
 test('lot cards mark leading bids green and overbid red on the public board', () => {
   const context = vm.createContext({ economyFlags: { paletteAuctions: true }, account: null, tab: 'public',
     data: { mine: [] }, t: en => en, esc: String, name: lot => lot.name, status: () => 'Active',
@@ -97,7 +111,8 @@ test('primary auction board separates My bids above all other live auctions', ()
     currentAccountPage: '/auctions', tab: 'public', routes: { '/auctions': 'paletteAuctions' }, location: { search: '' },
     data: { lots: [publicLot('plain'), publicLot('lead'), publicLot('outbid'), publicLot('other')], mine: [won, leadMine, outbidMine] },
     t: en => en, number: String, esc: String, justizEuro: value => `J€ ${value}`, paletteName: String,
-    pageHeading: heading => `<h>${heading}</h>`, tabs: () => '', empty: text => `[${text}]`, loginNotice: () => '',
+    pageHeading: heading => `<h>${heading}</h>`, economyOverviewMarkup: () => '<section class="economy-overview"></section>',
+    tabs: () => '', empty: text => `[${text}]`, loginNotice: () => '',
     URLSearchParams, infoTip: text => `<span class="info-tip">${text}</span>`,
     lotCard: lot => `<article data-id="${lot.id}" data-reveal="${!!lot.revealAvailable}"></article>` });
   vm.runInContext(extract(uiSource, '  function render(', '  function bidForm('), context);
