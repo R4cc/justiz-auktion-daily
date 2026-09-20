@@ -65,6 +65,12 @@ export function ensurePaletteAuctionSchema(db, now = Date.now()) {
   ) STRICT`);
   db.exec(`CREATE INDEX IF NOT EXISTS primary_palette_auctions_active
     ON primary_palette_auctions(status, ends_at)`);
+  // Idempotent column migration: databases created before reveal tracking
+  // learn the winner-side marker that closes the reveal presentation.
+  const columns = db.prepare('PRAGMA table_info(primary_palette_auctions)').all().map(column => column.name);
+  if (!columns.includes('revealed_at')) {
+    db.exec('ALTER TABLE primary_palette_auctions ADD COLUMN revealed_at INTEGER NULL');
+  }
   db.exec(`CREATE TABLE IF NOT EXISTS primary_palette_rewards (
     auction_id TEXT NOT NULL REFERENCES primary_palette_auctions(id),
     position INTEGER NOT NULL CHECK(position BETWEEN 0 AND 2),
@@ -357,7 +363,11 @@ export function paletteAuctionsByUser(dataDir, user, { now = Date.now(), limit =
       const won = auction.winner_id === user.id;
       return { ...serializePublicAuction(db, auction), highestBid: row.highest_bid,
         leading: auction.status === 'active' && auction.current_bidder_id === user.id,
-        led: true, won, revealAvailable: won && auction.settled_at !== null };
+        led: true, won,
+        // The unbox is a one-time presentation: after the winner's first
+        // rewards retrieval it stops being advertised (the finds themselves
+        // were already minted into inventory at settlement).
+        revealAvailable: won && auction.settled_at !== null && auction.revealed_at === null };
     });
   }));
 }
@@ -366,7 +376,9 @@ export function paletteAuctionsByUser(dataDir, user, { now = Date.now(), limit =
 // database state (banned users are out), refuses before the deadline without
 // revealing anything, settles if needed, and returns the same three original
 // historical snapshots on every call — later resale of a reward changes
-// ownership, never this reveal. Retrieval never mints or debits anything.
+// ownership, never this reveal. Retrieval never mints or debits anything;
+// the first retrieval stamps revealed_at so the winner's board stops
+// advertising the unbox (the rewards themselves were minted at settlement).
 export function getPaletteAuctionRewards(dataDir, user, auctionId, { now = Date.now() } = {}) {
   const needsSettlement = withDatabase(dataDir, db => {
     ensurePaletteAuctionSchema(db, now);
@@ -376,12 +388,16 @@ export function getPaletteAuctionRewards(dataDir, user, auctionId, { now = Date.
     return row.settled_at === null;
   });
   if (needsSettlement) settlePaletteAuction(dataDir, auctionId, { now });
-  return withDatabase(dataDir, db => {
+  return withDatabase(dataDir, db => transaction(db, () => {
     ensurePaletteAuctionSchema(db, now);
     const row = loadAuction(db, auctionId);
     // Non-winners (including admins and the no-bid case) get the same
     // generic response; existence of rewards is not confirmed to them.
     if (!row.winner_id || row.winner_id !== user.id) fail('palette_rewards_not_found', 404);
+    db.prepare('UPDATE primary_palette_auctions SET revealed_at = ? WHERE id = ? AND revealed_at IS NULL')
+      .run(now, row.id);
+    // The persisted first-reveal stamp keeps repeat responses byte-stable.
+    const revealedAt = db.prepare('SELECT revealed_at FROM primary_palette_auctions WHERE id = ?').get(row.id).revealed_at;
     const rewards = db.prepare(`SELECT position, inventory_id, item_json FROM primary_palette_rewards
       WHERE auction_id = ? ORDER BY position`).all(row.id);
     if (rewards.length !== 3) fail('palette_auction_inconsistent', 500);
@@ -391,6 +407,6 @@ export function getPaletteAuctionRewards(dataDir, user, auctionId, { now = Date.
     const reveal = rewards.map(reward => ({ position: reward.position, inventoryId: reward.inventory_id,
       item: composeRewardItem(reward.item_json, row, reward, row.current_bid) }));
     return { auctionId: row.id, editionId: row.edition_id, winnerId: row.winner_id,
-      settledAt: row.settled_at, bundleCostTokens: row.current_bid, rewards: reveal };
-  });
+      settledAt: row.settled_at, revealedAt, bundleCostTokens: row.current_bid, rewards: reveal };
+  }));
 }

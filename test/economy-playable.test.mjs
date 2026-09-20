@@ -157,7 +157,14 @@ test('My bids discovers won and lost lots, settles due rewards once and keeps hi
   closeDataStore(f.dir);
   const result = getPaletteAuctionRewards(f.dir, f.user('buyer'), lot.id, { now: day + hour });
   assert.equal(result.rewards.length, 3); assert.equal(count(f, 'inventory'), 3);
+  assert.equal(result.revealedAt, day + hour);
   assert.equal(xp(f, 'buyer'), 0); assert.equal(xp(f), 0);
+  // The unbox is a one-time presentation: the first retrieval marks it seen,
+  // the board stops advertising it and repeat calls stay reward-identical.
+  const seen = paletteAuctionsByUser(f.dir, f.user('buyer'), { now: day + hour + 1000 });
+  assert.equal(seen[0].won, true); assert.equal(seen[0].revealAvailable, false);
+  assert.deepEqual(getPaletteAuctionRewards(f.dir, f.user('buyer'), lot.id, { now: day + hour + 2000 }).rewards, result.rewards);
+  assert.equal(count(f, 'inventory'), 3);
 });
 
 test('Daily gives 150 XP on completion exactly once even when Higher-or-Lower took the token reward', async t => {
