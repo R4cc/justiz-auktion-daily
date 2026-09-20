@@ -78,26 +78,22 @@ test('lot cards mark leading bids green and overbid red on the public board', ()
   assert.doesNotMatch(unplayed, /is-leading|is-outbid|economy-outcome/);
 });
 
-test('My bids keeps bidder-state borders and places My wins in the tab row', () => {
+test('merged My bids keeps bidder-state borders without a separate primary tab', () => {
   const context = vm.createContext({ economyFlags: { paletteAuctions: true }, account: null, tab: 'mine',
     data: { mine: [{ id: 'l1', leading: true }] }, t: en => en, esc: String, name: lot => lot.name,
     status: () => 'Active', justizEuro: value => `J€ ${value}`, bidFacts: () => '',
     paletteArtwork: () => '<div class="palette-artwork"></div>', categoryName: () => 'Other' });
-  vm.runInContext(extract(uiSource, '  function tabs(', '  function bidFacts('), context);
   vm.runInContext(extract(uiSource, '  function lotCard(', '  function render('), context);
   const lead = vm.runInContext(`lotCard({ id: 'l1', name: 'Lead', status: 'active', leading: true, highestBid: 12 }, true)`, context);
   assert.match(lead, /economy-lot is-leading/);
-  const controls = vm.runInContext(`tabs(true, [{ id: 'won' }])`, context);
-  assert.match(controls, /economy-wins-tab/);
-  assert.match(controls, /My wins · 1/);
 });
 
-test('live auctions pin bids and won-unopened palettes to the top of the board', () => {
+test('primary auction board separates My bids above all other live auctions', () => {
   const won = { id: 'won', status: 'ended', won: true, revealAvailable: true, highestBid: 30, name: 'Won', paletteId: 'fundkiste', reserve: 10, currentBid: 30, bidCount: 2, requiredLevel: 1 };
   const leadMine = { id: 'lead', status: 'active', leading: true, revealAvailable: false, highestBid: 12, name: 'Lead', paletteId: 'fundkiste', reserve: 10, currentBid: 12, bidCount: 1, requiredLevel: 1 };
   const outbidMine = { id: 'outbid', status: 'active', leading: false, revealAvailable: false, highestBid: 5, name: 'Outbid', paletteId: 'fundkiste', reserve: 10, currentBid: 9, bidCount: 2, requiredLevel: 1 };
   const publicLot = id => ({ id, status: 'active', name: id, paletteId: 'fundkiste', reserve: 10, currentBid: null, bidCount: 0, requiredLevel: 1 });
-  const context = vm.createContext({ economyFlags: { paletteAuctions: true }, account: null, accountContent: { innerHTML: '' },
+  const context = vm.createContext({ economyFlags: { paletteAuctions: true }, account: { tokens: 277, progression: { level: 2 } }, accountContent: { innerHTML: '' },
     currentAccountPage: '/auctions', tab: 'public', routes: { '/auctions': 'paletteAuctions' }, location: { search: '' },
     data: { lots: [publicLot('plain'), publicLot('lead'), publicLot('outbid'), publicLot('other')], mine: [won, leadMine, outbidMine] },
     t: en => en, number: String, esc: String, justizEuro: value => `J€ ${value}`, paletteName: String,
@@ -109,7 +105,10 @@ test('live auctions pin bids and won-unopened palettes to the top of the board',
   const html = context.accountContent.innerHTML;
   const order = [...html.matchAll(/<article data-id="([^"]+)"/g)].map(match => match[1]);
   assert.deepEqual(order, ['won', 'lead', 'outbid', 'plain', 'other']);
-  assert.match(html, /Your live bids and wins/);
+  assert.match(html, /my-bids-board/);
+  assert.match(html, /My bids/);
+  assert.match(html, /AUCTION FLOOR/);
+  assert.equal([...html.matchAll(/data-id="lead"/g)].length, 1);
   assert.match(html, /data-reveal="true"/);
 });
 

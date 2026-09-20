@@ -825,7 +825,15 @@ button:focus-visible, a:focus-visible { outline: 3px solid var(--red); outline-o
 .economy-tabs { display: flex; gap: 8px; margin: 26px 0; }
 .economy-tabs button, .market-categories button { border: 1px solid var(--line); border-radius: 10px; background: transparent; padding: 12px 18px; color: var(--ink); cursor: pointer; font: inherit; font-weight: 700; }
 .economy-tabs [aria-pressed="true"], .market-categories [aria-pressed="true"] { background: var(--ink); color: var(--paper); }
-.economy-tabs .economy-wins-tab { margin-left: auto; border-color: var(--red); background: var(--red); color: #fff; box-shadow: 0 4px 0 #8f2f16; }
+.my-bids-board { margin: 28px 0 38px; padding: 24px; border: 2px solid var(--ink); border-radius: 18px; background: #e8ebdd; box-shadow: 7px 8px 0 #183e3617; }
+.my-bids-board .economy-grid { margin-bottom: 0; }
+.auction-section-heading { display: flex; align-items: center; justify-content: space-between; gap: 20px; }
+.auction-section-heading .eyebrow { margin: 0 0 5px; }
+.auction-section-heading h2 { margin: 0; font-size: clamp(24px, 3vw, 34px); }
+.auction-section-heading > strong { display: grid; place-items: center; min-width: 42px; height: 42px; padding: 0 10px; border-radius: 50%; background: var(--ink); color: var(--paper); font: 700 13px 'DM Mono', monospace; }
+.live-auctions-heading { margin-top: 34px; padding-top: 28px; border-top: 1px solid var(--line); }
+.live-auctions-heading > strong { background: transparent; color: var(--ink); border: 1px solid var(--line); }
+.my-bids-empty { margin: 20px 0 0; color: var(--muted); }
 .economy-dialog { border: 0; border-radius: 18px; width: min(840px, calc(100vw - 28px)); max-height: calc(100dvh - 28px); background: var(--paper); color: var(--ink); padding: 0; }
 .economy-dialog::backdrop { background: #0c211dcc; }
 .economy-dialog-content { position: relative; padding: 32px; overflow-y: auto; max-height: calc(100dvh - 28px); }
@@ -990,7 +998,7 @@ button:focus-visible, a:focus-visible { outline: 3px solid var(--red); outline-o
 .economy-effects a:focus-visible, .home-auction-ticket:focus-visible { outline: 3px solid #bd4b25; outline-offset: 3px; }
 @media (max-width: 700px) {
   .economy-tabs { flex-wrap: wrap; }
-  .economy-tabs .economy-wins-tab { width: 100%; margin: 4px 0 0; }
+  .my-bids-board { padding: 18px; }
 }
 
 /* Primary navigation: catalogue sidebar on wide screens, drawer on small screens. */

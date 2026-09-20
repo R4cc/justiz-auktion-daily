@@ -196,7 +196,7 @@ test('bidding escrows like resale: first bid, outbid refund, raise difference, r
   assert.equal(tokensOf(service, bidder), wallet);
   assert.equal(tokensOf(service, rival), wallet - reserve - 100);
   const outbidNotice = notificationsForUser(dir, bidder.id, { now: day + 3000 });
-  assert.ok(outbidNotice.fresh.some(entry => entry.type === 'outbid' && entry.href === '/auctions?view=mine'));
+  assert.ok(outbidNotice.fresh.some(entry => entry.type === 'outbid' && entry.href === '/auctions'));
   const rejected = tokensOf(service, rival);
   assert.throws(() => bidOnPaletteAuction(dir, rival, lot.id, wallet + 1, { now: day + 4000 }), /insufficient_tokens/);
   assert.equal(tokensOf(service, rival), rejected);

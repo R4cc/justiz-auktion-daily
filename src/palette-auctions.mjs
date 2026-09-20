@@ -249,7 +249,7 @@ export function bidOnPaletteAuction(dataDir, user, auctionId, amount, { now = Da
     if (!raise && row.current_bidder_id !== null) {
       const snapshot = JSON.parse(row.public_snapshot_json);
       pushNotification(db, row.current_bidder_id, {
-        type: 'outbid', sourceKey: `palette:outbid:${row.id}:${bid.lastInsertRowid}`, href: '/auctions?view=mine',
+        type: 'outbid', sourceKey: `palette:outbid:${row.id}:${bid.lastInsertRowid}`, href: '/auctions',
         titleEn: 'You were outbid', titleDe: 'Du wurdest überboten',
         bodyEn: `${snapshot.name} is now at J€ ${amount}.`, bodyDe: `${snapshot.nameDe || snapshot.name} steht jetzt bei J€ ${amount}.`
       }, now);
@@ -305,7 +305,7 @@ function settleAuctionRow(db, row, now) {
     .run(now, row.id).changes) fail('palette_auction_inconsistent', 500);
   const snapshot = JSON.parse(row.public_snapshot_json);
   pushNotification(db, winnerId, {
-    type: 'won', sourceKey: `palette:won:${row.id}`, href: '/auctions?view=mine',
+    type: 'won', sourceKey: `palette:won:${row.id}`, href: '/auctions',
     titleEn: 'You won a Mystery Palette', titleDe: 'Du hast eine Mystery-Palette gewonnen',
     bodyEn: `${snapshot.name} is ready to reveal.`, bodyDe: `${snapshot.nameDe || snapshot.name} kann jetzt aufgedeckt werden.`
   }, now);
