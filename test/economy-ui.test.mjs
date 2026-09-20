@@ -110,6 +110,7 @@ test('mystery cards never read candidate items and resale media keeps its item p
   const markup = vm.runInContext('lotCard(lot, true) + auctionMedia(lot, true)', context);
   assert.match(markup, /palette-artwork/);
   assert.match(markup, /palette-seal/);
+  assert.match(markup, /<h2>Mystery palette<\/h2>/);
   assert.doesNotMatch(markup, /<img|Possible contents|possible finds/);
   assert.doesNotMatch(markup, /economy-incident|auction-case-label|auction-parody-label|PARODY CASE/);
   const resale = vm.runInContext(`auctionMedia({item:{title:'Camera',image:'/camera.jpg'}}, false)`, context);

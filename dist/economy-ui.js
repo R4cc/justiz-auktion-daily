@@ -147,7 +147,7 @@ window.economyUi = (() => {
     const mine = tab === 'mine';
     return `<article class="economy-lot"><div class="economy-lot-image">${primary ? paletteArtwork(lot) : image ? `<img src="${esc(image)}" alt="" loading="lazy">` : '<span aria-hidden="true">◇</span>'}
       ${primary ? '' : `<span class="economy-badge">${esc(categoryName(lot.item.marketCategory))}</span>`}</div>
-      <div class="economy-lot-body">${primary && !mine ? '' : `<h2>${esc(primary ? name(lot) : lot.item.title)}</h2>`}
+      <div class="economy-lot-body"><h2>${esc(primary ? name(lot) : lot.item.title)}</h2>
       ${primary ? `<div class="palette-seal" aria-hidden="true"><span>01 ◇</span><span>02 ◇</span><span>03 ◇</span></div>`
         : `<p>${t('Seller', 'Verkäufer')}: ${esc(lot.sellerUsername)}</p><p>${t('Estimated market value', 'Geschätzter Marktwert')}: ${tokens(lot.estimatedValueTokens)}</p>`}
       ${bidFacts(lot, primary)}
