@@ -825,6 +825,7 @@ button:focus-visible, a:focus-visible { outline: 3px solid var(--red); outline-o
 .economy-tabs { display: flex; gap: 8px; margin: 26px 0; }
 .economy-tabs button, .market-categories button { border: 1px solid var(--line); border-radius: 10px; background: transparent; padding: 12px 18px; color: var(--ink); cursor: pointer; font: inherit; font-weight: 700; }
 .economy-tabs [aria-pressed="true"], .market-categories [aria-pressed="true"] { background: var(--ink); color: var(--paper); }
+.economy-tabs .economy-wins-tab { margin-left: auto; border-color: var(--red); background: var(--red); color: #fff; box-shadow: 0 4px 0 #8f2f16; }
 .economy-dialog { border: 0; border-radius: 18px; width: min(840px, calc(100vw - 28px)); max-height: calc(100dvh - 28px); background: var(--paper); color: var(--ink); padding: 0; }
 .economy-dialog::backdrop { background: #0c211dcc; }
 .economy-dialog-content { position: relative; padding: 32px; overflow-y: auto; max-height: calc(100dvh - 28px); }
@@ -987,7 +988,10 @@ button:focus-visible, a:focus-visible { outline: 3px solid var(--red); outline-o
 .economy-lot-body > button { width: 100%; }
 .economy-dialog summary { cursor: pointer; padding: 12px 0; font-weight: 800; }
 .economy-effects a:focus-visible, .home-auction-ticket:focus-visible { outline: 3px solid #bd4b25; outline-offset: 3px; }
-@media (max-width: 700px) { .palette-win-banner .primary-button { width: 100%; } }
+@media (max-width: 700px) {
+  .economy-tabs { flex-wrap: wrap; }
+  .economy-tabs .economy-wins-tab { width: 100%; margin: 4px 0 0; }
+}
 
 /* Primary navigation: catalogue sidebar on wide screens, drawer on small screens. */
 :root { --sidebar-width: 252px; }

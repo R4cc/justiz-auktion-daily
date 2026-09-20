@@ -78,6 +78,20 @@ test('lot cards mark leading bids green and overbid red on the public board', ()
   assert.doesNotMatch(unplayed, /is-leading|is-outbid|economy-outcome/);
 });
 
+test('My bids keeps bidder-state borders and places My wins in the tab row', () => {
+  const context = vm.createContext({ economyFlags: { paletteAuctions: true }, account: null, tab: 'mine',
+    data: { mine: [{ id: 'l1', leading: true }] }, t: en => en, esc: String, name: lot => lot.name,
+    status: () => 'Active', justizEuro: value => `J€ ${value}`, bidFacts: () => '',
+    paletteArtwork: () => '<div class="palette-artwork"></div>', categoryName: () => 'Other' });
+  vm.runInContext(extract(uiSource, '  function tabs(', '  function bidFacts('), context);
+  vm.runInContext(extract(uiSource, '  function lotCard(', '  function render('), context);
+  const lead = vm.runInContext(`lotCard({ id: 'l1', name: 'Lead', status: 'active', leading: true, highestBid: 12 }, true)`, context);
+  assert.match(lead, /economy-lot is-leading/);
+  const controls = vm.runInContext(`tabs(true, [{ id: 'won' }])`, context);
+  assert.match(controls, /economy-wins-tab/);
+  assert.match(controls, /My wins · 1/);
+});
+
 test('live auctions pin bids and won-unopened palettes to the top of the board', () => {
   const won = { id: 'won', status: 'ended', won: true, revealAvailable: true, highestBid: 30, name: 'Won', paletteId: 'fundkiste', reserve: 10, currentBid: 30, bidCount: 2, requiredLevel: 1 };
   const leadMine = { id: 'lead', status: 'active', leading: true, revealAvailable: false, highestBid: 12, name: 'Lead', paletteId: 'fundkiste', reserve: 10, currentBid: 12, bidCount: 1, requiredLevel: 1 };

@@ -127,10 +127,11 @@ window.economyUi = (() => {
       }
     }
   }
-  function tabs(primary) {
+  function tabs(primary, wins = []) {
     return `<div class="economy-tabs" role="group" aria-label="${t('Auction view', 'Auktionsansicht')}">
       <button data-economy="tab" data-id="public" aria-pressed="${tab === 'public'}">${t('Live auctions', 'Laufende Auktionen')}</button>
-      <button data-economy="tab" data-id="mine" aria-pressed="${tab === 'mine'}">${primary ? t('My bids', 'Meine Gebote') : t('My listings', 'Meine Angebote')}</button></div>`;
+      <button data-economy="tab" data-id="mine" aria-pressed="${tab === 'mine'}">${primary ? t('My bids', 'Meine Gebote') : t('My listings', 'Meine Angebote')}</button>
+      ${primary && wins.length ? `<button class="economy-wins-tab" data-economy="tab" data-id="mine">${t('My wins', 'Meine Gewinne')} · ${wins.length} →</button>` : ''}</div>`;
   }
   function bidFacts(lot, primary) {
     return `<div class="economy-bid"><strong>${justizEuro(lot.currentBid ?? (primary ? lot.reserve : lot.startPrice))}</strong><span>${lot.currentBid === null ? t('Starting bid', 'Startgebot') : t('Current bid', 'Aktuelles Gebot')}</span></div>
@@ -144,7 +145,7 @@ window.economyUi = (() => {
       && account.tokens + (participation?.leading ? lot.currentBid : 0) >= minimum;
     const mine = tab === 'mine';
     // Green border while the player leads (or has won), red while overbid.
-    const borderState = !mine && primary && participation
+    const borderState = primary && participation
       ? participation.leading || (participation.won && lot.status !== 'active') ? ' is-leading'
         : lot.status === 'active' ? ' is-outbid' : ''
       : '';
@@ -170,9 +171,8 @@ window.economyUi = (() => {
       primary ? t('Bid on a sealed Mystery Palette. Win it, then reveal three finds. Play Daily and sell items to unlock more.', 'Biete auf eine versiegelte Mystery-Palette. Gewinne und entdecke drei Funde. Spiele Daily und verkaufe Lose für höhere Level.')
         : t('Real finds, live bids. Sell one item at a time — up to 5 active listings.', 'Echte Funde, laufende Gebote. Verkaufe einzelne Lose — höchstens 5 aktive Angebote.'));
     const wins = primary ? (data.mine || []).filter(lot => lot.revealAvailable) : [];
-    if (wins.length && tab === 'public') accountContent.innerHTML += `<section class="palette-win-banner"><h2>${t('Palettes ready to reveal', 'Paletten zum Aufdecken')} · ${wins.length}</h2><button class="primary-button" data-economy="tab" data-id="mine">${t('My wins', 'Meine Gewinne')} →</button></section>`;
     accountContent.innerHTML += `<div class="economy-wallet">${account ? `${justizEuro(account.tokens)} · ${t('Level', 'Level')} ${account.progression.level}` : `<a href="/login" data-page>${t('Log in to join the bidding', 'Zum Mitbieten anmelden')}</a>`}
-      ${primary ? `<a href="/" data-page>${t('Earn J€ and XP', 'J€ und XP verdienen')} →</a>` : `<a href="/inventory" data-page>${t('List an item', 'Gegenstand anbieten')} →</a>`}</div>${tabs(primary)}`;
+      ${primary ? `<a href="/" data-page>${t('Earn J€ and XP', 'J€ und XP verdienen')} →</a>` : `<a href="/inventory" data-page>${t('List an item', 'Gegenstand anbieten')} →</a>`}</div>${tabs(primary, wins)}`;
     if (tab === 'mine' && !account) { accountContent.innerHTML += loginNotice('profile'); return; }
     const paletteFilter = primary && tab === 'public' ? new URLSearchParams(location.search).get('palette') : null;
     const lots = (data[tab === 'mine' ? 'mine' : 'lots'] || []).filter(lot => !paletteFilter || lot.paletteId === paletteFilter);
