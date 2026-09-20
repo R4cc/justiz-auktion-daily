@@ -8,8 +8,8 @@ import { Accounts } from '../src/accounts.mjs';
 import { closeDataStore, upsertAuctions, withDatabase } from '../src/database.mjs';
 import { featureFlags } from '../src/features.mjs';
 import { loadPaletteCatalog } from '../src/palette-definitions.mjs';
-import { bidOnPaletteAuction, getPaletteAuctionRewards, listPaletteAuctions,
-  paletteAuctionsByUser, settleDuePaletteAuctions } from '../src/palette-auctions.mjs';
+import { bidOnPaletteAuction, createPaletteAuction, getPaletteAuctionRewards, listPaletteAuctions,
+  paletteAuctionsByUser, settleDuePaletteAuctions, PALETTE_ACTIVE_PER_EDITION } from '../src/palette-auctions.mjs';
 import { cancelListing, getResale, listItem, placeBid, settleAuction } from '../src/resale.mjs';
 import { NPC_BALANCE, NPC_BUYERS, NPC_COHORT_SIZE, npcValuation, seedNpcBuyers, tickNpcBuyers } from '../src/npc-buyers.mjs';
 import { PALETTE_DROP_PERIOD_MS, supplyPaletteAuctions, tickEconomy, startEconomyRuntime } from '../src/economy-runtime.mjs';
@@ -50,22 +50,25 @@ const count = (f, table) => f.sql(`SELECT COUNT(*) AS n FROM ${table}`)[0].n;
 const balance = (f, id) => f.sql('SELECT tokens FROM users WHERE id = ?', id)[0].tokens;
 const xp = (f, id = 'seller') => f.accounts.profile(f.user(id)).progression.xp;
 
-test('automatic supply creates one palette per three-hour window and survives restart', async t => {
+test('automatic supply fills the board with ten staggered lots and survives restart', async t => {
   const f = await fixture(t);
   saveNewsEvent(f.dir, { id: 'fixture-event', title: 'Fiction', body: 'Fiction', status: 'published', paletteIds: ['electronics-smuggling'] }, { now: day });
   supplyPaletteAuctions(f.dir, { now: day });
   const lots = listPaletteAuctions(f.dir, { now: day });
-  assert.equal(lots.length, 1);
-  const ids = lots.map(l => l.id).sort(), rewards = f.sql('SELECT * FROM primary_palette_rewards');
+  assert.equal(lots.length, 10);
+  const ends = lots.map(l => l.endsAt - day);
+  assert.deepEqual([...ends].sort((a, b) => a - b), ends);
+  assert.equal(new Set(ends).size, 10);
+  assert.ok(Math.max(...ends) - Math.min(...ends) >= PALETTE_DROP_PERIOD_MS * 9);
+  const ids = lots.map(l => l.id).sort();
   supplyPaletteAuctions(f.dir, { now: day + 30_000 }); closeDataStore(f.dir);
   supplyPaletteAuctions(f.dir, { now: day + 45_000 });
+  assert.equal(count(f, 'primary_palette_auctions'), 10);
   assert.deepEqual(listPaletteAuctions(f.dir, { now: day + 45_000 }).map(l => l.id).sort(), ids);
-  assert.deepEqual(f.sql('SELECT * FROM primary_palette_rewards'), rewards);
-  assert.equal(settleDuePaletteAuctions(f.dir, { now: day + hour }).settled, 1);
+  assert.equal(settleDuePaletteAuctions(f.dir, { now: day + hour }).settled, 9);
   assert.equal(settleDuePaletteAuctions(f.dir, { now: day + hour }).settled, 0);
-  supplyPaletteAuctions(f.dir, { now: day + hour }); assert.equal(count(f, 'primary_palette_auctions'), 1);
-  supplyPaletteAuctions(f.dir, { now: day + PALETTE_DROP_PERIOD_MS });
-  assert.equal(count(f, 'primary_palette_auctions'), 2);
+  supplyPaletteAuctions(f.dir, { now: day + hour });
+  assert.equal(listPaletteAuctions(f.dir, { now: day + hour }).length, 10);
   assert.equal(count(f, 'inventory'), 0);
 });
 
@@ -76,9 +79,10 @@ test('economy reset removes primary and resale auction state but keeps the share
   bidOnPaletteAuction(f.dir, f.user('buyer'), palette.id, palette.reserve, { now: day });
   f.listing('reset-resale-item');
   const editions = count(f, 'palette_editions');
+  const paletteLots = count(f, 'primary_palette_auctions');
 
   const reset = f.accounts.resetEconomy(f.user('seller'), 'RESET ECONOMY');
-  assert.equal(reset.paletteAuctionCount, 1); assert.equal(reset.resaleCount, 1);
+  assert.equal(reset.paletteAuctionCount, paletteLots); assert.equal(reset.resaleCount, 1);
   assert.equal(count(f, 'primary_palette_auctions'), 0);
   assert.equal(count(f, 'primary_palette_rewards'), 0);
   assert.equal(count(f, 'primary_palette_bids'), 0);
@@ -89,13 +93,14 @@ test('economy reset removes primary and resale auction state but keeps the share
   assert.ok(count(f, 'primary_palette_auctions') > 0);
 });
 
-test('supply skips unavailable editions and windows shorter than a complete hour', async t => {
+test('supply skips unavailable editions, caps concurrent lots per edition and honors edition windows', async t => {
   const f = await fixture(t);
   loadPaletteCatalog(f.dir, { now: day });
   f.mutate(`UPDATE palette_editions SET payload_json = json_set(payload_json, '$.available', 0) WHERE palette_id != 'fundkiste'`);
-  supplyPaletteAuctions(f.dir, { now: day }); assert.equal(count(f, 'primary_palette_auctions'), 1);
-  f.mutate('UPDATE palette_editions SET ends_at = ?', day + hour + 1000);
-  supplyPaletteAuctions(f.dir, { now: day + 2000 }); assert.equal(count(f, 'primary_palette_auctions'), 1);
+  supplyPaletteAuctions(f.dir, { now: day }); assert.equal(count(f, 'primary_palette_auctions'), PALETTE_ACTIVE_PER_EDITION);
+  const editionId = f.sql(`SELECT id FROM palette_editions WHERE palette_id = 'fundkiste'`)[0].id;
+  assert.throws(() => createPaletteAuction(f.dir, { editionId, requestId: 'window-overflow-test-01', endsAt: day + 13 * hour },
+    { now: day }), /palette_window_closes_early/);
   assert.equal(count(f, 'palette_editions'), 8); // no replacement category fabricated
 });
 

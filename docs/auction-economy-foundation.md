@@ -73,17 +73,23 @@ precedes runtime startup in `server.mjs`.
 - Primary sweep: bounded 100 by default (maximum 1000), independent transaction
   per lot; corrupt domain state is reported and other lots can settle.
 
-Primary supply creates **one global lot per three-hour UTC bucket**. Each lot
-runs for one hour, leaving a gap between normal drops. It loads/persists current
-base editions and considers only available frozen editions whose window fits the
-complete auction. A bucket-derived request ID prevents duplicates across ticks,
-restarts and concurrent runtimes; past buckets are never backfilled. At most one
-automatically supplied palette may be active at once.
+Primary supply keeps **around ten concurrent lots on the board**. It creates one
+global lot per six-minute UTC bucket (one hour divided by the target of ten), so
+lot ends stay evenly staggered — every lot ends one full hour after its bucket,
+never after its creation moment. It loads/persists current base editions and
+considers only available frozen editions whose window fits the complete auction.
+A bucket-derived request ID prevents duplicates across ticks, restarts and
+concurrent runtimes; the current bucket and the previous nine are retried
+idempotently on every tick (a fresh or restarted system fills the whole board at
+once), and older buckets are never backfilled. At most ten automatically supplied
+palettes may be active at once, and at most two of them per edition.
 
 Every creation calls `createPaletteAuction`. A trusted `automaticSupply` option
-checks global count and active edition under that domain's write transaction,
-preventing parallel schedulers from overfilling. Manual admin creation retains
-its existing behavior. Request ID is SHA-256 of `primary:<editionId>:<UTC-hour>`.
+checks the global target and the per-edition concurrency cap under that domain's
+write transaction, preventing parallel schedulers from overfilling; a saturated
+edition is skipped so the window can fall through to another theme. Manual admin
+creation retains its existing behavior. Request ID is SHA-256 of
+`primary:<editionId>:<UTC-hour>`.
 The unique creation receipt prevents restart rerolls and repeated generation in
 the same slot. The next UTC-hour slot may replace an expired lot. Availability,
 spread validation, frozen reserve formula, weights, duration and 3 draws remain

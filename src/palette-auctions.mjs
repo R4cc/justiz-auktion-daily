@@ -32,6 +32,12 @@ export { levelForXp, XP_LEVEL_LIMIT } from './progression.mjs';
 // account-api.mjs. The runtime supplies and settles lots. NPCs never bid here;
 // bid and auction cancellation remain deliberately unsupported.
 export const PALETTE_AUCTION_DURATION_MS = 3600_000;
+// The board targets ten concurrent sealed lots, refreshed by one drop window
+// every duration/target (six minutes, see economy-runtime) so ends stay
+// staggered. An edition holds at most two concurrent lots to keep the board
+// varied when fewer editions are available than the target.
+export const PALETTE_ACTIVE_TARGET = 10;
+export const PALETTE_ACTIVE_PER_EDITION = 2;
 const fail = (code, status) => { throw new AccountError(code, status); };
 
 export function ensurePaletteAuctionSchema(db, now = Date.now()) {
@@ -132,7 +138,7 @@ function drawReward(items, weights, random) {
 // Trusted, server-only lot creation. Deterministic on (requestId): a replay
 // returns the original lot unchanged — same draws, same reserve — even after
 // expiry; a conflicting editionId for the same requestId is rejected.
-export function createPaletteAuction(dataDir, { editionId, requestId }, { now = Date.now(), random = randomInt, automaticSupply = false } = {}) {
+export function createPaletteAuction(dataDir, { editionId, requestId, endsAt }, { now = Date.now(), random = randomInt, automaticSupply = false } = {}) {
   if (typeof requestId !== 'string' || !/^[a-zA-Z0-9-]{16,80}$/.test(requestId)) fail('invalid_request', 400);
   if (typeof editionId !== 'string' || !editionId) fail('invalid_request', 400);
   return withDatabase(dataDir, db => transaction(db, () => {
@@ -143,19 +149,25 @@ export function createPaletteAuction(dataDir, { editionId, requestId }, { now = 
       return serializePublicAuction(db, existing);
     }
     // Runtime-only policy checked under the same write lock as creation.
-    if (automaticSupply && (db.prepare(`SELECT COUNT(*) AS count FROM primary_palette_auctions
-      WHERE status = 'active' AND ends_at > ?`).get(now).count >= 1
-      || db.prepare(`SELECT 1 FROM primary_palette_auctions WHERE edition_id = ? AND status = 'active'
-        AND ends_at > ?`).get(editionId, now))) return null;
+    // A per-edition cap is reported as its own code so the supply loop can
+    // fall through to another edition instead of leaving the slot empty.
+    if (automaticSupply) {
+      if (db.prepare(`SELECT COUNT(*) AS count FROM primary_palette_auctions
+        WHERE status = 'active' AND ends_at > ?`).get(now).count >= PALETTE_ACTIVE_TARGET) return null;
+      if (db.prepare(`SELECT COUNT(*) AS count FROM primary_palette_auctions
+        WHERE edition_id = ? AND status = 'active' AND ends_at > ?`).get(editionId, now).count >= PALETTE_ACTIVE_PER_EDITION) fail('palette_edition_busy', 409);
+    }
     const edition = db.prepare('SELECT * FROM palette_editions WHERE id = ?').get(editionId);
     if (!edition) fail('palette_edition_not_found', 404);
     const payload = JSON.parse(edition.payload_json);
     if (!payload.available || !Array.isArray(payload.items) || payload.items.length < 5) fail('palette_edition_unavailable', 409);
     if (now < edition.starts_at || now >= edition.ends_at) fail('palette_edition_inactive', 409);
-    // Exactly one hour, never shortened at the end of a palette window: the
-    // whole auction must fit inside the edition's availability window.
-    const endsAt = now + PALETTE_AUCTION_DURATION_MS;
-    if (endsAt > edition.ends_at) fail('palette_window_closes_early', 409);
+    // Live lots run exactly one hour. Backfilled board lots keep the slot
+    // their drop window was assigned — derived from the window, never from
+    // the creation moment — so board ends stay staggered across restarts.
+    // Either way the whole auction must fit inside the edition's window.
+    const auctionEndsAt = Number.isSafeInteger(endsAt) && endsAt > now ? endsAt : now + PALETTE_AUCTION_DURATION_MS;
+    if (auctionEndsAt > edition.ends_at) fail('palette_window_closes_early', 409);
     // Recompute bundle pricing against the global unrounded indexes right
     // now; the frozen edition values are not trusted for the reserve.
     const pricing = bundleReferencePricing(payload.items,
@@ -169,7 +181,7 @@ export function createPaletteAuction(dataDir, { editionId, requestId }, { now = 
       (id, creation_request_id, edition_id, reserve, current_bid, current_bidder_id, status,
        started_at, ends_at, valuation_at, required_level, public_snapshot_json)
       VALUES (?, ?, ?, ?, NULL, NULL, 'active', ?, ?, ?, ?, ?)`)
-      .run(auctionId, requestId, editionId, reserve, now, endsAt, now,
+      .run(auctionId, requestId, editionId, reserve, now, auctionEndsAt, now,
         payload.requiredLevel, JSON.stringify(publicSnapshot(payload, auctionStory)));
     // Draw the three sealed rewards now, with replacement, and reserve their
     // inventory UUIDs. Nothing is minted yet and none of this is public.
