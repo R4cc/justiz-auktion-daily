@@ -77,6 +77,10 @@ function renderStaticUi() {
   document.querySelector('.daily-reset').setAttribute('aria-label', t('Time until the next daily game', 'Zeit bis zum nächsten Tagesspiel'));
   document.querySelector('.daily-reset > span').textContent = t('NEXT DAILY IN', 'NEUES DAILY IN');
   document.querySelector('[data-action="help"]').setAttribute('aria-label', t('Game rules', 'Spielregeln'));
+  const sidebarButton = document.querySelector('[data-action="sidebar"]');
+  if (sidebarButton) sidebarButton.setAttribute('aria-label', t(sidebarButton.getAttribute('aria-expanded') === 'true' ? 'Close navigation' : 'Open navigation', sidebarButton.getAttribute('aria-expanded') === 'true' ? 'Navigation schließen' : 'Navigation öffnen'));
+  const sidebarClose = document.querySelector('[data-action="sidebar-close"]');
+  if (sidebarClose) sidebarClose.setAttribute('aria-label', t('Close navigation', 'Navigation schließen'));
   document.querySelector('#help-dialog').innerHTML = `<form method="dialog">
     <button class="dialog-close" aria-label="${t('Close', 'Schließen')}">×</button>
     <h2>${t('Game rules', 'Spielregeln')}</h2>

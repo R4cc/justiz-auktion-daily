@@ -1,6 +1,7 @@
 let account = null, accountCatalog = null, accountItems = [], accountCodes = [], freshCodes = [];
 let accountFriends = { friends: [], date: '' }, accountAdmin = { playerCount: 0, users: [], grants: [], lastReset: null };
 let accountLeaderboard = { date: '', leaders: [] }, adminUserFilter = '';
+let accountNotifications = [], notificationUnreadCount = 0, notificationOwner = null, notificationTimer = null, notificationBusy = false, notificationRequest = 0;
 let accountAuctions = { query: '', page: 1, pages: 1, total: 0, auctions: [] }, auctionSearchTimer = null;
 const auctionReveal = document.createElement('dialog');
 auctionReveal.className = 'auction-reveal';
@@ -20,6 +21,10 @@ let currentAccountPage = null, accountVisit = 0, pageLoaded = false;
 const accountPaths = ['/auctions', '/marketplace', '/market', '/shop', '/inventory', '/profile', '/login', '/register', '/admin', '/leaderboard'];
 const accountPage = document.querySelector('#account-page');
 const accountContent = document.querySelector('#account-content');
+const notificationButton = document.querySelector('#notification-button');
+const notificationPanel = document.querySelector('#notification-panel');
+const notificationList = notificationPanel.querySelector('.notification-list');
+const notificationToasts = document.querySelector('#notification-toasts');
 const accountEscape = value => String(value ?? '').replace(/[&<>"']/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[char]);
 
 function accountError(code) {
@@ -79,9 +84,9 @@ async function accountApi(route, payload) {
   return result;
 }
 function updateNavigation() {
-  const labels = { '/': t('Play', 'Spielen'), '/shop': 'Shop', '/auctions': t('Auctions', 'Auktionen'), '/marketplace': t('Marketplace', 'Marktplatz'), '/market': t('Market', 'Markt'), '/inventory': t('Inventory', 'Inventar'), '/leaderboard': t('Leaderboard', 'Rangliste'), '/profile': t('Profile', 'Profil'), '/admin': 'Admin' };
+  const labels = { '/': 'Daily', '/shop': 'Shop', '/auctions': t('Auctions', 'Auktionen'), '/marketplace': t('Marketplace', 'Marktplatz'), '/market': t('Market', 'Markt'), '/inventory': t('Inventory', 'Inventar'), '/leaderboard': t('Leaderboard', 'Rangliste'), '/profile': t('Profile', 'Profil'), '/admin': 'Admin' };
   for (const link of document.querySelectorAll('.site-nav a')) {
-    link.textContent = labels[link.getAttribute('href')];
+    if (link.id !== 'header-auth') link.textContent = labels[link.getAttribute('href')];
     if (link.pathname === location.pathname) link.setAttribute('aria-current', 'page'); else link.removeAttribute('aria-current');
     if (link.dataset.feature) link.hidden = !economyFlags[link.dataset.feature];
     if (link.pathname === '/shop') link.hidden = Boolean(economyFlags.paletteAuctions);
@@ -90,7 +95,78 @@ function updateNavigation() {
   const auth = document.querySelector('#header-auth');
   auth.href = account ? '/profile' : '/login';
   auth.textContent = account ? `${account.username} · ${justizEuro(account.tokens)}` : t('Log in / Register', 'Anmelden / Registrieren');
+  if (auth.pathname === location.pathname) auth.setAttribute('aria-current', 'page'); else auth.removeAttribute('aria-current');
+  document.querySelector('[data-nav-label="play"]').textContent = t('Play', 'Spielen');
+  document.querySelector('[data-nav-label="account"]').textContent = t('Account', 'Konto');
   document.querySelector('.site-nav').setAttribute('aria-label', t('Main navigation', 'Hauptnavigation'));
+  notificationButton.hidden = !account;
+}
+
+const notificationCopy = entry => ({ title: t(entry.titleEn, entry.titleDe), body: t(entry.bodyEn, entry.bodyDe) });
+function updateNotificationBadge() {
+  const badge = notificationButton.querySelector('.notification-badge');
+  badge.textContent = notificationUnreadCount > 99 ? '99+' : String(notificationUnreadCount);
+  badge.hidden = notificationUnreadCount < 1;
+  notificationButton.setAttribute('aria-label', notificationUnreadCount
+    ? t(`Notifications, ${notificationUnreadCount} unread`, `Benachrichtigungen, ${notificationUnreadCount} ungelesen`)
+    : t('Notifications', 'Benachrichtigungen'));
+}
+function renderNotificationPanel() {
+  notificationPanel.querySelector('.eyebrow').textContent = t('INBOX', 'POSTEINGANG');
+  notificationPanel.querySelector('h2').textContent = t('Notifications', 'Benachrichtigungen');
+  notificationPanel.querySelector('[data-notification="close"]').setAttribute('aria-label', t('Close', 'Schließen'));
+  notificationList.innerHTML = accountNotifications.length ? accountNotifications.map(entry => {
+    const copy = notificationCopy(entry), tag = entry.href ? 'a' : 'article';
+    const link = entry.href ? ` href="${accountEscape(entry.href)}" data-page` : '';
+    return `<${tag} class="notification-entry${entry.readAt ? '' : ' is-unread'}"${link}><span class="notification-entry-dot" aria-hidden="true"></span><span><strong>${accountEscape(copy.title)}</strong><p>${accountEscape(copy.body)}</p><time datetime="${new Date(entry.createdAt).toISOString()}">${new Date(entry.createdAt).toLocaleString(uiLocale())}</time></span></${tag}>`;
+  }).join('') : `<p class="notification-empty">${t('Nothing new yet.', 'Noch nichts Neues.')}</p>`;
+  updateNotificationBadge();
+}
+function dismissNotificationToast(node) {
+  if (!node?.isConnected) return;
+  node.classList.add('is-leaving');
+  setTimeout(() => node.remove(), 220);
+}
+function showNotificationToast(entry) {
+  const copy = notificationCopy(entry);
+  const node = document.createElement('article');
+  node.className = 'notification-toast';
+  node.innerHTML = `${entry.href ? `<a href="${accountEscape(entry.href)}" data-page aria-label="${accountEscape(copy.title)}"></a>` : ''}<strong>${accountEscape(copy.title)}</strong><p>${accountEscape(copy.body)}</p><button type="button" data-notification="dismiss" aria-label="${t('Dismiss', 'Ausblenden')}">×</button>`;
+  notificationToasts.append(node);
+  setTimeout(() => dismissNotificationToast(node), 7000);
+}
+function closeNotificationPanel() {
+  notificationPanel.hidden = true;
+  notificationButton.setAttribute('aria-expanded', 'false');
+}
+async function loadNotifications(showFresh = true) {
+  const owner = account?.id;
+  if (!owner || notificationBusy) return;
+  const request = ++notificationRequest;
+  notificationBusy = true;
+  try {
+    const result = await accountApi('notifications');
+    if (request !== notificationRequest || account?.id !== owner) return;
+    accountNotifications = result.notifications || [];
+    notificationUnreadCount = result.unreadCount || 0;
+    renderNotificationPanel();
+    if (showFresh) for (const entry of result.fresh || []) showNotificationToast(entry);
+  } catch { /* Session refresh handles authentication failures elsewhere. */ }
+  finally { if (request === notificationRequest) notificationBusy = false; }
+}
+function startNotifications(user) {
+  if (!user) {
+    notificationRequest++; notificationBusy = false;
+    notificationOwner = null; accountNotifications = []; notificationUnreadCount = 0;
+    clearInterval(notificationTimer); notificationTimer = null; closeNotificationPanel(); updateNotificationBadge();
+    return;
+  }
+  if (notificationOwner === user.id) return;
+  notificationRequest++; notificationBusy = false;
+  notificationOwner = user.id;
+  clearInterval(notificationTimer);
+  loadNotifications(true);
+  notificationTimer = setInterval(() => { if (!document.hidden) loadNotifications(true); }, 30_000);
 }
 function giftToast(gifts) {
   const total = gifts.reduce((sum, gift) => sum + gift.amount, 0);
@@ -102,6 +178,7 @@ function updateAccount(user) {
   account = user;
   if (user?.gifts?.length) showToast(giftToast(user.gifts));
   updateNavigation();
+  startNotifications(user);
 }
 function updateAccountCatalog(catalog) {
   accountCatalog = catalog;
@@ -444,7 +521,33 @@ async function pullCase(visit) {
 document.addEventListener('click', event => {
   const link = event.target.closest('a[data-page]');
   if (!link || event.button !== 0 || event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) return;
-  event.preventDefault(); if (link.pathname === '/') renderStart(); else navigateAccountPage(link.pathname + link.search);
+  event.preventDefault();
+  dismissNotificationToast(link.closest('.notification-toast'));
+  closeNotificationPanel();
+  if (typeof closeSidebar === 'function') closeSidebar();
+  if (link.pathname === '/') renderStart(); else navigateAccountPage(link.pathname + link.search);
+});
+document.addEventListener('click', async event => {
+  const control = event.target.closest('[data-notification]');
+  if (!control) return;
+  const action = control.dataset.notification;
+  if (action === 'dismiss') { dismissNotificationToast(control.closest('.notification-toast')); return; }
+  if (action === 'close') { closeNotificationPanel(); notificationButton.focus({ preventScroll: true }); return; }
+  if (action !== 'toggle' || !account) return;
+  if (!notificationPanel.hidden) { closeNotificationPanel(); return; }
+  await loadNotifications(false);
+  notificationToasts.replaceChildren();
+  notificationPanel.hidden = false;
+  notificationButton.setAttribute('aria-expanded', 'true');
+  notificationPanel.querySelector('[data-notification="close"]').focus({ preventScroll: true });
+  if (notificationUnreadCount) {
+    try {
+      await accountApi('notifications/read', { ids: 'all' });
+      const readAt = Date.now();
+      accountNotifications = accountNotifications.map(entry => entry.readAt ? entry : { ...entry, readAt });
+      notificationUnreadCount = 0; renderNotificationPanel();
+    } catch { /* Keep the unread state so the action can be retried. */ }
+  }
 });
 window.addEventListener('popstate', () => { if (accountPaths.includes(location.pathname)) navigateAccountPage(location.pathname, false); else renderStart(); });
 document.addEventListener('click', async event => {
@@ -557,6 +660,7 @@ document.addEventListener('input', event => {
 });
 document.addEventListener('jg:language', () => {
   updateNavigation();
+  renderNotificationPanel();
   if (currentAccountPage && pageLoaded) {
     const inputs = [...accountContent.querySelectorAll('input')].map(input => ({ name: input.name, value: input.value }));
     renderAccountPage();

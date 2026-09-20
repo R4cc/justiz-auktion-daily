@@ -10,24 +10,51 @@
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
-    <link rel="stylesheet" href="/styles.css?v=20260920-2" />
+    <link rel="stylesheet" href="/styles.css?v=20260920-4" />
   </head>
   <body>
     <div class="paper-noise" aria-hidden="true"></div>
     <header class="site-header">
-      <button class="wordmark" type="button" data-action="home" aria-label="Home">
-        <span class="brand-symbol" aria-hidden="true">J<span>g.</span></span><span>JUSTIZGUESSR</span>
-      </button>
-      <div class="header-actions">
-        <span class="daily-reset"><span>NEXT DAILY IN</span><strong data-daily-reset>--:--:--</strong></span>
-        <select id="language-select" aria-label="Language"><option value="en">English</option><option value="de">Deutsch</option></select>
-        <button class="icon-button" type="button" data-action="help" aria-label="Game rules">?</button>
+      <div class="sidebar-head">
+        <button class="wordmark" type="button" data-action="home" aria-label="Home">
+          <span class="brand-symbol" aria-hidden="true">J<span>g.</span></span><span>JUSTIZGUESSR</span>
+        </button>
+        <button class="sidebar-toggle" type="button" data-action="sidebar" aria-controls="site-menu" aria-expanded="false" aria-label="Open navigation"><span></span><span></span><span></span></button>
       </div>
-      <nav class="site-nav" aria-label="Main navigation">
-        <a href="/" data-page>Play</a><a href="/auctions" data-feature="paletteAuctions" data-page hidden>Auctions</a><a href="/marketplace" data-feature="resales" data-page hidden>Marketplace</a><a href="/market" data-feature="market" data-page hidden>Market</a><a href="/inventory" data-page>Inventory</a><a href="/shop" data-page>Shop</a><a href="/leaderboard" data-page>Leaderboard</a><a href="/profile" data-page>Profile</a><a href="/admin" data-page hidden>Admin</a>
-      </nav>
-      <a id="header-auth" class="account-button" href="/login" data-page>Log in / Register</a>
+      <div class="sidebar-panel" id="site-menu">
+        <nav class="site-nav" aria-label="Main navigation">
+          <div class="nav-group">
+            <p class="nav-group-label" data-nav-label="play">Play</p>
+            <a href="/" data-page>Daily</a>
+            <a href="/auctions" data-feature="paletteAuctions" data-page hidden>Auctions</a>
+            <a href="/marketplace" data-feature="resales" data-page hidden>Marketplace</a>
+            <a href="/market" data-feature="market" data-page hidden>Market</a>
+            <a href="/inventory" data-page>Inventory</a>
+            <a href="/shop" data-page>Shop</a>
+          </div>
+          <div class="nav-group nav-group-account">
+            <p class="nav-group-label" data-nav-label="account">Account</p>
+            <a href="/leaderboard" data-page>Leaderboard</a>
+            <a id="header-auth" class="account-button" href="/login" data-page>Log in / Register</a>
+            <a href="/admin" data-page hidden>Admin</a>
+          </div>
+        </nav>
+        <div class="header-actions">
+          <span class="daily-reset"><span>NEXT DAILY IN</span><strong data-daily-reset>--:--:--</strong></span>
+          <div class="sidebar-settings">
+            <select id="language-select" aria-label="Language"><option value="en">English</option><option value="de">Deutsch</option></select>
+            <button id="notification-button" class="icon-button notification-button" type="button" data-notification="toggle" aria-controls="notification-panel" aria-expanded="false" aria-label="Notifications" hidden><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 9a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4"/></svg><span class="notification-badge" hidden>0</span></button>
+            <button class="icon-button" type="button" data-action="help" aria-label="Game rules">?</button>
+          </div>
+        </div>
+      </div>
     </header>
+    <button class="sidebar-backdrop" type="button" data-action="sidebar-close" aria-label="Close navigation" hidden></button>
+    <aside id="notification-panel" class="notification-panel" aria-labelledby="notification-title" hidden>
+      <header><div><p class="eyebrow">INBOX</p><h2 id="notification-title">Notifications</h2></div><button class="dialog-close" type="button" data-notification="close" aria-label="Close">×</button></header>
+      <div class="notification-list"></div>
+    </aside>
+    <div id="notification-toasts" class="notification-toasts" role="region" aria-label="New notifications" aria-live="polite"></div>
     <main id="app" aria-live="polite"></main>
     <main id="account-page" class="account-page" hidden><div id="account-content"></div></main>
     <footer class="site-disclaimer">
@@ -36,11 +63,11 @@
     </footer>
     <dialog id="help-dialog" class="help-dialog"></dialog>
     <div id="toast" class="toast" role="status" aria-live="polite"></div>
-    <script src="/i18n.js?v=20260920-2" defer></script>
+    <script src="/i18n.js?v=20260920-3" defer></script>
     <script src="/economy.js?v=20260919-2" defer></script>
-    <script src="/account.js?v=20260920-2" defer></script>
+    <script src="/account.js?v=20260920-4" defer></script>
     <script src="/economy-ui.js?v=20260920-2" defer></script>
     <script src="/higher-lower.js?v=20260920-1" defer></script>
-    <script src="/app.js?v=20260920-2" defer></script>
+    <script src="/app.js?v=20260920-4" defer></script>
   </body>
 </html>

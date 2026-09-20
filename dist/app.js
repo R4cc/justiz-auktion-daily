@@ -79,6 +79,9 @@ let gameMode = 'daily';
 const app = document.querySelector('#app');
 const helpDialog = document.querySelector('#help-dialog');
 const toast = document.querySelector('#toast');
+const sidebar = document.querySelector('.site-header');
+const sidebarToggle = document.querySelector('.sidebar-toggle');
+const sidebarBackdrop = document.querySelector('.sidebar-backdrop');
 const GAME_EPOCH = Date.UTC(2026, 0, 1);
 const SCORE_VERSION = 2;
 const initialUtcDate = new Date().toISOString().slice(0, 10);
@@ -88,6 +91,15 @@ let dailyLoadPromise = Promise.resolve();
 let galleryAuction = null;
 let galleryIndex = 0;
 const GUESS_TIME_LIMIT = 25_000;
+
+function setSidebar(open) {
+  sidebar.classList.toggle('is-open', open);
+  sidebarToggle.setAttribute('aria-expanded', String(open));
+  sidebarToggle.setAttribute('aria-label', t(open ? 'Close navigation' : 'Open navigation', open ? 'Navigation schließen' : 'Navigation öffnen'));
+  sidebarBackdrop.hidden = !open;
+  document.body.classList.toggle('sidebar-open', open);
+}
+function closeSidebar() { setSidebar(false); }
 let guessTimer = null;
 let guessDeadline = 0;
 
@@ -719,9 +731,12 @@ document.addEventListener('click', event => {
   if (action === 'next') nextRound();
   if (action === 'share') shareResult();
   if (action === 'copy') copyResult();
-  if (action === 'home') renderStart();
+  if (action === 'home') { closeSidebar(); renderStart(); }
   if (action === 'help') helpDialog.showModal();
+  if (action === 'sidebar') setSidebar(!sidebar.classList.contains('is-open'));
+  if (action === 'sidebar-close') closeSidebar();
 });
+
 // A click on the dark area around any open modal (the backdrop targets the
 // dialog element itself) closes it — the standard close flows stay intact.
 document.addEventListener('click', event => {
@@ -729,6 +744,8 @@ document.addEventListener('click', event => {
 });
 
 document.addEventListener('keydown', event => {
+  if (event.key === 'Escape' && !notificationPanel.hidden) { closeNotificationPanel(); notificationButton.focus(); return; }
+  if (event.key === 'Escape' && sidebar.classList.contains('is-open')) { closeSidebar(); sidebarToggle.focus(); return; }
   if (event.target.closest('dialog')) return;
   if (event.target.closest('.auction-image-wrap') && ['ArrowLeft', 'ArrowRight'].includes(event.key)) {
     event.preventDefault();

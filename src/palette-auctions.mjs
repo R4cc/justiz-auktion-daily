@@ -6,6 +6,7 @@ import { marketIndexAt } from './market.mjs';
 import { bundleReferencePricing, ensurePaletteEditionSchema } from './palette-definitions.mjs';
 import { paletteStoryForAuction } from './palette-stories.mjs';
 import { levelForXp } from './progression.mjs';
+import { pushNotification } from './notifications.mjs';
 
 // Re-exported for backwards compatibility with the pre-extraction imports;
 // the curve itself is owned by src/progression.mjs.
@@ -241,10 +242,18 @@ export function bidOnPaletteAuction(dataDir, user, auctionId, amount, { now = Da
       if (!previous || !Number.isSafeInteger(previous.tokens + row.current_bid)) fail('token_balance_limit', 409);
       db.prepare('UPDATE users SET tokens = tokens + ? WHERE id = ?').run(row.current_bid, row.current_bidder_id);
     }
-    db.prepare('INSERT INTO primary_palette_bids (auction_id, bidder_id, amount, created_at) VALUES (?, ?, ?, ?)')
+    const bid = db.prepare('INSERT INTO primary_palette_bids (auction_id, bidder_id, amount, created_at) VALUES (?, ?, ?, ?)')
       .run(row.id, user.id, amount, now);
     db.prepare('UPDATE primary_palette_auctions SET current_bid = ?, current_bidder_id = ? WHERE id = ?')
       .run(amount, user.id, row.id);
+    if (!raise && row.current_bidder_id !== null) {
+      const snapshot = JSON.parse(row.public_snapshot_json);
+      pushNotification(db, row.current_bidder_id, {
+        type: 'outbid', sourceKey: `palette:outbid:${row.id}:${bid.lastInsertRowid}`, href: '/auctions?view=mine',
+        titleEn: 'You were outbid', titleDe: 'Du wurdest überboten',
+        bodyEn: `${snapshot.name} is now at J€ ${amount}.`, bodyDe: `${snapshot.nameDe || snapshot.name} steht jetzt bei J€ ${amount}.`
+      }, now);
+    }
     return serializePublicAuction(db, db.prepare('SELECT * FROM primary_palette_auctions WHERE id = ?').get(row.id));
   }));
 }
@@ -294,6 +303,12 @@ function settleAuctionRow(db, row, now) {
   }
   if (!db.prepare('UPDATE primary_palette_auctions SET settled_at = ? WHERE id = ? AND settled_at IS NULL')
     .run(now, row.id).changes) fail('palette_auction_inconsistent', 500);
+  const snapshot = JSON.parse(row.public_snapshot_json);
+  pushNotification(db, winnerId, {
+    type: 'won', sourceKey: `palette:won:${row.id}`, href: '/auctions?view=mine',
+    titleEn: 'You won a Mystery Palette', titleDe: 'Du hast eine Mystery-Palette gewonnen',
+    bodyEn: `${snapshot.name} is ready to reveal.`, bodyDe: `${snapshot.nameDe || snapshot.name} kann jetzt aufgedeckt werden.`
+  }, now);
   return db.prepare('SELECT * FROM primary_palette_auctions WHERE id = ?').get(row.id);
 }
 

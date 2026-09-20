@@ -462,6 +462,7 @@ test('HTTP API enforces authentication, CSRF headers, admin permissions and sess
   const post = (route, value, cookie = '', extra = {}) => fetch(base + route, { method: 'POST', headers: {
     'content-type': 'application/json', 'x-requested-with': 'JUSTIZGUESSR', cookie, ...extra }, body: JSON.stringify(value) });
   assert.equal((await fetch(base + 'inventory')).status, 401);
+  assert.equal((await fetch(base + 'notifications')).status, 401);
   assert.equal((await fetch(base + 'admin')).status, 401);
   assert.equal((await post('admin/grant-tokens', { amount: 400, requestId: 'bulk-grant-api-0001' })).status, 401);
   const publicCatalog = await (await fetch(base + 'cases')).json();
@@ -481,6 +482,10 @@ test('HTTP API enforces authentication, CSRF headers, admin permissions and sess
   const profile = await response.json();
   assert.ok(!JSON.stringify(profile).includes('password'));
   assert.equal(profile.user.tokens, STARTING_TOKENS);
+  const notices = await (await fetch(base + 'notifications', { headers: { cookie } })).json();
+  assert.equal(notices.unreadCount, 1); assert.equal(notices.fresh[0].type, 'daily');
+  assert.equal((await (await fetch(base + 'notifications', { headers: { cookie } })).json()).fresh.length, 0);
+  assert.equal((await (await post('notifications/read', { ids: 'all' }, cookie)).json()).unreadCount, 0);
   const codes = await (await post('codes', { count: 3 }, cookie)).json();
   assert.equal(codes.codes.length, 3);
   const registered = await post('register', { username: 'player', password, code: codes.codes[0] });

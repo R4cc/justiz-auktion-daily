@@ -8,6 +8,7 @@ import { saveNewsEvent } from './news.mjs';
 import { bidOnPaletteAuction, createPaletteAuction, getPaletteAuctionRewards, paletteAuctionsByUser } from './palette-auctions.mjs';
 import { cancelListing, listItem, listingsByUser, placeBid } from './resale.mjs';
 import { maskLeaderboard } from './username-privacy.mjs';
+import { markNotificationsRead, notificationsForUser } from './notifications.mjs';
 
 const AUCTION_PAGE_SIZE = 25;
 
@@ -77,6 +78,7 @@ export async function createAccountApi({ dataDir, dailyPayload, json, env = proc
         else {
           if (!user) throw new AccountError('login_required', 401);
           if (route === 'inventory') json(response, 200, { items: accounts.inventory(user) });
+          else if (route === 'notifications') json(response, 200, notificationsForUser(dataDir, user.id));
           else if (route === 'resale/listings' && flags.resales) json(response, 200, { listings: listingsByUser(dataDir, user.id) });
           else if (route === 'palette-auctions' && flags.paletteAuctions) json(response, 200, { auctions: paletteAuctionsByUser(dataDir, user, { limit: Number(url.searchParams.get('limit')) || 50, offset: Number(url.searchParams.get('offset')) || 0 }) });
           else if (route === 'friends') json(response, 200, accounts.friends(user));
@@ -129,6 +131,7 @@ export async function createAccountApi({ dataDir, dailyPayload, json, env = proc
         response.setHeader('set-cookie', cookie(''));
         result = { user: null };
       } else if (route === 'codes') result = { codes: accounts.codes(user, payload.count) };
+      else if (route === 'notifications/read') result = markNotificationsRead(dataDir, user.id, payload.ids);
       else if (route === 'admin/grant-tokens') result = { grant: accounts.grantTokens(user, payload.amount, payload.requestId), user: accounts.profile(user) };
       else if (route === 'admin/grant-user-tokens') result = { grant: accounts.grantUserTokens(user, payload.userId, payload.amount, payload.requestId), user: accounts.profile(user) };
       else if (route === 'admin/ban') result = { ban: accounts.banUser(user, payload.userId, payload.banned) };

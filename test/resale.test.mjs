@@ -10,6 +10,7 @@ import {
   cancelListing, getResale, listItem, listingsByUser, listResales,
   placeBid, settleAuction, settleDueListings
 } from '../src/resale.mjs';
+import { notificationsForUser } from '../src/notifications.mjs';
 
 const day = Date.parse('2026-09-12T12:00:00Z');
 const hour = 3600_000;
@@ -149,6 +150,8 @@ test('bids escrow exact amounts, refund on outbid, charge only the difference on
   placeBid(dir, rival, a.id, 900, { now: day + 2000 });
   assert.equal(tokensOf(service, bidder), bidderStart);
   assert.equal(tokensOf(service, rival), rivalStart - 900);
+  assert.ok(notificationsForUser(dir, bidder.id, { now: day + 2000 }).fresh
+    .some(entry => entry.type === 'outbid' && entry.bodyEn.includes('J€ 900')));
   const escalated = getResale(dir, a.id, { now: day + 3000 });
   assert.equal(escalated.currentBid, 900);
   assert.deepEqual(escalated.bids.map(bid => [bid.amount, bid.bidderUsername]),
@@ -198,6 +201,8 @@ test('won auctions settle lazily: item transfers, seller is paid, winner is neve
   assert.deepEqual(inventoryRow(service, second.id), { user_id: bidder.id, sold_at: null });
   assert.equal(service.inventory(admin).map(row => row.id).includes(second.id), false);
   assert.equal(service.inventory(bidder).map(row => row.id).includes(second.id), true);
+  assert.ok(notificationsForUser(dir, admin.id, { now: day + 2 * hour }).fresh.some(entry => entry.type === 'sold'));
+  assert.ok(notificationsForUser(dir, bidder.id, { now: day + 2 * hour }).fresh.some(entry => entry.type === 'won'));
   assert.deepEqual(listResales(dir, { now: day + 2 * hour }), []);
   // The settled winner may relist the item; the old seller may not.
   const winnerNow = advance(1000);

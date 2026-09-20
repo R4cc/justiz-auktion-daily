@@ -3,6 +3,7 @@ import { AccountError } from './errors.mjs';
 import { transaction, withDatabase } from './database.mjs';
 import { awardXp, resaleXp } from './xp.mjs';
 import { estimatedValueTokens, marketIndexes, marketCategoryForItem } from './market.mjs';
+import { pushNotification } from './notifications.mjs';
 
 // Player resale auctions: eBay-like listings of single inventory items.
 //
@@ -201,10 +202,18 @@ export function placeBid(dataDir, user, auctionId, amount, { now = Date.now() } 
       if (!Number.isSafeInteger(previous.tokens + row.current_bid)) fail('token_balance_limit', 409);
       db.prepare('UPDATE users SET tokens = tokens + ? WHERE id = ?').run(row.current_bid, row.current_bidder_id);
     }
-    db.prepare('INSERT INTO resale_bids (auction_id, bidder_id, amount, created_at) VALUES (?, ?, ?, ?)')
+    const bid = db.prepare('INSERT INTO resale_bids (auction_id, bidder_id, amount, created_at) VALUES (?, ?, ?, ?)')
       .run(row.id, user.id, amount, now);
     db.prepare('UPDATE resale_auctions SET current_bid = ?, current_bidder_id = ? WHERE id = ?')
       .run(amount, user.id, row.id);
+    if (!raise && row.current_bidder_id !== null) {
+      const item = JSON.parse(db.prepare('SELECT item FROM inventory WHERE id = ?').get(row.inventory_id).item);
+      pushNotification(db, row.current_bidder_id, {
+        type: 'outbid', sourceKey: `resale:outbid:${row.id}:${bid.lastInsertRowid}`, href: '/marketplace?view=mine',
+        titleEn: 'You were outbid', titleDe: 'Du wurdest überboten',
+        bodyEn: `${item.title} is now at J€ ${amount}.`, bodyDe: `${item.title} steht jetzt bei J€ ${amount}.`
+      }, now);
+    }
     return serializeListing(db, db.prepare('SELECT * FROM resale_auctions WHERE id = ?').get(row.id), { bids: true, now });
   }));
 }
@@ -221,12 +230,18 @@ function settleListingRow(db, row, now) {
     // reaches its terminal state exactly once.
     if (!db.prepare(`UPDATE resale_auctions SET settled_at = ? WHERE id = ? AND settled_at IS NULL`)
       .run(now, row.id).changes) fail('settlement_conflict', 409);
+    const item = JSON.parse(db.prepare('SELECT item FROM inventory WHERE id = ?').get(row.inventory_id).item);
+    pushNotification(db, row.seller_id, {
+      type: 'ended', sourceKey: `resale:unsold:${row.id}`, href: '/marketplace?view=mine',
+      titleEn: 'Your auction ended', titleDe: 'Deine Auktion ist beendet',
+      bodyEn: `${item.title} ended without a bid.`, bodyDe: `${item.title} endete ohne Gebot.`
+    }, now);
     return db.prepare('SELECT * FROM resale_auctions WHERE id = ?').get(row.id);
   }
   // The winner must be the escrow holder of a positive winning amount.
   if (row.current_bidder_id !== row.winner_id || !Number.isSafeInteger(row.current_bid)
     || row.current_bid < 1 || row.winner_id === row.seller_id) fail('escrow_inconsistent', 500);
-  const item = db.prepare('SELECT user_id, sold_at FROM inventory WHERE id = ?').get(row.inventory_id);
+  const item = db.prepare('SELECT user_id, sold_at, item FROM inventory WHERE id = ?').get(row.inventory_id);
   if (!item || item.user_id !== row.seller_id || item.sold_at !== null) fail('settlement_conflict', 409);
   const seller = db.prepare('SELECT tokens FROM users WHERE id = ?').get(row.seller_id);
   if (!seller || !Number.isSafeInteger(seller.tokens + row.current_bid)) fail('token_balance_limit', 409);
@@ -239,6 +254,17 @@ function settleListingRow(db, row, now) {
   // idempotency guarantee: a second settlement can never pay or transfer again.
   if (!db.prepare(`UPDATE resale_auctions SET settled_at = ? WHERE id = ? AND settled_at IS NULL`)
     .run(now, row.id).changes) fail('settlement_conflict', 409);
+  const itemTitle = JSON.parse(item.item).title;
+  pushNotification(db, row.seller_id, {
+    type: 'sold', sourceKey: `resale:sold:${row.id}`, href: '/marketplace?view=mine',
+    titleEn: 'Your item sold', titleDe: 'Dein Gegenstand wurde verkauft',
+    bodyEn: `${itemTitle} sold for J€ ${row.current_bid}.`, bodyDe: `${itemTitle} wurde für J€ ${row.current_bid} verkauft.`
+  }, now);
+  pushNotification(db, row.winner_id, {
+    type: 'won', sourceKey: `resale:won:${row.id}`, href: '/inventory',
+    titleEn: 'You won the auction', titleDe: 'Du hast die Auktion gewonnen',
+    bodyEn: `${itemTitle} is now in your inventory.`, bodyDe: `${itemTitle} liegt jetzt in deinem Inventar.`
+  }, now);
   return db.prepare('SELECT * FROM resale_auctions WHERE id = ?').get(row.id);
 }
 

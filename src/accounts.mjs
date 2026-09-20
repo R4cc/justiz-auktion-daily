@@ -10,6 +10,7 @@ import { awardXp, ensureXpSchema } from './xp.mjs';
 import { featureFlags } from './features.mjs';
 import { estimatedValueTokens, marketIndexes } from './market.mjs';
 import { progressionForXp } from './progression.mjs';
+import { ensureNotificationSchema } from './notifications.mjs';
 
 export { AccountError };
 
@@ -127,6 +128,7 @@ export class Accounts {
       // Resale listings reference inventory rows; creating the tables here keeps
       // the sell/list locking consistent for every database this class opens.
       ensureResaleSchema(db, this.now());
+      ensureNotificationSchema(db);
     });
   }
   db(work) { return withDatabase(this.dataDir, work); }
@@ -251,7 +253,7 @@ export class Accounts {
       for (const table of ['resale_npc_interest', 'resale_bids', 'resale_auctions',
         'primary_palette_bids', 'primary_palette_rewards', 'primary_palette_auctions',
         'daily_rewards', 'xp_events', 'case_openings', 'inventory', 'account_games',
-        'user_token_grants', 'token_grants']) {
+        'user_token_grants', 'token_grants', 'account_notifications']) {
         if (hasTable(table)) db.prepare(`DELETE FROM ${table}`).run();
       }
       // NPCs are runtime-owned and are recreated with their full configured

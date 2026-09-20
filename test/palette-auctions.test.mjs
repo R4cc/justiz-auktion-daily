@@ -7,6 +7,7 @@ import { Accounts, STARTING_TOKENS } from '../src/accounts.mjs';
 import { closeDataStore, upsertAuctions, withDatabase } from '../src/database.mjs';
 import { loadPaletteCatalog, bundleReferencePricing } from '../src/palette-definitions.mjs';
 import { saveNewsEvent } from '../src/news.mjs';
+import { notificationsForUser } from '../src/notifications.mjs';
 import {
   bidOnPaletteAuction, createPaletteAuction, ensurePaletteAuctionSchema, getPaletteAuction,
   getPaletteAuctionRewards, listPaletteAuctions, levelForXp, settlePaletteAuction
@@ -194,6 +195,8 @@ test('bidding escrows like resale: first bid, outbid refund, raise difference, r
   bidOnPaletteAuction(dir, rival, lot.id, reserve + 100, { now: day + 3000 });
   assert.equal(tokensOf(service, bidder), wallet);
   assert.equal(tokensOf(service, rival), wallet - reserve - 100);
+  const outbidNotice = notificationsForUser(dir, bidder.id, { now: day + 3000 });
+  assert.ok(outbidNotice.fresh.some(entry => entry.type === 'outbid' && entry.href === '/auctions?view=mine'));
   const rejected = tokensOf(service, rival);
   assert.throws(() => bidOnPaletteAuction(dir, rival, lot.id, wallet + 1, { now: day + 4000 }), /insufficient_tokens/);
   assert.equal(tokensOf(service, rival), rejected);
@@ -316,6 +319,8 @@ test('winning settlement creates exactly three provenance-stamped inventory rows
   assert.equal(before.users + before.escrow - (after.users + after.escrow), lot.reserve + 25);
   assert.equal(tokensOf(service, winner), 100000 - lot.reserve - 25);
   assert.equal(tokensOf(service, loser), 100000); // refunded at outbid, never charged again
+  const winnerNotices = notificationsForUser(dir, winner.id, { now: day + hour });
+  assert.ok(winnerNotices.fresh.some(entry => entry.type === 'won' && entry.bodyEn.includes('ready to reveal')));
   // Idempotent settlement, also across a restart.
   const settledAgain = settlePaletteAuction(dir, lot.id, { now: day + 2 * hour });
   assert.equal(settledAgain.settledAt, settled.settledAt);
