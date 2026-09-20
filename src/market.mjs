@@ -2,6 +2,11 @@ import { AccountError } from './errors.mjs';
 import { auctionSelectionCategory } from './auction-selection.mjs';
 import { tokenValue } from './cases.mjs';
 import { getState, setState, transaction, withDatabase } from './database.mjs';
+// Cyclic on purpose: market effects carry an FK into news_events, so the
+// drift path must be able to guarantee that schema exists. Both modules only
+// declare functions at module scope, so the cycle never dereferences a
+// half-initialized binding.
+import { ensureNewsSchema } from './news.mjs';
 
 // Market categories are the global buckets that future shared price indexes
 // attach to. They are intentionally coarser than the German listing categories
@@ -78,7 +83,9 @@ export function marketCategoryForTheme(theme) {
 // Deterministic index computation, always derived from persisted effects —
 // never by applying deltas onto a running value. An effect contributes its
 // signed magnitude (index points), linearly decaying to zero over exactly
-// EFFECT_DURATION_MS. There is no random or background movement anywhere.
+// EFFECT_DURATION_MS. Reads hold no randomness of their own: randomness only
+// enters as written effects (news publications, market drift below), so any
+// moment reconstructs identically from the table.
 export function effectContribution(delta, startsAt, at) {
   const remaining = Math.min(1, Math.max(0, 1 - (at - startsAt) / EFFECT_DURATION_MS));
   return delta * remaining;
@@ -199,6 +206,49 @@ export function insertNewsMarketEffects(db, eventId, effects, now) {
     const delta = effect.direction === 'up' ? effect.magnitude : -effect.magnitude;
     insert.run(`news:${eventId}:${effect.category}`, eventId, effect.category, delta, now, now + EFFECT_DURATION_MS);
   }
+}
+
+// Random background movement. With news dormant the indexes would otherwise
+// sit at neutral forever. Every MARKET_DRIFT_INTERVAL_MS each category moves
+// to a fresh random regime of ±MARKET_DRIFT_MAX_POINTS (index points, so
+// ±25 points ≈ ±25% around the neutral 100). The squared draw makes larger
+// fluctuations deliberately unlikely; a regime is an ordinary effect row that
+// decays back toward neutral over one effect duration if drift ever stops,
+// and it is replaced (never stacked) on the next regime change. All reads —
+// valuation, snapshots, history — go through the same effect computation as
+// news, so no read path needs drift-specific handling.
+export const MARKET_DRIFT_INTERVAL_MS = 2 * 3600_000;
+export const MARKET_DRIFT_MAX_POINTS = 25;
+const DRIFT_MARKER = 'market_drift_v1';
+
+export function applyMarketDrift(db, now, random = Math.random) {
+  ensureNewsSchema(db);
+  ensureMarketSchema(db, now);
+  ensureMarketEffectsSchema(db);
+  if (simulationActivation(db) === null) {
+    bootstrapMarketEffects(db, now);
+    markSimulationActivation(db, now);
+  }
+  const bucket = Math.floor(now / MARKET_DRIFT_INTERVAL_MS);
+  const state = getState(db, DRIFT_MARKER, null);
+  if (state?.bucket === bucket) return { applied: false, bucket };
+  const replace = db.prepare('DELETE FROM market_effects WHERE source_id = ?');
+  const insert = db.prepare(`INSERT INTO market_effects
+    (source_id, event_id, category, delta, starts_at, ends_at) VALUES (?, NULL, ?, ?, ?, ?)`);
+  for (const { id } of MARKET_CATEGORIES) {
+    const deviation = roundIndex(MARKET_DRIFT_MAX_POINTS * random() ** 2) * (random() < 0.5 ? -1 : 1);
+    replace.run(`drift:${id}`);
+    insert.run(`drift:${id}`, id, deviation, now, now + EFFECT_DURATION_MS);
+  }
+  setState(db, DRIFT_MARKER, { bucket, appliedAt: new Date(now).toISOString() });
+  return { applied: true, bucket };
+}
+
+// Runtime wrapper: one transaction per tick. The persisted bucket marker
+// makes the 30-second economy ticks and restarts inside the same window
+// idempotent — a regime is sampled exactly once per category per window.
+export function tickMarketDrift(dataDir, { now = Date.now(), random = Math.random } = {}) {
+  return withDatabase(dataDir, db => transaction(db, () => applyMarketDrift(db, now, random)));
 }
 
 // Fill the hourly UTC snapshot grid through floor(now/hour)*hour, starting at

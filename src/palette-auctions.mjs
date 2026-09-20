@@ -29,8 +29,10 @@ export { levelForXp, XP_LEVEL_LIMIT } from './progression.mjs';
 // difference), but implemented here standalone.
 // HTTP exposure is a thin adapter over these functions: public reads in
 // economy-api.mjs, authenticated bid/reveal and admin creation in
-// account-api.mjs. The runtime supplies and settles lots. NPCs never bid here;
-// bid and auction cancellation remain deliberately unsupported.
+// account-api.mjs. The runtime supplies, settles and lets NPC buyers bid
+// (bidOnPaletteAuction's trusted npc option — identical escrow, no level
+// gate); NPC accounts stay rejected on every player-facing surface, and
+// auction cancellation remains deliberately unsupported.
 export const PALETTE_AUCTION_DURATION_MS = 3600_000;
 // The board targets ten concurrent sealed lots, refreshed by one drop window
 // every duration/target (six minutes, see economy-runtime) so ends stay
@@ -199,24 +201,26 @@ export function createPaletteAuction(dataDir, { editionId, requestId, endsAt }, 
   }));
 }
 
-function currentUser(db, userId) {
+function currentUser(db, userId, { npc = false } = {}) {
   const account = db.prepare('SELECT tokens, xp, banned, npc FROM users WHERE id = ?').get(userId);
   if (!account) fail('login_required', 401);
-  if (account.npc) fail('forbidden', 403);
+  // NPC accounts bid only through the trusted runtime path, never the API.
+  if (account.npc && !npc) fail('forbidden', 403);
   if (account.banned) fail('account_banned', 403);
   return account;
 }
 
-export function bidOnPaletteAuction(dataDir, user, auctionId, amount, { now = Date.now() } = {}) {
+export function bidOnPaletteAuction(dataDir, user, auctionId, amount, { now = Date.now(), npc = false } = {}) {
   if (!Number.isSafeInteger(amount) || amount < 1) fail('invalid_bid', 400);
   return withDatabase(dataDir, db => transaction(db, () => {
     ensurePaletteAuctionSchema(db, now);
     const row = loadAuction(db, auctionId);
     if (now >= row.ends_at) fail('palette_auction_ended', 409);
-    const account = currentUser(db, user.id);
+    const account = currentUser(db, user.id, { npc });
     // The frozen requiredLevel gates bidding; the level derives from the
-    // persisted users.xp, never from a client-supplied level.
-    if (levelForXp(account.xp) < row.required_level) fail('level_required', 403);
+    // persisted users.xp, never from a client-supplied level. Trusted NPC
+    // bids skip the gate — house buyers are never level-locked.
+    if (!npc && levelForXp(account.xp) < row.required_level) fail('level_required', 403);
     const minimum = row.current_bid === null ? row.reserve : row.current_bid + 1;
     if (amount < minimum) fail('bid_too_low', 409);
     // Escrow accounting, identical in semantics to resale: the leader raising

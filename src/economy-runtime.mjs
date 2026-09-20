@@ -3,7 +3,8 @@ import { featureFlags } from './features.mjs';
 import { loadPaletteCatalog } from './palette-definitions.mjs';
 import { createPaletteAuction, settleDuePaletteAuctions, PALETTE_ACTIVE_TARGET, PALETTE_AUCTION_DURATION_MS } from './palette-auctions.mjs';
 import { settleDueListings } from './resale.mjs';
-import { tickNpcBuyers } from './npc-buyers.mjs';
+import { tickMarketDrift } from './market.mjs';
+import { tickNpcBuyers, tickPaletteBuyers } from './npc-buyers.mjs';
 import { tickWorldNews } from './world-news.mjs';
 import { AccountError } from './errors.mjs';
 
@@ -57,6 +58,8 @@ export function tickEconomy(dataDir, { now = Date.now(), flags = featureFlags() 
   const result = {}, failures = [];
   const run = (name, work) => { try { result[name] = work(); } catch (error) { failures.push({ system: name, code: error instanceof AccountError ? error.message : 'internal_error' }); } };
   if (flags.news) run('news', () => tickWorldNews(dataDir, { now }));
+  // Drift runs before buyers so NPC ceilings price the fresh regime.
+  if (flags.market) run('marketDrift', () => tickMarketDrift(dataDir, { now }));
   if (flags.paletteAuctions) {
     run('primarySettlement', () => settleDuePaletteAuctions(dataDir, { now }));
     run('supply', () => supplyPaletteAuctions(dataDir, { now }));
@@ -64,6 +67,7 @@ export function tickEconomy(dataDir, { now = Date.now(), flags = featureFlags() 
   if (flags.resales) {
     run('resaleSettlement', () => settleDueListings(dataDir, { now }));
     run('buyers', () => tickNpcBuyers(dataDir, { now }));
+    run('paletteBuyers', () => tickPaletteBuyers(dataDir, { now }));
   }
   return { ...result, failures };
 }

@@ -2,12 +2,15 @@ import { createHash } from 'node:crypto';
 import { transaction, withDatabase } from './database.mjs';
 import { estimatedValueTokens, marketCategoryForItem, marketIndexes } from './market.mjs';
 import { ensureResaleSchema, placeBid } from './resale.mjs';
+import { bidOnPaletteAuction, ensurePaletteAuctionSchema } from './palette-auctions.mjs';
+import { bundleReferencePricing } from './palette-definitions.mjs';
 import { AccountError } from './errors.mjs';
 export { NPC_BUYERS, SPECIAL_NPC_BUYERS } from './npc-roster.mjs';
 import { NPC_BUYERS } from './npc-roster.mjs';
 
 export const NPC_BALANCE = 1_000_000_000;
 export const NPC_COHORT_SIZE = 16;
+export const PALETTE_SHOWUP_MS = 5 * 60_000;
 
 export const deterministicUnit = key => createHash('sha256').update(key).digest().readUInt32BE(0) / 2 ** 32;
 
@@ -108,6 +111,60 @@ export function tickNpcBuyers(dataDir, { now = Date.now(), unit = deterministicU
     }
     withDatabase(dataDir, db => db.prepare('UPDATE resale_npc_interest SET next_bid_at = ? WHERE auction_id = ? AND npc_id = ?')
       .run(now + delay, interest.auction_id, npc.id));
+  }
+  return { bids };
+}
+
+// Sealed palette boards are priced against the live market: the ceiling is
+// the market-adjusted expected bundle value times a persona multiplier. The
+// reserve freezes at roughly expected-value / 0.85, so around a neutral
+// market NPCs only nibble just above the reserve, a hot market (index above
+// 100) lets them chase the lot well past it, and a cold market silences them
+// entirely — exactly the coupling between market indexes and NPC bidding the
+// economy wants.
+export function paletteBidCeiling(snapshot, indexes, npc, auctionId, unit = deterministicUnit) {
+  const items = Array.isArray(snapshot?.items) ? snapshot.items : [];
+  const expected = bundleReferencePricing(items, item => indexes[item.marketCategory] ?? 100, snapshot.rewardCount ?? 3);
+  const preferred = (snapshot.allowedMarketCategories ?? []).some(category => npc.categories.includes(category));
+  const variation = (unit(`${auctionId}:${npc.id}:palette-value`) - .5) * .10;
+  const multiplier = Math.max(1.0, Math.min(1.35, .90 + npc.willingness * .32
+    + (preferred ? .08 : -.04) + variation));
+  return { maxBid: Math.max(1, Math.round((expected.et || 0) * multiplier)), preferred };
+}
+
+// One deterministic consideration per active lot per five-minute slot: most
+// slots are quiet observation, so an hour-long lot gathers a handful of NPC
+// bids instead of a wall of them. Stateless by design — restarts and
+// concurrent runtimes cannot double-bid, because the slot roll, the chosen
+// cohort buyer and the amount are all derived from (lot, npc, slot, bid).
+export function tickPaletteBuyers(dataDir, { now = Date.now(), unit = deterministicUnit } = {}) {
+  seedNpcBuyers(dataDir, { now });
+  const slot = Math.floor(now / PALETTE_SHOWUP_MS);
+  const indexes = withDatabase(dataDir, db => marketIndexes(db, now));
+  const lots = withDatabase(dataDir, db => {
+    ensurePaletteAuctionSchema(db, now);
+    return db.prepare(`SELECT id, reserve, current_bid, ends_at, public_snapshot_json
+      FROM primary_palette_auctions WHERE status = 'active' AND ends_at > ?
+      ORDER BY ends_at, id LIMIT 50`).all(now);
+  });
+  let bids = 0;
+  for (const lot of lots) {
+    const cohort = npcCohort(lot.id, 4);
+    const npc = cohort[slot % cohort.length];
+    if (unit(`${lot.id}:${npc.id}:${slot}:palette-showup`) >= .5) continue;
+    const { maxBid } = paletteBidCeiling(JSON.parse(lot.public_snapshot_json), indexes, npc, lot.id, unit);
+    const minimum = lot.current_bid ?? lot.reserve;
+    if (minimum >= maxBid) continue;
+    const headroom = maxBid - minimum;
+    const pressure = .02 + npc.aggressiveness * .06;
+    const jump = 1 + Math.floor(unit(`${lot.id}:${npc.id}:${lot.current_bid}:palette-jump`)
+      * Math.min(headroom, Math.round(maxBid * pressure)));
+    try {
+      bidOnPaletteAuction(dataDir, npc, lot.id, Math.min(maxBid, minimum + jump), { now, npc: true });
+      bids++;
+    } catch (error) {
+      if (!(error instanceof AccountError) || !['bid_too_low', 'palette_auction_ended', 'insufficient_tokens'].includes(error.message)) throw error;
+    }
   }
   return { bids };
 }

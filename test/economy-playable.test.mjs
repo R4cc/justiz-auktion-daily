@@ -11,7 +11,8 @@ import { loadPaletteCatalog } from '../src/palette-definitions.mjs';
 import { bidOnPaletteAuction, createPaletteAuction, getPaletteAuctionRewards, listPaletteAuctions,
   paletteAuctionsByUser, settleDuePaletteAuctions, PALETTE_ACTIVE_PER_EDITION } from '../src/palette-auctions.mjs';
 import { cancelListing, getResale, listItem, placeBid, settleAuction } from '../src/resale.mjs';
-import { NPC_BALANCE, NPC_BUYERS, NPC_COHORT_SIZE, npcValuation, seedNpcBuyers, tickNpcBuyers } from '../src/npc-buyers.mjs';
+import { NPC_BALANCE, NPC_BUYERS, NPC_COHORT_SIZE, npcValuation, seedNpcBuyers, tickNpcBuyers, tickPaletteBuyers } from '../src/npc-buyers.mjs';
+import { marketState, tickMarketDrift } from '../src/market.mjs';
 import { PALETTE_DROP_PERIOD_MS, supplyPaletteAuctions, tickEconomy, startEconomyRuntime } from '../src/economy-runtime.mjs';
 import { getNewsEvent, saveNewsEvent } from '../src/news.mjs';
 import { setMarketIndex } from '../src/market.mjs';
@@ -102,6 +103,37 @@ test('supply skips unavailable editions, caps concurrent lots per edition and ho
   assert.throws(() => createPaletteAuction(f.dir, { editionId, requestId: 'window-overflow-test-01', endsAt: day + 13 * hour },
     { now: day }), /palette_window_closes_early/);
   assert.equal(count(f, 'palette_editions'), 8); // no replacement category fabricated
+});
+
+test('NPC buyers chase hot-market palettes and fall silent when the market cools', async t => {
+  const f = await fixture(t);
+  loadPaletteCatalog(f.dir, { now: day });
+  f.mutate(`UPDATE palette_editions SET payload_json = json_set(payload_json, '$.available', 0) WHERE palette_id != 'electronics'`);
+  const edition = loadPaletteCatalog(f.dir, { now: day }).palettes.find(p => p.editionId.startsWith('base:electronics:'));
+  assert.ok(edition);
+  // The reserve freezes at the neutral market the lot was created in; drift
+  // then moves the market and the NPC ceilings float against the frozen lot.
+  const lot = createPaletteAuction(f.dir, { editionId: edition.editionId, requestId: 'palette-npc-fixture-1', endsAt: day + 8 * hour }, { now: day });
+  const unit = key => key.includes(':palette-showup') ? 0 : 0.5;
+  let hotCalls = 0;
+  tickMarketDrift(f.dir, { now: day, random: () => { hotCalls++; return hotCalls === 1 ? .999999 : hotCalls === 2 ? .9 : 0; } });
+  assert.equal(marketState(f.dir, { now: day }).categories.find(c => c.category === 'electronics').currentIndex, 125);
+  assert.ok(tickPaletteBuyers(f.dir, { now: day + 30_000, unit }).bids >= 1);
+  const bid = f.sql('SELECT * FROM primary_palette_bids ORDER BY id DESC LIMIT 1')[0];
+  assert.ok(bid.amount >= lot.reserve);
+  assert.ok(bid.bidder_id.startsWith('npc-'));
+  assert.equal(balance(f, bid.bidder_id), NPC_BALANCE - bid.amount);
+  // A cold market drops every ceiling below the standing bid: silence.
+  let coldCalls = 0;
+  tickMarketDrift(f.dir, { now: day + 2 * hour, random: () => { coldCalls++; return coldCalls === 1 ? .999999 : coldCalls === 2 ? .1 : 0; } });
+  const bidsBefore = count(f, 'primary_palette_bids');
+  assert.equal(tickPaletteBuyers(f.dir, { now: day + 2 * hour + 60_000, unit }).bids, 0);
+  assert.equal(count(f, 'primary_palette_bids'), bidsBefore);
+  // A recovered market resumes bidding; the player-facing API still rejects NPCs.
+  let warmCalls = 0;
+  tickMarketDrift(f.dir, { now: day + 4 * hour, random: () => { warmCalls++; return warmCalls === 1 ? .999999 : warmCalls === 2 ? .9 : 0; } });
+  assert.ok(tickPaletteBuyers(f.dir, { now: day + 4 * hour + 60_000, unit }).bids >= 1);
+  assert.throws(() => bidOnPaletteAuction(f.dir, { id: bid.bidder_id }, lot.id, bid.amount + 1, { now: day + 4 * hour + 90_000 }), /forbidden/);
 });
 
 test('My bids discovers won and lost lots, settles due rewards once and keeps hidden data private', async t => {

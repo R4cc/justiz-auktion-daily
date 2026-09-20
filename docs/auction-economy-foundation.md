@@ -72,6 +72,20 @@ precedes runtime startup in `server.mjs`.
   settlement remains as a correctness fallback for reads.
 - Primary sweep: bounded 100 by default (maximum 1000), independent transaction
   per lot; corrupt domain state is reported and other lots can settle.
+- Market drift (under `FEATURE_MARKET`): with news dormant, indexes would sit
+  at neutral forever. Every two hours each category moves to a fresh random
+  regime of ±25 index points (±25%) with a squared draw — small moves are
+  common, full swings rare. A regime is an ordinary market effect that decays
+  back toward neutral over one effect duration and is replaced on the next
+  window; the first drift also performs the one-time simulation activation.
+- Palette NPC buyers (under `FEATURE_RESALES`): every five minutes each active
+  lot gets at most one deterministic consideration from a rotating cohort of
+  the twelve NPC buyers. Their ceiling is the market-adjusted expected bundle
+  value times a persona multiplier, so a hot market (index above 100) lets
+  NPCs chase a lot past its frozen reserve and a cold market silences them.
+  Bids use the identical escrow/refund accounting as human bids through a
+  trusted runtime path; NPC accounts stay rejected on every player-facing
+  surface.
 
 Primary supply keeps **around ten concurrent lots on the board**. It creates one
 global lot per six-minute UTC bucket (one hour divided by the target of ten), so
