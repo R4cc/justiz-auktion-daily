@@ -92,8 +92,9 @@ test('auction detail uses media, story and bid-room columns with the bid form be
   assert.match(markup, /palette-artwork/);
   assert.match(markup, /Sealed until your winning reveal/);
   assert.match(markup, /A mysterious customs lot/);
-  assert.match(markup, /Customs warehouse bust/);
-  assert.match(markup, /PARODY CASE/);
+  assert.doesNotMatch(markup, /Customs warehouse bust/);
+  assert.doesNotMatch(markup, /PARODY CASE/);
+  assert.doesNotMatch(markup, /auction-story-badges/);
 });
 
 test('mystery cards never read candidate items and resale media keeps its item photo', () => {
@@ -108,7 +109,9 @@ test('mystery cards never read candidate items and resale media keeps its item p
   context.lot = lot;
   const markup = vm.runInContext('lotCard(lot, true) + auctionMedia(lot, true)', context);
   assert.match(markup, /palette-artwork/);
+  assert.match(markup, /palette-seal/);
   assert.doesNotMatch(markup, /<img|Possible contents|possible finds/);
+  assert.doesNotMatch(markup, /economy-incident|auction-case-label|auction-parody-label|PARODY CASE/);
   const resale = vm.runInContext(`auctionMedia({item:{title:'Camera',image:'/camera.jpg'}}, false)`, context);
   assert.match(resale, /camera\.jpg/);
   assert.match(resale, /Camera/);

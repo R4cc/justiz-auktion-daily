@@ -23,22 +23,6 @@ function paletteStoryDe(id) {
     'wine-tax-seizure': 'In Weißbrunn decken Steuerermittler einen unversteuerten Weinimport auf. Wein und Sammlerstücke aus dem Keller bilden diese Palette.'
   })[id] || 'Eine Geschichte aus der JUSTIZGUESSR-Welt.';
 }
-function paletteIncident(id) {
-  const incidents = {
-    fundkiste: ['Customs warehouse bust', 'Zollrazzia im Hafenlager'],
-    schatzkiste: ['Unclaimed vault clearance', 'Räumung eines herrenlosen Tresors'],
-    cars: ['Police impound clearance', 'Räumung eines Polizeiverwahrplatzes'],
-    wine: ['Seized vineyard cellar', 'Beschlagnahmter Weinkeller'],
-    electronics: ['Freight warehouse bust', 'Razzia im Frachtlager'],
-    tools: ['Illegal workshop bust', 'Razzia in illegaler Werkstatt'],
-    jewellery: ['Pawnshop seizure', 'Pfandhaus-Beschlagnahme'],
-    collectibles: ['Estate attic clearance', 'Dachboden aus Nachlassauflösung'],
-    'electronics-smuggling': ['Electronics smuggling bust', 'Razzia gegen Elektronikschmuggel'],
-    'dealer-seizure': ['Dealer fraud bust', 'Razzia wegen Händlerbetrugs'],
-    'wine-tax-seizure': ['Wine tax bust', 'Razzia wegen Weinsteuerbetrugs']
-  };
-  return t(...(incidents[id] || ['Seized goods case', 'Beschlagnahmte Waren']));
-}
 // Older frozen editions and published news retain their original snapshots.
 // Normalize their display copy so the single site disclaimer carries the
 // fiction notice instead of repeating it inside every story.
