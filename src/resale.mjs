@@ -5,7 +5,7 @@ import { awardXp, resaleXp } from './xp.mjs';
 import { estimatedValueTokens, marketIndexes, marketCategoryForItem } from './market.mjs';
 import { pushNotification } from './notifications.mjs';
 
-// Player resale auctions: eBay-like listings of single inventory items.
+// Player resale auctions: eBay-like listings of one or more identical items.
 //
 // Ownership rules enforced here and in accounts.mjs:
 //  - A listing always references the original inventory row; the item is never
@@ -64,6 +64,17 @@ export function ensureResaleSchema(db, now = Date.now()) {
     created_at INTEGER NOT NULL
   ) STRICT`);
   db.exec(`CREATE INDEX IF NOT EXISTS resale_bids_auction ON resale_bids(auction_id, amount)`);
+  db.exec(`CREATE TABLE IF NOT EXISTS resale_auction_items (
+    auction_id TEXT NOT NULL REFERENCES resale_auctions(id) ON DELETE CASCADE,
+    inventory_id TEXT NOT NULL REFERENCES inventory(id),
+    position INTEGER NOT NULL CHECK(position >= 0),
+    PRIMARY KEY(auction_id, inventory_id), UNIQUE(auction_id, position)
+  ) STRICT`);
+  // Every legacy listing becomes a quantity-one batch. Keeping inventory_id
+  // on resale_auctions preserves compatibility with existing databases and
+  // callers while this table owns the complete batch from now on.
+  db.exec(`INSERT OR IGNORE INTO resale_auction_items (auction_id, inventory_id, position)
+    SELECT id, inventory_id, 0 FROM resale_auctions`);
   const columns = db.prepare('PRAGMA table_info(resale_auctions)').all().map(column => column.name);
   if (!columns.includes('settled_at')) {
     db.exec('ALTER TABLE resale_auctions ADD COLUMN settled_at INTEGER');
@@ -89,14 +100,30 @@ export function ensureResaleSchema(db, now = Date.now()) {
 const RESALE_LOCK_SQL = `(status = 'active' OR (status = 'ended' AND winner_id IS NOT NULL AND settled_at IS NULL))`;
 
 export function inventoryIsLocked(db, inventoryId) {
-  return Boolean(db.prepare(`SELECT 1 FROM resale_auctions WHERE inventory_id = ? AND ${RESALE_LOCK_SQL}`)
+  return Boolean(db.prepare(`SELECT 1 FROM resale_auction_items ai
+    JOIN resale_auctions a ON a.id = ai.auction_id
+    WHERE ai.inventory_id = ? AND ${RESALE_LOCK_SQL.replaceAll('status', 'a.status').replaceAll('winner_id', 'a.winner_id').replaceAll('settled_at', 'a.settled_at')}`)
     .get(String(inventoryId)));
 }
 
 export function lockedInventoryIds(db) {
-  return new Set(db.prepare(`SELECT inventory_id AS id FROM resale_auctions WHERE ${RESALE_LOCK_SQL}`)
+  return new Set(db.prepare(`SELECT ai.inventory_id AS id FROM resale_auction_items ai
+    JOIN resale_auctions a ON a.id = ai.auction_id
+    WHERE ${RESALE_LOCK_SQL.replaceAll('status', 'a.status').replaceAll('winner_id', 'a.winner_id').replaceAll('settled_at', 'a.settled_at')}`)
     .all().map(row => row.id));
 }
+
+const resaleIdentity = item => JSON.stringify([
+  item.auctionId, item.title, item.image || null, item.price, item.rarity, item.sellValue
+]);
+
+function listingInventory(db, row) {
+  return db.prepare(`SELECT i.id, i.user_id, i.sold_at, i.item FROM resale_auction_items ai
+    JOIN inventory i ON i.id = ai.inventory_id WHERE ai.auction_id = ? ORDER BY ai.position`)
+    .all(row.id);
+}
+
+const quantityTitle = (title, quantity) => quantity > 1 ? `${quantity}× ${title}` : title;
 
 // Deterministic lazy close: the highest bid wins; the escrow stays held by the
 // auction row until settlement. Kept separate from settlement so a future
@@ -107,15 +134,17 @@ function closeDueListings(db, now) {
 }
 
 function serializeListing(db, row, { bids = false, now = Date.now(), indexes = marketIndexes(db, now) } = {}) {
-  const item = JSON.parse(db.prepare('SELECT item FROM inventory WHERE id = ?').get(row.inventory_id).item);
+  const inventory = listingInventory(db, row);
+  if (!inventory.length) fail('settlement_conflict', 409);
+  const item = JSON.parse(inventory[0].item), quantity = inventory.length;
   const seller = db.prepare('SELECT username FROM users WHERE id = ?').get(row.seller_id);
   const bidCount = db.prepare('SELECT COUNT(*) AS count FROM resale_bids WHERE auction_id = ?').get(row.id).count;
   return {
     id: row.id, sellerId: row.seller_id, sellerUsername: seller?.username || null,
-    inventoryId: row.inventory_id,
+    inventoryId: row.inventory_id, quantity,
     item: { title: item.title, image: item.image || null, price: item.price,
       rarity: item.rarity, marketCategory: marketCategoryForItem(item) },
-    estimatedValueTokens: estimatedValueTokens(item, indexes),
+    estimatedValueTokens: estimatedValueTokens(item, indexes) * quantity,
     currentBidderId: row.current_bidder_id,
     startPrice: row.start_price, currentBid: row.current_bid, bidCount,
     status: row.status, startedAt: row.started_at, endsAt: row.ends_at,
@@ -134,8 +163,9 @@ function loadListing(db, auctionId, now) {
   return row;
 }
 
-export function listItem(dataDir, user, { inventoryId, startPrice, endsAt }, { now = Date.now() } = {}) {
+export function listItem(dataDir, user, { inventoryId, quantity = 1, startPrice, endsAt }, { now = Date.now() } = {}) {
   if (typeof inventoryId !== 'string' || !inventoryId) fail('invalid_listing');
+  if (!Number.isSafeInteger(quantity) || quantity < 1) fail('invalid_listing');
   if (!Number.isSafeInteger(startPrice) || startPrice < 1) fail('invalid_listing');
   const end = Date.parse(endsAt ?? '');
   if (!Number.isFinite(end) || end < now + MIN_LISTING_MS || end > now + MAX_LISTING_MS) fail('invalid_listing');
@@ -146,14 +176,24 @@ export function listItem(dataDir, user, { inventoryId, startPrice, endsAt }, { n
     if (!seller) fail('login_required', 401);
     if (seller.npc || seller.banned) fail('forbidden', 403);
     if (db.prepare("SELECT COUNT(*) AS count FROM resale_auctions WHERE seller_id = ? AND status = 'active'").get(user.id).count >= 5) fail('listing_limit', 409);
-    const row = db.prepare('SELECT id, sold_at FROM inventory WHERE id = ? AND user_id = ?').get(inventoryId, user.id);
+    const row = db.prepare('SELECT id, sold_at, item FROM inventory WHERE id = ? AND user_id = ?').get(inventoryId, user.id);
     if (!row) fail('item_not_found', 404);
     if (row.sold_at !== null) fail('item_sold', 409);
     if (inventoryIsLocked(db, inventoryId)) fail('item_listed', 409);
+    const identity = resaleIdentity(JSON.parse(row.item));
+    const matches = db.prepare(`SELECT id, item FROM inventory
+      WHERE user_id = ? AND sold_at IS NULL ORDER BY created_at, id`).all(user.id)
+      .filter(candidate => resaleIdentity(JSON.parse(candidate.item)) === identity)
+      .filter(candidate => !inventoryIsLocked(db, candidate.id));
+    const requested = matches.find(candidate => candidate.id === inventoryId);
+    const selected = requested ? [requested, ...matches.filter(candidate => candidate.id !== inventoryId)].slice(0, quantity) : [];
+    if (selected.length !== quantity) fail('quantity_unavailable', 409);
     const id = randomUUID();
     db.prepare(`INSERT INTO resale_auctions
       (id, seller_id, inventory_id, start_price, current_bid, current_bidder_id, status, started_at, ends_at)
       VALUES (?, ?, ?, ?, NULL, NULL, 'active', ?, ?)`).run(id, user.id, inventoryId, startPrice, now, end);
+    const addItem = db.prepare('INSERT INTO resale_auction_items (auction_id, inventory_id, position) VALUES (?, ?, ?)');
+    selected.forEach((candidate, position) => addItem.run(id, candidate.id, position));
     return serializeListing(db, db.prepare('SELECT * FROM resale_auctions WHERE id = ?').get(id), { bids: true, now });
   }));
 }
@@ -208,11 +248,12 @@ export function placeBid(dataDir, user, auctionId, amount, { now = Date.now() } 
     db.prepare('UPDATE resale_auctions SET current_bid = ?, current_bidder_id = ? WHERE id = ?')
       .run(amount, user.id, row.id);
     if (!raise && row.current_bidder_id !== null) {
-      const item = JSON.parse(db.prepare('SELECT item FROM inventory WHERE id = ?').get(row.inventory_id).item);
+      const items = listingInventory(db, row);
+      const item = JSON.parse(items[0].item), title = quantityTitle(item.title, items.length);
       pushNotification(db, row.current_bidder_id, {
         type: 'outbid', sourceKey: `resale:outbid:${row.id}:${bid.lastInsertRowid}`, href: '/marketplace?view=mine',
         titleEn: 'You were outbid', titleDe: 'Du wurdest überboten',
-        bodyEn: `${item.title} is now at J€ ${amount}.`, bodyDe: `${item.title} steht jetzt bei J€ ${amount}.`
+        bodyEn: `${title} is now at J€ ${amount}.`, bodyDe: `${title} steht jetzt bei J€ ${amount}.`
       }, now);
     }
     return serializeListing(db, db.prepare('SELECT * FROM resale_auctions WHERE id = ?').get(row.id), { bids: true, now });
@@ -231,31 +272,33 @@ function settleListingRow(db, row, now) {
     // reaches its terminal state exactly once.
     if (!db.prepare(`UPDATE resale_auctions SET settled_at = ? WHERE id = ? AND settled_at IS NULL`)
       .run(now, row.id).changes) fail('settlement_conflict', 409);
-    const item = JSON.parse(db.prepare('SELECT item FROM inventory WHERE id = ?').get(row.inventory_id).item);
+    const items = listingInventory(db, row);
+    const item = JSON.parse(items[0].item), title = quantityTitle(item.title, items.length);
     pushNotification(db, row.seller_id, {
       type: 'ended', sourceKey: `resale:unsold:${row.id}`, href: '/marketplace?view=mine',
       titleEn: 'Your auction ended', titleDe: 'Deine Auktion ist beendet',
-      bodyEn: `${item.title} ended without a bid.`, bodyDe: `${item.title} endete ohne Gebot.`
+      bodyEn: `${title} ended without a bid.`, bodyDe: `${title} endete ohne Gebot.`
     }, now);
     return db.prepare('SELECT * FROM resale_auctions WHERE id = ?').get(row.id);
   }
   // The winner must be the escrow holder of a positive winning amount.
   if (row.current_bidder_id !== row.winner_id || !Number.isSafeInteger(row.current_bid)
     || row.current_bid < 1 || row.winner_id === row.seller_id) fail('escrow_inconsistent', 500);
-  const item = db.prepare('SELECT user_id, sold_at, item FROM inventory WHERE id = ?').get(row.inventory_id);
-  if (!item || item.user_id !== row.seller_id || item.sold_at !== null) fail('settlement_conflict', 409);
+  const items = listingInventory(db, row);
+  if (!items.length || items.some(item => item.user_id !== row.seller_id || item.sold_at !== null)) fail('settlement_conflict', 409);
   const seller = db.prepare('SELECT tokens FROM users WHERE id = ?').get(row.seller_id);
   if (!seller || !Number.isSafeInteger(seller.tokens + row.current_bid)) fail('token_balance_limit', 409);
-  // Transfer the existing inventory row — never insert or mint a copy — and
+  // Transfer every existing inventory row — never insert or mint copies — and
   // release the escrow (paid by the winner at bid time) to the seller.
-  db.prepare('UPDATE inventory SET user_id = ? WHERE id = ?').run(row.winner_id, row.inventory_id);
+  const transfer = db.prepare('UPDATE inventory SET user_id = ? WHERE id = ? AND user_id = ? AND sold_at IS NULL');
+  for (const item of items) if (!transfer.run(row.winner_id, item.id, row.seller_id).changes) fail('settlement_conflict', 409);
   db.prepare('UPDATE users SET tokens = tokens + ? WHERE id = ?').run(row.current_bid, row.seller_id);
   awardXp(db, row.seller_id, 'resale', row.id, resaleXp(row.current_bid), now);
   // The guarded UPDATE plus the surrounding transaction is the database-level
   // idempotency guarantee: a second settlement can never pay or transfer again.
   if (!db.prepare(`UPDATE resale_auctions SET settled_at = ? WHERE id = ? AND settled_at IS NULL`)
     .run(now, row.id).changes) fail('settlement_conflict', 409);
-  const itemTitle = JSON.parse(item.item).title;
+  const itemTitle = quantityTitle(JSON.parse(items[0].item).title, items.length);
   pushNotification(db, row.seller_id, {
     type: 'sold', sourceKey: `resale:sold:${row.id}`, href: '/marketplace?view=mine',
     titleEn: 'Your item sold', titleDe: 'Dein Gegenstand wurde verkauft',
@@ -339,4 +382,19 @@ export function listResales(dataDir, { now = Date.now(), limit = 50, offset = 0,
 
 export function listingsByUser(dataDir, userId, { now = Date.now(), limit = 100 } = {}) {
   return listResales(dataDir, { now, limit, sellerId: userId, status: null });
+}
+
+export function listingsBidOnByUser(dataDir, userId, { now = Date.now(), limit = 100 } = {}) {
+  settleDueListings(dataDir, { now });
+  return withDatabase(dataDir, db => {
+    ensureResaleSchema(db, now);
+    const indexes = marketIndexes(db, now);
+    return db.prepare(`SELECT r.*, MAX(b.amount) AS highest_bid FROM resale_auctions r
+      JOIN resale_bids b ON b.auction_id = r.id
+      WHERE b.bidder_id = ? AND r.seller_id != ? AND r.status = 'active' AND r.ends_at > ?
+      GROUP BY r.id ORDER BY r.ends_at, r.id LIMIT ?`)
+      .all(userId, userId, now, Math.max(1, Math.min(200, Math.floor(limit) || 100)))
+      .map(row => ({ ...serializeListing(db, row, { now, indexes }), highestBid: row.highest_bid,
+        leading: row.current_bidder_id === userId }));
+  });
 }

@@ -59,6 +59,7 @@ function accountError(code) {
     invalid_reset_confirmation: t('Type RESET ECONOMY exactly to confirm.', 'Gib zur Bestätigung exakt RESET ECONOMY ein.'),
     account_banned: t('This account has been banned.', 'Dieses Konto wurde gesperrt.'),
     item_listed: t('This item is listed in a resale auction.', 'Dieser Gegenstand ist in einer Verkaufsauktion gelistet.'),
+    quantity_unavailable: t('That many matching items are no longer available.', 'So viele passende Gegenstände sind nicht mehr verfügbar.'),
     item_sold: t('This item has already been sold.', 'Dieser Gegenstand wurde bereits verkauft.'),
     invalid_listing: t('This listing is not valid. Check price and end time.', 'Diese Auktion ist ungültig. Prüfe Startpreis und Endzeit.'),
     auction_not_found: t('This auction is no longer available.', 'Diese Auktion ist nicht mehr verfügbar.'),

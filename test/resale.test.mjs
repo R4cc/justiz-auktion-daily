@@ -7,7 +7,7 @@ import { Accounts, STARTING_TOKENS } from '../src/accounts.mjs';
 import { caseCatalog } from '../src/cases.mjs';
 import { closeDataStore } from '../src/database.mjs';
 import {
-  cancelListing, getResale, listItem, listingsByUser, listResales,
+  cancelListing, getResale, listItem, listingsBidOnByUser, listingsByUser, listResales,
   placeBid, settleAuction, settleDueListings
 } from '../src/resale.mjs';
 import { notificationsForUser } from '../src/notifications.mjs';
@@ -88,6 +88,39 @@ test('listing references the owned inventory row without copying or minting it',
   assert.equal(owner.user_id, admin.id);
   assert.equal(owner.sold_at, null);
   assert.deepEqual(listResales(dir, { now: day }).map(row => row.id), [listing.id]);
+});
+
+test('one listing can auction any available quantity of an identical item as one atomic batch', async t => {
+  const { dir, service, admin, register } = await fixture(t);
+  const first = service.openCase(admin, catalog, 'fundkiste', 'resale-batch-000001');
+  const copies = [first.id, 'batch-copy-2', 'batch-copy-3', 'batch-copy-4', 'batch-copy-5'];
+  service.db(db => {
+    const stored = db.prepare('SELECT item, created_at FROM inventory WHERE id = ?').get(first.id);
+    for (const id of copies.slice(1)) db.prepare('INSERT INTO inventory (id, user_id, item, created_at) VALUES (?, ?, ?, ?)')
+      .run(id, admin.id, stored.item, stored.created_at);
+  });
+  assert.throws(() => listItem(dir, admin, { inventoryId: first.id, quantity: 6, startPrice: 100,
+    endsAt: endsIn(1) }, { now: day }), /quantity_unavailable/);
+  const listing = listItem(dir, admin, { inventoryId: first.id, quantity: 5, startPrice: 100,
+    endsAt: endsIn(1) }, { now: day });
+  assert.equal(listing.quantity, 5);
+  const listedIds = service.db(db => db.prepare('SELECT inventory_id FROM resale_auction_items WHERE auction_id = ?')
+    .all(listing.id).map(row => row.inventory_id));
+  assert.deepEqual(new Set(listedIds), new Set(copies));
+  assert.equal(listing.estimatedValueTokens, Math.round(first.price) * 5);
+  assert.equal(rowCount(service, 'inventory', 'user_id = ?', admin.id), 5);
+  for (const id of copies) assert.throws(() => service.sell(admin, id), /item_listed/);
+
+  const bidder = await register('BatchBidder');
+  placeBid(dir, bidder, listing.id, 125, { now: day + 1000 });
+  const participation = listingsBidOnByUser(dir, bidder.id, { now: day + 2000 });
+  assert.equal(participation.length, 1);
+  assert.equal(participation[0].quantity, 5);
+  assert.equal(participation[0].leading, true);
+  settleAuction(dir, listing.id, { now: day + 2 * hour });
+  for (const id of copies) assert.deepEqual(inventoryRow(service, id), { user_id: bidder.id, sold_at: null });
+  assert.equal(service.inventory(bidder).length, 5);
+  assert.equal(rowCount(service, 'inventory', 'id IN (?, ?, ?, ?, ?)', ...copies), 5);
 });
 
 test('selling, relisting and foreign listings are blocked while an auction is live', async t => {

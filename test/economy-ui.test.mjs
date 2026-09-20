@@ -15,11 +15,11 @@ test('economy helpers use authenticated history/list/bid/cancel contracts and sa
     fetch: async url => { reads.push(url); return { ok: true, json: async () => ({ features: { resales: true } }) }; } });
   vm.runInContext(dataSource, context);
   const api = context.window.justizEconomy;
-  await api.myPaletteAuctions(10, 20); await api.myListings();
+  await api.myPaletteAuctions(10, 20); await api.myListings(); await api.myResaleBids();
   await api.paletteAuctionRewards('a/b'); await api.resaleBid('listing', 123);
   await api.listItem({ inventoryId: 'item', startPrice: 20, endsAt: 'end' }); await api.cancelListing('listing');
   assert.deepEqual(JSON.parse(JSON.stringify(calls)), [
-    ['palette-auctions?limit=10&offset=20', null], ['resale/listings', null],
+    ['palette-auctions?limit=10&offset=20', null], ['resale/listings', null], ['resale/bids', null],
     ['palette-auctions/a%2Fb/rewards', null], ['resale/bid', { id: 'listing', amount: 123 }],
     ['resale/listings', { inventoryId: 'item', startPrice: 20, endsAt: 'end' }], ['resale/cancel', { id: 'listing' }]
   ]);
@@ -90,6 +90,22 @@ test('lot cards mark leading bids green and overbid red on the public board', ()
   assert.match(outbid, /Outbid/);
   const unplayed = vm.runInContext(`lotCard({ id: 'l3', name: 'Unplayed', status: 'active' }, true)`, context);
   assert.doesNotMatch(unplayed, /is-leading|is-outbid|economy-outcome/);
+});
+
+test('auction card actions share the same bottom row', async () => {
+  const styles = await readFile(new URL('../dist/styles.css', import.meta.url), 'utf8');
+  assert.match(styles, /\.economy-lot\s*\{[^}]*display:\s*flex;[^}]*flex-direction:\s*column;/);
+  assert.match(styles, /\.economy-lot-body\s*\{[^}]*display:\s*flex;[^}]*flex:\s*1;[^}]*flex-direction:\s*column;/);
+  assert.match(styles, /\.economy-lot-body\s*>\s*button\s*\{[^}]*margin-top:\s*auto;/);
+});
+
+test('marketplace exposes four glanceable auction status sections and batch quantity controls', () => {
+  for (const label of ['My live auctions', "Other players' live auctions", 'My current bids', 'My completed auctions']) {
+    assert.match(uiSource, new RegExp(label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
+  }
+  assert.match(uiSource, /auction-state-badge/);
+  assert.match(uiSource, /name="quantity"[\s\S]*max="\$\{quantity\}"[\s\S]*value="\$\{quantity\}"/);
+  assert.match(uiSource, /myResaleBids/);
 });
 
 test('merged My bids keeps bidder-state borders without a separate primary tab', () => {

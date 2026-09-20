@@ -76,9 +76,10 @@ window.economyUi = (() => {
       if (!lots) throw new Error(t('Auctions are unavailable. Please retry.', 'Auktionen sind nicht verfügbar. Bitte erneut versuchen.'));
       next = { lots: lots.auctions, mine: mine?.auctions || [] };
     } else if (path === '/marketplace') {
-      const [lots, mine] = await Promise.all([api.resales(200), owner ? api.myListings() : null]);
+      const [lots, mine, bids] = await Promise.all([api.resales(200), owner ? api.myListings() : null,
+        owner ? api.myResaleBids() : null]);
       if (!lots) throw new Error(t('Marketplace is unavailable. Please retry.', 'Marktplatz ist nicht verfügbar. Bitte erneut versuchen.'));
-      next = { lots: lots.listings, mine: mine?.listings || [] };
+      next = { lots: lots.listings, mine: mine?.listings || [], bids: bids?.listings || [] };
     } else if (path === '/market') {
       next = await api.market();
       if (!next) throw new Error(t('Market is unavailable.', 'Markt ist nicht verfügbar.'));
@@ -128,37 +129,43 @@ window.economyUi = (() => {
       }
     }
   }
-  function tabs(primary) {
-    if (primary) return '';
-    return `<div class="economy-tabs" role="group" aria-label="${t('Auction view', 'Auktionsansicht')}">
-      <button data-economy="tab" data-id="public" aria-pressed="${tab === 'public'}">${t('Live auctions', 'Laufende Auktionen')}</button>
-      <button data-economy="tab" data-id="mine" aria-pressed="${tab === 'mine'}">${t('My listings', 'Meine Angebote')}</button></div>`;
-  }
   function bidFacts(lot, primary) {
     return `<div class="economy-bid"><strong>${justizEuro(lot.currentBid ?? (primary ? lot.reserve : lot.startPrice))}</strong><span>${lot.currentBid === null ? t('Starting bid', 'Startgebot') : t('Current bid', 'Aktuelles Gebot')}</span></div>
       <p>${lot.bidCount} ${t('bids', 'Gebote')} · ${countdown(lot.endsAt)}</p>`;
   }
-  function lotCard(lot, primary) {
+  function lotCard(lot, primary, view = '') {
     const image = primary ? null : lot.item.image;
-    const participation = (data.mine || []).find(entry => entry.id === lot.id);
+    const participation = primary ? (data.mine || []).find(entry => entry.id === lot.id)
+      : view === 'bid' ? lot : null;
     const minimum = lot.currentBid === null ? lot.reserve : lot.currentBid + 1;
     const eligible = account && (account.progression?.level || 1) >= lot.requiredLevel
       && account.tokens + (participation?.leading ? lot.currentBid : 0) >= minimum;
-    const mine = tab === 'mine';
+    const mine = view === 'mine-live' || view === 'mine-done';
     // Green border while the player leads (or has won), red while overbid.
     const borderState = primary && participation
       ? participation.leading || (participation.won && lot.status !== 'active') ? ' is-leading'
         : lot.status === 'active' ? ' is-outbid' : ''
-      : '';
+      : !primary && view === 'bid' ? lot.leading ? ' is-leading' : ' is-outbid'
+        : !primary && view === 'mine-live' ? ' is-owned' : !primary && view === 'mine-done' ? ' is-ended' : '';
+    const resaleState = !primary ? view === 'mine-live' ? t('YOUR LISTING', 'DEIN ANGEBOT')
+      : view === 'bid' ? lot.leading ? t('LEADING', 'DU FÜHRST') : t('OUTBID', 'ÜBERBOTEN')
+        : view === 'mine-done' ? lot.status === 'cancelled' ? t('CANCELLED', 'STORNIERT')
+          : lot.winnerId ? t('SOLD', 'VERKAUFT') : t('UNSOLD', 'NICHT VERKAUFT')
+          : t('LIVE', 'LIVE') : '';
+    const displayTitle = primary ? name(lot) : `${lot.quantity > 1 ? `${lot.quantity}× ` : ''}${lot.item.title}`;
     return `<article class="economy-lot${borderState}"><div class="economy-lot-image">${primary ? paletteArtwork(lot) : image ? `<img src="${esc(image)}" alt="" loading="lazy">` : '<span aria-hidden="true">◇</span>'}
-      ${primary ? '' : `<span class="economy-badge">${esc(categoryName(lot.item.marketCategory))}</span>`}</div>
-      <div class="economy-lot-body"><h2>${esc(primary ? name(lot) : lot.item.title)}</h2>
+      ${primary ? '' : `<span class="economy-badge">${esc(categoryName(lot.item.marketCategory))}</span><span class="auction-state-badge">${resaleState}</span>`}</div>
+      <div class="economy-lot-body"><h2>${esc(displayTitle)}</h2>
       ${primary ? `<div class="palette-seal" aria-hidden="true"><span>01 ◇</span><span>02 ◇</span><span>03 ◇</span></div>`
         : `<p>${t('Seller', 'Verkäufer')}: ${esc(lot.sellerUsername)}</p><p>${t('Estimated market value', 'Geschätzter Marktwert')}: ${justizEuro(lot.estimatedValueTokens)}</p>`}
       ${bidFacts(lot, primary)}
-      ${mine || (primary && participation) ? `<p class="economy-outcome">${primary ? lot.status === 'active' ? lot.leading ? t('You lead', 'Du führst') : t('Outbid', 'Überboten') : lot.won ? t('Won!', 'Gewonnen!') : t('Lost', 'Verloren') : status(lot)}${primary ? ` · ${t('Your highest bid', 'Dein Höchstgebot')}: ${justizEuro(lot.highestBid)}` : lot.winnerId ? ` · ${t('Final sale', 'Verkaufspreis')}: ${justizEuro(lot.currentBid)}` : ''}</p>` : ''}
+      ${mine || view === 'bid' || (primary && participation) ? `<p class="economy-outcome">${primary ? lot.status === 'active' ? lot.leading ? t('You lead', 'Du führst') : t('Outbid', 'Überboten') : lot.won ? t('Won!', 'Gewonnen!') : t('Lost', 'Verloren') : view === 'bid' ? lot.leading ? t('You lead', 'Du führst') : t('You were outbid', 'Du wurdest überboten') : status(lot)}${primary ? ` · ${t('Your highest bid', 'Dein Höchstgebot')}: ${justizEuro(lot.highestBid)}` : view === 'bid' ? ` · ${t('Your highest bid', 'Dein Höchstgebot')}: ${justizEuro(lot.highestBid)}` : lot.winnerId ? ` · ${t('Final sale', 'Verkaufspreis')}: ${justizEuro(lot.currentBid)}` : ''}</p>` : ''}
       <button class="${primary && lot.revealAvailable ? 'primary-button' : 'secondary-button'}" data-economy="${primary ? 'primary' : 'resale'}" data-id="${esc(lot.id)}">${primary && lot.revealAvailable ? t('View winning palette', 'Gewonnene Palette ansehen') : primary && !eligible ? t('Explore palette', 'Palette ansehen') : t('View auction', 'Auktion ansehen')} →</button>
-      ${!primary && mine && lot.status === 'active' && !lot.bidCount ? `<button class="text-button" data-economy="cancel" data-id="${esc(lot.id)}">${t('Cancel listing', 'Angebot stornieren')}</button>` : ''}</div></article>`;
+      ${!primary && view === 'mine-live' && lot.status === 'active' && !lot.bidCount ? `<button class="text-button" data-economy="cancel" data-id="${esc(lot.id)}">${t('Cancel listing', 'Angebot stornieren')}</button>` : ''}</div></article>`;
+  }
+  function marketplaceSection(title, eyebrow, lots, view, emptyText) {
+    return `<section class="marketplace-section marketplace-section--${view}"><div class="auction-section-heading"><div><p class="eyebrow">${eyebrow}</p><h2>${title}</h2></div><strong>${lots.length}</strong></div>
+      ${lots.length ? `<div class="economy-grid">${lots.map(lot => lotCard(lot, false, view)).join('')}</div>` : `<p class="marketplace-empty">${emptyText}</p>`}</section>`;
   }
   function render() {
     const path = currentAccountPage;
@@ -170,8 +177,7 @@ window.economyUi = (() => {
     const primary = path === '/auctions';
     accountContent.innerHTML = pageHeading(primary ? t('Mystery Palette auctions', 'Mystery-Palette-Auktionen') : t('Marketplace', 'Marktplatz'),
       primary ? t('Bid on a sealed Mystery Palette. Win it, then reveal three finds. Play Daily and sell items to unlock more.', 'Biete auf eine versiegelte Mystery-Palette. Gewinne und entdecke drei Funde. Spiele Daily und verkaufe Lose für höhere Level.')
-        : t('Real finds, live bids. Sell one item at a time — up to 5 active listings.', 'Echte Funde, laufende Gebote. Verkaufe einzelne Lose — höchstens 5 aktive Angebote.')) + economyOverviewMarkup();
-    accountContent.innerHTML += tabs(primary);
+        : t('Sell matching items together in one auction — up to 5 active listings.', 'Verkaufe passende Gegenstände gemeinsam in einer Auktion — höchstens 5 aktive Angebote.')) + economyOverviewMarkup();
     if (primary) {
       const paletteFilter = new URLSearchParams(location.search).get('palette');
       const myLots = data.mine || [];
@@ -188,12 +194,17 @@ window.economyUi = (() => {
         : empty(t('No other auctions right now.', 'Aktuell keine weiteren Auktionen.'));
       return;
     }
-    if (tab === 'mine' && !account) { accountContent.innerHTML += loginNotice('profile'); return; }
-    const paletteFilter = null;
-    const lots = (data[tab === 'mine' ? 'mine' : 'lots'] || []).filter(lot => !paletteFilter || lot.paletteId === paletteFilter);
-    if (lots.length) accountContent.innerHTML += `<div class="economy-grid">${lots.map(lot => lotCard(lot, primary)).join('')}</div>`;
-    else accountContent.innerHTML += empty(tab === 'mine' ? t('Your auction history will appear here after your first listing.', 'Nach deinem ersten Angebot erscheint hier dein Verlauf.') : t('No auctions right now.', 'Aktuell keine Auktionen.'));
-    if (tab === 'mine') accountContent.innerHTML += infoTip(t('Shows up to 100 recent auctions, with active auctions first.', 'Zeigt bis zu 100 aktuelle Auktionen, laufende Auktionen zuerst.'), t('History limits', 'Verlaufslimit'));
+    const own = data.mine || [], bidLots = data.bids || [];
+    const myLive = own.filter(lot => lot.status === 'active');
+    const myDone = own.filter(lot => lot.status !== 'active');
+    const separatedIds = new Set([...myLive, ...bidLots].map(lot => lot.id));
+    const otherLive = (data.lots || []).filter(lot => lot.sellerId !== account?.id && !separatedIds.has(lot.id));
+    if (account) accountContent.innerHTML += marketplaceSection(t('My live auctions', 'Meine laufenden Auktionen'), t('SELLING', 'VERKAUF'), myLive, 'mine-live', t('You have no live listings.', 'Du hast keine laufenden Angebote.'));
+    accountContent.innerHTML += marketplaceSection(t("Other players' live auctions", 'Laufende Auktionen anderer'), t('BROWSE', 'ENTDECKEN'), otherLive, 'other', t('No other live auctions right now.', 'Aktuell keine weiteren laufenden Auktionen.'));
+    if (account) {
+      accountContent.innerHTML += marketplaceSection(t('My current bids', 'Meine aktuellen Gebote'), t('BUYING', 'KAUF'), bidLots, 'bid', t('You have no active marketplace bids.', 'Du hast keine aktiven Marktplatzgebote.'));
+      accountContent.innerHTML += marketplaceSection(t('My completed auctions', 'Meine beendeten Auktionen'), t('HISTORY', 'VERLAUF'), myDone, 'mine-done', t('Completed listings will appear here.', 'Beendete Angebote erscheinen hier.'));
+    }
   }
   function bidForm(lot, primary) {
     if (!account) return `<a href="/login" data-page>${t('Log in to bid', 'Zum Bieten anmelden')}</a>`;
@@ -255,21 +266,24 @@ window.economyUi = (() => {
     if (participation) Object.assign(lot, { won: participation.won, leading: participation.leading,
       highestBid: participation.highestBid, revealAvailable: participation.revealAvailable });
     detailId = id;
-    const title = primary ? name(lot) : lot.item.title;
+    const title = primary ? name(lot) : `${lot.quantity > 1 ? `${lot.quantity}× ` : ''}${lot.item.title}`;
     const winAction = primary && lot.revealAvailable ? `<div class="auction-win-panel"><h3>${t('Won palette', 'Gewonnene Palette')}</h3><div class="palette-seal" aria-hidden="true"><span>01 ◇</span><span>02 ◇</span><span>03 ◇</span></div><button class="primary-button" data-economy="reveal" data-id="${esc(lot.id)}">${t('Reveal three finds', 'Drei Funde aufdecken')} →</button></div>` : bidForm(lot, primary);
     openDialog(`<div class="auction-room"><section class="auction-room-media" aria-label="${primary ? t('Sealed palette illustration', 'Illustration der versiegelten Palette') : t('Auction pictures', 'Auktionsbilder')}">${auctionMedia(lot, primary)}</section>
       <section class="auction-room-story"><p class="eyebrow">${primary ? t('SEALED · THREE FINDS', 'VERSIEGELT · DREI FUNDE') : t('PLAYER MARKETPLACE', 'SPIELERMARKTPLATZ')}</p><h2 id="economy-dialog-title" tabindex="-1">${esc(title)}</h2>
-      ${primary ? `<h3>${esc(story(lot).title)}</h3><p>${esc(story(lot).body)}</p><p class="auction-room-meta">${t('Required level', 'Benötigtes Level')} <strong>${lot.requiredLevel}</strong><br>${esc((lot.allowedMarketCategories || []).map(categoryName).join(' · ') || categoryName(null))}</p>${auctionContents(lot)}` : `<p class="auction-room-meta">${t('Seller', 'Verkäufer')}: <strong>${esc(lot.sellerUsername)}</strong><br>${t('Auction value', 'Auktionswert')}: <strong>${euro(lot.item.price)}</strong><br>${t('Estimated market value', 'Geschätzter Marktwert')}: <strong>${justizEuro(lot.estimatedValueTokens)}</strong></p>`}
+      ${primary ? `<h3>${esc(story(lot).title)}</h3><p>${esc(story(lot).body)}</p><p class="auction-room-meta">${t('Required level', 'Benötigtes Level')} <strong>${lot.requiredLevel}</strong><br>${esc((lot.allowedMarketCategories || []).map(categoryName).join(' · ') || categoryName(null))}</p>${auctionContents(lot)}` : `<p class="auction-room-meta">${t('Seller', 'Verkäufer')}: <strong>${esc(lot.sellerUsername)}</strong><br>${t('Quantity', 'Anzahl')}: <strong>${lot.quantity}</strong><br>${t('Auction value', 'Auktionswert')}: <strong>${euro(lot.item.price * lot.quantity)}</strong><br>${t('Estimated market value', 'Geschätzter Marktwert')}: <strong>${justizEuro(lot.estimatedValueTokens)}</strong></p>`}
       </section><aside class="auction-room-bidding"><header><p class="eyebrow">${t('LIVE AUCTION', 'LIVE-AUKTION')}</p><h3>${t('Bid room', 'Bietraum')}</h3></header><div data-live-facts>${bidFacts(lot, primary)}</div>
       <ol class="auction-chat" data-live-history role="log" aria-label="${t('Bid history', 'Gebotsverlauf')}">${bidHistory(lot.bids)}</ol><div class="auction-bid-dock">${winAction}</div></aside></div>`);
     const historyNode = dialog.querySelector('[data-live-history]');
     if (historyNode) historyNode.scrollTop = historyNode.scrollHeight;
   }
   function listingDialog(id) {
-    const item = accountItems.find(entry => entry.id === id);
+    const group = groupedInventory(accountItems).find(entry => entry.copies.some(copy => copy.id === id));
+    const available = group?.copies.filter(copy => !copy.listed) || [];
+    const item = available.find(copy => copy.id === id) || available[0];
     if (!item || !economyFlags.resales) return;
-    openDialog(`<h2 id="economy-dialog-title" tabindex="-1">${t('List for auction', 'Zur Auktion anbieten')}</h2><p>${esc(item.title)}</p><p>${t('Estimated market value', 'Geschätzter Marktwert')}: ${justizEuro(item.estimatedValueTokens)}</p>
-      <form data-economy-form="list" data-id="${esc(id)}" class="economy-form"><label>${t('Starting price in J€', 'Startpreis in J€')}<input name="amount" type="number" inputmode="numeric" min="1" step="1" value="${Math.max(1, Math.round(item.estimatedValueTokens * .7))}" required></label>
+    const quantity = available.length;
+    openDialog(`<h2 id="economy-dialog-title" tabindex="-1">${t('List for auction', 'Zur Auktion anbieten')}</h2><p>${esc(item.title)}</p><p>${t('Estimated market value', 'Geschätzter Marktwert')}: ${justizEuro(item.estimatedValueTokens * quantity)}</p>
+      <form data-economy-form="list" data-id="${esc(item.id)}" class="economy-form"><label>${t('Quantity', 'Anzahl')} · ${quantity} ${t('available', 'verfügbar')}<input name="quantity" type="number" inputmode="numeric" min="1" max="${quantity}" step="1" value="${quantity}" required></label><label>${t('Starting price in J€', 'Startpreis in J€')}<input name="amount" type="number" inputmode="numeric" min="1" step="1" value="${Math.max(1, Math.round(item.estimatedValueTokens * quantity * .7))}" required></label>
       <label>${t('Duration', 'Dauer')}<select name="duration"><option value="300000">${t('5 minutes', '5 Minuten')}</option><option value="900000" selected>${t('15 minutes', '15 Minuten')}</option><option value="3600000">${t('1 hour', '1 Stunde')}</option></select></label>
       <p>${t('Maximum 5 active listings. A listing with bids cannot be cancelled.', 'Höchstens 5 aktive Angebote. Angebote mit Geboten können nicht storniert werden.')}</p><p class="account-error" role="alert"></p><button class="primary-button" type="submit">${t('Start auction', 'Auktion starten')}</button></form>`);
   }
@@ -373,11 +387,11 @@ window.economyUi = (() => {
     const button = form.querySelector('button[type="submit"]'); button.disabled = true;
     try {
       const fields = new FormData(form), amount = Number(fields.get('amount')), id = form.dataset.id, type = form.dataset.economyForm;
-      const result = type === 'list' ? await api.listItem({ inventoryId: id, startPrice: amount, endsAt: new Date(Date.now() + Number(fields.get('duration'))).toISOString() })
+      const result = type === 'list' ? await api.listItem({ inventoryId: id, quantity: Number(fields.get('quantity')), startPrice: amount, endsAt: new Date(Date.now() + Number(fields.get('duration'))).toISOString() })
         : type === 'primary' ? await api.paletteAuctionBid(id, amount) : await api.resaleBid(id, amount);
       if (visit !== accountVisit || account?.id !== owner) return;
       updateAccount(result.user); busy = false;
-      if (type === 'list') { dialog.close(); await navigateAccountPage('/marketplace?view=mine'); }
+      if (type === 'list') { dialog.close(); await navigateAccountPage('/marketplace'); }
       else {
         await refresh(currentAccountPage, visit, true);
         if (visit !== accountVisit || owner !== account?.id) return;

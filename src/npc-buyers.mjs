@@ -68,13 +68,16 @@ export function tickNpcBuyers(dataDir, { now = Date.now(), unit = deterministicU
   seedNpcBuyers(dataDir, { now });
   withDatabase(dataDir, db => transaction(db, () => {
     const indexes = marketIndexes(db, now);
-    const auctions = db.prepare(`SELECT a.*, i.item FROM resale_auctions a JOIN inventory i ON i.id = a.inventory_id
+    const auctions = db.prepare(`SELECT a.*, i.item,
+      (SELECT COUNT(*) FROM resale_auction_items ai WHERE ai.auction_id = a.id) AS quantity
+      FROM resale_auctions a JOIN inventory i ON i.id = a.inventory_id
       WHERE a.status = 'active' AND a.ends_at > ? AND NOT EXISTS
       (SELECT 1 FROM resale_npc_interest n WHERE n.auction_id = a.id) ORDER BY a.started_at, a.id LIMIT 200`).all(now);
     const insert = db.prepare(`INSERT OR IGNORE INTO resale_npc_interest
       (auction_id, npc_id, max_bid, next_bid_at, created_at, active) VALUES (?, ?, ?, ?, ?, ?)`);
     for (const row of auctions) for (const npc of npcCohort(row.id)) {
-      const value = npcValuation(JSON.parse(row.item), indexes, npc, row.id, unit);
+      const item = JSON.parse(row.item);
+      const value = npcValuation({ ...item, price: item.price * Math.max(1, row.quantity) }, indexes, npc, row.id, unit);
       insert.run(row.id, npc.id, value.maxBid, now + npc.delaySeconds * 1000, now, Number(value.interested));
     }
     db.prepare(`UPDATE resale_npc_interest SET active = 0 WHERE active = 1 AND auction_id IN
