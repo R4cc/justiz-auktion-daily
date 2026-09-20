@@ -721,6 +721,14 @@ button:focus-visible, a:focus-visible { outline: 3px solid var(--red); outline-o
 .primary-button, .secondary-button { text-decoration: none; }
 .collection-heading { margin-bottom: 30px; }
 .collection-heading h1:focus { outline: none; }
+.collection-heading-line, .section-title-row { display: flex; align-items: center; gap: 10px; }
+.collection-heading-line h1, .section-title-row h2, .section-title-row h3 { margin-right: 0; }
+.info-tip { position: relative; z-index: 8; display: inline-flex; flex: none; vertical-align: middle; }
+.info-tip > button { display: grid; place-items: center; width: 24px; height: 24px; padding: 0; border: 1px solid var(--line); border-radius: 50%; background: transparent; color: var(--muted); font: 800 12px/1 'DM Mono', monospace; cursor: help; }
+.info-tip > button:hover, .info-tip > button:focus-visible { border-color: var(--ink); color: var(--ink); background: #e8ebdd; }
+.info-tip [role="tooltip"] { position: absolute; z-index: 20; top: calc(100% + 9px); left: 50%; width: min(300px, calc(100vw - 32px)); padding: 11px 13px; border: 1px solid var(--ink); border-radius: 8px; background: var(--ink); color: var(--paper); box-shadow: 0 8px 24px #10251e30; font: 500 12px/1.55 'Manrope', sans-serif; text-align: left; text-transform: none; letter-spacing: normal; pointer-events: none; opacity: 0; transform: translate(-50%, -4px); transition: opacity .14s ease, transform .14s ease; }
+.info-tip:hover [role="tooltip"], .info-tip:focus-within [role="tooltip"] { opacity: 1; transform: translate(-50%, 0); }
+@media (max-width: 700px) { .info-tip [role="tooltip"] { left: auto; right: -8px; transform: translateY(-4px); } .info-tip:hover [role="tooltip"], .info-tip:focus-within [role="tooltip"] { transform: translateY(0); } }
 .collection-empty .primary-button { margin-top: 14px; }
 .shop-balance { display: flex; justify-content: space-between; align-items: center; gap: 14px; padding: 18px 0; border-block: 1px solid var(--line); font-size: 13px; }
 .shop-balance a { color: var(--ink); }
@@ -949,6 +957,20 @@ button:focus-visible, a:focus-visible { outline: 3px solid var(--red); outline-o
 .reveal-steps { display: flex; justify-content: center; gap: 12px; margin: 20px; }
 .reveal-steps span { display: grid; place-items: center; width: 34px; height: 34px; border: 1px solid var(--line); border-radius: 50%; }
 .reveal-steps .is-current { background: var(--ink); color: var(--paper); }
+.palette-ledger { max-width: 620px; margin: 22px 0 8px; padding: 20px 24px; border: 1px solid var(--line); border-radius: 12px; background: #fffdf7; }
+.palette-ledger .eyebrow { margin-bottom: 10px; }
+.palette-ledger-row { display: flex; justify-content: space-between; align-items: baseline; gap: 18px; padding: 9px 0; border-bottom: 1px dashed var(--line); font-size: 14px; }
+.palette-ledger-row span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.palette-ledger-row small { color: var(--muted); font-size: 12px; }
+.palette-ledger-row b { font: 700 14px 'DM Mono', monospace; white-space: nowrap; }
+.palette-ledger-row.is-total { border-bottom: 2px solid var(--ink); font-weight: 700; }
+.palette-ledger-verdict { display: flex; justify-content: space-between; align-items: center; gap: 18px; margin-top: 14px; padding: 14px 16px; border-radius: 10px; }
+.palette-ledger-verdict span { font: 700 12px/1.2 'DM Mono', monospace; letter-spacing: .06em; text-transform: uppercase; }
+.palette-ledger-verdict strong { font-size: 22px; white-space: nowrap; }
+.palette-ledger-verdict.is-profit { background: #e4f3ea; color: #1c7a4c; }
+.palette-ledger-verdict.is-loss { background: #f9e7e0; color: #a03317; }
+.palette-ledger-verdict.is-even { background: #e8ebdd; color: var(--ink); }
+.palette-ledger-note { margin: 12px 0 0; color: var(--muted); font-size: 12px; line-height: 1.6; }
 .economy-effects a { padding: 10px 12px; background: #e8ebdd; border-radius: 8px; font-size: 12px; }
 .market-guidance p { max-width: 75ch; line-height: 1.7; }
 .market-history-table { max-height: 280px; overflow: auto; }

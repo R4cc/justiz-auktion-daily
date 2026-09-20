@@ -276,11 +276,24 @@ window.economyUi = (() => {
     dialog.querySelector('[data-economy="next-reward"]').focus({ preventScroll: true });
   }
   function revealSummary(fixed) {
+    const entries = fixed.rewards.map(r => ({ title: r.item.title, tokens: Math.max(1, Math.round(r.item.price)) }));
+    const staticTokens = entries.reduce((sum, entry) => sum + entry.tokens, 0);
     const value = fixed.rewards.reduce((sum, r) => sum + r.item.price, 0);
-    const staticTokens = fixed.rewards.reduce((sum, r) => sum + Math.max(1, Math.round(r.item.price)), 0);
     const difference = staticTokens - fixed.bundleCostTokens;
+    const verdict = difference > 0 ? { label: t('Your profit', 'Dein Gewinn'), className: 'is-profit',
+        note: t('A profitable palette. Sell your finds to bank it.', 'Eine profitable Palette. Verkaufe deine Funde und sichere dir den Gewinn.') }
+      : difference < 0 ? { label: t('Your loss', 'Dein Verlust'), className: 'is-loss',
+        note: t('Below the winning bid this time — your finds can still sell for more.', 'Diesmal unter dem Gewinngebot — deine Funde können noch mehr einbringen.') }
+      : { label: t('Break-even', 'Ausgeglichen'), className: 'is-even',
+        note: t('Exactly even with the winning bid.', 'Genau ausgeglichen mit dem Gewinngebot.') };
     openDialog(`<h2 id="economy-dialog-title" tabindex="-1">${t('Three finds. Yours.', 'Drei Funde. Deine.')}</h2><div class="inventory-grid">${fixed.rewards.map(r => itemCard({ ...r.item, sellValue: Math.max(1, Math.round(r.item.price)) }, false)).join('')}</div>
-      <dl class="auction-facts"><div><dt>${t('Total auction value', 'Gesamter Auktionswert')}</dt><dd>${euro(value)}</dd></div><div><dt>${t('Winning bid', 'Gewinngebot')}</dt><dd>${tokens(fixed.bundleCostTokens)}</dd></div><div><dt>${t('Rough difference vs. frozen values', 'Grobe Differenz zu eingefrorenen Werten')}</dt><dd>${difference >= 0 ? '+' : ''}${tokens(difference)}</dd></div></dl><p>${t('Historical values are not guaranteed sale prices. Your finds are already in your inventory.', 'Historische Werte sind keine garantierten Verkaufspreise. Deine Funde liegen bereits im Inventar.')}</p><a class="primary-button" href="/inventory" data-page>${t('Go to inventory', 'Zum Inventar')} →</a>`);
+      <div class="palette-ledger"><p class="eyebrow">${t('The tally', 'Die Abrechnung')}</p>
+      ${entries.map(entry => `<div class="palette-ledger-row"><span>${esc(entry.title)}</span><b>+${number(entry.tokens)}</b></div>`).join('')}
+      <div class="palette-ledger-row is-total"><span>${t('Total finds value', 'Gesamtwert der Funde')} <small>(${euro(value)})</small></span><b>${number(staticTokens)}</b></div>
+      <div class="palette-ledger-row"><span>${t('Winning bid', 'Gewinngebot')}</span><b>−${number(fixed.bundleCostTokens)}</b></div>
+      <div class="palette-ledger-verdict ${verdict.className}"><span>${verdict.label}</span><strong>${difference > 0 ? '+' : difference < 0 ? '−' : ''}${number(Math.abs(difference))} ${t('tokens', 'Tokens')}</strong></div>
+      <p class="palette-ledger-note">${verdict.note} ${t('Historical values are not guaranteed sale prices. Your finds are already in your inventory.', 'Historische Werte sind keine garantierten Verkaufspreise. Deine Funde liegen bereits im Inventar.')}</p></div>
+      <a class="primary-button" href="/inventory" data-page>${t('Go to inventory', 'Zum Inventar')} →</a>`);
   }
   async function loadHistory(id, visit = accountVisit, repaint = true) {
     if (!id) return;

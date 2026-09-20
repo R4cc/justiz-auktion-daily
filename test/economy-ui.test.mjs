@@ -148,6 +148,31 @@ test('closing or navigating during palette animation suppresses the pending item
   assert.equal(writes, 0); assert.equal(context.revealPosition, 0);
 });
 
+test('palette summary tallies finds, subtracts the winning bid and declares profit or loss', async () => {
+  let markup = '';
+  const rewards = [{ item: { title: 'Sneakers', price: 50 } }, { item: { title: 'Esprimo', price: 277 } }, { item: { title: 'Toothbrush', price: 15 } }];
+  const context = vm.createContext({
+    openDialog: value => { markup = value; },
+    itemCard: item => `<div class="card">${item.title}</div>`,
+    t: en => en, esc: String, number: value => String(value), euro: value => `€${value}`
+  });
+  vm.runInContext(extract(uiSource, '  function revealSummary(', '  async function loadHistory('), context);
+  vm.runInContext(`revealSummary(${JSON.stringify({ rewards, bundleCostTokens: 797 })})`, context);
+  assert.match(markup, /<b>\+50<\/b>/);
+  assert.match(markup, /<b>\+277<\/b>/);
+  assert.match(markup, /<b>\+15<\/b>/);
+  assert.match(markup, /Total finds value/);
+  assert.match(markup, /<b>342<\/b>/);
+  assert.match(markup, /−797/);
+  assert.match(markup, /palette-ledger-verdict is-loss/);
+  assert.match(markup, /Your loss/);
+  assert.match(markup, /−455 tokens/);
+  vm.runInContext(`revealSummary(${JSON.stringify({ rewards, bundleCostTokens: 100 })})`, context);
+  assert.match(markup, /palette-ledger-verdict is-profit/);
+  assert.match(markup, /Your profit/);
+  assert.match(markup, /\+242 tokens/);
+});
+
 test('progression terminal state and active economy routes remain in syntax verification', async () => {
   const context = vm.createContext({ t: en => en, number: String });
   vm.runInContext(uiSource.slice(0, uiSource.indexOf('window.economyUi')), context);
