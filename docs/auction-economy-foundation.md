@@ -6,8 +6,12 @@ default on; the Compose file passes them through explicitly. Explicit false valu
 
 ## Player loop and routes
 
-Daily → tokens and 150 XP → sealed Mystery Palette auction → three fixed rewards
-→ inventory → player resale marketplace → human/NPC buyers → seller tokens and XP.
+Daily → J€ and 150 XP → sealed Mystery Palette auction → three fixed rewards
+→ inventory → player resale marketplace → human/NPC buyers → seller J€ and XP.
+
+Player-facing currency is **J€ (Justiz€)**. Existing persisted and API fields such
+as `tokens` and `estimatedValueTokens` retain their names for data compatibility;
+they are implementation details and are never shown as the currency name.
 Persisted market effects influence current item estimates and the demand of
 newly initialized NPC buyers. Automatic news publication is dormant.
 
@@ -55,7 +59,7 @@ With resales enabled, `Accounts.sell` and `sellAll` reject with
 result dialogs omit instant-sell actions. With resales disabled, old sell paths
 and locking rules remain intact. Legacy case HTTP operations remain available
 for compatibility; the enabled primary experience routes players to auctions.
-Daily XP earning is independent of feature flags; token reward selection/rates
+Daily XP earning is independent of feature flags; J€ reward selection/rates
 and Higher-or-Lower gameplay are unchanged.
 
 ## Runtime and automatic primary supply
@@ -138,7 +142,7 @@ Only rarity cards appear during each spin. The server result is already fixed;
 client randomness decorates the reel and never selects an economic outcome.
 Reduced motion uses the existing timed stepped presentation. Closing/navigating
 invalidates the sequence. Reveal can be replayed safely. The summary shows three
-items, total historical euro value, winning bid, and a rough token difference
+items, total historical euro value, winning bid, and a rough J€ difference
 using frozen item values. It does not promise a resale price.
 
 ## XP and schema version 9
@@ -161,7 +165,7 @@ XP increment run inside the same economic transaction as Daily completion or
 resale settlement. Failed transactions roll all changes back.
 
 - Daily completion: **150 XP**, source ID = account game/run ID. Awarded even if
-  Higher-or-Lower already claimed that day's token reward. Completion retries,
+  Higher-or-Lower already claimed that day's J€ reward. Completion retries,
   reloads and restarts cannot repeat it.
 - Successful resale: seller gets
   `clamp(10, 200, round(20 * log2(1 + finalSalePrice / 100)))`.
@@ -181,13 +185,13 @@ playful named characters alongside deterministic generated names. Every profile
 has preferred categories, willingness, aggressiveness, cheapness, patience,
 collector status and timing. Registry names contain spaces, outside the
 human-registration username alphabet. Each account is seeded once with
-**1,000,000,000 tokens**, representing external consumer demand. Repeated seeds
+**J€ 1,000,000,000**, representing external consumer demand. Repeated seeds
 insert only missing identities and never refill balances or reset inventory.
 
 NPCs cannot log in, receive sessions, bid on primary palettes, or create resale
 listings. Session lookup independently excludes them. Friends, human leaderboards,
 admin player-management lists and playerCount exclude them. Both global and
-individual admin token grants exclude them. Their names appear naturally in
+individual admin J€ grants exclude them. Their names appear naturally in
 resale bid history, without AI badges. Won items stay in NPC inventory and leave
 the human resale market.
 
@@ -203,7 +207,7 @@ Once initialized, max_bid and interest remain frozen through market changes,
 page refreshes and restarts. New listings reflect newer market state.
 
 Scheduled buyers wait according to patience and aggressiveness, then either add
-the minimum one-token increment according to cheapness or make a bounded jump
+the minimum J€ 1 increment according to cheapness or make a bounded jump
 toward WTP according to aggressiveness. They react when outbid below WTP and
 shorten their personality-based delay in the last two minutes. No NPC jumps
 straight to WTP. A database-backed guard inside `placeBid`
@@ -232,7 +236,7 @@ serialization uses `estimatedValueTokens`. Inventory includes the estimate when
 market or resales are enabled, and `listed` for current item locks. Listings
 include `estimatedValueTokens` and `currentBidderId`; detail bid history includes
 public usernames. Item price, sellValue and frozen reward JSON are never updated
-for market valuation. Historical auction values and current token estimates have
+for market valuation. Historical auction values and current J€ estimates have
 separate labels in the UI.
 
 `src/world-news.mjs` retains 10 predefined bilingual scenarios for possible
@@ -313,9 +317,9 @@ readable table; current indexes distinguish above/below normal in text.
 ## Economy reset
 
 The admin page includes an explicit, phrase-confirmed economy reset. It runs in
-one database transaction and restores every human account to 1,000 tokens and
+one database transaction and restores every human account to J€ 1,000 and
 0 XP while deleting inventories, account game runs and rewards, case-opening
-receipts, token-grant history, XP receipts, resale auctions and primary palette
+receipts, J€ grant history, XP receipts, resale auctions and primary palette
 auctions. Runtime-owned NPC accounts are removed and recreated normally.
 
 Authentication and social identity are outside the reset boundary: user ids,

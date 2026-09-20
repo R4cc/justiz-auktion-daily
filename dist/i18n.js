@@ -1,6 +1,14 @@
 let language = 'en';
 try { if (localStorage.getItem('justizguessr:language') === 'de') language = 'de'; } catch {}
 function t(en, de) { return language === 'de' ? de : en; }
+let infoTipSequence = 0;
+function uiEscape(value) {
+  return String(value).replace(/[&<>"']/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[char]);
+}
+function infoTip(text, label = t('More information', 'Mehr Informationen')) {
+  const id = `info-tip-${++infoTipSequence}`;
+  return `<span class="info-tip"><button type="button" aria-label="${uiEscape(label)}" aria-describedby="${id}">?</button><span id="${id}" role="tooltip">${uiEscape(text)}</span></span>`;
+}
 function paletteName(id) {
   const names = { 'electronics-smuggling': ['Smuggled Electronics', 'Geschmuggelte Elektronik'],
     'dealer-seizure': ['Dealer Seizure', 'Händlerbeschlagnahme'], 'wine-tax-seizure': ['Wine Tax Seizure', 'Weinsteuerbeschlagnahme'] };
@@ -45,6 +53,7 @@ function uiLocale() { return language === 'de' ? 'de-DE' : 'en-GB'; }
 function number(value, digits) {
   return Number(value).toLocaleString(uiLocale(), digits === undefined ? {} : { minimumFractionDigits: digits, maximumFractionDigits: digits });
 }
+function justizEuro(value) { return `J€ ${number(value)}`; }
 function dayLabel(count) { return t(`${count} day${count === 1 ? '' : 's'}`, `${count} Tag${count === 1 ? '' : 'e'}`); }
 function listingLabel(value = '') {
   const labels = {
@@ -70,13 +79,13 @@ function renderStaticUi() {
   document.querySelector('[data-action="help"]').setAttribute('aria-label', t('Game rules', 'Spielregeln'));
   document.querySelector('#help-dialog').innerHTML = `<form method="dialog">
     <button class="dialog-close" aria-label="${t('Close', 'Schließen')}">×</button>
-    <p class="eyebrow">${t('HOW TO PLAY', "SO FUNKTIONIERT’S")}</p><h2>${t('Trust your sense of value.', 'Vertraue deinem Preisgefühl.')}</h2>
+    <h2>${t('Game rules', 'Spielregeln')}</h2>
     <div class="rules-grid"><div><span>01</span><p>${t('Explore five real, publicly listed auctions.', 'Entdecke fünf echte, öffentlich gelistete Auktionen.')}</p></div>
     <div><span>02</span><p>${t('Guess the bid. Condition and time remaining can help.', 'Schätze das Gebot. Zustand und Restzeit helfen dir.')}</p></div>
     <div><span>03</span><p>${t('The closer your guess, the more points you earn. Small price differences on cheaper items are scored generously.', 'Je näher dein Tipp, desto mehr Punkte. Kleine Preisunterschiede bei günstigen Losen werden großzügig bewertet.')}</p></div></div>
     <p>${t('Everyone gets the same Daily set and fixed prices. Guest progress stays on this device; signed-in games can be resumed across devices.', 'Alle spielen dasselbe Daily mit festgeschriebenen Preisen. Gastfortschritt bleibt auf diesem Gerät; angemeldete Spiele kannst du geräteübergreifend fortsetzen.')}</p>
     <h2>Higher or Lower</h2><p>${t('Compare the final bids of ended auctions. Each correct guess extends your streak. Ties count either way; a miss ends the run.', 'Vergleiche die Endgebote beendeter Auktionen. Jeder richtige Tipp verlängert den Lauf. Bei Gleichstand zählen beide Tipps; ein Fehler beendet den Lauf.')}</p>
-    <h2>${t('Tokens & collectibles', 'Tokens & Sammelobjekte')}</h2>${typeof economyFlags !== 'undefined' && economyFlags.paletteAuctions ? `<p>${t('Complete Daily to earn 150 XP. Your first Daily or Higher or Lower run of the UTC day can also earn tokens. Bid on sealed Mystery Palettes, reveal three finds, and collect them in your inventory. Successful marketplace sales earn 10–200 XP.', 'Schließe Daily für 150 XP ab. Dein erster Daily- oder Higher-or-Lower-Lauf pro UTC-Tag kann auch Tokens verdienen. Biete auf versiegelte Mystery-Paletten, entdecke drei Funde und sammle sie im Inventar. Erfolgreiche Marktplatzverkäufe bringen 10–200 XP.')}</p>` : `<p>${t(`Sign in before playing. One rewarded run per UTC day: complete Daily for ${number(rewards.daily)} tokens, or earn ${number(rewards.higherLowerPerCorrect)} per correct Higher or Lower comparison with a final streak of at least ${rewards.minimumStreak} (maximum ${number(rewards.higherLowerMax)}). Rewards follow today’s cheapest case price. Your first answer reserves that day’s run. Spend tokens in the shop and sell collectibles from your inventory.`, `Melde dich vor dem Spielen an. Ein Token-Lauf pro UTC-Tag: ${number(rewards.daily)} Tokens für ein abgeschlossenes Daily oder ${number(rewards.higherLowerPerCorrect)} je richtigem Higher-or-Lower-Vergleich ab einem Endlauf von ${rewards.minimumStreak} Treffern (maximal ${number(rewards.higherLowerMax)}). Die Belohnungen richten sich nach dem heutigen günstigsten Kistenpreis. Der erste Tipp reserviert den Lauf. Nutze Tokens im Shop und verkaufe Sammelobjekte im Inventar.`)}</p>`}
+    <h2>${t('Justiz€ & collectibles', 'Justiz€ & Sammelobjekte')}</h2>${typeof economyFlags !== 'undefined' && economyFlags.paletteAuctions ? `<p>${t('Complete Daily to earn 150 XP. Your first Daily or Higher or Lower run of the UTC day can also earn J€. Bid on sealed Mystery Palettes, reveal three finds, and collect them in your inventory. Successful marketplace sales earn 10–200 XP.', 'Schließe Daily für 150 XP ab. Dein erster Daily- oder Higher-or-Lower-Lauf pro UTC-Tag kann auch J€ verdienen. Biete auf versiegelte Mystery-Paletten, entdecke drei Funde und sammle sie im Inventar. Erfolgreiche Marktplatzverkäufe bringen 10–200 XP.')}</p>` : `<p>${t(`Sign in before playing. One rewarded run per UTC day: complete Daily for ${justizEuro(rewards.daily)}, or earn ${justizEuro(rewards.higherLowerPerCorrect)} per correct Higher or Lower comparison with a final streak of at least ${rewards.minimumStreak} (maximum ${justizEuro(rewards.higherLowerMax)}). Rewards follow today’s cheapest case price. Your first answer reserves that day’s run. Spend J€ in the shop and sell collectibles from your inventory.`, `Melde dich vor dem Spielen an. Ein J€-Lauf pro UTC-Tag: ${justizEuro(rewards.daily)} für ein abgeschlossenes Daily oder ${justizEuro(rewards.higherLowerPerCorrect)} je richtigem Higher-or-Lower-Vergleich ab einem Endlauf von ${rewards.minimumStreak} Treffern (maximal ${justizEuro(rewards.higherLowerMax)}). Die Belohnungen richten sich nach dem heutigen günstigsten Kistenpreis. Der erste Tipp reserviert den Lauf. Nutze J€ im Shop und verkaufe Sammelobjekte im Inventar.`)}</p>`}
     <p class="fine-print">${t('Auction titles and descriptions are shown in their original source language.', 'Auktionstitel und Beschreibungen erscheinen in der Originalsprache.')}</p>
   </form>`;
 }

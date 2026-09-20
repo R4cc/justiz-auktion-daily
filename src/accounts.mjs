@@ -410,8 +410,16 @@ export class Accounts {
       const indexes = this.flags.resales || this.flags.market ? marketIndexes(db, this.now()) : null;
       const locked = lockedInventoryIds(db);
       return db.prepare('SELECT id, item, created_at FROM inventory WHERE user_id = ? AND sold_at IS NULL ORDER BY created_at DESC, id')
-      .all(user.id).map(row => ({ ...currentItemValue(JSON.parse(row.item)), id: row.id, createdAt: row.created_at,
-        ...(indexes ? { estimatedValueTokens: estimatedValueTokens(JSON.parse(row.item), indexes), listed: locked.has(row.id) } : {}) }));
+      .all(user.id).map(row => {
+        const item = currentItemValue(JSON.parse(row.item));
+        return { ...item, id: row.id, createdAt: row.created_at,
+          ...(indexes ? { estimatedValueTokens: estimatedValueTokens(item, indexes),
+            // Current category index (100 = neutral): lets the inventory card
+            // show the market-adjusted euro value and the ±% since the last
+            // market update.
+            marketIndex: item.marketCategory ? indexes[item.marketCategory] ?? null : null,
+            listed: locked.has(row.id) } : {}) };
+      });
     });
   }
   openCase(user, catalog, caseId, requestId, revision = catalog.revision) {

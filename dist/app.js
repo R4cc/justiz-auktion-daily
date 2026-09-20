@@ -348,25 +348,21 @@ function renderStart() {
   app.innerHTML = `
     <section class="start-screen">
       <div class="start-main">
-        <p class="eyebrow game-number"><span class="live-dot" aria-hidden="true"></span> ${t("THE DAILY HAMMER", "DER HAMMER DES TAGES")} · #${gameNumber()}</p>
+        <div class="section-title-row"><p class="eyebrow game-number"><span class="live-dot" aria-hidden="true"></span> ${t("DAILY", "DAILY")} · #${gameNumber()}</p>${infoTip(t('Guess the bids on five public justice auctions. Sign in to keep rewards and progress across devices.', 'Schätze die Gebote von fünf öffentlichen Justiz-Auktionen. Melde dich an, um Belohnungen und Fortschritt geräteübergreifend zu behalten.'), t('How Daily works', 'So funktioniert Daily'))}</div>
         <h1 class="hero-title">${t("Going once.", "Zum Ersten.")}<br>${t("Going twice.", "Zum Zweiten.")}<br><span>${t("Your guess!", "Dein Tipp!")}</span></h1>
-        <p class="hero-copy">${t("From lost property to lucky finds: guess the bids on", "Vom Fundstück zum Glücksgriff: Schätze die Gebote von")} <strong>${t("5 real justice auctions.", "5 echten Justiz-Auktionen.")}</strong> ${t("How good is your sense of value?", "Wie gut ist dein Preisgefühl?")}</p>
         <div class="start-actions">
           <button class="primary-button" type="button" data-action="play">${buttonText}<span class="button-arrow">→</span></button>
           <button class="secondary-button random-button" type="button" data-action="random">${t("Start a free game", "Freies Spiel starten")} <span aria-hidden="true">↻</span></button>
-          <button class="secondary-button hl-start" type="button" data-action="higher-lower"><span>Higher or Lower <small>${t("Higher? Lower? Keep your streak alive.", "Höher? Niedriger? Halte deinen Lauf am Leben.")}</small></span><span aria-hidden="true">↑↓</span></button>
+          <button class="secondary-button hl-start" type="button" data-action="higher-lower"><span>Higher or Lower</span><span aria-hidden="true">↑↓</span></button>
         </div>
-        <p class="play-note">${t("Play as a guest or sign in to collect auction finds.", "Als Gast spielen oder mit Konto Auktionslose sammeln.")}</p>
-        ${economyFlags.paletteAuctions ? `<a class="home-auction-ticket" href="/auctions" data-page><span class="eyebrow">${t("THE AUCTION FLOOR IS OPEN", "DER AUKTIONSSAAL IST GEÖFFNET")}</span><strong>${t("One palette. Three surprises.", "Eine Palette. Drei Überraschungen.")}</strong><span>${t("Use your tokens. Bid, win and reveal your next finds.", "Nutze deine Tokens. Biete, gewinne und entdecke deine nächsten Funde.")} →</span></a>` : ""}<div class="how-strip" aria-label="${t("How to play", "Spielablauf")}"><span><b>01</b> ${t("Discover", "Entdecken")}</span><span><b>02</b> ${t("Guess", "Schätzen")}</span><span><b>03</b> ${t("Collect", "Abräumen")}</span></div>
+        ${economyFlags.paletteAuctions ? `<a class="home-auction-ticket" href="/auctions" data-page><strong>${t("Mystery Palette auctions", "Mystery-Palette-Auktionen")}</strong><span>${t("Bid with J€", "Mit J€ bieten")} →</span></a>` : ""}
       </div>
       <aside class="start-side" aria-label="${t("Daily statistics", "Tagesstatistik")}">
         <div class="auction-art" aria-hidden="true">
-          <span class="art-caption">${t("THE DAILY AUCTION GAME", "DAS TÄGLICHE AUKTIONSSPIEL")}</span>
           <span class="art-spark art-spark--one">✳</span><span class="art-spark art-spark--two">✦</span>
-          <div class="bid-paddle"><span>${t("BIDDER NUMBER", "BIETERNUMMER")}</span><strong>001</strong><small>${t("TRUST YOUR INSTINCT", "DEIN PREISGEFÜHL ZÄHLT")}</small></div>
+          <div class="bid-paddle"><span>${t("BIDDER NUMBER", "BIETERNUMMER")}</span><strong>001</strong></div>
           <div class="gavel"><i class="gavel-head"></i><i class="gavel-handle"></i></div>
           <span class="art-stamp">${t("TODAY", "HEUTE")}<br><strong>${t("5 LOTS", "5 LOSE")}</strong><br>${t("FOR YOU", "FÜR DICH")}</span>
-          <span class="art-caption art-caption--bottom">${t("LITTLE TREASURES. BIG QUESTIONS.", "KLEINE SCHÄTZE. GROSSE FRAGEZEICHEN.")}</span>
         </div>
         <div class="ticket">
           <div class="ticket-top">
@@ -595,7 +591,7 @@ function renderResults() {
   app.innerHTML = `
     <section class="results-screen">
       <div class="results-header">
-        <div><p class="eyebrow">${gameMode === 'random' ? t("FREE PLAY", "FREIES SPIEL") : `${t('DAILY AUCTION', 'TAGESAUKTION')} #${gameNumber()}`} · ${t("COMPLETE", "GESCHAFFT")}</p><h1>${t("Going, gone.", "Zum Dritten.")}<br><span style="color:var(--red)">${t("Let’s add it up!", "Abgerechnet!")}</span></h1></div>
+        <div><p class="eyebrow">${gameMode === 'random' ? t("FREE PLAY", "FREIES SPIEL") : `${t('DAILY', 'DAILY')} #${gameNumber()}`}</p><h1>${t("Results", "Ergebnis")}</h1></div>
         <div class="results-score"><strong>${total.toLocaleString(uiLocale())} / ${number(5000)}</strong><span>${t("TOTAL POINTS", "GESAMTPUNKTE")}</span></div>
       </div>
       <div class="result-stats">
@@ -615,7 +611,7 @@ function renderResults() {
         <button class="secondary-button" type="button" data-action="copy">${t("Copy text", "Text kopieren")}</button>
         <button class="secondary-button" type="button" data-action="home">${t("Back to home", "Zur Startseite")}</button>
       </div>
-      <p class="data-note">${gameMode === 'random' ? t("This round uses the auction archive. Ended auctions use their last recorded final bid.", "Diese Runde stammt aus dem dauerhaft gespeicherten Auktionsarchiv. Beendete Auktionen werden mit ihrem letzten erfassten Endgebot gespielt.") : t("Prices are fixed for this Daily. The original auction may continue to change.", "Gebotsstände wurden für dieses Tagesspiel festgeschrieben. Die Originalauktion kann sich danach weiter verändern.")}</p>
+      <div class="data-note">${infoTip(gameMode === 'random' ? t("This round uses the auction archive. Ended auctions use their last recorded final bid.", "Diese Runde stammt aus dem Auktionsarchiv. Beendete Auktionen nutzen ihr zuletzt erfasstes Endgebot.") : t("Prices are fixed for this Daily. The original auction may continue to change.", "Gebotsstände sind für dieses Daily festgeschrieben. Die Originalauktion kann sich weiter verändern."), t('About these prices', 'Über diese Preise'))}</div>
     </section>`;
 }
 

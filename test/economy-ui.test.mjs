@@ -29,7 +29,7 @@ test('economy helpers use authenticated history/list/bid/cancel contracts and sa
 test('resale inventory and legacy reward markup never render instant-sell buttons; flags off retain them', () => {
   const item = { id: 'item', title: 'Tool', price: 100, sellValue: 100, estimatedValueTokens: 120, rarity: 'common', image: '/tool.jpg' };
   const context = vm.createContext({ economyFlags: { resales: true }, accountResult: item,
-    t: en => en, number: String, euro: value => `EUR ${value}`, accountEscape: String, rarityLabel: String });
+    t: en => en, number: String, justizEuro: value => `J€ ${value}`, euro: value => `EUR ${value}`, accountEscape: String, rarityLabel: String });
   vm.runInContext(extract(accountSource, 'function itemCard(', 'function groupedInventory(')
     + extract(accountSource, 'function resultMarkup(', 'function tierCard('), context);
   const markup = vm.runInContext(`itemCard(${JSON.stringify(item)}) + resultMarkup()`, context);
@@ -42,15 +42,34 @@ test('resale inventory and legacy reward markup never render instant-sell button
   assert.match(listed, /disabled/); assert.match(listed, /Already listed/);
 });
 
+test('inventory cards show the market value with a delta badge when the market is priced', () => {
+  const item = { id: 'item', title: 'Tool', price: 100, sellValue: 100, estimatedValueTokens: 125, marketCategory: 'electronics', marketIndex: 125, rarity: 'common', image: '/tool.jpg' };
+  const context = vm.createContext({ economyFlags: { resales: true }, accountResult: item,
+    t: en => en, number: String, justizEuro: value => `J€ ${value}`, euro: value => `EUR ${value}`, accountEscape: String, rarityLabel: String });
+  vm.runInContext(extract(accountSource, 'function itemCard(', 'function groupedInventory('), context);
+  const markup = vm.runInContext(`itemCard(${JSON.stringify(item)})`, context);
+  assert.match(markup, /Market value J€ 125/);
+  assert.match(markup, /market-delta is-up/);
+  assert.match(markup, /↑ \+25%/);
+  assert.doesNotMatch(markup, /Auction value/);
+  const cold = vm.runInContext(`itemCard(${JSON.stringify({ ...item, marketIndex: 77.7 })})`, context);
+  assert.match(cold, /Market value J€ 77.7/);
+  assert.match(cold, /market-delta is-down/);
+  assert.match(cold, /↓ −22%/);
+  const unpriced = vm.runInContext(`itemCard(${JSON.stringify({ ...item, marketIndex: null, estimatedValueTokens: null })})`, context);
+  assert.match(unpriced, /Auction value/);
+  assert.doesNotMatch(unpriced, /market-delta/);
+});
+
 test('auction bid history is chronological and marks the signed-in player as chat bubbles', () => {
   const context = vm.createContext({ account: { id: 'mine' }, t: en => en, esc: String,
-    tokens: value => `${value} tokens`, date: String });
+    justizEuro: value => `J€ ${value}`, date: String });
   vm.runInContext(extract(uiSource, '  const bidHistory =', '  const story ='), context);
   const markup = vm.runInContext(`bidHistory([
     {id:'2', bidderId:'other', bidderUsername:'Rival', amount:120, createdAt:20},
     {id:'1', bidderId:'mine', bidderUsername:'Player', amount:100, createdAt:10}
   ])`, context);
-  assert.ok(markup.indexOf('100 tokens') < markup.indexOf('120 tokens'));
+  assert.ok(markup.indexOf('J€ 100') < markup.indexOf('J€ 120'));
   assert.match(markup, /auction-chat-message is-mine/);
   assert.match(markup, />You</);
   assert.match(markup, />Rival</);
@@ -67,6 +86,15 @@ test('legacy story copy moves fiction notices into the single site disclaimer', 
     'In Grayfield öffnet eine Werkstatt.');
 });
 
+test('information tips are labelled, keyboard focusable and escape their copy', () => {
+  const context = vm.createContext({ language: 'en' });
+  vm.runInContext(extract(i18nSource, 'function t(', 'function paletteName('), context);
+  const markup = vm.runInContext(`infoTip('Balance < reserve & fees', 'Bid details')`, context);
+  assert.match(markup, /<button type="button" aria-label="Bid details" aria-describedby="info-tip-1">\?/);
+  assert.match(markup, /id="info-tip-1" role="tooltip"/);
+  assert.match(markup, /Balance &lt; reserve &amp; fees/);
+});
+
 test('auction detail uses media, story and bid-room columns with the bid form below the log', async () => {
   let markup = '';
   const lot = { id: 'lot', name: 'Palette', story: { parody: true }, items: [{ title: 'Camera', image: '/camera.jpg', rarity: 'rare' }],
@@ -76,10 +104,11 @@ test('auction detail uses media, story and bid-room columns with the bid form be
   const context = vm.createContext({
     account: { id: 'mine', tokens: 500, progression: { level: 2 } }, data: { mine: [] }, dialogSequence: 0,
     accountVisit: 1, detailId: null, api: { paletteAuction: async () => ({ auction: lot }) },
-    t: en => en, esc: String, tokens: value => `${value} tokens`, name: value => value.name,
+    t: en => en, esc: String, justizEuro: value => `J€ ${value}`, name: value => value.name,
+    infoTip: text => `<span class="info-tip">${text}</span>`,
     story: () => ({ title: 'The story', body: 'A mysterious customs lot.', shortDescription: 'Customs warehouse bust', parody: true }), categoryName: String,
     rarityLabel: String, euro: String, accountError: String, status: () => 'Active',
-    bidFacts: () => '<div>120 tokens</div>', bidHistory: () => '<li>bid bubble</li>',
+    bidFacts: () => '<div>J€ 120</div>', bidHistory: () => '<li>bid bubble</li>',
     openDialog: value => { markup = value; }, dialog: { querySelector: () => ({ scrollTop: 0, scrollHeight: 100 }) }
   });
   vm.runInContext(extract(uiSource, '  function bidForm(', '  function listingDialog('), context);
@@ -154,27 +183,28 @@ test('palette summary tallies finds, subtracts the winning bid and declares prof
   const context = vm.createContext({
     openDialog: value => { markup = value; },
     itemCard: item => `<div class="card">${item.title}</div>`,
-    t: en => en, esc: String, number: value => String(value), euro: value => `€${value}`
+    t: en => en, esc: String, number: value => String(value), justizEuro: value => `J€ ${value}`, euro: value => `€${value}`,
+    infoTip: text => `<span class="info-tip">${text}</span>`
   });
   vm.runInContext(extract(uiSource, '  function revealSummary(', '  async function loadHistory('), context);
   vm.runInContext(`revealSummary(${JSON.stringify({ rewards, bundleCostTokens: 797 })})`, context);
-  assert.match(markup, /<b>\+50<\/b>/);
-  assert.match(markup, /<b>\+277<\/b>/);
-  assert.match(markup, /<b>\+15<\/b>/);
+  assert.match(markup, /<b>\+J€ 50<\/b>/);
+  assert.match(markup, /<b>\+J€ 277<\/b>/);
+  assert.match(markup, /<b>\+J€ 15<\/b>/);
   assert.match(markup, /Total finds value/);
-  assert.match(markup, /<b>342<\/b>/);
-  assert.match(markup, /−797/);
+  assert.match(markup, /<b>J€ 342<\/b>/);
+  assert.match(markup, /−J€ 797/);
   assert.match(markup, /palette-ledger-verdict is-loss/);
-  assert.match(markup, /Your loss/);
-  assert.match(markup, /−455 tokens/);
+  assert.match(markup, />Loss</);
+  assert.match(markup, /−J€ 455/);
   vm.runInContext(`revealSummary(${JSON.stringify({ rewards, bundleCostTokens: 100 })})`, context);
   assert.match(markup, /palette-ledger-verdict is-profit/);
-  assert.match(markup, /Your profit/);
-  assert.match(markup, /\+242 tokens/);
+  assert.match(markup, />Profit</);
+  assert.match(markup, /\+J€ 242/);
 });
 
 test('progression terminal state and active economy routes remain in syntax verification', async () => {
-  const context = vm.createContext({ t: en => en, number: String });
+  const context = vm.createContext({ t: en => en, number: String, justizEuro: value => `J€ ${value}`, infoTip: text => `<span>${text}</span>` });
   vm.runInContext(uiSource.slice(0, uiSource.indexOf('window.economyUi')), context);
   const terminal = vm.runInContext('progressionMarkup({level:20,xp:36100,nextLevelXp:null,progress:1})', context);
   assert.match(terminal, /Level 20 reached/); assert.doesNotMatch(terminal, /NaN/);

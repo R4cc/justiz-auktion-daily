@@ -36,7 +36,7 @@ function accountError(code) {
     invalid_code: t('This code is invalid or already used.', 'Dieser Code ist ungültig oder bereits verwendet.'),
     username_taken: t('That username is already taken.', 'Dieser Benutzername ist bereits vergeben.'),
     login_required: t('Please sign in again.', 'Bitte melde dich erneut an.'),
-    insufficient_tokens: t('You do not have enough tokens yet.', 'Du hast noch nicht genug Tokens.'),
+    insufficient_tokens: t('You do not have enough J€.', 'Du hast nicht genug J€.'),
     try_later: t('Too many attempts. Try again later.', 'Zu viele Versuche. Versuche es später erneut.'),
     forbidden: t('This action is not allowed.', 'Diese Aktion ist nicht erlaubt.'),
     daily_reset: t('A new Daily is here. Please reload.', 'Ein neues Daily ist da. Bitte lade neu.'),
@@ -48,8 +48,8 @@ function accountError(code) {
     friend_self: t('You cannot add yourself.', 'Du kannst dich nicht selbst hinzufügen.'),
     friend_limit: t('The limit of 100 friends and pending requests has been reached.', 'Das Limit von 100 Freunden und offenen Anfragen wurde erreicht.'),
     friend_request_not_found: t('That request is no longer available. Refresh your profile.', 'Diese Anfrage ist nicht mehr verfügbar. Aktualisiere dein Profil.'),
-    invalid_grant_amount: t('Enter a whole number from 1 to 1,000,000 tokens.', 'Gib eine ganze Zahl von 1 bis 1.000.000 Tokens ein.'),
-    invalid_grant_user: t('Choose a user to receive the tokens.', 'Wähle einen Benutzer aus, der die Tokens erhalten soll.'),
+    invalid_grant_amount: t('Enter a whole J€ amount from 1 to 1,000,000.', 'Gib einen ganzen J€-Betrag von 1 bis 1.000.000 ein.'),
+    invalid_grant_user: t('Choose a user to receive the J€.', 'Wähle einen Benutzer aus, der die J€ erhalten soll.'),
     request_conflict: t('This request was already used with different values.', 'Diese Anfrage wurde bereits mit anderen Werten verwendet.'),
     invalid_reset_confirmation: t('Type RESET ECONOMY exactly to confirm.', 'Gib zur Bestätigung exakt RESET ECONOMY ein.'),
     account_banned: t('This account has been banned.', 'Dieses Konto wurde gesperrt.'),
@@ -61,7 +61,7 @@ function accountError(code) {
     auction_has_bids: t('This auction already has bids and cannot be cancelled.', 'Diese Auktion hat bereits Gebote und kann nicht storniert werden.'),
     own_auction: t('You cannot bid on your own auction.', 'Du kannst nicht auf deine eigene Auktion bieten.'),
     bid_too_low: t('Your bid must beat the current highest bid.', 'Dein Gebot muss höher als das aktuelle Höchstgebot sein.'),
-    invalid_bid: t('Enter a whole number of tokens.', 'Gib eine ganze Zahl an Tokens ein.'),
+    invalid_bid: t('Enter a whole J€ amount.', 'Gib einen ganzen J€-Betrag ein.'),
     invalid_market_effects: t('The market effect is not valid.', 'Der Markteffekt ist ungültig.'),
     invalid_palette: t('The referenced palette is not valid.', 'Die referenzierte Palette ist ungültig.'),
     invalid_status: t('The status is not valid.', 'Der Status ist ungültig.'),
@@ -89,14 +89,14 @@ function updateNavigation() {
   }
   const auth = document.querySelector('#header-auth');
   auth.href = account ? '/profile' : '/login';
-  auth.textContent = account ? `${account.username} · ${number(account.tokens)} ${t('tokens', 'Tokens')}` : t('Log in / Register', 'Anmelden / Registrieren');
+  auth.textContent = account ? `${account.username} · ${justizEuro(account.tokens)}` : t('Log in / Register', 'Anmelden / Registrieren');
   document.querySelector('.site-nav').setAttribute('aria-label', t('Main navigation', 'Hauptnavigation'));
 }
 function giftToast(gifts) {
   const total = gifts.reduce((sum, gift) => sum + gift.amount, 0);
   return gifts.length === 1
-    ? t(`You were given ${number(total)} tokens.`, `Du hast ${number(total)} Tokens geschenkt bekommen.`)
-    : t(`You were given ${number(total)} tokens across ${gifts.length} gifts.`, `Du hast ${number(total)} Tokens aus ${gifts.length} Geschenken erhalten.`);
+    ? t(`You were given ${justizEuro(total)}.`, `Du hast ${justizEuro(total)} geschenkt bekommen.`)
+    : t(`You were given ${justizEuro(total)} across ${gifts.length} gifts.`, `Du hast ${justizEuro(total)} aus ${gifts.length} Geschenken erhalten.`);
 }
 function updateAccount(user) {
   account = user;
@@ -177,13 +177,13 @@ async function navigateAccountPage(path, push = true) {
   }
 }
 function pageHeading(title, text) {
-  return `<header class="collection-heading"><p class="eyebrow">JUSTIZGUESSR</p><h1 tabindex="-1">${title}</h1><p>${text}</p></header>`;
+  return `<header class="collection-heading"><div class="collection-heading-line"><h1 tabindex="-1">${title}</h1>${text ? infoTip(text) : ''}</div></header>`;
 }
 function loginNotice(subject) {
-  return `<section class="collection-empty"><span aria-hidden="true">◇</span><h2>${t(`Log in to view your ${subject}.`, subject === 'inventory' ? 'Melde dich an, um dein Inventar zu sehen.' : 'Melde dich an, um dein Profil zu sehen.')}</h2><p>${t('Your collection and friends will be waiting here.', 'Deine Sammlung und Freunde warten hier auf dich.')}</p><a class="primary-button" href="/login" data-page>${t('Log in', 'Anmelden')}</a></section>`;
+  return `<section class="collection-empty"><span aria-hidden="true">◇</span><h2>${t(`Log in to view your ${subject}.`, subject === 'inventory' ? 'Melde dich an, um dein Inventar zu sehen.' : 'Melde dich an, um dein Profil zu sehen.')}</h2><a class="primary-button" href="/login" data-page>${t('Log in', 'Anmelden')}</a></section>`;
 }
 function accountValueMarkup() {
-  return `<div class="account-value"><span>${t('TOTAL ACCOUNT VALUE', 'GESAMTER KONTOWERT')}<strong>${euro(account.accountValueEur)}</strong></span><p>${t(`Auction values of your collection (${account.itemCount} item${account.itemCount === 1 ? "" : "s"}). Tokens are not included in the euro value.`, `Auktionswerte deiner Sammlung (${account.itemCount} Lose). Tokens zählen nicht zum Eurowert.`)}</p></div>`;
+  return `<div class="account-value"><span>${t('TOTAL ACCOUNT VALUE', 'GESAMTER KONTOWERT')}<strong>${euro(account.accountValueEur)}</strong></span>${infoTip(t(`Auction values of your collection (${account.itemCount} item${account.itemCount === 1 ? "" : "s"}). Justiz€ is not included in the euro value.`, `Auktionswerte deiner Sammlung (${account.itemCount} Lose). Justiz€ zählt nicht zum Eurowert.`), t('How account value is calculated', 'Berechnung des Kontowerts'))}</div>`;
 }
 function renderAccountPage() {
   if (!pageLoaded || !currentAccountPage) return;
@@ -198,11 +198,11 @@ function renderAccountPage() {
 }
 function renderAuth() {
   const register = currentAccountPage === '/register';
-  accountContent.innerHTML = pageHeading(register ? t('Create an account.', 'Konto erstellen.') : t('Welcome back.', 'Willkommen zurück.'), t('A username. A password. Your collection.', 'Ein Benutzername. Ein Passwort. Deine Sammlung.')) +
+  accountContent.innerHTML = pageHeading(register ? t('Create account', 'Konto erstellen') : t('Log in', 'Anmelden')) +
     (account ? `<p>${t('You are already logged in.', 'Du bist bereits angemeldet.')}</p><a class="secondary-button" href="/profile" data-page>${t('Go to profile', 'Zum Profil')}</a>` :
     `<form id="account-form" class="account-form"><label>${t('Username', 'Benutzername')}<input name="username" autocomplete="username" required pattern="[a-zA-Z0-9_-]{3,32}" minlength="3" maxlength="32"></label>
     <label>${t('Password', 'Passwort')}<input name="password" type="password" autocomplete="${register ? 'new-password' : 'current-password'}" required minlength="12" maxlength="128"></label>
-    ${register ? `<label>${t('Registration code', 'Registrierungscode')}<input name="code" autocomplete="off" required minlength="32" maxlength="32" spellcheck="false"></label><p>${t('Ask an admin for a single-use registration code. Passwords need at least 12 characters.', 'Du erhältst einen einmal verwendbaren Code vom Admin. Passwörter benötigen mindestens 12 Zeichen.')}</p>` : ''}
+    ${register ? `<label>${t('Registration code', 'Registrierungscode')}<input name="code" autocomplete="off" required minlength="32" maxlength="32" spellcheck="false"></label>${infoTip(t('Ask an admin for a single-use registration code. Passwords need at least 12 characters.', 'Du erhältst einen einmal verwendbaren Code vom Admin. Passwörter benötigen mindestens 12 Zeichen.'), t('Account requirements', 'Kontoanforderungen'))}` : ''}
     <p class="account-error" role="alert"></p><button class="primary-button" type="submit">${register ? t('Register', 'Registrieren') : t('Log in', 'Anmelden')}</button>
     <a class="text-button" href="${register ? '/login' : '/register'}" data-page>${register ? t('Already registered? Log in', 'Schon registriert? Anmelden') : t('Have a code? Create an account', 'Du hast einen Code? Konto erstellen')}</a></form>`);
 }
@@ -212,10 +212,16 @@ function rarityLabel(id) {
 function itemCard(item, controls = true) {
   const copies = item.copies || [item];
   const available = copies.find(copy => !copy.listed);
+  const marketValue = item.marketIndex == null ? null : item.price * item.marketIndex / 100;
+  const marketDelta = marketValue == null ? null : Math.round(item.marketIndex) - 100;
+  const marketDeltaBadge = marketDelta ? `<span class="market-delta ${marketDelta > 0 ? 'is-up' : 'is-down'}" title="${t('Market movement since the last update', 'Marktbewegung seit der letzten Aktualisierung')}">${marketDelta > 0 ? '↑ +' : '↓ −'}${Math.abs(marketDelta)}%</span>` : '';
+  const valueLine = marketValue == null
+    ? `${t('Auction value', 'Auktionswert')} ${euro(item.price)}`
+    : `${t('Market value', 'Marktwert')} ${justizEuro(marketValue)} ${marketDeltaBadge}`;
   const resaleControls = `<button class="primary-button" data-economy="list" data-id="${accountEscape(available?.id || item.id)}" ${available ? '' : 'disabled'}>${available ? t('List for auction', 'Zur Auktion anbieten') : t('Already listed', 'Bereits angeboten')}</button>${economyFlags.market && item.marketCategory ? `<a href="/market?category=${encodeURIComponent(item.marketCategory)}" data-page>${t('Check market before selling', 'Markt vor dem Verkauf prüfen')} →</a>` : ''}<a href="/marketplace?view=mine" data-page>${t('Manage my listings', 'Meine Angebote verwalten')}</a>`;
   return `<article class="collection-item rarity-${accountEscape(item.rarity)}"><span class="rarity-label">${rarityLabel(item.rarity)}</span>${copies.length > 1 ? `<span class="item-count" aria-label="${copies.length} ${t('copies', 'Exemplare')}">×${copies.length}</span>` : ''}
-    <img src="${accountEscape(item.image)}" alt="" loading="lazy"><h3>${accountEscape(item.title)}</h3><p>${t('Auction value', 'Auktionswert')} ${euro(item.price)}</p>${item.estimatedValueTokens == null ? '' : `<p>${t('Estimated market value', 'Geschätzter Marktwert')} · ${number(item.estimatedValueTokens)} ${t('tokens', 'Tokens')}</p>`}
-    ${economyFlags.resales && controls ? resaleControls : controls ? copies.length > 1 ? `<div class="item-actions"><button class="secondary-button" data-account="sell" data-id="${accountEscape(copies[0].id)}">${t('Sell one', 'Eins verkaufen')}<small>+${number(item.sellValue)}</small></button><button class="secondary-button" data-account="sell-all" data-id="${accountEscape(copies[0].id)}">${t('Sell all', 'Alle verkaufen')}<small>+${number(item.sellValue * copies.length)}</small></button></div>` : `<button class="secondary-button" data-account="sell" data-id="${accountEscape(item.id)}">${t('Sell', 'Verkaufen')} · ${number(item.sellValue)} ${t('tokens', 'Tokens')}</button>` : `<span class="item-value">${number(item.sellValue)} ${t('tokens', 'Tokens')}</span>`}</article>`;
+    <img src="${accountEscape(item.image)}" alt="" loading="lazy"><h3>${accountEscape(item.title)}</h3><p>${valueLine}</p>${item.estimatedValueTokens == null ? '' : `<p>${t('Estimated market value', 'Geschätzter Marktwert')} · ${justizEuro(item.estimatedValueTokens)}</p>`}
+    ${economyFlags.resales && controls ? resaleControls : controls ? copies.length > 1 ? `<div class="item-actions"><button class="secondary-button" data-account="sell" data-id="${accountEscape(copies[0].id)}">${t('Sell one', 'Eins verkaufen')}<small>+${justizEuro(item.sellValue)}</small></button><button class="secondary-button" data-account="sell-all" data-id="${accountEscape(copies[0].id)}">${t('Sell all', 'Alle verkaufen')}<small>+${justizEuro(item.sellValue * copies.length)}</small></button></div>` : `<button class="secondary-button" data-account="sell" data-id="${accountEscape(item.id)}">${t('Sell', 'Verkaufen')} · ${justizEuro(item.sellValue)}</button>` : `<span class="item-value">${justizEuro(item.sellValue)}</span>`}</article>`;
 }
 function groupedInventory(items) {
   const groups = new Map();
@@ -227,11 +233,11 @@ function groupedInventory(items) {
   return [...groups.values()];
 }
 function renderInventory() {
-  accountContent.innerHTML = pageHeading(t('Your inventory.', 'Dein Inventar.'), t('Every find has a story. Keep yours or trade it for tokens.', 'Jeder Fund hat eine Geschichte. Behalte ihn oder tausche ihn gegen Tokens.'));
+  accountContent.innerHTML = pageHeading(t('Inventory', 'Inventar'), t('List items on the marketplace or keep them in your collection.', 'Biete Gegenstände auf dem Marktplatz an oder behalte sie in deiner Sammlung.'));
   if (!account) { accountContent.innerHTML += loginNotice('inventory'); return; }
   const filtered = groupedInventory(accountItems.filter(item => accountFilter === 'all' || item.rarity === accountFilter));
   accountInventoryPage = Math.min(accountInventoryPage, Math.max(0, Math.ceil(filtered.length / 24) - 1));
-  accountContent.innerHTML += accountValueMarkup() + (economyFlags.resales ? `<p class="earning-detail">${t('Sell through the marketplace. Maximum 5 active listings.', 'Verkaufe auf dem Marktplatz. Höchstens 5 aktive Angebote.')}</p>` : '') + `<div class="inventory-heading"><h2>${t('Collection', 'Sammlung')} <small>${accountItems.length} ${accountItems.length === 1 ? t('item', 'Los') : t('items', 'Lose')}</small></h2><label>${t('Rarity', 'Seltenheit')} <select id="rarity-filter"><option value="all">${t('All', 'Alle')}</option>${accountCatalog.rarities.map(rarity => `<option value="${rarity.id}" ${accountFilter === rarity.id ? 'selected' : ''}>${rarityLabel(rarity.id)}</option>`).join('')}</select></label></div>
+  accountContent.innerHTML += accountValueMarkup() + `<div class="inventory-heading"><div class="section-title-row"><h2>${t('Collection', 'Sammlung')} <small>${accountItems.length} ${accountItems.length === 1 ? t('item', 'Los') : t('items', 'Lose')}</small></h2>${economyFlags.resales ? infoTip(t('Sell through the marketplace. Maximum 5 active listings.', 'Verkaufe auf dem Marktplatz. Höchstens 5 aktive Angebote.'), t('Selling limits', 'Verkaufslimits')) : ''}</div><label>${t('Rarity', 'Seltenheit')} <select id="rarity-filter"><option value="all">${t('All', 'Alle')}</option>${accountCatalog.rarities.map(rarity => `<option value="${rarity.id}" ${accountFilter === rarity.id ? 'selected' : ''}>${rarityLabel(rarity.id)}</option>`).join('')}</select></label></div>
     ${filtered.length ? `<div class="inventory-grid">${filtered.slice(accountInventoryPage * 24, (accountInventoryPage + 1) * 24).map(item => itemCard(item)).join('')}</div><div class="inventory-pages"><button data-account="page" data-step="-1" ${accountInventoryPage ? '' : 'disabled'}>← ${t('Previous', 'Zurück')}</button><span>${accountInventoryPage + 1} / ${Math.ceil(filtered.length / 24)}</span><button data-account="page" data-step="1" ${(accountInventoryPage + 1) * 24 >= filtered.length ? 'disabled' : ''}>${t('Next', 'Weiter')} →</button></div>` : `<div class="collection-empty"><h2>${t('Your next find belongs here.', 'Hier wartet dein nächster Fund.')}</h2><p>${economyFlags.paletteAuctions ? t('Win a Mystery Palette to start your collection, or try another rarity filter.', 'Gewinne eine Mystery-Palette oder wähle einen anderen Seltenheitsfilter.') : t('Open a case to start your collection, or try another rarity filter.', 'Öffne eine Kiste für deine Sammlung oder wähle einen anderen Seltenheitsfilter.')}</p><a class="primary-button" href="/shop" data-page>${economyFlags.paletteAuctions ? t('Browse auctions', 'Auktionen ansehen') : t('Visit the shop', 'Zum Shop')} →</a></div>`}`;
 }
 function dailyFriendLabel(daily) {
@@ -239,23 +245,23 @@ function dailyFriendLabel(daily) {
   return daily.status === 'in_progress' ? t(`In progress · ${daily.completedRounds} / 5 lots`, `In Arbeit · ${daily.completedRounds} / 5 Lose`) : t('Not played yet', 'Noch nicht gespielt');
 }
 function renderLeaderboard() {
-  accountContent.innerHTML = pageHeading(t('Global leaderboard.', 'Globale Rangliste.'), t('The top 100 players, ranked by the auction value of their collection.', 'Die besten 100 Spieler, sortiert nach dem Auktionswert ihrer Sammlung.'));
+  accountContent.innerHTML = pageHeading(t('Leaderboard', 'Rangliste'), t('Top 100 players by collection auction value.', 'Top 100 nach Auktionswert der Sammlung.'));
   const rows = accountLeaderboard.leaders.map(leader => `<tr${account?.id === leader.id ? ' class="is-me"' : ''}><td class="leaderboard-rank">${leader.rank}</td><td class="leaderboard-name">${accountEscape(leader.username)}</td>
     <td>${leader.score === null ? t('Not played yet', 'Noch nicht gespielt') : `${number(leader.score)} / ${number(5000)} ${t('pts', 'Pkt')}`}</td><td>${euro(leader.inventoryValueEur)}</td></tr>`).join('');
   accountContent.innerHTML += `<div class="friends-heading"><div><h2>${t('Top 100', 'Top 100')}</h2><p>${t('Daily for', 'Daily vom')} ${accountLeaderboard.date} · ${t('Resets at 00:00 UTC', 'Reset um 00:00 UTC')}</p></div><button data-account="refresh">${t('Refresh', 'Aktualisieren')}</button></div>
     ${rows ? `<div class="leaderboard-wrap"><table class="leaderboard-table"><thead><tr><th scope="col">#</th><th scope="col">${t('Player', 'Spieler')}</th><th scope="col">${t('TODAY’S DAILY', 'HEUTIGES DAILY')}</th><th scope="col">${t('INVENTORY VALUE', 'INVENTARWERT')}</th></tr></thead><tbody>${rows}</tbody></table></div>` : `<p class="collection-empty">${t('No players yet. Register to claim the first rank.', 'Noch keine Spieler. Registriere dich für den ersten Platz.')}</p>`}`;
 }
 function rewardNote() {
-  if (!account) return t('Log in before playing to earn tokens.', 'Melde dich vor dem Spielen an, um Tokens zu verdienen.');
+  if (!account) return t('Log in before playing to earn J€.', 'Melde dich vor dem Spielen an, um J€ zu verdienen.');
   const rewards = accountCatalog?.rewards || { daily: 100, higherLowerMax: 200 };
-  if (!account.reward) return t(`Your daily reward run is available. Finish Daily for ${number(rewards.daily)} tokens, or earn up to ${number(rewards.higherLowerMax)} in Higher or Lower.`, `Dein täglicher Token-Lauf ist verfügbar. Schließe das Daily für ${number(rewards.daily)} Tokens ab oder verdiene bis zu ${number(rewards.higherLowerMax)} in Higher or Lower.`);
-  return account.reward.complete ? t(`You earned ${account.reward.earned} tokens today. Your next reward run unlocks at 00:00 UTC.`, `Du hast heute ${account.reward.earned} Tokens verdient. Dein nächster Token-Lauf startet um 00:00 UTC.`) : t(`Resume your ${account.reward.mode === 'daily' ? 'Daily' : 'Higher or Lower'} run to earn today’s tokens.`, `Setze deinen ${account.reward.mode === 'daily' ? 'Daily' : 'Higher-or-Lower'}-Lauf für die heutigen Tokens fort.`);
+  if (!account.reward) return t(`Your daily reward run is available. Finish Daily for ${justizEuro(rewards.daily)}, or earn up to ${justizEuro(rewards.higherLowerMax)} in Higher or Lower.`, `Dein täglicher J€-Lauf ist verfügbar. Schließe das Daily für ${justizEuro(rewards.daily)} ab oder verdiene bis zu ${justizEuro(rewards.higherLowerMax)} in Higher or Lower.`);
+  return account.reward.complete ? t(`You earned ${justizEuro(account.reward.earned)} today. Your next reward run unlocks at 00:00 UTC.`, `Du hast heute ${justizEuro(account.reward.earned)} verdient. Dein nächster J€-Lauf startet um 00:00 UTC.`) : t(`Resume your ${account.reward.mode === 'daily' ? 'Daily' : 'Higher or Lower'} run to earn today’s J€.`, `Setze deinen ${account.reward.mode === 'daily' ? 'Daily' : 'Higher-or-Lower'}-Lauf für die heutigen J€ fort.`);
 }
 function rewardBanner() { return `<p class="reward-note">${accountEscape(rewardNote())}</p>`; }
 function renderProfile() {
-  accountContent.innerHTML = pageHeading(account ? accountEscape(account.username) : t('Your profile.', 'Dein Profil.'), t('Your collection, your progress, your friends.', 'Deine Sammlung, dein Fortschritt, deine Freunde.'));
+  accountContent.innerHTML = pageHeading(account ? accountEscape(account.username) : t('Profile', 'Profil'));
   if (!account) { accountContent.innerHTML += loginNotice('profile'); return; }
-  accountContent.innerHTML += accountValueMarkup() + progressionMarkup(account.progression) + `<div class="profile-stats"><div><span>TOKENS</span><strong>${number(account.tokens)}</strong></div><div><span>${t('TODAY’S DAILY', 'HEUTIGES DAILY')}</span><strong>${dailyFriendLabel(account.daily)}</strong></div><button class="secondary-button" data-account="logout">${t('Log out', 'Abmelden')}</button></div>${rewardBanner()}
+  accountContent.innerHTML += accountValueMarkup() + progressionMarkup(account.progression) + `<div class="profile-stats"><div><span>JUSTIZ€</span><strong>${justizEuro(account.tokens)}</strong></div><div><span>${t('TODAY’S DAILY', 'HEUTIGES DAILY')}</span><strong>${dailyFriendLabel(account.daily)}</strong></div><button class="secondary-button" data-account="logout">${t('Log out', 'Abmelden')}</button></div>${rewardBanner()}
     <section class="profile-friends"><div class="friends-heading"><div><h2>${t('Friends', 'Freunde')}</h2><p>${t('Daily for', 'Daily vom')} ${accountFriends.date} · ${t('Resets at 00:00 UTC', 'Reset um 00:00 UTC')}</p></div><button data-account="refresh">${t('Refresh', 'Aktualisieren')}</button></div>${friendsMarkup()}</section>`;
 }
 function friendsMarkup() {
@@ -264,7 +270,7 @@ function friendsMarkup() {
   const outgoing = accountFriends.friends.filter(friend => friend.status === 'outgoing');
   const requests = (friends, incoming) => friends.map(friend => `<div class="friend-request"><strong>${accountEscape(friend.username)}</strong><span>${incoming ? t('Wants to be your friend', 'Möchte mit dir befreundet sein') : t('Waiting for a reply', 'Wartet auf Antwort')}</span><div>${incoming ? `<button data-account="friend-accept" data-id="${friend.id}">${t('Accept', 'Annehmen')}</button>` : ''}<button data-account="friend-remove" data-id="${friend.id}">${incoming ? t('Decline', 'Ablehnen') : t('Cancel request', 'Zurückziehen')}</button></div></div>`).join('');
   return `<form id="friend-form" class="friend-form"><label>${t('Username', 'Benutzername')}<input name="username" required minlength="3" maxlength="32" pattern="[a-zA-Z0-9_-]{3,32}" autocomplete="off" placeholder="${t('Your friend’s username', 'Benutzername eines Freundes')}"></label><button class="secondary-button" type="submit">${t('Send request', 'Anfrage senden')}</button><p class="account-error" role="alert"></p></form>
-    <p class="earning-detail">${t('Once accepted, you can see each other’s inventory value and today’s Daily progress.', 'Nach dem Annehmen seht ihr gegenseitig euren Inventarwert und den heutigen Daily-Spielstand.')}</p>
+    ${infoTip(t('Accepted friends can see each other’s inventory value and today’s Daily progress.', 'Angenommene Freunde sehen gegenseitig ihren Inventarwert und den heutigen Daily-Spielstand.'), t('What friends can see', 'Was Freunde sehen'))}
     ${incoming.length ? `<h3>${t('Incoming requests', 'Anfragen an dich')} · ${incoming.length}</h3><div class="friend-requests">${requests(incoming, true)}</div>` : ''}
     ${outgoing.length ? `<h3>${t('Sent requests', 'Gesendete Anfragen')} · ${outgoing.length}</h3><div class="friend-requests">${requests(outgoing, false)}</div>` : ''}
     <h3>${t('Your friends', 'Deine Freunde')} · ${accepted.length}</h3>
@@ -274,8 +280,8 @@ function adminUserListMarkup() {
   const query = adminUserFilter.trim().toLowerCase();
   const filtered = accountAdmin.users.filter(user => user.username.toLowerCase().includes(query));
   const rows = filtered.slice(0, 100).map(user => `<div class="user-row${user.banned ? ' is-banned' : ''}">
-    <div class="user-row-main"><strong>${accountEscape(user.username)}</strong><span>${number(user.tokens)} ${t('tokens', 'Tokens')}${user.admin ? ` · ${t('Admin', 'Admin')}` : ''}${user.banned ? ` · ${t('Banned', 'Gesperrt')}` : ''}</span></div>
-    <div class="user-row-actions">${user.admin ? '' : `<button data-account="ban-toggle" data-id="${accountEscape(user.id)}" data-banned="${user.banned ? 'true' : 'false'}">${user.banned ? t('Unban', 'Entsperren') : t('Ban', 'Sperren')}</button>`}<button data-account="grant-user" data-id="${accountEscape(user.id)}">${t('Give tokens', 'Tokens geben')}</button></div>
+    <div class="user-row-main"><strong>${accountEscape(user.username)}</strong><span>${justizEuro(user.tokens)}${user.admin ? ` · ${t('Admin', 'Admin')}` : ''}${user.banned ? ` · ${t('Banned', 'Gesperrt')}` : ''}</span></div>
+    <div class="user-row-actions">${user.admin ? '' : `<button data-account="ban-toggle" data-id="${accountEscape(user.id)}" data-banned="${user.banned ? 'true' : 'false'}">${user.banned ? t('Unban', 'Entsperren') : t('Ban', 'Sperren')}</button>`}<button data-account="grant-user" data-id="${accountEscape(user.id)}">${t('Give J€', 'J€ geben')}</button></div>
   </div>`).join('');
   const note = filtered.length > 100 ? t(`Showing 100 of ${filtered.length} players. Refine your search.`, `Zeige 100 von ${filtered.length} Spielern. Grenze die Suche weiter ein.`) :
     filtered.length ? '' : t('No players match this search.', 'Keine Spieler gefunden.');
@@ -320,23 +326,23 @@ function renderAuctionDetail(auction) {
   auctionReveal.querySelector('[data-account="close-auction"]').focus({ preventScroll: true });
 }
 function renderAdmin() {
-  accountContent.innerHTML = pageHeading(t('Admin desk.', 'Adminbereich.'), t('Manage players, grant tokens and invite your community.', 'Verwalte Spieler, verschenke Tokens und lade deine Community ein.'));
+  accountContent.innerHTML = pageHeading(t('Admin', 'Adminbereich'));
   if (!account?.admin) { accountContent.innerHTML += `<p class="collection-empty">${t('Log in with an admin account to access this page.', 'Melde dich mit einem Adminkonto an, um diese Seite zu nutzen.')}</p>`; return; }
-  accountContent.innerHTML += `<section class="admin-section"><h2>${t('Players', 'Spieler')}</h2><p>${t(`Search all ${accountAdmin.playerCount} players to give tokens to one account or ban it. Banned players are signed out immediately and cannot log back in.`, `Durchsuche alle ${accountAdmin.playerCount} Spieler, um einem Konto Tokens zu geben oder es zu sperren. Gesperrte Spieler werden sofort abgemeldet und können sich nicht mehr anmelden.`)}</p>
-    <div class="admin-toolbar"><label>${t('Search', 'Suche')}<input id="user-search" type="search" autocomplete="off" placeholder="${t('Username', 'Benutzername')}" value="${accountEscape(adminUserFilter)}"></label><label>${t('Tokens per grant', 'Tokens pro Grant')}<input id="grant-amount" type="number" min="1" max="1000000" step="1" value="100"></label></div>
+  accountContent.innerHTML += `<section class="admin-section"><div class="section-title-row"><h2>${t('Players', 'Spieler')}</h2>${infoTip(t(`Search all ${accountAdmin.playerCount} players to grant J€ or change access. Banned players are signed out immediately.`, `Durchsuche alle ${accountAdmin.playerCount} Spieler, um J€ zu vergeben oder den Zugang zu ändern. Gesperrte Spieler werden sofort abgemeldet.`))}</div>
+    <div class="admin-toolbar"><label>${t('Search', 'Suche')}<input id="user-search" type="search" autocomplete="off" placeholder="${t('Username', 'Benutzername')}" value="${accountEscape(adminUserFilter)}"></label><label>${t('J€ per grant', 'J€ pro Gutschrift')}<input id="grant-amount" type="number" min="1" max="1000000" step="1" value="100"></label></div>
     <div id="user-list" class="user-list">${adminUserListMarkup()}</div>
-    <h3>${t('Give all players tokens', 'Allen Spielern Tokens geben')}</h3><p>${t(`Give a custom amount to every existing account, including admins (${accountAdmin.playerCount} currently). Accounts registered afterwards will not receive this grant.`, `Gib jedem bestehenden Konto inklusive Admins einen Betrag deiner Wahl (aktuell ${accountAdmin.playerCount}). Später registrierte Konten erhalten diese Gutschrift nicht.`)}</p>
-    <form id="grant-form" class="grant-form"><label>${t('Tokens per player', 'Tokens pro Spieler')}<input name="amount" type="number" min="1" max="1000000" step="1" value="100" required></label><button class="primary-button" type="submit">${t('Give tokens to all current players', 'Tokens an alle aktuellen Spieler geben')}</button><p class="account-error" role="alert"></p></form>
-    <div class="grant-history">${accountAdmin.grants.map(grant => `<p>${new Date(grant.createdAt).toLocaleString(uiLocale())} · ${number(grant.amount)} ${t('tokens each', 'Tokens je Spieler')} · ${grant.recipients} ${t('players', 'Spieler')}</p>`).join('')}</div></section>
-    <section class="admin-section"><h2>${t('Auctions', 'Auktionen')}</h2><p>${t('Browse the full auction archive. Search by title, description, category or ID and open details for every record.', 'Durchsuche das gesamte Auktionsarchiv. Suche nach Titel, Beschreibung, Kategorie oder ID und öffne die Details jedes Eintrags.')}</p>
+    <div class="section-title-row"><h3>${t('Give all players J€', 'Allen Spielern J€ geben')}</h3>${infoTip(t(`Applies to every existing account, including admins (${accountAdmin.playerCount} currently). Later registrations do not receive it.`, `Gilt für alle bestehenden Konten inklusive Admins (aktuell ${accountAdmin.playerCount}). Spätere Registrierungen erhalten nichts.`))}</div>
+    <form id="grant-form" class="grant-form"><label>${t('J€ per player', 'J€ pro Spieler')}<input name="amount" type="number" min="1" max="1000000" step="1" value="100" required></label><button class="primary-button" type="submit">${t('Give J€ to all current players', 'J€ an alle aktuellen Spieler geben')}</button><p class="account-error" role="alert"></p></form>
+    <div class="grant-history">${accountAdmin.grants.map(grant => `<p>${new Date(grant.createdAt).toLocaleString(uiLocale())} · ${justizEuro(grant.amount)} ${t('each', 'je Spieler')} · ${grant.recipients} ${t('players', 'Spieler')}</p>`).join('')}</div></section>
+    <section class="admin-section"><div class="section-title-row"><h2>${t('Auctions', 'Auktionen')}</h2>${infoTip(t('Search the archive by title, description, category or ID.', 'Durchsuche das Archiv nach Titel, Beschreibung, Kategorie oder ID.'))}</div>
     <div class="admin-toolbar"><label>${t('Search', 'Suche')}<input id="auction-search" type="search" autocomplete="off" placeholder="${t('Title, description, category or ID', 'Titel, Beschreibung, Kategorie oder ID')}" value="${accountEscape(accountAuctions.query)}"></label></div>
     <div id="auction-results">${auctionResultsMarkup()}</div></section>
-    <section class="admin-section"><h2>${t('Registration codes', 'Registrierungscodes')}</h2><p>${t('Each code allows one registration. Full codes are shown only just after creation.', 'Jeder Code erlaubt eine Registrierung. Vollständige Codes werden nur direkt nach dem Erstellen angezeigt.')}</p>
+    <section class="admin-section"><div class="section-title-row"><h2>${t('Registration codes', 'Registrierungscodes')}</h2>${infoTip(t('Each code allows one registration. Full codes are shown only immediately after creation.', 'Jeder Code erlaubt eine Registrierung. Vollständige Codes werden nur direkt nach dem Erstellen angezeigt.'))}</div>
     <form id="code-form" class="code-form"><label>${t('Number of codes', 'Anzahl der Codes')}<input name="count" type="number" min="1" max="50" value="5" required></label><button class="primary-button" type="submit">${t('Create codes', 'Codes erstellen')}</button><p class="account-error" role="alert"></p></form>
     ${freshCodes.length ? `<label class="fresh-codes">${t('New codes — copy and save them now', 'Neue Codes — jetzt kopieren und aufbewahren')}<textarea readonly rows="${Math.min(10, freshCodes.length + 1)}">${freshCodes.join('\n')}</textarea></label>` : ''}
     <div class="code-list">${accountCodes.map(code => `<div><code>…${accountEscape(code.label)}</code><span>${code.used_at !== null ? t('Used', 'Verwendet') : code.revoked ? t('Revoked', 'Widerrufen') : t('Available', 'Verfügbar')}</span>${code.used_at === null && !code.revoked ? `<button data-account="revoke" data-id="${code.id}">${t('Revoke', 'Widerrufen')}</button>` : ''}</div>`).join('') || `<p>${t('No codes created yet.', 'Noch keine Codes erstellt.')}</p>`}</div></section>
     <section class="admin-section economy-reset"><p class="eyebrow">${t('DANGER ZONE', 'GEFAHRENBEREICH')}</p><h2>${t('Reset the player economy', 'Spielerwirtschaft zurücksetzen')}</h2>
-    <p>${t('Every human account returns to 1,000 tokens and 0 XP. Inventories, game progress, rewards, grants, bids and both auction histories are deleted. Usernames, passwords, active login sessions, registration codes, bans, admin roles and friendships stay intact.', 'Jedes menschliche Konto wird auf 1.000 Tokens und 0 XP gesetzt. Inventare, Spielfortschritt, Belohnungen, Gutschriften, Gebote und beide Auktionsverläufe werden gelöscht. Benutzernamen, Passwörter, aktive Anmeldungen, Registrierungscodes, Sperren, Adminrollen und Freundschaften bleiben erhalten.')}</p>
+    <p>${t('Every human account returns to J€ 1,000 and 0 XP. Inventories, game progress, rewards, grants, bids and both auction histories are deleted. Usernames, passwords, active login sessions, registration codes, bans, admin roles and friendships stay intact.', 'Jedes menschliche Konto wird auf J€ 1.000 und 0 XP gesetzt. Inventare, Spielfortschritt, Belohnungen, Gutschriften, Gebote und beide Auktionsverläufe werden gelöscht. Benutzernamen, Passwörter, aktive Anmeldungen, Registrierungscodes, Sperren, Adminrollen und Freundschaften bleiben erhalten.')}</p>
     ${accountAdmin.lastReset ? `<p class="reset-history">${t('Last reset', 'Letzter Reset')}: ${new Date(accountAdmin.lastReset.createdAt).toLocaleString(uiLocale())} · ${number(accountAdmin.lastReset.playerCount)} ${t('accounts', 'Konten')} · ${number(accountAdmin.lastReset.inventoryCount)} ${t('items removed', 'Gegenstände entfernt')}</p>` : ''}
     <form id="reset-economy-form" class="reset-economy-form"><label>${t('Type RESET ECONOMY to confirm', 'Zur Bestätigung RESET ECONOMY eingeben')}<input name="confirmation" required autocomplete="off" spellcheck="false" pattern="RESET ECONOMY"></label><button class="danger-button" type="submit">${t('Reset economy for every player', 'Wirtschaft für alle Spieler zurücksetzen')}</button><p class="account-error" role="alert"></p></form></section>`;
 }
@@ -345,27 +351,27 @@ function renderShop() {
   accountSelectedCase = box.id;
   const caseName = box => t(box.name, box.nameDe || box.name);
   const result = accountResult?.caseId === box.id ? accountResult : null;
-  accountContent.innerHTML = pageHeading('Shop', t('Sealed cases. Unexpected finds.', 'Versiegelte Kisten. Unerwartete Fundstücke.')) +
-    `<div class="shop-balance">${account ? `${number(account.tokens)} ${t('tokens available', 'Tokens verfügbar')}` : `${t('Browse the cases. Log in to earn tokens and open one.', 'Entdecke die Kisten. Melde dich an, um Tokens zu verdienen und eine zu öffnen.')} <a href="/login" data-page>${t('Log in', 'Anmelden')} →</a>`}</div>
-    <p class="shop-edition"><span>${t('DAILY EDITION', 'TAGESAUSGABE')} · ${accountCatalog.rotationDate}</span>${t('New prices and finds at 00:00 UTC. Today’s offers stay fixed until then.', 'Neue Preise und Fundstücke um 00:00 UTC. Bis dahin gelten die heutigen Angebote.')}</p>
-    <div class="case-options">${accountCatalog.cases.map(option => `<button class="case-option case-theme-${option.category} ${box.id === option.id ? 'is-selected' : ''} ${option.available ? '' : 'is-restocking'}" data-account="select-case" data-id="${option.id}" aria-pressed="${box.id === option.id}"><span class="case-art" aria-hidden="true"><b>${option.badge}</b></span><span><strong>${caseName(option)}</strong><small>${option.available ? `${number(option.cost)} ${t('tokens', 'Tokens')}` : t('Restocking', 'Wird aufgefüllt')}</small></span></button>`).join('')}</div>
+  accountContent.innerHTML = pageHeading('Shop') +
+    `<div class="shop-balance">${account ? `${justizEuro(account.tokens)} ${t('available', 'verfügbar')}` : `${t('Browse the cases. Log in to earn J€ and open one.', 'Entdecke die Kisten. Melde dich an, um J€ zu verdienen und eine zu öffnen.')} <a href="/login" data-page>${t('Log in', 'Anmelden')} →</a>`}</div>
+    <p class="shop-edition"><span>${t('DAILY EDITION', 'TAGESAUSGABE')} · ${accountCatalog.rotationDate}</span>${infoTip(t('New prices and finds at 00:00 UTC. Today’s offers stay fixed until then.', 'Neue Preise und Fundstücke um 00:00 UTC. Bis dahin gelten die heutigen Angebote.'), t('Edition timing', 'Ausgabenwechsel'))}</p>
+    <div class="case-options">${accountCatalog.cases.map(option => `<button class="case-option case-theme-${option.category} ${box.id === option.id ? 'is-selected' : ''} ${option.available ? '' : 'is-restocking'}" data-account="select-case" data-id="${option.id}" aria-pressed="${box.id === option.id}"><span class="case-art" aria-hidden="true"><b>${option.badge}</b></span><span><strong>${caseName(option)}</strong><small>${option.available ? justizEuro(option.cost) : t('Restocking', 'Wird aufgefüllt')}</small></span></button>`).join('')}</div>
     <section class="case-stage" aria-label="${t('Case opening', 'Kistenöffnung')}"><div class="case-stage-heading"><span>${caseName(box).toUpperCase()}</span><span>${box.available ? `${box.items.length} ${t('FINDS IN THIS EDITION', 'FUNDE IN DIESER AUSGABE')}` : t('MORE FINDS ON THE WAY', 'NEUE FUNDE UNTERWEGS')}</span></div>
     ${box.available ? `<div class="case-window" aria-hidden="true"><div class="case-marker"></div><div class="case-reel">${box.items.slice(0, 10).map(item => tierCard(item.rarity)).join('')}</div></div>` : ''}
-    <div class="case-result" role="status">${result ? resultMarkup() : `<h2>${box.available ? t('What’s inside?', 'Was steckt drin?') : t('Good finds take time.', 'Gute Funde brauchen Zeit.')}</h2><p>${box.available ? t('One digital auction collectible in every case.', 'Ein digitales Auktionslos in jeder Kiste.') : t('This category needs more distinct items. We check for new stock with each Daily edition.', 'Diese Kategorie benötigt mehr unterschiedliche Lose. Neue Bestände werden mit jeder Tagesausgabe geprüft.')}</p>`}</div>
-    <button class="primary-button case-open" data-account="pull" ${!account || account.tokens < box.cost || !box.available || accountBusy ? 'disabled' : ''}>${!box.available ? t('Currently unavailable', 'Derzeit nicht verfügbar') : account ? `${result ? t('Open another case', 'Weitere Kiste öffnen') : t('Open case', 'Kiste öffnen')} · ${number(box.cost)} ${t('tokens', 'Tokens')}` : t('Log in to open cases', 'Zum Öffnen anmelden')}</button></section>
-    ${box.available ? `<details class="case-contents"><summary>${t('Explore this edition’s contents', 'Inhalte dieser Ausgabe entdecken')} · ${box.items.length}</summary><p>${t('Rarity and token resale values belong to this case edition. Collected items keep these values when the shop rotates.', 'Seltenheit und Token-Verkaufswerte gehören zu dieser Kistenausgabe. Gesammelte Lose behalten diese Werte beim Shopwechsel.')}</p><div class="inventory-grid">${box.items.map(item => itemCard(item, false)).join('')}</div></details>` : ''}
-    <p class="data-note">${t('Digital collectibles. No ownership of the real auction item. Tokens have no cash value.', 'Digitale Sammelobjekte. Kein Eigentum am echten Auktionsgegenstand. Tokens haben keinen Geldwert.')}</p>`;
+    <div class="case-result" role="status">${result ? resultMarkup() : `<h2>${box.available ? t('Open for one item', 'Für einen Gegenstand öffnen') : t('Unavailable', 'Nicht verfügbar')}</h2>${box.available ? '' : infoTip(t('This category needs more distinct items. Stock is checked with each Daily edition.', 'Diese Kategorie benötigt mehr unterschiedliche Lose. Der Bestand wird mit jeder Tagesausgabe geprüft.'))}`}</div>
+    <button class="primary-button case-open" data-account="pull" ${!account || account.tokens < box.cost || !box.available || accountBusy ? 'disabled' : ''}>${!box.available ? t('Currently unavailable', 'Derzeit nicht verfügbar') : account ? `${result ? t('Open another case', 'Weitere Kiste öffnen') : t('Open case', 'Kiste öffnen')} · ${justizEuro(box.cost)}` : t('Log in to open cases', 'Zum Öffnen anmelden')}</button></section>
+    ${box.available ? `<details class="case-contents"><summary>${t('Edition contents', 'Inhalt der Ausgabe')} · ${box.items.length}</summary><div class="case-contents-note">${infoTip(t('Rarity and J€ resale values are fixed for this edition. Collected items keep them after rotation.', 'Seltenheit und J€-Verkaufswerte sind für diese Ausgabe fest. Gesammelte Lose behalten sie nach dem Wechsel.'))}</div><div class="inventory-grid">${box.items.map(item => itemCard(item, false)).join('')}</div></details>` : ''}
+    <p class="data-note">${t('Digital collectibles. No ownership of the real auction item. J€ has no cash value.', 'Digitale Sammelobjekte. Kein Eigentum am echten Auktionsgegenstand. J€ hat keinen Geldwert.')}</p>`;
 }
 function resultMarkup() {
-  return `<p class="rarity-label rarity-${accountResult.rarity}">${rarityLabel(accountResult.rarity)}</p><h2>${accountEscape(accountResult.title)}</h2><p>${accountResult.sold ? t('Sold. Tokens added to your balance.', 'Verkauft. Tokens gutgeschrieben.') : t('Your find is safe in your inventory.', 'Dein Fund liegt sicher im Inventar.')}</p>
-    ${accountResult.sold || economyFlags.resales ? '' : `<button class="secondary-button" data-account="sell-result" data-id="${accountResult.id}">${t('Sell now', 'Sofort verkaufen')} · ${number(accountResult.sellValue)} ${t('tokens', 'Tokens')}</button>`}`;
+  return `<p class="rarity-label rarity-${accountResult.rarity}">${rarityLabel(accountResult.rarity)}</p><h2>${accountEscape(accountResult.title)}</h2>${accountResult.sold ? `<p>${t('Sold. J€ added.', 'Verkauft. J€ gutgeschrieben.')}</p>` : ''}
+    ${accountResult.sold || economyFlags.resales ? '' : `<button class="secondary-button" data-account="sell-result" data-id="${accountResult.id}">${t('Sell now', 'Sofort verkaufen')} · ${justizEuro(accountResult.sellValue)}</button>`}`;
 }
 function tierCard(rarity) {
   return `<div class="case-tier rarity-${accountEscape(rarity)}"><span class="case-tier-symbol" aria-hidden="true">◇</span><span class="rarity-label">${rarityLabel(rarity)}</span></div>`;
 }
 function revealCaseItem() {
   const box = accountCatalog.cases.find(box => box.id === accountResult.caseId);
-  caseReveal.innerHTML = `<div class="case-reveal-content rarity-${accountEscape(accountResult.rarity)}"><p class="eyebrow">${t('YOUR FIND', 'DEIN FUND')}</p><h2 id="case-reveal-title">${accountEscape(accountResult.title)}</h2><img src="${accountEscape(accountResult.image)}" alt=""><p class="rarity-label">${rarityLabel(accountResult.rarity)}</p><p>${t('Auction value', 'Auktionswert')} ${euro(accountResult.price)}</p><p role="status">${accountResult.sold ? t('Sold. Tokens added to your balance.', 'Verkauft. Tokens gutgeschrieben.') : t('Your find is safe in your inventory.', 'Dein Fund liegt sicher im Inventar.')}</p><div class="case-reveal-actions">${accountResult.sold || economyFlags.resales ? '' : `<button class="secondary-button" data-account="sell-result" data-id="${accountEscape(accountResult.id)}">${t('Sell now', 'Sofort verkaufen')} · ${number(accountResult.sellValue)} ${t('tokens', 'Tokens')}</button>`}<button class="primary-button" data-account="pull" ${!account || account.tokens < box.cost || !box.available ? 'disabled' : ''}>${t('Open another case', 'Weitere Kiste öffnen')} · ${number(box.cost)} ${t('tokens', 'Tokens')}</button><button class="text-button" data-account="close-reveal" autofocus>${accountResult.sold ? t('Close', 'Schließen') : t('Keep item', 'Behalten')}</button></div></div>`;
+  caseReveal.innerHTML = `<div class="case-reveal-content rarity-${accountEscape(accountResult.rarity)}"><h2 id="case-reveal-title">${accountEscape(accountResult.title)}</h2><img src="${accountEscape(accountResult.image)}" alt=""><p class="rarity-label">${rarityLabel(accountResult.rarity)}</p><p>${t('Auction value', 'Auktionswert')} ${euro(accountResult.price)}</p><p role="status">${accountResult.sold ? t('Sold. J€ added.', 'Verkauft. J€ gutgeschrieben.') : t('Added to inventory.', 'Zum Inventar hinzugefügt.')}</p><div class="case-reveal-actions">${accountResult.sold || economyFlags.resales ? '' : `<button class="secondary-button" data-account="sell-result" data-id="${accountEscape(accountResult.id)}">${t('Sell now', 'Sofort verkaufen')} · ${justizEuro(accountResult.sellValue)}</button>`}<button class="primary-button" data-account="pull" ${!account || account.tokens < box.cost || !box.available ? 'disabled' : ''}>${t('Open another case', 'Weitere Kiste öffnen')} · ${justizEuro(box.cost)}</button><button class="text-button" data-account="close-reveal" autofocus>${accountResult.sold ? t('Close', 'Schließen') : t('Keep item', 'Behalten')}</button></div></div>`;
   if (!caseReveal.open) caseReveal.showModal();
   caseReveal.querySelector('[data-account="close-reveal"]').focus({ preventScroll: true });
 }
@@ -380,8 +386,8 @@ async function accountGameAnswer(run, position, answer) {
   if (account?.id !== owner) throw new Error(t('Your account changed. Please start again.', 'Das Konto wurde gewechselt. Bitte starte erneut.'));
   updateAccount(result.user);
   if (result.run.complete && result.run.earned) showToast(economyFlags.paletteAuctions
-    ? t(`+${result.run.earned} tokens! Explore the auctions.`, `+${result.run.earned} Tokens! Entdecke die Auktionen.`)
-    : t(`+${result.run.earned} tokens! Your next case is waiting.`, `+${result.run.earned} Tokens! Deine nächste Kiste wartet.`));
+    ? t(`+${justizEuro(result.run.earned)}! Explore the auctions.`, `+${justizEuro(result.run.earned)}! Entdecke die Auktionen.`)
+    : t(`+${justizEuro(result.run.earned)}! Your next case is waiting.`, `+${justizEuro(result.run.earned)}! Deine nächste Kiste wartet.`));
   return result.run;
 }
 async function spinCaseReel(reel, viewport, item, pool, isCurrent) {
@@ -423,7 +429,7 @@ async function pullCase(visit) {
   caseOpening = visit;
   try {
   const reel = accountContent.querySelector('.case-reel'), viewport = accountContent.querySelector('.case-window'), resultNode = accountContent.querySelector('.case-result');
-  resultNode.innerHTML = `<h2>${t('The hammer is spinning…', 'Der Hammer kreist …')}</h2><p>${t('Revealing your find.', 'Dein Fund wird aufgedeckt.')}</p>`;
+  resultNode.innerHTML = `<h2>${t('Revealing…', 'Wird aufgedeckt …')}</h2>`;
   await spinCaseReel(reel, viewport, result.item, box.items, () => visit === accountVisit && account?.id === owner);
   if (visit !== accountVisit || !reel.isConnected) return;
   const pause = ms => new Promise(resolve => setTimeout(resolve, ms));
@@ -461,7 +467,7 @@ document.addEventListener('click', async event => {
       updateAccount(result.user); if (accountResult?.id === button.dataset.id) accountResult.sold = true;
       const soldIds = new Set(Array.isArray(result.sold) ? result.sold : [result.sold]);
       accountItems = accountItems.filter(item => !soldIds.has(item.id));
-      if (visit === accountVisit) { renderAccountPage(); if (caseReveal.open) revealCaseItem(); showToast(t(`${result.value} tokens added.`, `${result.value} Tokens gutgeschrieben.`)); }
+      if (visit === accountVisit) { renderAccountPage(); if (caseReveal.open) revealCaseItem(); showToast(t(`${justizEuro(result.value)} added.`, `${justizEuro(result.value)} gutgeschrieben.`)); }
     }
     if (action === 'revoke') { await accountApi('codes/revoke', { id: button.dataset.id }); if (visit === accountVisit) await navigateAccountPage('/admin', false); }
     if (action === 'grant-user') {
@@ -473,7 +479,7 @@ document.addEventListener('click', async event => {
       try { localStorage.removeItem(key); } catch {}
       if (account?.id !== owner) return;
       updateAccount(result.user);
-      if (visit === accountVisit) { await navigateAccountPage('/admin', false); showToast(t(`Gave ${number(result.grant.amount)} tokens to ${result.grant.username}.`, `${result.grant.username} hat ${number(result.grant.amount)} Tokens erhalten.`)); }
+      if (visit === accountVisit) { await navigateAccountPage('/admin', false); showToast(t(`Gave ${justizEuro(result.grant.amount)} to ${result.grant.username}.`, `${result.grant.username} hat ${justizEuro(result.grant.amount)} erhalten.`)); }
     }
     if (action === 'auction-detail') {
       const result = await accountApi(`admin/auctions/${button.dataset.id}`);
@@ -519,7 +525,7 @@ document.addEventListener('submit', async event => {
       const result = await accountApi('admin/grant-tokens', { amount, requestId });
       try { localStorage.removeItem(key); } catch {}
       updateAccount(result.user);
-      if (visit === accountVisit) { await navigateAccountPage('/admin', false); showToast(t(`Gave ${number(result.grant.amount)} tokens each to ${result.grant.recipients} existing players.`, `${result.grant.recipients} bestehende Spieler haben je ${number(result.grant.amount)} Tokens erhalten.`)); }
+      if (visit === accountVisit) { await navigateAccountPage('/admin', false); showToast(t(`Gave ${justizEuro(result.grant.amount)} each to ${result.grant.recipients} existing players.`, `${result.grant.recipients} bestehende Spieler haben je ${justizEuro(result.grant.amount)} erhalten.`)); }
     } else if (form.id === 'reset-economy-form') {
       const result = await accountApi('admin/reset-economy', { confirmation: data.confirmation });
       updateAccount(result.user); accountDailyRun = null; higherLowerRequest++; higherLowerRun = null;
