@@ -47,7 +47,7 @@ The server chooses draws using cryptographic randomness. SQLite transactions mak
 
 ## Auction economy foundation (experimental)
 
-The playable auction economy is enabled by default: category markets, periodic Mystery Palette auctions, player resale listings, and the palette catalog. News is dormant and is not exposed to players. No feature environment variables are needed. Set any of `FEATURE_MARKET`, `FEATURE_RESALES`, `FEATURE_PALETTES`, or `FEATURE_PALETTE_AUCTIONS` to `false` to disable that feature independently. See [the economy handoff](docs/auction-economy-foundation.md) for API contracts and operations.
+The playable auction economy is enabled by default: category markets, periodic Mystery Palette auctions, player resale listings, and the palette catalog. Auctions you bid on stay visible after they finish: won Mystery Palettes remain under **My bids** until you reveal their contents, and every other finished lot is reachable behind a small **Archived auctions** button on the auction pages. News is dormant and is not exposed to players. No feature environment variables are needed. Set any of `FEATURE_MARKET`, `FEATURE_RESALES`, `FEATURE_PALETTES`, or `FEATURE_PALETTE_AUCTIONS` to `false` to disable that feature independently. See [the economy handoff](docs/auction-economy-foundation.md) for API contracts and operations.
 
 ## Run with Docker
 

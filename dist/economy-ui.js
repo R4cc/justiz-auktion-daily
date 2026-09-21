@@ -12,7 +12,7 @@ window.economyUi = (() => {
   const dialog = document.createElement('dialog');
   dialog.className = 'economy-dialog'; dialog.setAttribute('aria-labelledby', 'economy-dialog-title');
   document.body.append(dialog);
-  let data = {}, tab = 'public', timer, clockTimer, sequence = 0, dialogSequence = 0, busy = false;
+  let data = {}, tab = 'public', timer, clockTimer, sequence = 0, dialogSequence = 0, busy = false, archiveOpen = false;
   let category = null, history = [], historySequence = 0, reveal = null, revealPosition = 0, detailId = null, returnFocus;
   const name = lot => t(lot.name, lot.nameDe || lot.name);
   const date = value => new Date(value).toLocaleString(uiLocale());
@@ -41,7 +41,7 @@ window.economyUi = (() => {
     body: immersiveCopy(t(lot.story?.body || '', lot.story?.bodyDe || paletteStoryDe(lot.paletteId))) });
   function stop() {
     clearInterval(timer); clearInterval(clockTimer); sequence++; historySequence++; dialogSequence++;
-    detailId = null; reveal = null; dialog.close(); busy = false;
+    detailId = null; reveal = null; dialog.close(); busy = false; archiveOpen = false;
   }
   function openDialog(markup) {
     if (!dialog.open) returnFocus = document.activeElement;
@@ -58,7 +58,7 @@ window.economyUi = (() => {
   async function load(path, visit) {
     const query = new URLSearchParams(location.search);
     tab = path === '/auctions' ? 'public' : query.get('view') === 'mine' ? 'mine' : 'public';
-    data = {}; history = []; category = query.get('category');
+    data = {}; history = []; category = query.get('category'); archiveOpen = false;
     if (!economyFlags[routes[path]]) return;
     await refresh(path, visit, false);
     if (visit !== accountVisit) return;
@@ -76,10 +76,11 @@ window.economyUi = (() => {
       if (!lots) throw new Error(t('Auctions are unavailable. Please retry.', 'Auktionen sind nicht verfügbar. Bitte erneut versuchen.'));
       next = { lots: lots.auctions, mine: mine?.auctions || [] };
     } else if (path === '/marketplace') {
-      const [lots, mine, bids] = await Promise.all([api.resales(200), owner ? api.myListings() : null,
-        owner ? api.myResaleBids() : null]);
+      const [lots, mine, bids, archived] = await Promise.all([api.resales(200), owner ? api.myListings() : null,
+        owner ? api.myResaleBids() : null, owner ? api.myArchivedResaleBids() : null]);
       if (!lots) throw new Error(t('Marketplace is unavailable. Please retry.', 'Marktplatz ist nicht verfügbar. Bitte erneut versuchen.'));
-      next = { lots: lots.listings, mine: mine?.listings || [], bids: bids?.listings || [] };
+      next = { lots: lots.listings, mine: mine?.listings || [], bids: bids?.listings || [],
+        archivedBids: archived?.listings || [] };
     } else if (path === '/market') {
       next = await api.market();
       if (!next) throw new Error(t('Market is unavailable.', 'Markt ist nicht verfügbar.'));
@@ -146,9 +147,12 @@ window.economyUi = (() => {
       ? participation.leading || (participation.won && lot.status !== 'active') ? ' is-leading'
         : lot.status === 'active' ? ' is-outbid' : ''
       : !primary && view === 'bid' ? lot.leading ? ' is-leading' : ' is-outbid'
-        : !primary && view === 'mine-live' ? ' is-owned' : !primary && view === 'mine-done' ? ' is-ended' : '';
+        : !primary && view === 'bid-done' ? lot.status === 'cancelled' ? ' is-ended' : lot.won ? ' is-leading' : ' is-outbid'
+          : !primary && view === 'mine-live' ? ' is-owned' : !primary && view === 'mine-done' ? ' is-ended' : '';
     const resaleState = !primary ? view === 'mine-live' ? t('YOUR LISTING', 'DEIN ANGEBOT')
       : view === 'bid' ? lot.leading ? t('LEADING', 'DU FÜHRST') : t('OUTBID', 'ÜBERBOTEN')
+        : view === 'bid-done' ? lot.status === 'cancelled' ? t('CANCELLED', 'STORNIERT')
+          : lot.won ? t('WON', 'GEWONNEN') : t('LOST', 'VERLOREN')
         : view === 'mine-done' ? lot.status === 'cancelled' ? t('CANCELLED', 'STORNIERT')
           : lot.winnerId ? t('SOLD', 'VERKAUFT') : t('UNSOLD', 'NICHT VERKAUFT')
           : t('LIVE', 'LIVE') : '';
@@ -159,7 +163,7 @@ window.economyUi = (() => {
       ${primary ? `<div class="palette-seal" aria-hidden="true"><span>01 ◇</span><span>02 ◇</span><span>03 ◇</span></div>`
         : `<p>${t('Seller', 'Verkäufer')}: ${esc(lot.sellerUsername)}</p><p>${t('Estimated market value', 'Geschätzter Marktwert')}: ${justizEuro(lot.estimatedValueTokens)}</p>`}
       ${bidFacts(lot, primary)}
-      ${mine || view === 'bid' || (primary && participation) ? `<p class="economy-outcome">${primary ? lot.status === 'active' ? lot.leading ? t('You lead', 'Du führst') : t('Outbid', 'Überboten') : lot.won ? t('Won!', 'Gewonnen!') : t('Lost', 'Verloren') : view === 'bid' ? lot.leading ? t('You lead', 'Du führst') : t('You were outbid', 'Du wurdest überboten') : status(lot)}${primary ? ` · ${t('Your highest bid', 'Dein Höchstgebot')}: ${justizEuro(lot.highestBid)}` : view === 'bid' ? ` · ${t('Your highest bid', 'Dein Höchstgebot')}: ${justizEuro(lot.highestBid)}` : lot.winnerId ? ` · ${t('Final sale', 'Verkaufspreis')}: ${justizEuro(lot.currentBid)}` : ''}</p>` : ''}
+      ${mine || view === 'bid' || view === 'bid-done' || (primary && participation) ? `<p class="economy-outcome">${primary ? lot.status === 'active' ? lot.leading ? t('You lead', 'Du führst') : t('Outbid', 'Überboten') : lot.won ? t('Won!', 'Gewonnen!') : t('Lost', 'Verloren') : view === 'bid' ? lot.leading ? t('You lead', 'Du führst') : t('You were outbid', 'Du wurdest überboten') : view === 'bid-done' ? lot.status === 'cancelled' ? t('Cancelled', 'Storniert') : lot.won ? t('You won', 'Du hast gewonnen') : t('You lost', 'Du hast verloren') : status(lot)}${primary ? ` · ${t('Your highest bid', 'Dein Höchstgebot')}: ${justizEuro(lot.highestBid)}` : view === 'bid' ? ` · ${t('Your highest bid', 'Dein Höchstgebot')}: ${justizEuro(lot.highestBid)}` : view === 'bid-done' ? ` · ${t('Your highest bid', 'Dein Höchstgebot')}: ${justizEuro(lot.highestBid)}${lot.winnerId ? ` · ${t('Final sale', 'Verkaufspreis')}: ${justizEuro(lot.currentBid)}` : ''}` : lot.winnerId ? ` · ${t('Final sale', 'Verkaufspreis')}: ${justizEuro(lot.currentBid)}` : ''}</p>` : ''}
       <button class="${primary && lot.revealAvailable ? 'primary-button' : 'secondary-button'}" data-economy="${primary ? 'primary' : 'resale'}" data-id="${esc(lot.id)}">${primary && lot.revealAvailable ? t('View winning palette', 'Gewonnene Palette ansehen') : primary && !eligible ? t('Explore palette', 'Palette ansehen') : t('View auction', 'Auktion ansehen')} →</button>
       ${!primary && view === 'mine-live' && lot.status === 'active' && !lot.bidCount ? `<button class="text-button" data-economy="cancel" data-id="${esc(lot.id)}">${t('Cancel listing', 'Angebot stornieren')}</button>` : ''}</div></article>`;
   }
@@ -167,6 +171,9 @@ window.economyUi = (() => {
     return `<section class="marketplace-section marketplace-section--${view}"><div class="auction-section-heading"><div><p class="eyebrow">${eyebrow}</p><h2>${title}</h2></div><strong>${lots.length}</strong></div>
       ${lots.length ? `<div class="economy-grid">${lots.map(lot => lotCard(lot, false, view)).join('')}</div>` : `<p class="marketplace-empty">${emptyText}</p>`}</section>`;
   }
+  // Small disclosure shared by both auction pages: finished lots (won, lost,
+  // expired) leave the live sections and stay reachable here.
+  const archiveToggle = count => `<button class="text-button archive-toggle" type="button" data-economy="archive" aria-expanded="${archiveOpen}">${archiveOpen ? t('Hide archived auctions', 'Archivierte Auktionen ausblenden') : t('Archived auctions', 'Archivierte Auktionen')} (${count})</button>`;
   function render() {
     const path = currentAccountPage;
     if (!economyFlags[routes[path]]) {
@@ -181,11 +188,19 @@ window.economyUi = (() => {
     if (primary) {
       const paletteFilter = new URLSearchParams(location.search).get('palette');
       const myLots = data.mine || [];
+      // Won lots stay on the board until the winner reveals them; every other
+      // finished lot (lost, expired, already revealed) waits in the archive.
+      const onBoard = lot => (lot.status === 'active' && lot.endsAt > Date.now()) || (lot.won && lot.revealAvailable);
+      const myBoard = myLots.filter(onBoard);
+      const myArchived = myLots.filter(lot => !onBoard(lot));
       const myIds = new Set(myLots.map(lot => lot.id));
       const liveLots = (data.lots || []).filter(lot => !myIds.has(lot.id) && (!paletteFilter || lot.paletteId === paletteFilter));
       if (account) {
-        accountContent.innerHTML += `<section class="my-bids-board"><div class="auction-section-heading"><div><p class="eyebrow">${t('YOUR AUCTIONS', 'DEINE AUKTIONEN')}</p><h2>${t('My bids', 'Meine Gebote')}</h2></div><strong>${myLots.length}</strong></div>
-          ${myLots.length ? `<div class="economy-grid">${myLots.map(lot => lotCard(lot, true)).join('')}</div>` : `<p class="my-bids-empty">${t('You have not placed a bid yet.', 'Du hast noch kein Gebot abgegeben.')}</p>`}</section>`;
+        accountContent.innerHTML += `<section class="my-bids-board"><div class="auction-section-heading"><div><p class="eyebrow">${t('YOUR AUCTIONS', 'DEINE AUKTIONEN')}</p><h2>${t('My bids', 'Meine Gebote')}</h2></div><strong>${myBoard.length}</strong></div>
+          ${myBoard.length ? `<div class="economy-grid">${myBoard.map(lot => lotCard(lot, true)).join('')}</div>` : `<p class="my-bids-empty">${t('You have not placed a bid yet.', 'Du hast noch kein Gebot abgegeben.')}</p>`}
+          ${myArchived.length ? archiveToggle(myArchived.length) : ''}
+          ${myArchived.length && archiveOpen ? `<div class="auction-section-heading archive-heading"><div><p class="eyebrow">${t('ARCHIVE', 'ARCHIV')}</p><h2>${t('Archived auctions', 'Archivierte Auktionen')}</h2></div><strong>${myArchived.length}</strong></div>
+          <div class="economy-grid">${myArchived.map(lot => lotCard(lot, true)).join('')}</div>` : ''}</section>`;
       }
       if (paletteFilter) accountContent.innerHTML += `<p>${t('Related to your story', 'Passend zu deiner Geschichte')}: <strong>${esc(paletteName(paletteFilter))}</strong> <a href="/auctions" data-page>${t('Show all auctions', 'Alle Auktionen anzeigen')} →</a></p>`;
       accountContent.innerHTML += `<div class="auction-section-heading live-auctions-heading"><div><p class="eyebrow">${t('AUCTION FLOOR', 'AUKTIONSHALLE')}</p><h2>${t('Live auctions', 'Laufende Auktionen')}</h2></div><strong>${liveLots.length}</strong></div>`;
@@ -203,6 +218,11 @@ window.economyUi = (() => {
     accountContent.innerHTML += marketplaceSection(t("Other players' live auctions", 'Laufende Auktionen anderer'), t('BROWSE', 'ENTDECKEN'), otherLive, 'other', t('No other live auctions right now.', 'Aktuell keine weiteren laufenden Auktionen.'));
     if (account) {
       accountContent.innerHTML += marketplaceSection(t('My current bids', 'Meine aktuellen Gebote'), t('BUYING', 'KAUF'), bidLots, 'bid', t('You have no active marketplace bids.', 'Du hast keine aktiven Marktplatzgebote.'));
+      const archivedBids = data.archivedBids || [];
+      if (archivedBids.length) {
+        accountContent.innerHTML += archiveToggle(archivedBids.length);
+        if (archiveOpen) accountContent.innerHTML += marketplaceSection(t('Archived auctions', 'Archivierte Auktionen'), t('ARCHIVE', 'ARCHIV'), archivedBids, 'bid-done', t('Nothing archived yet.', 'Noch nichts archiviert.'));
+      }
       accountContent.innerHTML += marketplaceSection(t('My completed auctions', 'Meine beendeten Auktionen'), t('HISTORY', 'VERLAUF'), myDone, 'mine-done', t('Completed listings will appear here.', 'Beendete Angebote erscheinen hier.'));
     }
   }
@@ -364,6 +384,7 @@ window.economyUi = (() => {
     const visit = accountVisit;
     try {
       if (action === 'tab') { tab = id; const query = new URLSearchParams(location.search); query.set('view', id); window.history.replaceState({}, '', currentAccountPage + '?' + query); render(); accountContent.querySelector(`[data-id="${id}"]`)?.focus(); }
+      if (action === 'archive') { archiveOpen = !archiveOpen; render(); accountContent.querySelector('[data-economy="archive"]')?.focus({ preventScroll: true }); }
       if (action === 'category') { category = id; window.history.replaceState({}, '', '/market?category=' + encodeURIComponent(id)); await loadHistory(id); accountContent.querySelector(`[data-id="${id}"]`)?.focus({ preventScroll: true }); }
       if (action === 'list') listingDialog(id);
       if (action === 'primary' || action === 'resale') await showLot(id, action === 'primary');

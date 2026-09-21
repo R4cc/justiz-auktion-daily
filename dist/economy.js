@@ -23,6 +23,7 @@ window.justizEconomy = {
   myPaletteAuctions: (limit = 50, offset = 0) => accountCall(`palette-auctions?limit=${limit}&offset=${offset}`),
   myListings: () => accountCall('resale/listings'),
   myResaleBids: () => accountCall('resale/bids'),
+  myArchivedResaleBids: () => accountCall('resale/bids/archived'),
   listItem: payload => accountCall('resale/listings', payload),
   resaleBid: (id, amount) => accountCall('resale/bid', { id, amount }),
   cancelListing: id => accountCall('resale/cancel', { id }),

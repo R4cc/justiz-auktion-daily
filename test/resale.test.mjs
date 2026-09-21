@@ -7,8 +7,8 @@ import { Accounts, STARTING_TOKENS } from '../src/accounts.mjs';
 import { caseCatalog } from '../src/cases.mjs';
 import { closeDataStore } from '../src/database.mjs';
 import {
-  cancelListing, getResale, listItem, listingsBidOnByUser, listingsByUser, listResales,
-  placeBid, settleAuction, settleDueListings
+  archivedListingsBidOnByUser, cancelListing, getResale, listItem, listingsBidOnByUser, listingsByUser,
+  listResales, placeBid, settleAuction, settleDueListings
 } from '../src/resale.mjs';
 import { notificationsForUser } from '../src/notifications.mjs';
 
@@ -121,6 +121,33 @@ test('one listing can auction any available quantity of an identical item as one
   for (const id of copies) assert.deepEqual(inventoryRow(service, id), { user_id: bidder.id, sold_at: null });
   assert.equal(service.inventory(bidder).length, 5);
   assert.equal(rowCount(service, 'inventory', 'id IN (?, ?, ?, ?, ?)', ...copies), 5);
+});
+
+test('finished bids stay discoverable in the archive with won and lost outcomes', async t => {
+  const { dir, register, listing } = await listedFixture(t);
+  const winner = await register('ArchiveWinner');
+  const loser = await register('ArchiveLoser');
+  placeBid(dir, loser, listing.id, 55, { now: day + 1000 });
+  placeBid(dir, winner, listing.id, 60, { now: day + 2000 });
+  // Running participation belongs to the current-bids list, never the archive.
+  assert.deepEqual(archivedListingsBidOnByUser(dir, winner.id, { now: day + 3000 }), []);
+  assert.equal(listingsBidOnByUser(dir, loser.id, { now: day + 3000 }).length, 1);
+  settleAuction(dir, listing.id, { now: day + 25 * hour });
+  const wonArchive = archivedListingsBidOnByUser(dir, winner.id, { now: day + 26 * hour });
+  assert.deepEqual(wonArchive.map(row => row.id), [listing.id]);
+  assert.equal(wonArchive[0].won, true);
+  assert.equal(wonArchive[0].leading, false);
+  assert.equal(wonArchive[0].currentBid, 60);
+  assert.equal(wonArchive[0].highestBid, 60);
+  const lostArchive = archivedListingsBidOnByUser(dir, loser.id, { now: day + 26 * hour });
+  assert.deepEqual(lostArchive.map(row => row.id), [listing.id]);
+  assert.equal(lostArchive[0].won, false);
+  assert.equal(lostArchive[0].currentBid, 60);
+  assert.equal(lostArchive[0].highestBid, 55);
+  // The ended listing has left the current-bids list and the live board.
+  assert.deepEqual(listingsBidOnByUser(dir, winner.id, { now: day + 26 * hour }), []);
+  assert.deepEqual(listingsBidOnByUser(dir, loser.id, { now: day + 26 * hour }), []);
+  assert.deepEqual(listResales(dir, { now: day + 26 * hour }), []);
 });
 
 test('selling, relisting and foreign listings are blocked while an auction is live', async t => {

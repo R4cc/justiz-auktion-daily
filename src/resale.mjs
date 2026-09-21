@@ -398,3 +398,21 @@ export function listingsBidOnByUser(dataDir, userId, { now = Date.now(), limit =
         leading: row.current_bidder_id === userId }));
   });
 }
+
+// Finished (won, lost or cancelled) auctions the user bid on. They leave the
+// live board and the current-bids list at close, so this bounded history is
+// the only place a completed bid remains discoverable.
+export function archivedListingsBidOnByUser(dataDir, userId, { now = Date.now(), limit = 100 } = {}) {
+  settleDueListings(dataDir, { now });
+  return withDatabase(dataDir, db => {
+    ensureResaleSchema(db, now);
+    const indexes = marketIndexes(db, now);
+    return db.prepare(`SELECT r.*, MAX(b.amount) AS highest_bid FROM resale_auctions r
+      JOIN resale_bids b ON b.auction_id = r.id
+      WHERE b.bidder_id = ? AND r.seller_id != ? AND r.status IN ('ended','cancelled')
+      GROUP BY r.id ORDER BY r.ends_at DESC, r.id DESC LIMIT ?`)
+      .all(userId, userId, Math.max(1, Math.min(200, Math.floor(limit) || 100)))
+      .map(row => ({ ...serializeListing(db, row, { now, indexes }), highestBid: row.highest_bid,
+        leading: false, won: row.winner_id === userId }));
+  });
+}

@@ -15,11 +15,12 @@ test('economy helpers use authenticated history/list/bid/cancel contracts and sa
     fetch: async url => { reads.push(url); return { ok: true, json: async () => ({ features: { resales: true } }) }; } });
   vm.runInContext(dataSource, context);
   const api = context.window.justizEconomy;
-  await api.myPaletteAuctions(10, 20); await api.myListings(); await api.myResaleBids();
+  await api.myPaletteAuctions(10, 20); await api.myListings(); await api.myResaleBids(); await api.myArchivedResaleBids();
   await api.paletteAuctionRewards('a/b'); await api.resaleBid('listing', 123);
   await api.listItem({ inventoryId: 'item', startPrice: 20, endsAt: 'end' }); await api.cancelListing('listing');
   assert.deepEqual(JSON.parse(JSON.stringify(calls)), [
     ['palette-auctions?limit=10&offset=20', null], ['resale/listings', null], ['resale/bids', null],
+    ['resale/bids/archived', null],
     ['palette-auctions/a%2Fb/rewards', null], ['resale/bid', { id: 'listing', amount: 123 }],
     ['resale/listings', { inventoryId: 'item', startPrice: 20, endsAt: 'end' }], ['resale/cancel', { id: 'listing' }]
   ]);
@@ -100,7 +101,7 @@ test('auction card actions share the same bottom row', async () => {
 });
 
 test('marketplace exposes four glanceable auction status sections and batch quantity controls', () => {
-  for (const label of ['My live auctions', "Other players' live auctions", 'My current bids', 'My completed auctions']) {
+  for (const label of ['My live auctions', "Other players' live auctions", 'My current bids', 'My completed auctions', 'Archived auctions']) {
     assert.match(uiSource, new RegExp(label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
   }
   assert.match(uiSource, /auction-state-badge/);
@@ -119,19 +120,24 @@ test('merged My bids keeps bidder-state borders without a separate primary tab',
 });
 
 test('primary auction board separates My bids above all other live auctions', () => {
-  const won = { id: 'won', status: 'ended', won: true, revealAvailable: true, highestBid: 30, name: 'Won', paletteId: 'fundkiste', reserve: 10, currentBid: 30, bidCount: 2, requiredLevel: 1 };
-  const leadMine = { id: 'lead', status: 'active', leading: true, revealAvailable: false, highestBid: 12, name: 'Lead', paletteId: 'fundkiste', reserve: 10, currentBid: 12, bidCount: 1, requiredLevel: 1 };
-  const outbidMine = { id: 'outbid', status: 'active', leading: false, revealAvailable: false, highestBid: 5, name: 'Outbid', paletteId: 'fundkiste', reserve: 10, currentBid: 9, bidCount: 2, requiredLevel: 1 };
+  const future = Date.now() + 3600_000;
+  const won = { id: 'won', status: 'ended', won: true, revealAvailable: true, highestBid: 30, name: 'Won', paletteId: 'fundkiste', reserve: 10, currentBid: 30, bidCount: 2, requiredLevel: 1, endsAt: future };
+  const leadMine = { id: 'lead', status: 'active', leading: true, revealAvailable: false, highestBid: 12, name: 'Lead', paletteId: 'fundkiste', reserve: 10, currentBid: 12, bidCount: 1, requiredLevel: 1, endsAt: future };
+  const outbidMine = { id: 'outbid', status: 'active', leading: false, revealAvailable: false, highestBid: 5, name: 'Outbid', paletteId: 'fundkiste', reserve: 10, currentBid: 9, bidCount: 2, requiredLevel: 1, endsAt: future };
+  const lost = { id: 'lost', status: 'ended', won: false, revealAvailable: false, highestBid: 5, name: 'Lost', paletteId: 'fundkiste', reserve: 10, currentBid: 9, bidCount: 2, requiredLevel: 1, endsAt: future - 7200_000 };
+  const revealed = { id: 'revealed', status: 'ended', won: true, revealAvailable: false, highestBid: 31, name: 'Revealed', paletteId: 'fundkiste', reserve: 10, currentBid: 31, bidCount: 2, requiredLevel: 1, endsAt: future - 7200_000 };
   const publicLot = id => ({ id, status: 'active', name: id, paletteId: 'fundkiste', reserve: 10, currentBid: null, bidCount: 0, requiredLevel: 1 });
   const context = vm.createContext({ economyFlags: { paletteAuctions: true }, account: { tokens: 277, progression: { level: 2 } }, accountContent: { innerHTML: '' },
     currentAccountPage: '/auctions', tab: 'public', routes: { '/auctions': 'paletteAuctions' }, location: { search: '' },
-    data: { lots: [publicLot('plain'), publicLot('lead'), publicLot('outbid'), publicLot('other')], mine: [won, leadMine, outbidMine] },
+    data: { lots: [publicLot('plain'), publicLot('lead'), publicLot('outbid'), publicLot('other')],
+      mine: [won, leadMine, outbidMine, lost, revealed] },
+    archiveOpen: false,
     t: en => en, number: String, esc: String, justizEuro: value => `J€ ${value}`, paletteName: String,
     pageHeading: heading => `<h>${heading}</h>`, economyOverviewMarkup: () => '<section class="economy-overview"></section>',
     tabs: () => '', empty: text => `[${text}]`, loginNotice: () => '',
     URLSearchParams, infoTip: text => `<span class="info-tip">${text}</span>`,
     lotCard: lot => `<article data-id="${lot.id}" data-reveal="${!!lot.revealAvailable}"></article>` });
-  vm.runInContext(extract(uiSource, '  function render(', '  function bidForm('), context);
+  vm.runInContext(extract(uiSource, '  function marketplaceSection(', '  function bidForm('), context);
   vm.runInContext('render()', context);
   const html = context.accountContent.innerHTML;
   const order = [...html.matchAll(/<article data-id="([^"]+)"/g)].map(match => match[1]);
@@ -141,6 +147,72 @@ test('primary auction board separates My bids above all other live auctions', ()
   assert.match(html, /AUCTION FLOOR/);
   assert.equal([...html.matchAll(/data-id="lead"/g)].length, 1);
   assert.match(html, /data-reveal="true"/);
+  // Won lots stay on the board until their reveal; lost and revealed lots
+  // wait behind the archived-auctions disclosure.
+  assert.match(html, /Archived auctions \(2\)/);
+  assert.match(html, /aria-expanded="false"/);
+  assert.doesNotMatch(html, /data-id="lost"/);
+  assert.doesNotMatch(html, /data-id="revealed"/);
+  context.archiveOpen = true;
+  vm.runInContext('render()', context);
+  const expanded = context.accountContent.innerHTML;
+  assert.match(expanded, /aria-expanded="true"/);
+  assert.match(expanded, /data-id="lost"/);
+  assert.match(expanded, /data-id="revealed"/);
+  assert.equal([...expanded.matchAll(/data-id="lead"/g)].length, 1);
+});
+
+test('marketplace moves finished bids behind the Archived auctions disclosure', () => {
+  const wonBid = { id: 'won-bid', status: 'ended', won: true, leading: false, highestBid: 20,
+    currentBid: 20, winnerId: 'player', bidCount: 3, quantity: 1, item: { title: 'Radio', marketCategory: 'electronics' } };
+  const lostBid = { id: 'lost-bid', status: 'ended', won: false, leading: false, highestBid: 5,
+    currentBid: 9, winnerId: 'rival', bidCount: 2, quantity: 1, item: { title: 'Lamp', marketCategory: 'household' } };
+  const context = vm.createContext({ economyFlags: { resales: true },
+    account: { id: 'player', tokens: 500, progression: { level: 2 } }, accountContent: { innerHTML: '' },
+    currentAccountPage: '/marketplace', tab: 'public', routes: { '/marketplace': 'resales' }, location: { search: '' },
+    data: { lots: [], mine: [], bids: [], archivedBids: [wonBid, lostBid] }, archiveOpen: false,
+    t: en => en, number: String, esc: String, justizEuro: value => `J€ ${value}`, paletteName: String,
+    pageHeading: heading => `<h>${heading}</h>`, economyOverviewMarkup: () => '<section class="economy-overview"></section>',
+    tabs: () => '', empty: text => `[${text}]`, loginNotice: () => '',
+    URLSearchParams, infoTip: text => `<span class="info-tip">${text}</span>`,
+    lotCard: lot => `<article data-id="${lot.id}" data-won="${!!lot.won}"></article>` });
+  vm.runInContext(extract(uiSource, '  function marketplaceSection(', '  function bidForm('), context);
+  vm.runInContext('render()', context);
+  const html = context.accountContent.innerHTML;
+  assert.match(html, /My current bids/);
+  assert.match(html, /Archived auctions \(2\)/);
+  assert.doesNotMatch(html, /data-id="won-bid"|data-id="lost-bid"/);
+  context.archiveOpen = true;
+  vm.runInContext('render()', context);
+  const expanded = context.accountContent.innerHTML;
+  assert.match(expanded, /marketplace-section--bid-done/);
+  assert.match(expanded, /data-id="won-bid"/);
+  assert.match(expanded, /data-id="lost-bid"/);
+  assert.match(expanded, /My completed auctions/);
+});
+
+test('archived bid cards mark wins green and losses red once the auction ended', () => {
+  const context = vm.createContext({ economyFlags: { paletteAuctions: true },
+    account: { id: 'player', tokens: 100, progression: { level: 2 } }, tab: 'public', data: { mine: [] },
+    t: en => en, esc: String, name: lot => lot.name, status: () => 'Ended',
+    justizEuro: value => `J€ ${value}`, bidFacts: () => '',
+    paletteArtwork: () => '<div class="palette-artwork"></div>', categoryName: () => 'Other' });
+  vm.runInContext(extract(uiSource, '  function lotCard(', '  function render('), context);
+  const item = { title: 'Radio', image: null, marketCategory: 'electronics' };
+  const won = vm.runInContext(`lotCard(${JSON.stringify({ id: 'w', status: 'ended', won: true, leading: false,
+    highestBid: 20, currentBid: 20, winnerId: 'player', bidCount: 2, quantity: 1, estimatedValueTokens: 30,
+    sellerUsername: 'Sam', item })}, false, 'bid-done')`, context);
+  assert.match(won, /economy-lot is-leading/);
+  assert.match(won, /WON/);
+  assert.match(won, /You won/);
+  assert.match(won, /Final sale/);
+  const lost = vm.runInContext(`lotCard(${JSON.stringify({ id: 'l', status: 'ended', won: false, leading: false,
+    highestBid: 5, currentBid: 9, winnerId: 'rival', bidCount: 2, quantity: 1, estimatedValueTokens: 30,
+    sellerUsername: 'Sam', item })}, false, 'bid-done')`, context);
+  assert.match(lost, /economy-lot is-outbid/);
+  assert.match(lost, /LOST/);
+  assert.match(lost, /You lost/);
+  assert.match(lost, /J€ 5/);
 });
 
 test('auction bid history is chronological and marks the signed-in player as chat bubbles', () => {

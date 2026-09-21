@@ -16,9 +16,13 @@ Persisted market effects influence current item estimates and the demand of
 newly initialized NPC buyers. Automatic news publication is dormant.
 
 - `/auctions`: active lots, candidate pools, level/affordability information,
-  bidding, and **My bids** (active and recent ended participation).
+  bidding, and **My bids** (active participation plus won lots until the winner
+  reveals them). Finished participation — lost, expired and already-revealed
+  lots — stays reachable behind the small **Archived auctions** disclosure.
 - `/marketplace`: public listings, item valuation, bidding/history and **My
   listings**, including cancellation before any bids and final sale information.
+  Ended bids (won or lost) leave **My current bids** into the same
+  **Archived auctions** disclosure.
 - `/inventory`: list individual items, starting price and 5/15/60 minute duration
   selection (default 15 minutes). Listed items are marked; matching copies remain
   grouped and the next available copy can be listed.
@@ -260,13 +264,19 @@ New routes:
 - `GET /api/features` → `{features: {news, market, resales, palettes, paletteAuctions}}`.
   Public boolean allowlist only; no environment or secrets.
 - `GET /api/account/palette-auctions?limit=50&offset=0` → `{auctions}`;
-  authenticated and primary-auction flag gated.
+  authenticated and primary-auction flag gated. Returns every lot the account
+  bid on (active first, then ended) with `highestBid`, `leading`, `won` and
+  `revealAvailable`; the client splits it into My bids and the archive.
+- `GET /api/account/resale/bids/archived` → `{listings}`; authenticated and
+  resales-flag gated. Ended and cancelled auctions the account bid on,
+  newest first, each with `highestBid`, `leading: false` and `won`.
 
 Existing routes reused:
 
 - `/api/palette-auctions[/:id]`, account `/palette-auctions/bid`,
   `/palette-auctions/:id/rewards`, admin `/palette-auctions`.
-- `/api/resales[/:id]`, account `/resale/listings`, `/resale/bid`, `/resale/cancel`.
+- `/api/resales[/:id]`, account `/resale/listings`, `/resale/bid`, `/resale/bids`,
+  `/resale/bids/archived`, `/resale/cancel`.
 - `/api/market`, `/api/market/:category/history`, `/api/palettes`.
 - Account `/me`, `/inventory`, Daily start/answer, legacy cases/sells.
 

@@ -138,6 +138,15 @@ test('marketplace bidder names are censored for guests and full for signed-in pl
   assert.deepEqual(signedIn.listing.bids.map(row => row.bidderUsername), ['Bidder01']);
 });
 
+test('archived marketplace bids are authenticated, flag-gated and start empty', async t => {
+  const { base } = await fixture(t);
+  assert.equal((await fetch(`${base}/api/account/resale/bids/archived`)).status, 401);
+  const login = await post(base, 'login', { username: 'admin', password });
+  const cookie = login.headers.get('set-cookie');
+  const archived = await (await fetch(`${base}/api/account/resale/bids/archived`, { headers: { cookie } })).json();
+  assert.deepEqual(archived, { listings: [] });
+});
+
 test('username censoring keeps a short prefix and never reveals short names whole', () => {
   assert.equal(maskUsername('admin'), 'ad****');
   assert.equal(maskUsername('mira fund'), 'mi****');

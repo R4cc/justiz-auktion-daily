@@ -846,6 +846,9 @@ button:focus-visible, a:focus-visible { outline: 3px solid var(--red); outline-o
 .live-auctions-heading { margin-top: 34px; padding-top: 28px; border-top: 1px solid var(--line); }
 .live-auctions-heading > strong { background: transparent; color: var(--ink); border: 1px solid var(--line); }
 .my-bids-empty { margin: 20px 0 0; color: var(--muted); }
+.archive-toggle { margin: 14px 0 0; padding: 10px 0; font-size: 13px; font-weight: 700; color: var(--muted); }
+.archive-heading { margin-top: 26px; padding-top: 22px; border-top: 1px solid #183e3622; }
+.archive-heading > strong { background: transparent; color: var(--ink); border: 1px solid var(--line); }
 .marketplace-section { margin: 34px 0 46px; padding-top: 26px; border-top: 1px solid var(--line); }
 .marketplace-section:first-of-type { margin-top: 8px; border-top: 0; }
 .marketplace-section--mine-live { padding: 24px; border: 2px solid var(--ink); border-radius: 18px; background: #e8ebdd; box-shadow: 7px 8px 0 #183e3617; }
