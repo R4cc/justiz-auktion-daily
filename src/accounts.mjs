@@ -5,6 +5,7 @@ import { drawItem, tokenValue } from './cases.mjs';
 import { scoreGuess } from './core.mjs';
 import { AccountError } from './errors.mjs';
 import { ensureResaleSchema, inventoryIsLocked, lockedInventoryIds } from './resale.mjs';
+import { sealedPaletteInventoryIds } from './palette-auctions.mjs';
 import { marketCategoryForItem } from './market.mjs';
 import { awardXp, ensureXpSchema } from './xp.mjs';
 import { featureFlags } from './features.mjs';
@@ -481,8 +482,10 @@ export class Accounts {
     return this.db(db => {
       const indexes = this.flags.resales || this.flags.market ? marketIndexes(db, this.now()) : null;
       const locked = lockedInventoryIds(db);
+      const sealed = sealedPaletteInventoryIds(db);
       return db.prepare('SELECT id, item, created_at FROM inventory WHERE user_id = ? AND sold_at IS NULL ORDER BY created_at DESC, id')
-      .all(user.id).map(row => {
+      .all(user.id).filter(row => !sealed.has(row.id))
+      .map(row => {
         const item = currentItemValue(JSON.parse(row.item));
         return { ...item, id: row.id, createdAt: row.created_at,
           ...(indexes ? { estimatedValueTokens: estimatedValueTokens(item, indexes),
@@ -539,8 +542,11 @@ export class Accounts {
       const selected = db.prepare('SELECT item FROM inventory WHERE id = ? AND user_id = ?').get(String(id), user.id);
       if (!selected) fail('item_not_found', 404);
       const identity = collectibleIdentity(JSON.parse(selected.item));
+      // Sealed palette finds are invisible in the inventory and are never
+      // swept up by a visible duplicate's sell-all.
+      const sealed = sealedPaletteInventoryIds(db);
       const rows = db.prepare('SELECT id, item FROM inventory WHERE user_id = ? AND sold_at IS NULL').all(user.id)
-        .filter(row => collectibleIdentity(JSON.parse(row.item)) === identity);
+        .filter(row => collectibleIdentity(JSON.parse(row.item)) === identity && !sealed.has(row.id));
       const listed = lockedInventoryIds(db);
       if (rows.some(row => listed.has(row.id))) fail('item_listed', 409);
       const value = rows.reduce((sum, row) => sum + currentItemValue(JSON.parse(row.item)).sellValue, 0);

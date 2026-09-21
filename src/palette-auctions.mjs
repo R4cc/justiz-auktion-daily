@@ -101,6 +101,20 @@ export function ensurePaletteAuctionSchema(db, now = Date.now()) {
   db.exec(`CREATE INDEX IF NOT EXISTS primary_palette_bids_auction ON primary_palette_bids(auction_id, id)`);
 }
 
+// Settlement mints the three finds into the winner's inventory immediately,
+// but they stay sealed until the winner's first reveal stamps revealed_at:
+// sealed ids stay out of every player-facing inventory read and out of
+// identity-matched disposal paths (sell-all sweeps, resale batch matching).
+// Only ownership moves them, never the reveal. Databases without the palette
+// tables or the revealed_at migration seal nothing — their rows were created
+// when no reveal existed, so hiding them would lose items.
+export function sealedPaletteInventoryIds(db) {
+  if (!db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'primary_palette_auctions'").get()) return new Set();
+  if (!db.prepare('PRAGMA table_info(primary_palette_auctions)').all().some(column => column.name === 'revealed_at')) return new Set();
+  return new Set(db.prepare(`SELECT r.inventory_id AS id FROM primary_palette_rewards r
+    JOIN primary_palette_auctions a ON a.id = r.auction_id WHERE a.revealed_at IS NULL`).all().map(row => row.id));
+}
+
 // The frozen public view of a lot. Explicit allowlist: the candidate pool is
 // public, the drawn outcome never is. No reserved inventory ids, no reward
 // snapshots, no randomness, no private payload fields.

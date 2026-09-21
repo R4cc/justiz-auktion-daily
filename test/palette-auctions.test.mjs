@@ -487,8 +487,12 @@ test('legacy case opening and resale remain unchanged alongside primary auctions
   bidOnPaletteAuction(dir, player, lot.id, lot.reserve, { now: day });
   advance(hour);
   settlePaletteAuction(dir, lot.id, { now: day + hour });
-  // The legacy-opened item and the three palette rewards coexist; the legacy
-  // item keeps its case provenance, rewards keep palette provenance.
+  // Sealed rewards stay out of the winner's inventory until their reveal;
+  // the legacy-opened item is visible on its own.
+  assert.equal(service.inventory(player).length, 1);
+  getPaletteAuctionRewards(dir, player, lot.id, { now: day + hour });
+  // After the reveal the legacy item and the three palette rewards coexist;
+  // the legacy item keeps its case provenance, rewards keep palette provenance.
   const inventoryItems = service.inventory(player);
   assert.equal(inventoryItems.length, 4);
   assert.ok(inventoryItems.some(row => row.id === item.id));
