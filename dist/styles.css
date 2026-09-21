@@ -852,22 +852,21 @@ button:focus-visible, a:focus-visible { outline: 3px solid var(--red); outline-o
 .archive-toggle { margin: 14px 0 0; padding: 10px 0; font-size: 13px; font-weight: 700; color: var(--muted); }
 .archive-heading { margin-top: 26px; padding-top: 22px; border-top: 1px solid #183e3622; }
 .archive-heading > strong { background: transparent; color: var(--ink); border: 1px solid var(--line); }
-.marketplace-section { margin: 34px 0 46px; padding-top: 26px; border-top: 1px solid var(--line); }
-.marketplace-section:first-of-type { margin-top: 8px; border-top: 0; }
-.marketplace-section--mine-live { padding: 24px; border: 2px solid var(--ink); border-radius: 18px; background: #e8ebdd; box-shadow: 7px 8px 0 #183e3617; }
-.marketplace-section--mine-live .economy-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 16px; margin: 18px 0 0; }
-.economy-lot--compact-owned .economy-lot-image { height: 110px; }
-.economy-lot--compact-owned .economy-lot-image img { height: 110px; padding: 10px; }
-.economy-lot--compact-owned .economy-lot-body { padding: 14px; }
-.economy-lot--compact-owned h2 { margin-bottom: 6px; font-size: 18px; }
-.economy-lot--compact-owned p { margin: 5px 0; line-height: 1.4; }
-.economy-lot--compact-owned .economy-bid { gap: 2px; padding-top: 8px; }
-.economy-lot--compact-owned .economy-bid strong { font-size: 19px; }
-.economy-lot--compact-owned .secondary-button { padding: 10px 12px; }
-.marketplace-section--bid { padding: 24px; border: 2px solid var(--green); border-radius: 18px; background: #eef6ed; }
-.marketplace-section--bid .economy-grid { margin-bottom: 0; }
-.marketplace-section--mine-done { opacity: .9; }
-.marketplace-empty { margin: 20px 0 0; color: var(--muted); }
+.marketplace-subtitle { margin: 0; color: var(--muted); font-size: 14px; }
+.marketplace-summary { margin: 14px 0 0; color: var(--muted); font: 12px/1.9 'DM Mono', monospace; }
+.marketplace-summary strong { color: var(--ink); font-weight: 700; }
+.marketplace-tabs { margin: 18px 0 4px; }
+.marketplace-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 12px 18px; margin: 26px 0 0; }
+.marketplace-toolbar h2 { margin: 0; font-size: clamp(22px, 2.6vw, 30px); }
+.marketplace-toolbar .primary-button { min-height: 46px; margin: 0 0 0 auto; padding: 10px 18px; font-size: 13px; }
+.marketplace-count { padding: 6px 11px; border: 1px solid var(--line); border-radius: 99px; color: var(--muted); font: 700 11px 'DM Mono', monospace; }
+.marketplace-group { margin: 28px 0 0; color: var(--muted); font: 700 10px/1.2 'DM Mono', monospace; letter-spacing: .12em; text-transform: uppercase; }
+.marketplace-blank { display: grid; gap: 16px; justify-items: start; margin: 24px 0 0; color: var(--muted); }
+.marketplace-blank p { margin: 0; }
+.marketplace-blank .primary-button, .marketplace-blank .secondary-button { margin: 0; }
+.economy-lot-foot { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: auto; padding-top: 14px; }
+.economy-lot-action { color: var(--ink); font: 700 12px 'DM Mono', monospace; }
+.economy-lot-foot .text-button { padding: 2px 0; color: var(--muted); font-size: 12px; font-weight: 700; }
 .economy-dialog { border: 0; border-radius: 18px; width: min(840px, calc(100vw - 28px)); max-height: calc(100dvh - 28px); background: var(--paper); color: var(--ink); padding: 0; }
 .economy-dialog::backdrop { background: #0c211dcc; }
 .economy-dialog-content { position: relative; padding: 32px; overflow-y: auto; max-height: calc(100dvh - 28px); }
@@ -950,7 +949,6 @@ button:focus-visible, a:focus-visible { outline: 3px solid var(--red); outline-o
 .economy-effects span { padding: 8px 12px; background: #e8ebdd; border-radius: 8px; font-size: 12px; }
 @media (max-width: 980px) {
   .economy-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .marketplace-section--mine-live .economy-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .market-categories { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .economy-dialog--auction .economy-dialog-content { height: auto; max-height: calc(100dvh - 28px); overflow-y: auto; }
   .auction-room { grid-template-columns: minmax(240px, .85fr) minmax(300px, 1.15fr); height: auto; }
@@ -962,7 +960,6 @@ button:focus-visible, a:focus-visible { outline: 3px solid var(--red); outline-o
   .site-nav { flex-wrap: nowrap; overflow-x: auto; max-width: 100%; padding-bottom: 4px; }
   .site-nav a { flex-shrink: 0; }
   .economy-grid { grid-template-columns: 1fr; }
-  .marketplace-section--mine-live .economy-grid { grid-template-columns: 1fr; }
   .market-categories { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .economy-dialog-content { padding: 22px; }
   .economy-dialog .inventory-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
@@ -1029,13 +1026,13 @@ button:focus-visible, a:focus-visible { outline: 3px solid var(--red); outline-o
 .home-auction-ticket { display: grid; gap: 12px; padding: 22px; border: 2px solid var(--ink); border-radius: 12px; color: var(--ink); text-decoration: none; background: #e8ebdd; margin: 20px 0; }
 .home-auction-ticket strong { font-size: 24px; }
 .home-auction-ticket span:last-child { line-height: 1.6; font-size: 14px; }
-.economy-lot-body > button { width: 100%; margin-top: auto; }
 .economy-dialog summary { cursor: pointer; padding: 12px 0; font-weight: 800; }
 .economy-effects a:focus-visible, .home-auction-ticket:focus-visible { outline: 3px solid #bd4b25; outline-offset: 3px; }
 @media (max-width: 700px) {
   .economy-tabs { flex-wrap: wrap; }
   .my-bids-board { padding: 18px; }
-  .marketplace-section--mine-live, .marketplace-section--bid { padding: 18px; }
+  .marketplace-toolbar { margin-top: 22px; }
+  .marketplace-toolbar .primary-button { width: 100%; margin: 4px 0 0; }
   .economy-overview { grid-template-columns: 1fr; }
   .economy-overview > div { border-left: 0; border-top: 1px solid var(--line); }
   .economy-overview > div:first-child { border-top: 0; }

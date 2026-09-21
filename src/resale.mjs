@@ -255,7 +255,7 @@ export function placeBid(dataDir, user, auctionId, amount, { now = Date.now() } 
       const items = listingInventory(db, row);
       const item = JSON.parse(items[0].item), title = quantityTitle(item.title, items.length);
       pushNotification(db, row.current_bidder_id, {
-        type: 'outbid', sourceKey: `resale:outbid:${row.id}:${bid.lastInsertRowid}`, href: '/marketplace?view=mine',
+        type: 'outbid', sourceKey: `resale:outbid:${row.id}:${bid.lastInsertRowid}`, href: '/marketplace?view=bids',
         titleEn: 'You were outbid', titleDe: 'Du wurdest überboten',
         bodyEn: `${title} is now at J€ ${amount}.`, bodyDe: `${title} steht jetzt bei J€ ${amount}.`
       }, now);

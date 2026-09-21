@@ -122,13 +122,16 @@ test('auction card actions share the same bottom row', async () => {
   const styles = await readFile(new URL('../dist/styles.css', import.meta.url), 'utf8');
   assert.match(styles, /\.economy-lot\s*\{[^}]*display:\s*flex;[^}]*flex-direction:\s*column;/);
   assert.match(styles, /\.economy-lot-body\s*\{[^}]*display:\s*flex;[^}]*flex:\s*1;[^}]*flex-direction:\s*column;/);
-  assert.match(styles, /\.economy-lot-body\s*>\s*button\s*\{[^}]*margin-top:\s*auto;/);
+  assert.match(styles, /\.economy-lot-foot\s*\{[^}]*display:\s*flex;[^}]*justify-content:\s*space-between;[^}]*margin-top:\s*auto;/);
 });
 
-test('marketplace exposes four glanceable auction status sections and batch quantity controls', () => {
-  for (const label of ['My live auctions', "Other players' live auctions", 'My current bids', 'My completed auctions', 'Archived auctions']) {
+test('marketplace keeps tabs, sell action and quantity controls in the source', () => {
+  for (const label of ['Browse auctions', 'My auctions', 'My bids', 'Sell an item',
+    'No auctions are live right now.', "You haven't listed anything yet.",
+    'You have not bid on any auctions yet.', 'Choose an inventory item']) {
     assert.match(uiSource, new RegExp(label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
   }
+  assert.match(uiSource, /data-economy="tab" data-id="\$\{id\}"/);
   assert.match(uiSource, /auction-state-badge/);
   assert.match(uiSource, /name="quantity"[\s\S]*max="\$\{quantity\}"[\s\S]*value="\$\{quantity\}"/);
   assert.match(uiSource, /myResaleBids/);
@@ -162,7 +165,7 @@ test('primary auction board separates My bids above all other live auctions', ()
     tabs: () => '', empty: text => `[${text}]`, loginNotice: () => '',
     URLSearchParams, infoTip: text => `<span class="info-tip">${text}</span>`,
     lotCard: lot => `<article data-id="${lot.id}" data-reveal="${!!lot.revealAvailable}"></article>` });
-  vm.runInContext(extract(uiSource, '  function marketplaceSection(', '  function bidForm('), context);
+  vm.runInContext(extract(uiSource, '  const archiveToggle', '  function bidForm('), context);
   vm.runInContext('render()', context);
   const html = context.accountContent.innerHTML;
   const order = [...html.matchAll(/<article data-id="([^"]+)"/g)].map(match => match[1]);
@@ -187,46 +190,74 @@ test('primary auction board separates My bids above all other live auctions', ()
   assert.equal([...expanded.matchAll(/data-id="lead"/g)].length, 1);
 });
 
-test('marketplace moves finished bids and completed listings behind one archive disclosure', () => {
-  const wonBid = { id: 'won-bid', status: 'ended', won: true, leading: false, highestBid: 20,
-    currentBid: 20, winnerId: 'player', bidCount: 3, quantity: 1, item: { title: 'Radio', marketCategory: 'electronics' } };
-  const lostBid = { id: 'lost-bid', status: 'ended', won: false, leading: false, highestBid: 5,
-    currentBid: 9, winnerId: 'rival', bidCount: 2, quantity: 1, item: { title: 'Lamp', marketCategory: 'household' } };
+test('marketplace tabs show one context at a time with ended history inside its tab', () => {
+  const activeBid = { id: 'lead-bid', status: 'active', leading: true, highestBid: 20, currentBid: 20, bidCount: 2, quantity: 1, item: { title: 'Radio', marketCategory: 'electronics' } };
+  const wonBid = { id: 'won-bid', status: 'ended', won: true, leading: false, highestBid: 20, currentBid: 20, winnerId: 'player', bidCount: 3, quantity: 1, item: { title: 'Lamp', marketCategory: 'household' } };
   const context = vm.createContext({ economyFlags: { resales: true },
-    account: { id: 'player', tokens: 500, progression: { level: 2 } }, accountContent: { innerHTML: '' },
-    currentAccountPage: '/marketplace', tab: 'public', routes: { '/marketplace': 'resales' }, location: { search: '' },
-    data: { lots: [], mine: [{ id: 'sold', status: 'ended' }], bids: [], archivedBids: [wonBid, lostBid] }, archiveOpen: false,
+    account: { id: 'player', tokens: 500, activeBids: 1, progression: { level: 2 } }, accountContent: { innerHTML: '' },
+    currentAccountPage: '/marketplace', tab: 'browse', routes: { '/marketplace': 'resales' }, location: { search: '' },
+    data: { lots: [{ id: 'rival', sellerId: 'rival' }], mine: [{ id: 'live', status: 'active' }, { id: 'sold', status: 'ended' }],
+      bids: [activeBid], archivedBids: [wonBid] },
     t: en => en, number: String, esc: String, justizEuro: value => `J€ ${value}`, paletteName: String,
     pageHeading: heading => `<h>${heading}</h>`, economyOverviewMarkup: () => '<section class="economy-overview"></section>',
-    tabs: () => '', empty: text => `[${text}]`, loginNotice: () => '',
     URLSearchParams, infoTip: text => `<span class="info-tip">${text}</span>`,
-    lotCard: lot => `<article data-id="${lot.id}" data-won="${!!lot.won}"></article>` });
-  vm.runInContext(extract(uiSource, '  function marketplaceSection(', '  function bidForm('), context);
+    lotCard: (lot, primary, view) => `<article data-id="${lot.id}" data-view="${view}"></article>` });
+  vm.runInContext(extract(uiSource, '  const archiveToggle', '  function bidForm('), context);
+  // Browse: a one-line wallet summary, the sell action and only others' live auctions.
   vm.runInContext('render()', context);
-  const html = context.accountContent.innerHTML;
-  assert.match(html, /My current bids/);
-  assert.match(html, /Archived auctions \(3\)/);
-  assert.doesNotMatch(html, /data-id="won-bid"|data-id="lost-bid"|data-id="sold"/);
-  context.archiveOpen = true;
-  vm.runInContext('render()', context);
-  const expanded = context.accountContent.innerHTML;
-  assert.match(expanded, /marketplace-section--bid-done/);
-  assert.match(expanded, /data-id="won-bid"/);
-  assert.match(expanded, /data-id="lost-bid"/);
-  assert.match(expanded, /data-id="sold"/);
-  assert.match(expanded, /My completed auctions/);
+  let html = context.accountContent.innerHTML;
+  assert.match(html, /marketplace-tabs/);
+  assert.match(html, /data-id="browse" aria-pressed="true"/);
+  assert.match(html, /data-id="mine" aria-pressed="false"/);
+  const cards = () => [...context.accountContent.innerHTML.matchAll(/data-id="([^"]+)" data-view/g)].map(match => match[1]);
+  assert.deepEqual(cards(), ['rival']);
+  assert.match(html, /Browse auctions/);
+  assert.match(html, /Sell an item/);
+  assert.match(html, /Available <strong>J€ 500<\/strong>/);
+  assert.match(html, /1 active bid\b/);
+  assert.match(html, /<strong>1<\/strong> active listing/);
+  assert.doesNotMatch(html, /data-view="mine-live"|data-view="mine-done"|data-view="bid"|archive-toggle/);
+  // My auctions: own live and ended listings share the tab; ended ones are labelled.
+  context.tab = 'mine'; vm.runInContext('render()', context);
+  html = context.accountContent.innerHTML;
+  assert.match(html, /data-view="mine-live"/);
+  assert.match(html, /data-view="mine-done"/);
+  assert.match(html, /ENDED/);
+  assert.doesNotMatch(html, /data-view="other"|data-view="bid"|archive-toggle/);
+  // My bids: active and ended bids share the tab.
+  context.tab = 'bids'; vm.runInContext('render()', context);
+  html = context.accountContent.innerHTML;
+  assert.match(html, /data-view="bid"/);
+  assert.match(html, /data-view="bid-done"/);
+  assert.doesNotMatch(html, /data-view="other"|data-view="mine/);
+  // Empty states stay compact text lines with a contextual action.
+  context.data = { lots: [], mine: [], bids: [], archivedBids: [] };
+  context.tab = 'browse'; vm.runInContext('render()', context);
+  assert.match(context.accountContent.innerHTML, /No auctions are live right now\./);
+  context.tab = 'mine'; vm.runInContext('render()', context);
+  assert.match(context.accountContent.innerHTML, /You haven't listed anything yet\./);
+  assert.match(context.accountContent.innerHTML, /Choose an inventory item/);
+  context.tab = 'bids'; vm.runInContext('render()', context);
+  assert.match(context.accountContent.innerHTML, /You have not bid on any auctions yet\./);
+  assert.match(context.accountContent.innerHTML, /data-economy="tab" data-id="browse"/);
 });
 
-test('owned live-listing cards omit redundant metadata and use the compact layout', () => {
-  const context = vm.createContext({ account: { id: 'seller', tokens: 100, progression: { level: 1 } }, tab: 'public', data: { mine: [] },
+test('own live-listing cards keep the standard layout, hide the seller and cancel only without bids', () => {
+  const context = vm.createContext({ account: { id: 'seller', tokens: 100, progression: { level: 1 } }, tab: 'mine', data: { mine: [] },
     t: en => en, esc: String, status: () => 'Active', justizEuro: value => `J€ ${value}`,
     bidFacts: () => '<div class="economy-bid"></div>', categoryName: () => 'Other' });
   vm.runInContext(extract(uiSource, '  function lotCard(', '  function render('), context);
   const lot = { id: 'mine', status: 'active', sellerUsername: 'Seller', estimatedValueTokens: 80,
     currentBid: null, startPrice: 20, bidCount: 0, requiredLevel: 1, quantity: 1, item: { title: 'Radio' } };
   const markup = vm.runInContext(`lotCard(${JSON.stringify(lot)}, false, 'mine-live')`, context);
-  assert.match(markup, /economy-lot--compact-owned/);
-  assert.doesNotMatch(markup, /Seller:|Estimated market value/);
+  assert.match(markup, /economy-lot is-owned/);
+  assert.match(markup, /class="auction-state-badge">LIVE<\/span>/);
+  assert.doesNotMatch(markup, /Seller:/);
+  assert.match(markup, /Market estimate/);
+  assert.match(markup, /economy-lot-foot/);
+  assert.match(markup, /data-economy="cancel"/);
+  const withBids = vm.runInContext(`lotCard(${JSON.stringify({ ...lot, currentBid: 30, bidCount: 1 })}, false, 'mine-live')`, context);
+  assert.doesNotMatch(withBids, /data-economy="cancel"/);
 });
 
 test('archived bid cards mark wins green and losses red once the auction ended', () => {
