@@ -188,7 +188,7 @@ window.economyUi = (() => {
     const primary = path === '/auctions';
     accountContent.innerHTML = pageHeading(primary ? t('Mystery Palette auctions', 'Mystery-Palette-Auktionen') : t('Marketplace', 'Marktplatz'),
       primary ? t('Bid on a sealed Mystery Palette. Win it, then reveal three finds. Play Daily and sell items to unlock more.', 'Biete auf eine versiegelte Mystery-Palette. Gewinne und entdecke drei Funde. Spiele Daily und verkaufe Lose für höhere Level.')
-        : t('Sell matching items together in one auction — up to 5 active listings.', 'Verkaufe passende Gegenstände gemeinsam in einer Auktion — höchstens 5 aktive Angebote.')) + economyOverviewMarkup();
+        : t('Sell matching items together in one auction.', 'Verkaufe passende Gegenstände gemeinsam in einer Auktion.')) + economyOverviewMarkup();
     if (primary) {
       const paletteFilter = new URLSearchParams(location.search).get('palette');
       const myLots = data.mine || [];
@@ -313,7 +313,7 @@ window.economyUi = (() => {
     openDialog(`<h2 id="economy-dialog-title" tabindex="-1">${t('List for auction', 'Zur Auktion anbieten')}</h2><p>${esc(item.title)}</p><p>${t('Estimated market value', 'Geschätzter Marktwert')}: ${justizEuro(item.estimatedValueTokens * quantity)}</p>
       <form data-economy-form="list" data-id="${esc(item.id)}" class="economy-form"><label>${t('Quantity', 'Anzahl')} · ${quantity} ${t('available', 'verfügbar')}<input name="quantity" type="number" inputmode="numeric" min="1" max="${quantity}" step="1" value="${quantity}" required></label><label>${t('Starting price in J€', 'Startpreis in J€')}<input name="amount" type="number" inputmode="numeric" min="1" step="1" value="${Math.max(1, Math.round(item.estimatedValueTokens * quantity * .7))}" required></label>
       <label>${t('Duration', 'Dauer')}<select name="duration"><option value="300000">${t('5 minutes', '5 Minuten')}</option><option value="900000" selected>${t('15 minutes', '15 Minuten')}</option><option value="3600000">${t('1 hour', '1 Stunde')}</option></select></label>
-      <p>${t('Maximum 5 active listings. A listing with bids cannot be cancelled.', 'Höchstens 5 aktive Angebote. Angebote mit Geboten können nicht storniert werden.')}</p><p class="account-error" role="alert"></p><button class="primary-button" type="submit">${t('Start auction', 'Auktion starten')}</button></form>`);
+      <p>${t('A listing with bids cannot be cancelled.', 'Angebote mit Geboten können nicht storniert werden.')}</p><p class="account-error" role="alert"></p><button class="primary-button" type="submit">${t('Start auction', 'Auktion starten')}</button></form>`);
   }
   async function startReveal(id) {
     const visit = accountVisit, owner = account?.id, request = ++dialogSequence;

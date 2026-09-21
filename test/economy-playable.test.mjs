@@ -248,12 +248,11 @@ test('sale XP clamps boundaries; cancelled, unsold and legacy sales earn no XP',
   assert.equal(xp(f), 0); assert.equal(count(f, 'xp_events'), 0);
 });
 
-test('five active human listings maximum; cancellations and deadlines free slots, NPC listings rejected', async t => {
-  const f = await fixture(t), lots = Array.from({ length: 5 }, (_, i) => f.listing(`item${i}`));
-  const sixth = f.item('sixth');
-  const list = () => listItem(f.dir, f.user('seller'), { inventoryId: sixth, startPrice: 1, endsAt: new Date(day + hour).toISOString() }, { now: day });
-  assert.throws(list, /listing_limit/); cancelListing(f.dir, f.user('seller'), lots[0].id, { now: day }); list();
-  f.setNow(day + hour); assert.doesNotThrow(() => f.listing('seventh'));
+test('human sellers face no active-listing cap; NPC listings rejected', async t => {
+  const f = await fixture(t);
+  for (let i = 0; i < 6; i++) f.listing(`item${i}`);
+  assert.doesNotThrow(() => f.listing('seventh'));
+  f.setNow(day + hour); assert.doesNotThrow(() => f.listing('eighth'));
   seedNpcBuyers(f.dir, { now: day });
   assert.throws(() => f.listing('npc-item', 300000, 1, NPC_BUYERS[0].id), /forbidden/);
 });

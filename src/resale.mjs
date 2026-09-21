@@ -175,7 +175,6 @@ export function listItem(dataDir, user, { inventoryId, quantity = 1, startPrice,
     const seller = db.prepare('SELECT npc, banned FROM users WHERE id = ?').get(user.id);
     if (!seller) fail('login_required', 401);
     if (seller.npc || seller.banned) fail('forbidden', 403);
-    if (db.prepare("SELECT COUNT(*) AS count FROM resale_auctions WHERE seller_id = ? AND status = 'active'").get(user.id).count >= 5) fail('listing_limit', 409);
     const row = db.prepare('SELECT id, sold_at, item FROM inventory WHERE id = ? AND user_id = ?').get(inventoryId, user.id);
     if (!row) fail('item_not_found', 404);
     if (row.sold_at !== null) fail('item_sold', 409);

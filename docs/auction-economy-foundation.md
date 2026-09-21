@@ -51,7 +51,7 @@ refresh cadence. No WebSockets or chart dependencies.
 | Flag | Effect |
 | --- | --- |
 | `FEATURE_PALETTE_AUCTIONS` | Primary reads, participation history, bid/reveal/admin-create, Auctions UI, automatic supply and settlement |
-| `FEATURE_RESALES` | Resale routes/UI, listing cap, NPC runtime, resale settlement, instant-sell rejection |
+| `FEATURE_RESALES` | Resale routes/UI, NPC runtime, resale settlement, instant-sell rejection |
 | `FEATURE_MARKET` | Public market/history routes and Market UI |
 | `FEATURE_PALETTES` | Persisted palette catalog HTTP route only |
 
@@ -224,9 +224,8 @@ full escrow debit, exact outbid refund, leader raises pay the difference.
 Settlement transfers the existing inventory row and pays the seller once.
 No parallel NPC currency/accounting system or recurring mint/refill exists.
 
-Resale domain enforces **5 active listings per human** after closing due
-listings; cancelled, ended and settled lots do not count. Sixth listing returns
-`listing_limit` (409). Backend duration support remains 1 minute–30 days.
+Resale domain applies no per-seller cap on active listings. Backend duration
+support remains 1 minute–30 days.
 
 ## Market contracts and dormant news backend
 
@@ -296,7 +295,7 @@ passes for **54 JavaScript files** and project JSON. `git diff --check` passes.
 
 Coverage added in `test/economy-playable.test.mjs`: supply/event priority/window
 eligibility/restart, My bids secrecy/discovery, settlement, Daily XP and rollback,
-resale XP boundaries/idempotency, listing cap, instant-sell gating, immutable value
+resale XP boundaries/idempotency, instant-sell gating, immutable value
 serialization, NPC visibility/session isolation, funding persistence, market WTP,
 interest persistence/timing, escrow/refunds/NPC wins/human wins, news exact-once,
 budget fallback/skip and runtime flag/timer isolation. API tests cover the new
