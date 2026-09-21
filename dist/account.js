@@ -155,7 +155,9 @@ async function loadNotifications(showFresh = true) {
     accountNotifications = result.notifications || [];
     notificationUnreadCount = result.unreadCount || 0;
     renderNotificationPanel();
-    if (showFresh) for (const entry of result.fresh || []) showNotificationToast(entry);
+    // The open inbox already shows fresh entries in the same top-right area;
+    // avoid stacking transient notification toasts over the panel.
+    if (showFresh && notificationPanel.hidden) for (const entry of result.fresh || []) showNotificationToast(entry);
   } catch { /* Session refresh handles authentication failures elsewhere. */ }
   finally { if (request === notificationRequest) notificationBusy = false; }
 }

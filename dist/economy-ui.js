@@ -159,11 +159,12 @@ window.economyUi = (() => {
           : lot.winnerId ? t('SOLD', 'VERKAUFT') : t('UNSOLD', 'NICHT VERKAUFT')
           : t('LIVE', 'LIVE') : '';
     const displayTitle = primary ? name(lot) : `${lot.quantity > 1 ? `${lot.quantity}× ` : ''}${lot.item.title}`;
-    return `<article class="economy-lot${borderState}"><div class="economy-lot-image">${primary ? paletteArtwork(lot) : image ? `<img src="${esc(image)}" alt="" loading="lazy">` : '<span aria-hidden="true">◇</span>'}
+    const compactOwned = !primary && view === 'mine-live';
+    return `<article class="economy-lot${compactOwned ? ' economy-lot--compact-owned' : ''}${borderState}"><div class="economy-lot-image">${primary ? paletteArtwork(lot) : image ? `<img src="${esc(image)}" alt="" loading="lazy">` : '<span aria-hidden="true">◇</span>'}
       ${primary ? '' : `<span class="economy-badge">${esc(categoryName(lot.item.marketCategory))}</span><span class="auction-state-badge">${resaleState}</span>`}</div>
       <div class="economy-lot-body"><h2>${esc(displayTitle)}</h2>
       ${primary ? `<div class="palette-seal" aria-hidden="true"><span>01 ◇</span><span>02 ◇</span><span>03 ◇</span></div>`
-        : `<p>${t('Seller', 'Verkäufer')}: ${esc(lot.sellerUsername)}</p><p>${t('Estimated market value', 'Geschätzter Marktwert')}: ${justizEuro(lot.estimatedValueTokens)}</p>`}
+        : compactOwned ? '' : `<p>${t('Seller', 'Verkäufer')}: ${esc(lot.sellerUsername)}</p><p>${t('Estimated market value', 'Geschätzter Marktwert')}: ${justizEuro(lot.estimatedValueTokens)}</p>`}
       ${bidFacts(lot, primary)}
       ${mine || view === 'bid' || view === 'bid-done' || (primary && participation) ? `<p class="economy-outcome">${primary ? lot.status === 'active' ? lot.leading ? t('You lead', 'Du führst') : t('Outbid', 'Überboten') : lot.won ? t('Won!', 'Gewonnen!') : t('Lost', 'Verloren') : view === 'bid' ? lot.leading ? t('You lead', 'Du führst') : t('You were outbid', 'Du wurdest überboten') : view === 'bid-done' ? lot.status === 'cancelled' ? t('Cancelled', 'Storniert') : lot.won ? t('You won', 'Du hast gewonnen') : t('You lost', 'Du hast verloren') : status(lot)}${primary ? ` · ${t('Your highest bid', 'Dein Höchstgebot')}: ${justizEuro(lot.highestBid)}` : view === 'bid' ? ` · ${t('Your highest bid', 'Dein Höchstgebot')}: ${justizEuro(lot.highestBid)}` : view === 'bid-done' ? ` · ${t('Your highest bid', 'Dein Höchstgebot')}: ${justizEuro(lot.highestBid)}${lot.winnerId ? ` · ${t('Final sale', 'Verkaufspreis')}: ${justizEuro(lot.currentBid)}` : ''}` : lot.winnerId ? ` · ${t('Final sale', 'Verkaufspreis')}: ${justizEuro(lot.currentBid)}` : ''}</p>` : ''}
       <button class="${primary && lot.revealAvailable ? 'primary-button' : 'secondary-button'}" data-economy="${primary ? 'primary' : 'resale'}" data-id="${esc(lot.id)}">${primary && lot.revealAvailable ? t('View winning palette', 'Gewonnene Palette ansehen') : primary && !eligible ? t('Explore palette', 'Palette ansehen') : t('View auction', 'Auktion ansehen')} →</button>
@@ -221,11 +222,14 @@ window.economyUi = (() => {
     if (account) {
       accountContent.innerHTML += marketplaceSection(t('My current bids', 'Meine aktuellen Gebote'), t('BUYING', 'KAUF'), bidLots, 'bid', t('You have no active marketplace bids.', 'Du hast keine aktiven Marktplatzgebote.'));
       const archivedBids = data.archivedBids || [];
-      if (archivedBids.length) {
-        accountContent.innerHTML += archiveToggle(archivedBids.length);
-        if (archiveOpen) accountContent.innerHTML += marketplaceSection(t('Archived auctions', 'Archivierte Auktionen'), t('ARCHIVE', 'ARCHIV'), archivedBids, 'bid-done', t('Nothing archived yet.', 'Noch nichts archiviert.'));
+      const archiveCount = archivedBids.length + myDone.length;
+      if (archiveCount) {
+        accountContent.innerHTML += archiveToggle(archiveCount);
+        if (archiveOpen) {
+          accountContent.innerHTML += `<div class="marketplace-archive">${archivedBids.length ? marketplaceSection(t('Archived bids', 'Archivierte Gebote'), t('BUYING HISTORY', 'KAUFVERLAUF'), archivedBids, 'bid-done', t('Nothing archived yet.', 'Noch nichts archiviert.')) : ''}
+            ${myDone.length ? marketplaceSection(t('My completed auctions', 'Meine beendeten Auktionen'), t('SELLING HISTORY', 'VERKAUFSVERLAUF'), myDone, 'mine-done', t('Completed listings will appear here.', 'Beendete Angebote erscheinen hier.')) : ''}</div>`;
+        }
       }
-      accountContent.innerHTML += marketplaceSection(t('My completed auctions', 'Meine beendeten Auktionen'), t('HISTORY', 'VERLAUF'), myDone, 'mine-done', t('Completed listings will appear here.', 'Beendete Angebote erscheinen hier.'));
     }
   }
   function bidForm(lot, primary) {

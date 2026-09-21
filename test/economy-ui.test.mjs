@@ -76,6 +76,10 @@ test('economy overview prominently shows J€, active bids and inventory value',
   assert.equal((uiSource.match(/economyOverviewMarkup\(\)/g) || []).length, 2);
 });
 
+test('open notification inbox suppresses overlapping notification toasts', () => {
+  assert.match(accountSource, /showFresh\s*&&\s*notificationPanel\.hidden/);
+});
+
 test('lot cards mark leading bids green and overbid red on the public board', () => {
   const context = vm.createContext({ economyFlags: { paletteAuctions: true }, account: null, tab: 'public',
     data: { mine: [] }, t: en => en, esc: String, name: lot => lot.name, status: () => 'Active',
@@ -162,7 +166,7 @@ test('primary auction board separates My bids above all other live auctions', ()
   assert.equal([...expanded.matchAll(/data-id="lead"/g)].length, 1);
 });
 
-test('marketplace moves finished bids behind the Archived auctions disclosure', () => {
+test('marketplace moves finished bids and completed listings behind one archive disclosure', () => {
   const wonBid = { id: 'won-bid', status: 'ended', won: true, leading: false, highestBid: 20,
     currentBid: 20, winnerId: 'player', bidCount: 3, quantity: 1, item: { title: 'Radio', marketCategory: 'electronics' } };
   const lostBid = { id: 'lost-bid', status: 'ended', won: false, leading: false, highestBid: 5,
@@ -170,7 +174,7 @@ test('marketplace moves finished bids behind the Archived auctions disclosure', 
   const context = vm.createContext({ economyFlags: { resales: true },
     account: { id: 'player', tokens: 500, progression: { level: 2 } }, accountContent: { innerHTML: '' },
     currentAccountPage: '/marketplace', tab: 'public', routes: { '/marketplace': 'resales' }, location: { search: '' },
-    data: { lots: [], mine: [], bids: [], archivedBids: [wonBid, lostBid] }, archiveOpen: false,
+    data: { lots: [], mine: [{ id: 'sold', status: 'ended' }], bids: [], archivedBids: [wonBid, lostBid] }, archiveOpen: false,
     t: en => en, number: String, esc: String, justizEuro: value => `J€ ${value}`, paletteName: String,
     pageHeading: heading => `<h>${heading}</h>`, economyOverviewMarkup: () => '<section class="economy-overview"></section>',
     tabs: () => '', empty: text => `[${text}]`, loginNotice: () => '',
@@ -180,15 +184,28 @@ test('marketplace moves finished bids behind the Archived auctions disclosure', 
   vm.runInContext('render()', context);
   const html = context.accountContent.innerHTML;
   assert.match(html, /My current bids/);
-  assert.match(html, /Archived auctions \(2\)/);
-  assert.doesNotMatch(html, /data-id="won-bid"|data-id="lost-bid"/);
+  assert.match(html, /Archived auctions \(3\)/);
+  assert.doesNotMatch(html, /data-id="won-bid"|data-id="lost-bid"|data-id="sold"/);
   context.archiveOpen = true;
   vm.runInContext('render()', context);
   const expanded = context.accountContent.innerHTML;
   assert.match(expanded, /marketplace-section--bid-done/);
   assert.match(expanded, /data-id="won-bid"/);
   assert.match(expanded, /data-id="lost-bid"/);
+  assert.match(expanded, /data-id="sold"/);
   assert.match(expanded, /My completed auctions/);
+});
+
+test('owned live-listing cards omit redundant metadata and use the compact layout', () => {
+  const context = vm.createContext({ account: { id: 'seller', tokens: 100, progression: { level: 1 } }, tab: 'public', data: { mine: [] },
+    t: en => en, esc: String, status: () => 'Active', justizEuro: value => `J€ ${value}`,
+    bidFacts: () => '<div class="economy-bid"></div>', categoryName: () => 'Other' });
+  vm.runInContext(extract(uiSource, '  function lotCard(', '  function render('), context);
+  const lot = { id: 'mine', status: 'active', sellerUsername: 'Seller', estimatedValueTokens: 80,
+    currentBid: null, startPrice: 20, bidCount: 0, requiredLevel: 1, quantity: 1, item: { title: 'Radio' } };
+  const markup = vm.runInContext(`lotCard(${JSON.stringify(lot)}, false, 'mine-live')`, context);
+  assert.match(markup, /economy-lot--compact-owned/);
+  assert.doesNotMatch(markup, /Seller:|Estimated market value/);
 });
 
 test('archived bid cards mark wins green and losses red once the auction ended', () => {
