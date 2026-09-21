@@ -21,6 +21,14 @@ test('Higher or Lower uses confirmed finals, excludes duplicate families, and pr
   assert.throws(() => higherLowerDeck(lots.map(item => ({ ...item, capturedAt: '2019-01-01' }))), { code: 'insufficient_variety' });
 });
 
+test('Higher or Lower excludes every auction used by the current Daily', () => {
+  const dailyIds = [lots[0].id, String(lots[6].id), lots[12].id, lots[18].id, lots[24].id];
+  const deck = higherLowerDeck(lots, () => .4, Date.now(), dailyIds).auctions;
+  const excluded = new Set(dailyIds.map(String));
+  assert.ok(deck.length >= 2);
+  assert.ok(deck.every(item => !excluded.has(String(item.id))));
+});
+
 test('client streak handles ties, prevents repeated guesses, stops on a miss and completes the deck', async () => {
   const storage = new Map();
   const context = vm.createContext({ window: { scrollTo() {} }, localStorage: { getItem: key => storage.get(key), setItem: (key, value) => storage.set(key, value) } });

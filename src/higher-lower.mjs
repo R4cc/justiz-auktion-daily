@@ -1,10 +1,11 @@
 import { auctionGallery } from './auction-images.mjs';
 import { buildAuctionFamilies, chooseVariedAuctions, auctionSelectionCategory } from './auction-selection.mjs';
 
-export function higherLowerDeck(archive, random = Math.random, now = Date.now()) {
+export function higherLowerDeck(archive, random = Math.random, now = Date.now(), excludedAuctionIds = []) {
+  const excluded = new Set(excludedAuctionIds.map(id => String(id)));
   const eligible = archive.filter(item => Number.isFinite(item.finalPrice) && item.finalPrice > 0 &&
     Date.parse(item.endAt) <= now && Date.parse(item.capturedAt) >= Date.parse(item.endAt) &&
-    item.title && auctionGallery(item).length);
+    item.title && auctionGallery(item).length && !excluded.has(String(item.id)));
   let remaining = buildAuctionFamilies(eligible).map(family => family[Math.floor(random() * family.length)]);
   const deck = [];
   // Each five-lot block has four categories and at most one drinks lot.

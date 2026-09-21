@@ -187,8 +187,12 @@ export async function createAccountApi({ dataDir, dailyPayload, json, env = proc
       else if (route === 'inventory/sell') result = { ...accounts.sell(user, payload.id), user: accounts.profile(user) };
       else if (route === 'inventory/sell-all') result = { ...accounts.sellAll(user, payload.id), user: accounts.profile(user) };
       else if (route === 'games/start') {
-        const auctions = payload.mode === 'daily' ? (await dailyPayload()).auctions : null;
-        result = { run: accounts.startGame(user, payload.mode, () => auctions || higherLowerDeck(readArchive(dataDir).auctions).auctions, caseRewards(getCatalog())), user: accounts.profile(user) };
+        const dailyAuctions = (await dailyPayload()).auctions;
+        const auctions = payload.mode === 'daily' ? dailyAuctions : null;
+        const dailyIds = dailyAuctions.map(auction => auction.id);
+        result = { run: accounts.startGame(user, payload.mode,
+          () => auctions || higherLowerDeck(readArchive(dataDir).auctions, Math.random, Date.now(), dailyIds).auctions,
+          caseRewards(getCatalog())), user: accounts.profile(user) };
       } else if (route === 'games/answer') result = { run: accounts.answer(user, payload.id, payload.position, payload.answer), user: accounts.profile(user) };
       else throw new AccountError('not_found', 404);
       json(response, 200, result);
