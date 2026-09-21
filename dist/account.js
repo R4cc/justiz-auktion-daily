@@ -89,7 +89,7 @@ async function accountApi(route, payload) {
   return result;
 }
 function updateNavigation() {
-  const labels = { '/': 'Daily', '/shop': 'Shop', '/auctions': t('Auctions', 'Auktionen'), '/marketplace': t('Marketplace', 'Marktplatz'), '/market': t('Market', 'Markt'), '/inventory': t('Inventory', 'Inventar'), '/leaderboard': t('Leaderboard', 'Rangliste'), '/profile': t('Profile', 'Profil'), '/admin': 'Admin' };
+  const labels = { '/': 'Daily', '/shop': 'Shop', '/auctions': t('Palette Auctions', 'Paletten-Auktionen'), '/marketplace': t('Marketplace', 'Marktplatz'), '/market': t('Stock Market', 'Aktienmarkt'), '/inventory': t('Inventory', 'Inventar'), '/leaderboard': t('Leaderboard', 'Rangliste'), '/profile': t('Profile', 'Profil'), '/admin': 'Admin' };
   for (const link of document.querySelectorAll('.site-nav a')) {
     if (link.id !== 'header-auth') link.textContent = labels[link.getAttribute('href')];
     if (link.pathname === location.pathname) link.setAttribute('aria-current', 'page'); else link.removeAttribute('aria-current');
