@@ -77,6 +77,9 @@ export async function createAccountApi({ dataDir, dailyPayload, json, env = proc
         }
         else {
           if (!user) throw new AccountError('login_required', 401);
+          // A temporary password may only read its own session state; every
+          // other surface waits until a real password is set.
+          if (user.must_change_password && route !== 'me') throw new AccountError('password_change_required', 403);
           if (route === 'inventory') json(response, 200, { items: accounts.inventory(user) });
           else if (route === 'notifications') json(response, 200, notificationsForUser(dataDir, user.id));
           else if (route === 'resale/listings' && flags.resales) json(response, 200, { listings: listingsByUser(dataDir, user.id) });
@@ -127,15 +130,27 @@ export async function createAccountApi({ dataDir, dailyPayload, json, env = proc
         return true;
       }
       if (!user) throw new AccountError('login_required', 401);
+      // The forced-change state allows nothing but setting a new password
+      // (or signing out); logout is dispatched below and stays reachable.
+      if (user.must_change_password && route !== 'logout' && route !== 'password/change') {
+        throw new AccountError('password_change_required', 403);
+      }
       let result;
       if (route === 'logout') {
         accounts.logout(token);
         response.setHeader('set-cookie', cookie(''));
         result = { user: null };
       } else if (route === 'codes') result = { codes: accounts.codes(user, payload.count) };
+      else if (route === 'password/change') {
+        // Thin adapter: pending-state check, temporary-password verification
+        // and the guarded flag clear all live in the domain function.
+        await accounts.changePassword(user, payload);
+        result = { user: accounts.profile(user) };
+      }
       else if (route === 'notifications/read') result = markNotificationsRead(dataDir, user.id, payload.ids);
       else if (route === 'admin/grant-tokens') result = { grant: accounts.grantTokens(user, payload.amount, payload.requestId), user: accounts.profile(user) };
       else if (route === 'admin/grant-user-tokens') result = { grant: accounts.grantUserTokens(user, payload.userId, payload.amount, payload.requestId), user: accounts.profile(user) };
+      else if (route === 'admin/password-reset') result = { reset: await accounts.resetPassword(user, payload.userId), user: accounts.profile(user) };
       else if (route === 'admin/ban') result = { ban: accounts.banUser(user, payload.userId, payload.banned) };
       else if (route === 'admin/reset-economy') result = { reset: accounts.resetEconomy(user, payload.confirmation), user: accounts.profile(user) };
       else if (route === 'admin/news' && flags.news) {

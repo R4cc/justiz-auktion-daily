@@ -1,4 +1,4 @@
-import { randomBytes, randomUUID, createHash, scrypt, timingSafeEqual } from 'node:crypto';
+import { randomBytes, randomInt, randomUUID, createHash, scrypt, timingSafeEqual } from 'node:crypto';
 import { promisify } from 'node:util';
 import { withDatabase, transaction } from './database.mjs';
 import { drawItem, tokenValue } from './cases.mjs';
@@ -10,7 +10,7 @@ import { awardXp, ensureXpSchema } from './xp.mjs';
 import { featureFlags } from './features.mjs';
 import { estimatedValueTokens, marketIndexes } from './market.mjs';
 import { progressionForXp } from './progression.mjs';
-import { ensureNotificationSchema } from './notifications.mjs';
+import { ensureNotificationSchema, pushNotification } from './notifications.mjs';
 
 export { AccountError };
 
@@ -125,6 +125,11 @@ export class Accounts {
         // Grants that predate the migration stay unannounced.
         db.prepare('UPDATE users SET grants_seen_at = ?').run(this.now());
       }
+      if (!columns.includes('must_change_password')) {
+        // Admin password resets set this flag: 1 = temporary password armed,
+        // 2 = consumed by its single login, waiting for the new password.
+        db.exec('ALTER TABLE users ADD COLUMN must_change_password INTEGER NOT NULL DEFAULT 0');
+      }
       // Resale listings reference inventory rows; creating the tables here keeps
       // the sell/list locking consistent for every database this class opens.
       ensureResaleSchema(db, this.now());
@@ -144,7 +149,7 @@ export class Accounts {
     const hash = await passwordHash(password);
     this.atomic(db => {
       if (existing) {
-        db.prepare('UPDATE users SET password_hash = ? WHERE id = ?').run(hash, existing.id);
+        db.prepare('UPDATE users SET password_hash = ?, must_change_password = 0 WHERE id = ?').run(hash, existing.id);
         db.prepare('DELETE FROM account_sessions WHERE user_id = ?').run(existing.id);
       } else db.prepare('INSERT INTO users (id, username, password_hash, admin, tokens, created_at, grants_seen_at) VALUES (?, ?, ?, 1, ?, ?, ?)')
         .run(randomUUID(), username, hash, STARTING_TOKENS, this.now(), this.now());
@@ -201,7 +206,56 @@ export class Accounts {
     const stored = row?.password_hash || `${'0'.repeat(32)}:${'0'.repeat(128)}`;
     if (!await passwordMatches(password, stored) || !row) fail('invalid_login', 401);
     if (row.banned) fail('account_banned', 403);
-    return this.atomic(db => this.session(db, row.id));
+    return this.atomic(db => {
+      // A temporary password from an admin reset works for exactly one login;
+      // the session it creates may do nothing but set a real password.
+      if (row.must_change_password === 2) fail('temporary_password_used', 403);
+      if (row.must_change_password === 1) db.prepare('UPDATE users SET must_change_password = 2 WHERE id = ?').run(row.id);
+      return this.session(db, row.id);
+    });
+  }
+  // Admin-issued temporary password. It replaces the account password (old
+  // sessions are dropped), works for exactly one login and forces the player
+  // to set a real password before the account can be used again. Admin
+  // accounts are excluded so a compromised admin session cannot lock other
+  // admins out of recovery.
+  async resetPassword(admin, userId) {
+    if (!admin.admin) fail('forbidden', 403);
+    // 16 characters from a lookalike-free alphabet; typed once from the admin screen.
+    const alphabet = 'abcdefghijkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+    const temporaryPassword = Array.from({ length: 16 }, () => alphabet[randomInt(alphabet.length)]).join('');
+    const hash = await passwordHash(temporaryPassword);
+    return this.atomic(db => {
+      const target = db.prepare('SELECT id, username FROM users WHERE id = ? AND npc = 0 AND admin = 0').get(String(userId));
+      if (!target) fail('user_not_found', 404);
+      db.prepare('UPDATE users SET password_hash = ?, must_change_password = 1 WHERE id = ?').run(hash, target.id);
+      // Everywhere the player is signed in stops working the moment the
+      // temporary password replaces the real one.
+      db.prepare('DELETE FROM account_sessions WHERE user_id = ?').run(target.id);
+      pushNotification(db, target.id, {
+        type: 'security', sourceKey: `password-reset:${randomUUID()}`, href: '/login',
+        titleEn: 'Your password was reset', titleDe: 'Dein Passwort wurde zurückgesetzt',
+        bodyEn: 'An administrator issued a temporary password. Sign in once with it and set a new password.',
+        bodyDe: 'Ein Admin hat ein temporäres Passwort vergeben. Melde dich einmal damit an und setze ein neues Passwort.'
+      }, this.now());
+      return { userId: target.id, username: target.username, temporaryPassword };
+    });
+  }
+  // The single permitted action on a temporary-password session: verify the
+  // temporary password, store the new one and clear the forced state. The
+  // guarded UPDATE keeps a second tab from racing the same change.
+  async changePassword(user, { currentPassword, newPassword } = {}) {
+    if (!user.must_change_password) fail('no_password_change_pending', 409);
+    if (typeof newPassword !== 'string' || newPassword.length < 12 || newPassword.length > 128) fail('invalid_password');
+    this.throttle(`password-change:${user.id}`, 30);
+    const row = this.db(db => db.prepare('SELECT password_hash FROM users WHERE id = ? AND must_change_password != 0').get(user.id));
+    const stored = row?.password_hash || `${'0'.repeat(32)}:${'0'.repeat(128)}`;
+    if (!await passwordMatches(String(currentPassword ?? ''), stored)) fail('wrong_password', 403);
+    const hash = await passwordHash(newPassword);
+    return this.atomic(db => {
+      if (!db.prepare('UPDATE users SET password_hash = ?, must_change_password = 0 WHERE id = ? AND must_change_password != 0')
+        .run(hash, user.id).changes) fail('no_password_change_pending', 409);
+    });
   }
   codes(user, count) {
     if (!user.admin) fail('forbidden', 403);
@@ -325,7 +379,7 @@ export class Accounts {
   }
   profile(user) {
     return this.db(db => {
-      const row = db.prepare('SELECT id, username, admin, tokens, xp, created_at, grants_seen_at FROM users WHERE id = ?').get(user.id);
+      const row = db.prepare('SELECT id, username, admin, tokens, xp, created_at, grants_seen_at, must_change_password FROM users WHERE id = ?').get(user.id);
       const reward = db.prepare(`SELECT daily_rewards.earned, account_games.mode, account_games.complete FROM daily_rewards
         JOIN account_games ON run_id = account_games.id WHERE daily_rewards.user_id = ? AND daily_rewards.date = ?`).get(user.id, day(this.now()));
       // Token gifts are consumed on read, so every grant is announced exactly once.
@@ -333,10 +387,11 @@ export class Accounts {
         ...db.prepare('SELECT amount, created_at FROM token_grants WHERE created_at > ? AND created_at >= ?').all(row.grants_seen_at, row.created_at)]
         .sort((left, right) => left.created_at - right.created_at).map(gift => ({ amount: gift.amount, createdAt: gift.created_at }));
       db.prepare('UPDATE users SET grants_seen_at = ? WHERE id = ?').run(this.now(), user.id);
-      const { created_at, grants_seen_at, xp, ...publicRow } = row;
+      const { created_at, grants_seen_at, xp, must_change_password, ...publicRow } = row;
       // Progression derives from the freshly read users.xp through the shared
       // curve — no level arithmetic lives in this class.
-      return { ...publicRow, progression: progressionForXp(xp), ...this.summary(db, user.id), admin: Boolean(row.admin), reward: reward || null, gifts, date: day(this.now()) };
+      return { ...publicRow, mustChangePassword: Boolean(must_change_password),
+        progression: progressionForXp(xp), ...this.summary(db, user.id), admin: Boolean(row.admin), reward: reward || null, gifts, date: day(this.now()) };
     });
   }
   summary(db, userId) {

@@ -125,6 +125,37 @@ test('admins ban and unban players, revoking sessions, blocking logins and hidin
   await service.login({ username: 'alice', password });
 });
 
+test('admin password resets arm a one-time temporary password that forces a new one', async t => {
+  const { service, admin, register } = await fixture(t);
+  const player = await register('Resettable');
+  const session = await service.login({ username: 'Resettable', password });
+  await assert.rejects(() => service.resetPassword(player, player.id), /forbidden/);
+  await assert.rejects(() => service.resetPassword(admin, 'missing-user'), /user_not_found/);
+  await assert.rejects(() => service.resetPassword(admin, admin.id), /user_not_found/);
+  const reset = await service.resetPassword(admin, player.id);
+  assert.equal(reset.username, 'Resettable');
+  assert.match(reset.temporaryPassword, /^[A-Za-z0-9]{16}$/);
+  // The reset signs the player out everywhere and retires the old password.
+  assert.equal(service.user(session), null);
+  await assert.rejects(() => service.login({ username: 'Resettable', password }), /invalid_login/);
+  // The temporary password works exactly once and lands in the forced state.
+  const tempToken = await service.login({ username: 'Resettable', password: reset.temporaryPassword });
+  const tempUser = service.user(tempToken);
+  assert.equal(tempUser.must_change_password, 2);
+  assert.equal(service.profile(tempUser).mustChangePassword, true);
+  await assert.rejects(() => service.login({ username: 'Resettable', password: reset.temporaryPassword }), /temporary_password_used/);
+  // The forced session may only set a new password, verified against the temporary one.
+  await assert.rejects(() => service.changePassword(tempUser, { currentPassword: reset.temporaryPassword, newPassword: 'short' }), /invalid_password/);
+  await assert.rejects(() => service.changePassword(tempUser, { currentPassword: 'not-the-temporary-password', newPassword: 'brand-new-password-456' }), /wrong_password/);
+  await service.changePassword(tempUser, { currentPassword: reset.temporaryPassword, newPassword: 'brand-new-password-456' });
+  assert.equal(service.profile(tempUser).mustChangePassword, false);
+  const newToken = await service.login({ username: 'Resettable', password: 'brand-new-password-456' });
+  assert.ok(service.user(newToken));
+  await assert.rejects(() => service.login({ username: 'Resettable', password: reset.temporaryPassword }), /invalid_login/);
+  await assert.rejects(() => service.changePassword(service.user(newToken),
+    { currentPassword: 'x'.repeat(12), newPassword: 'another-password-789' }), /no_password_change_pending/);
+});
+
 test('admin token gifts are announced exactly once on the next profile read', async t => {
   const { service, admin, register, nextDay } = await fixture(t);
   const alice = await register('Alice');
@@ -566,4 +597,45 @@ test('HTTP API enforces authentication, CSRF headers, admin permissions and sess
   assert.equal((await post('logout', {}, playerCookie)).status, 200);
   assert.equal((await (await fetch(base + 'me', { headers: { cookie: playerCookie } })).json()).user, null);
   assert.equal((await post('login', { username: 'admin', password: 'x'.repeat(9000) })).status, 413);
+});
+
+test('password reset over HTTP gates the whole account behind one forced password change', async t => {
+  const { dir } = await fixture(t);
+  upsertAuctions(dir, lots);
+  const json = (res, status, value) => { res.writeHead(status, { 'content-type': 'application/json', 'cache-control': 'no-store' }); res.end(JSON.stringify(value)); };
+  const api = await createAccountApi({ dataDir: dir, dailyPayload: async () => ({ auctions: lots.slice(0, 5) }), json,
+    env: { ADMIN_USERNAME: 'admin', ADMIN_PASSWORD: password, COOKIE_SECURE: 'true' } });
+  const server = createServer(async (req, res) => { if (!await api(req, res, new URL(req.url, 'http://localhost'))) json(res, 404, {}); });
+  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+  t.after(() => new Promise(resolve => server.close(resolve)));
+  const base = `http://127.0.0.1:${server.address().port}/api/account/`;
+  const post = (route, value, cookie = '') => fetch(base + route, { method: 'POST', headers: {
+    'content-type': 'application/json', 'x-requested-with': 'JUSTIZGUESSR', cookie }, body: JSON.stringify(value) });
+  const adminCookie = (await post('login', { username: 'admin', password })).headers.get('set-cookie');
+  const code = (await (await post('codes', { count: 1 }, adminCookie)).json()).codes[0];
+  const registered = await post('register', { username: 'fresh', password, code });
+  const freshCookie = registered.headers.get('set-cookie');
+  const freshId = (await registered.json()).user.id;
+  // Regular users cannot trigger resets.
+  assert.equal((await post('admin/password-reset', { userId: freshId }, freshCookie)).status, 403);
+  const reset = await (await post('admin/password-reset', { userId: freshId }, adminCookie)).json();
+  assert.match(reset.reset.temporaryPassword, /^[A-Za-z0-9]{16}$/);
+  // The old session is gone and the old password is dead.
+  assert.equal((await (await fetch(base + 'me', { headers: { cookie: freshCookie } })).json()).user, null);
+  assert.equal((await post('login', { username: 'fresh', password })).status, 401);
+  // The temporary login succeeds once; every surface except the change is gated.
+  const temp = await post('login', { username: 'fresh', password: reset.reset.temporaryPassword });
+  assert.equal(temp.status, 200);
+  const tempCookie = temp.headers.get('set-cookie');
+  const tempProfile = await (await fetch(base + 'me', { headers: { cookie: tempCookie } })).json();
+  assert.equal(tempProfile.user.mustChangePassword, true);
+  assert.equal((await fetch(base + 'inventory', { headers: { cookie: tempCookie } })).status, 403);
+  assert.equal((await (await post('codes', { count: 1 }, tempCookie)).json()).error, 'password_change_required');
+  assert.equal((await post('password/change', { currentPassword: 'wrong-wrong-wrong', newPassword: 'brand-new-password-456' }, tempCookie)).status, 403);
+  const changed = await post('password/change', { currentPassword: reset.reset.temporaryPassword, newPassword: 'brand-new-password-456' }, tempCookie);
+  assert.equal(changed.status, 200);
+  assert.equal((await changed.json()).user.mustChangePassword, false);
+  // Normal usage resumes with the new password; the temporary one is consumed.
+  assert.equal((await post('login', { username: 'fresh', password: 'brand-new-password-456' })).status, 200);
+  assert.equal((await post('login', { username: 'fresh', password: reset.reset.temporaryPassword })).status, 401);
 });

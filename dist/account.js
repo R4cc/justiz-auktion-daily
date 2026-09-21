@@ -1,4 +1,4 @@
-let account = null, accountCatalog = null, accountItems = [], accountCodes = [], freshCodes = [];
+let account = null, accountCatalog = null, accountItems = [], accountCodes = [], freshCodes = [], freshPasswordReset = null;
 let accountFriends = { friends: [], date: '' }, accountAdmin = { playerCount: 0, users: [], grants: [], lastReset: null };
 let accountLeaderboard = { date: '', leaders: [] }, adminUserFilter = '';
 let accountNotifications = [], notificationUnreadCount = 0, notificationOwner = null, notificationTimer = null, notificationBusy = false, notificationRequest = 0;
@@ -57,6 +57,10 @@ function accountError(code) {
     invalid_grant_user: t('Choose a user to receive the J€.', 'Wähle einen Benutzer aus, der die J€ erhalten soll.'),
     request_conflict: t('This request was already used with different values.', 'Diese Anfrage wurde bereits mit anderen Werten verwendet.'),
     invalid_reset_confirmation: t('Type RESET ECONOMY exactly to confirm.', 'Gib zur Bestätigung exakt RESET ECONOMY ein.'),
+    password_change_required: t('Set a new password to continue.', 'Setze ein neues Passwort, um fortzufahren.'),
+    temporary_password_used: t('The temporary password was already used for its one login. Ask an admin to reset your password again.', 'Das temporäre Passwort wurde bereits für seine eine Anmeldung verwendet. Lass dein Passwort vom Admin erneut zurücksetzen.'),
+    no_password_change_pending: t('There is no password change pending.', 'Es steht keine Passwortänderung aus.'),
+    wrong_password: t('That is not your current password.', 'Das ist nicht dein aktuelles Passwort.'),
     account_banned: t('This account has been banned.', 'Dieses Konto wurde gesperrt.'),
     item_listed: t('This item is listed in a resale auction.', 'Dieser Gegenstand ist in einer Verkaufsauktion gelistet.'),
     quantity_unavailable: t('That many matching items are no longer available.', 'So viele passende Gegenstände sind nicht mehr verfügbar.'),
@@ -224,6 +228,12 @@ async function navigateAccountPage(path, push = true) {
     const session = await accountApi('me');
     if (visit !== accountVisit) return;
     updateAccount(session.user);
+    // Skip every page loader while a temporary password still needs replacing.
+    if (account?.mustChangePassword) {
+      pageLoaded = true; renderAccountPage();
+      accountContent.querySelector('h1')?.focus({ preventScroll: true });
+      return;
+    }
     const owner = account?.id;
     if (window.economyUi?.isRoute(path)) {
       await window.economyUi.load(path, visit);
@@ -274,6 +284,8 @@ function accountValueMarkup() {
 function renderAccountPage() {
   if (!pageLoaded || !currentAccountPage) return;
   if (caseOpening === accountVisit && currentAccountPage === '/shop') return;
+  // A temporary password from an admin reset allows exactly one thing next.
+  if (account?.mustChangePassword) { renderPasswordChange(); return; }
   if (window.economyUi?.isRoute(currentAccountPage)) window.economyUi.render();
   else if (currentAccountPage === '/shop') renderShop();
   else if (currentAccountPage === '/inventory') renderInventory();
@@ -281,6 +293,17 @@ function renderAccountPage() {
   else if (currentAccountPage === '/admin') renderAdmin();
   else if (currentAccountPage === '/leaderboard') renderLeaderboard();
   else renderAuth();
+}
+// Forced one-time view after signing in with an admin-issued temporary
+// password: the session cannot do anything else until a real password is set.
+function renderPasswordChange() {
+  accountContent.innerHTML = pageHeading(t('Set a new password', 'Neues Passwort setzen')) +
+    `<form id="password-change-form" class="account-form"><p role="status">${t('You signed in with a temporary password from an administrator. It worked for this one login only — set a new password now to keep using your account.', 'Du hast dich mit einem temporären Passwort eines Admins angemeldet. Es galt nur für diese eine Anmeldung — setze jetzt ein neues Passwort, um dein Konto weiterzuverwenden.')}</p>
+    <label>${t('Temporary password', 'Temporäres Passwort')}<input name="currentPassword" type="password" autocomplete="current-password" required minlength="12" maxlength="128"></label>
+    <label>${t('New password', 'Neues Passwort')}<input name="newPassword" type="password" autocomplete="new-password" required minlength="12" maxlength="128"></label>
+    <p>${t('Passwords need at least 12 characters.', 'Passwörter benötigen mindestens 12 Zeichen.')}</p>
+    <p class="account-error" role="alert"></p><button class="primary-button" type="submit">${t('Save new password', 'Neues Passwort speichern')}</button>
+    <button class="text-button" type="button" data-account="logout">${t('Log out', 'Abmelden')}</button></form>`;
 }
 function renderAuth() {
   const register = currentAccountPage === '/register';
@@ -367,7 +390,7 @@ function adminUserListMarkup() {
   const filtered = accountAdmin.users.filter(user => user.username.toLowerCase().includes(query));
   const rows = filtered.slice(0, 100).map(user => `<div class="user-row${user.banned ? ' is-banned' : ''}">
     <div class="user-row-main"><strong>${accountEscape(user.username)}</strong><span>${justizEuro(user.tokens)}${user.admin ? ` · ${t('Admin', 'Admin')}` : ''}${user.banned ? ` · ${t('Banned', 'Gesperrt')}` : ''}</span></div>
-    <div class="user-row-actions">${user.admin ? '' : `<button data-account="ban-toggle" data-id="${accountEscape(user.id)}" data-banned="${user.banned ? 'true' : 'false'}">${user.banned ? t('Unban', 'Entsperren') : t('Ban', 'Sperren')}</button>`}<button data-account="grant-user" data-id="${accountEscape(user.id)}">${t('Give J€', 'J€ geben')}</button></div>
+    <div class="user-row-actions">${user.admin ? '' : `<button data-account="ban-toggle" data-id="${accountEscape(user.id)}" data-banned="${user.banned ? 'true' : 'false'}">${user.banned ? t('Unban', 'Entsperren') : t('Ban', 'Sperren')}</button><button data-account="password-reset" data-id="${accountEscape(user.id)}">${t('Reset password', 'Passwort zurücksetzen')}</button>`}<button data-account="grant-user" data-id="${accountEscape(user.id)}">${t('Give J€', 'J€ geben')}</button></div>
   </div>`).join('');
   const note = filtered.length > 100 ? t(`Showing 100 of ${filtered.length} players. Refine your search.`, `Zeige 100 von ${filtered.length} Spielern. Grenze die Suche weiter ein.`) :
     filtered.length ? '' : t('No players match this search.', 'Keine Spieler gefunden.');
@@ -417,6 +440,7 @@ function renderAdmin() {
   accountContent.innerHTML += `<section class="admin-section"><div class="section-title-row"><h2>${t('Players', 'Spieler')}</h2>${infoTip(t(`Search all ${accountAdmin.playerCount} players to grant J€ or change access. Banned players are signed out immediately.`, `Durchsuche alle ${accountAdmin.playerCount} Spieler, um J€ zu vergeben oder den Zugang zu ändern. Gesperrte Spieler werden sofort abgemeldet.`))}</div>
     <div class="admin-toolbar"><label>${t('Search', 'Suche')}<input id="user-search" type="search" autocomplete="off" placeholder="${t('Username', 'Benutzername')}" value="${accountEscape(adminUserFilter)}"></label><label>${t('J€ per grant', 'J€ pro Gutschrift')}<input id="grant-amount" type="number" min="1" max="1000000" step="1" value="100"></label></div>
     <div id="user-list" class="user-list">${adminUserListMarkup()}</div>
+    ${freshPasswordReset ? `<label class="fresh-codes">${t(`Temporary password for ${freshPasswordReset.username} — copy it now, it is shown only once and works for exactly one login`, `Temporäres Passwort für ${freshPasswordReset.username} — jetzt kopieren, es wird nur einmal angezeigt und gilt für genau eine Anmeldung`)}<textarea readonly rows="2">${freshPasswordReset.temporaryPassword}</textarea></label>` : ''}
     <div class="section-title-row"><h3>${t('Give all players J€', 'Allen Spielern J€ geben')}</h3>${infoTip(t(`Applies to every existing account, including admins (${accountAdmin.playerCount} currently). Later registrations do not receive it.`, `Gilt für alle bestehenden Konten inklusive Admins (aktuell ${accountAdmin.playerCount}). Spätere Registrierungen erhalten nichts.`))}</div>
     <form id="grant-form" class="grant-form"><label>${t('J€ per player', 'J€ pro Spieler')}<input name="amount" type="number" min="1" max="1000000" step="1" value="100" required></label><button class="primary-button" type="submit">${t('Give J€ to all current players', 'J€ an alle aktuellen Spieler geben')}</button><p class="account-error" role="alert"></p></form>
     <div class="grant-history">${accountAdmin.grants.map(grant => `<p>${new Date(grant.createdAt).toLocaleString(uiLocale())} · ${justizEuro(grant.amount)} ${t('each', 'je Spieler')} · ${grant.recipients} ${t('players', 'Spieler')}</p>`).join('')}</div></section>
@@ -567,7 +591,7 @@ document.addEventListener('click', async event => {
   try {
     if (action === 'logout') {
       await accountApi('logout', {}); updateAccount(null); accountDailyRun = null; higherLowerRequest++; higherLowerRun = null;
-      accountResult = null; freshCodes = []; accountItems = []; accountCodes = []; accountFriends = { friends: [], date: '' };
+      accountResult = null; freshCodes = []; freshPasswordReset = null; accountItems = []; accountCodes = []; accountFriends = { friends: [], date: '' };
       await navigateAccountPage('/login');
     }
     if (action === 'select-case') { accountSelectedCase = button.dataset.id; accountResult = null; renderAccountPage(); }
@@ -604,6 +628,16 @@ document.addEventListener('click', async event => {
       const result = await accountApi('admin/ban', { userId: button.dataset.id, banned });
       if (visit === accountVisit) { await navigateAccountPage('/admin', false); showToast(banned ? t(`${result.ban.username} has been banned.`, `${result.ban.username} wurde gesperrt.`) : t(`${result.ban.username} can log in again.`, `${result.ban.username} kann sich wieder anmelden.`)); }
     }
+    if (action === 'password-reset') {
+      // Replaces the account password with a one-time temporary one and signs
+      // the player out everywhere; the plaintext is shown once, like codes.
+      const result = await accountApi('admin/password-reset', { userId: button.dataset.id });
+      freshPasswordReset = result.reset;
+      if (visit === accountVisit) {
+        await navigateAccountPage('/admin', false);
+        showToast(t(`Temporary password for ${result.reset.username} created. The player must set a new password after their next login.`, `Temporäres Passwort für ${result.reset.username} erstellt. Der Spieler muss nach der nächsten Anmeldung ein neues Passwort setzen.`));
+      }
+    }
     if (action === 'friend-accept' || action === 'friend-remove') {
       const result = await accountApi(action === 'friend-accept' ? 'friends/accept' : 'friends/remove', { id: button.dataset.id });
       if (visit === accountVisit) { accountFriends = result; renderAccountPage(); }
@@ -618,7 +652,7 @@ document.addEventListener('click', async event => {
   }
 });
 document.addEventListener('submit', async event => {
-  if (!event.target.matches('#account-form, #code-form, #friend-form, #grant-form, #reset-economy-form')) return;
+  if (!event.target.matches('#account-form, #code-form, #friend-form, #grant-form, #reset-economy-form, #password-change-form')) return;
   event.preventDefault(); if (accountBusy) return; accountBusy = true;
   const visit = accountVisit, form = event.target, page = currentAccountPage, button = form.querySelector('button[type="submit"]'); button.disabled = true;
   try {
@@ -627,6 +661,13 @@ document.addEventListener('submit', async event => {
       const result = await accountApi(page === '/register' ? 'register' : 'login', data);
       updateAccount(result.user); accountDailyRun = null; higherLowerRequest++; higherLowerRun = null; accountResult = null; freshCodes = [];
       if (visit === accountVisit) await navigateAccountPage('/profile');
+    } else if (form.id === 'password-change-form') {
+      const result = await accountApi('password/change', { currentPassword: data.currentPassword, newPassword: data.newPassword });
+      updateAccount(result.user); accountDailyRun = null; higherLowerRequest++; higherLowerRun = null; accountResult = null; accountItems = [];
+      if (visit === accountVisit) {
+        await navigateAccountPage('/profile');
+        showToast(t('New password saved. Your account is back to normal.', 'Neues Passwort gespeichert. Dein Konto ist wieder normal nutzbar.'));
+      }
     } else if (form.id === 'friend-form') {
       const result = await accountApi('friends/request', { username: data.username.trim() });
       if (visit === accountVisit) { accountFriends = result; renderAccountPage(); }
