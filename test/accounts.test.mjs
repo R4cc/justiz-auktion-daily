@@ -218,9 +218,9 @@ test('daily rewards are once per account per UTC day across modes, survive repla
   assert.throws(() => service.answer(admin, run.id, 1, 10), /invalid_position/);
   assert.throws(() => service.answer(admin, run.id, 0, '100'), /invalid_guess/);
   for (let i = 0; i < 5; i++) run = service.answer(admin, run.id, i, 10);
-  assert.equal(run.earned, 100);
-  assert.equal(service.answer(admin, run.id, 4, 10).earned, 100);
-  assert.equal(service.profile(admin).tokens, STARTING_TOKENS + 100);
+  assert.equal(run.earned, 200);
+  assert.equal(service.answer(admin, run.id, 4, 10).earned, 200);
+  assert.equal(service.profile(admin).tokens, STARTING_TOKENS + 200);
   assert.throws(() => service.answer(admin, run.id, 4, 20), /answer_conflict/);
   const hl = service.startGame(admin, 'higher-lower', () => lots);
   assert.equal(hl.auctions[0].actualBid, 10);
@@ -228,15 +228,15 @@ test('daily rewards are once per account per UTC day across modes, survive repla
   let result;
   for (let i = 0; i < 7; i++) result = service.answer(admin, hl.id, i, 'higher');
   assert.equal(result.earned, 0);
-  assert.equal(service.profile(admin).tokens, STARTING_TOKENS + 100);
+  assert.equal(service.profile(admin).tokens, STARTING_TOKENS + 200);
   nextDay();
   assert.equal(service.profile(admin).reward, null);
   assert.throws(() => service.answer(admin, run.id, 0, 10), /daily_reset/);
   const fresh = service.startGame(admin, 'higher-lower', () => lots);
   assert.notEqual(fresh.id, hl.id);
   for (let i = 0; i < 7; i++) result = service.answer(admin, fresh.id, i, 'higher');
-  assert.equal(result.earned, 140);
-  assert.equal(service.profile(admin).tokens, STARTING_TOKENS + 240);
+  assert.equal(result.earned, 280);
+  assert.equal(service.profile(admin).tokens, STARTING_TOKENS + 480);
 });
 
 test('a timed-out guess is recorded as null, scores zero and still completes the daily run', async t => {
@@ -248,7 +248,7 @@ test('a timed-out guess is recorded as null, scores zero and still completes the
   assert.throws(() => service.answer(admin, run.id, 0, 10), /answer_conflict/);
   for (let i = 1; i < 5; i++) run = service.answer(admin, run.id, i, lots[i].actualBid);
   assert.equal(run.complete, true);
-  assert.equal(run.earned, 100);
+  assert.equal(run.earned, 200);
   assert.equal(service.profile(admin).daily.score,
     [1, 2, 3, 4].reduce((sum, i) => sum + scoreGuess(lots[i].actualBid, lots[i].actualBid), 0));
   const hl = service.startGame(admin, 'higher-lower', () => lots);
@@ -290,7 +290,7 @@ test('first answer reserves the run, low streaks earn zero, ties count and anoth
   let result;
   for (let i = 0; i < 14; i++) result = service.answer(admin, tie.id, i, i % 2 ? 'higher' : 'lower');
   assert.equal(result.streak, 14);
-  assert.equal(result.earned, 200);
+  assert.equal(result.earned, 400);
 });
 
 test('case debits, item ownership, idempotent openings and sales remain atomic across restart', async t => {
@@ -301,20 +301,20 @@ test('case debits, item ownership, idempotent openings and sales remain atomic a
   const daily = service.startGame(admin, 'daily', () => lots.slice(0, 5));
   for (let i = 0; i < 5; i++) service.answer(admin, daily.id, i, 10);
   assert.throws(() => service.openCase(admin, catalog, 'fundkiste', 'test-request-00001', 'stale'), /catalog_changed/);
-  assert.equal(service.profile(admin).tokens, STARTING_TOKENS + 100);
+  assert.equal(service.profile(admin).tokens, STARTING_TOKENS + 200);
   const item = service.openCase(admin, catalog, 'fundkiste', 'test-request-00001');
-  assert.equal(service.profile(admin).tokens, STARTING_TOKENS + 100 - cost);
+  assert.equal(service.profile(admin).tokens, STARTING_TOKENS + 200 - cost);
   assert.deepEqual(service.openCase(admin, catalog, 'fundkiste', 'test-request-00001'), item);
   assert.throws(() => service.openCase(admin, catalog, 'schatzkiste', 'test-request-00001'), /request_conflict/);
   assert.equal(service.inventory(admin).length, 1);
   assert.equal(service.inventory(other).length, 0);
   assert.throws(() => service.sell(other, item.id), { status: 404 });
   service.sell(admin, item.id); service.sell(admin, item.id);
-  assert.equal(service.profile(admin).tokens, STARTING_TOKENS + 100 - cost + item.sellValue);
+  assert.equal(service.profile(admin).tokens, STARTING_TOKENS + 200 - cost + item.sellValue);
   assert.equal(service.inventory(admin).length, 0);
   closeDataStore(dir);
   const reopened = new Accounts(dir);
-  assert.equal(reopened.profile(admin).tokens, STARTING_TOKENS + 100 - cost + item.sellValue);
+  assert.equal(reopened.profile(admin).tokens, STARTING_TOKENS + 200 - cost + item.sellValue);
   assert.equal(reopened.inventory(admin).length, 0);
   assert.deepEqual(reopened.openCase(admin, catalog, 'fundkiste', 'test-request-00001'), item);
 });

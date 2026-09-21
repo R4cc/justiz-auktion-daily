@@ -22,9 +22,12 @@ const fail = (code, status) => { throw new AccountError(code, status); };
 export const REWARD_COUNT = 3;
 // Reference pricing units: expectations are BUNDLE expectations (rewardCount
 // draws), min/max stay PER-ITEM. v1 payloads mistakenly stored single-draw
-// expectations; v2 is the corrected bundle math (see migrateBundlePricing).
-export const PRICING_VERSION = 2;
-const BUNDLE_PRICING_MARKER = 'palette_bundle_pricing_v2';
+// expectations; v2 corrected the bundle math and v3 prices auctions at 60%
+// of expected reward value so a winning palette is more likely to be
+// profitable before optional competitive bidding.
+export const PRICING_VERSION = 3;
+export const PALETTE_RESERVE_RATE = .60;
+const BUNDLE_PRICING_MARKER = 'palette_bundle_pricing_v3';
 const DAY_MS = 86_400_000;
 const hour = 3_600_000;
 const MARKET_CATEGORY_IDS = new Set(['electronics', 'vehicles', 'wine', 'watches_jewelry', 'tools',
@@ -178,9 +181,9 @@ export function ensurePaletteEditionSchema(db, now = Date.now()) {
 
 // One-time correction of pre-acquisition reference metadata: v1 payloads
 // stored SINGLE-DRAW expectations while editions price a rewardCount-item
-// bundle. Stored e0/et are multiplied by the payload's rewardCount; reserve
-// and spread are recomputed purely from those corrected expectations and the
-// stored per-item minimum/maximum — never against today's market or archive.
+// bundle. Their e0/et are multiplied by rewardCount; v2 bundle expectations
+// are retained. Both are repriced at the v3 reserve rate using only frozen
+// inputs — never today's market or archive.
 // Items, ids, rarity, story, windows, definitionVersion and valuationAt are
 // untouched; malformed pricing is rejected rather than silently replaced.
 // The durable marker is written last, making the migration exactly-once.
@@ -209,9 +212,11 @@ function migrateBundlePricing(db, now) {
     for (const field of ['e0', 'et', 'minMarketValue', 'maxMarketValue']) {
       if (!Number.isFinite(pricing[field])) fail('invalid_stored_pricing', 500);
     }
-    pricing.e0 = pricing.e0 * rewardCount;
-    pricing.et = pricing.et * rewardCount;
-    pricing.referenceReserve = Math.ceil(Math.max(.75 * pricing.e0 + .25 * pricing.et, pricing.et) / .85);
+    if (payload.pricingVersion == null || payload.pricingVersion === 1) {
+      pricing.e0 = pricing.e0 * rewardCount;
+      pricing.et = pricing.et * rewardCount;
+    } else if (payload.pricingVersion !== 2) fail('invalid_stored_pricing', 500);
+    pricing.referenceReserve = Math.ceil(Math.max(.75 * pricing.e0 + .25 * pricing.et, pricing.et) * PALETTE_RESERVE_RATE);
     pricing.spreadOk = rewardCount * pricing.minMarketValue < pricing.referenceReserve
       && rewardCount * pricing.maxMarketValue > pricing.referenceReserve;
     payload.available = pricing.spreadOk;
@@ -230,7 +235,7 @@ function migrateBundlePricing(db, now) {
 // E0 and Et are BUNDLE expectations: rewardCount times the single-draw
 // expectation over frozen base token values (E0) and unrounded market-adjusted
 // values captured once at generation time (Et). referenceReserve =
-// ceil(max(0.75*E0 + 0.25*Et, Et) / 0.85). minMarketValue/maxMarketValue stay
+// ceil(max(0.75*E0 + 0.25*Et, Et) * 0.60). minMarketValue/maxMarketValue stay
 // per-item; a usable edition needs both loss and upside at the reserve:
 // rewardCount*min < reserve AND rewardCount*max > reserve.
 // Exported as a pure helper for independent regression tests.
@@ -251,7 +256,7 @@ export function bundleReferencePricing(items, marketIndexOf, rewardCount = REWAR
   }
   e0 *= rewardCount;
   et *= rewardCount;
-  const referenceReserve = Math.ceil(Math.max(.75 * e0 + .25 * et, et) / .85);
+  const referenceReserve = Math.ceil(Math.max(.75 * e0 + .25 * et, et) * PALETTE_RESERVE_RATE);
   return { e0, et, referenceReserve, minMarketValue: min, maxMarketValue: max,
     spreadOk: rewardCount * min < referenceReserve && rewardCount * max > referenceReserve };
 }

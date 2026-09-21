@@ -9,6 +9,7 @@ export const RARITIES = [
 ];
 export const CASE_WEIGHTS = [5000, 3500, 1200, 290, 10];
 export const CASE_RETURN_TARGET = .9425;
+export const DAILY_REWARD_FLOOR = 200;
 export const CASES = [
   { id: 'fundkiste', name: 'Seized Goods Case', category: 'mixed', badge: 'JG' },
   { id: 'schatzkiste', name: 'Contraband Case', category: 'premium', badge: 'JG+' },
@@ -142,7 +143,9 @@ export function publicCaseCatalog(catalog) {
 
 export function caseRewards(catalog) {
   const costs = catalog.cases.filter(box => box.available).map(box => box.cost);
-  const daily = costs.length ? Math.min(...costs) : 100;
+  // Daily should provide enough currency to participate meaningfully in the
+  // auction economy even when the cheapest rotating case is inexpensive.
+  const daily = Math.max(DAILY_REWARD_FLOOR, costs.length ? Math.min(...costs) : 0);
   return { daily, higherLowerPerCorrect: Math.max(1, Math.round(daily / 5)), higherLowerMax: daily * 2, minimumStreak: 3 };
 }
 

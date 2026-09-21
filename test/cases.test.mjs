@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdtemp, rm } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { CASE_RETURN_TARGET, caseCatalog, caseRewards, loadCaseCatalog, drawItem, publicCaseCatalog, RARITIES, tokenValue } from '../src/cases.mjs';
+import { CASE_RETURN_TARGET, DAILY_REWARD_FLOOR, caseCatalog, caseRewards, loadCaseCatalog, drawItem, publicCaseCatalog, RARITIES, tokenValue } from '../src/cases.mjs';
 import { Accounts } from '../src/accounts.mjs';
 import { closeDataStore, upsertAuctions } from '../src/database.mjs';
 
@@ -76,13 +76,15 @@ test('sale values follow auction euros and case prices preserve the target retur
   }
 });
 
-test('daily game rewards track the cheapest available case', () => {
+test('daily game rewards have a J€200 floor and still scale with expensive cases', () => {
   const catalog = caseCatalog(stock, day);
   const cheapest = Math.min(...catalog.cases.filter(box => box.available).map(box => box.cost));
+  const daily = Math.max(DAILY_REWARD_FLOOR, cheapest);
   assert.deepEqual(caseRewards(catalog), {
-    daily: cheapest, higherLowerPerCorrect: Math.max(1, Math.round(cheapest / 5)),
-    higherLowerMax: cheapest * 2, minimumStreak: 3
+    daily, higherLowerPerCorrect: Math.max(1, Math.round(daily / 5)),
+    higherLowerMax: daily * 2, minimumStreak: 3
   });
+  assert.ok(caseRewards(catalog).daily >= 200);
   assert.deepEqual(publicCaseCatalog(catalog).rewards, caseRewards(catalog));
 });
 

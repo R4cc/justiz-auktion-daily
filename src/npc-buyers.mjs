@@ -120,18 +120,16 @@ export function tickNpcBuyers(dataDir, { now = Date.now(), unit = deterministicU
 
 // Sealed palette boards are priced against the live market: the ceiling is
 // the market-adjusted expected bundle value times a persona multiplier. The
-// reserve freezes at roughly expected-value / 0.85, so around a neutral
-// market NPCs only nibble just above the reserve, a hot market (index above
-// 100) lets them chase the lot well past it, and a cold market silences them
-// entirely — exactly the coupling between market indexes and NPC bidding the
-// economy wants.
+// reserve freezes at 60% of expected value. NPC ceilings stay below expected
+// value as well, preserving meaningful player upside while still letting
+// interested buyers compete and hot markets lift bids above a frozen reserve.
 export function paletteBidCeiling(snapshot, indexes, npc, auctionId, unit = deterministicUnit) {
   const items = Array.isArray(snapshot?.items) ? snapshot.items : [];
   const expected = bundleReferencePricing(items, item => indexes[item.marketCategory] ?? 100, snapshot.rewardCount ?? 3);
   const preferred = (snapshot.allowedMarketCategories ?? []).some(category => npc.categories.includes(category));
-  const variation = (unit(`${auctionId}:${npc.id}:palette-value`) - .5) * .10;
-  const multiplier = Math.max(1.0, Math.min(1.35, .90 + npc.willingness * .32
-    + (preferred ? .08 : -.04) + variation));
+  const variation = (unit(`${auctionId}:${npc.id}:palette-value`) - .5) * .06;
+  const multiplier = Math.max(.49, Math.min(.78, .52 + npc.willingness * .18
+    + (preferred ? .05 : -.03) + variation));
   return { maxBid: Math.max(1, Math.round((expected.et || 0) * multiplier)), preferred };
 }
 

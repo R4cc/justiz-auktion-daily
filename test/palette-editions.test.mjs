@@ -147,13 +147,13 @@ test('frozen editions carry three-reward metadata, all five tiers, weights and t
     max = Math.max(max, base * marketIndex / 100);
   }
   const e0 = rewardCount * singleE0, et = rewardCount * singleEt;
-  const reserve = Math.ceil(Math.max(.75 * e0 + .25 * et, et) / .85);
+  const reserve = Math.ceil(Math.max(.75 * e0 + .25 * et, et) * .60);
   assert.ok(Math.abs(payload.pricing.e0 - e0) < 1e-9);
   assert.ok(Math.abs(payload.pricing.et - et) < 1e-9);
   assert.ok(Math.abs(payload.pricing.minMarketValue - min) < 1e-9);
   assert.ok(Math.abs(payload.pricing.maxMarketValue - max) < 1e-9);
   assert.equal(payload.pricing.referenceReserve, reserve);
-  assert.equal(payload.pricingVersion, 2);
+  assert.equal(payload.pricingVersion, 3);
   assert.equal(entry.referenceReserve, reserve);
   assert.equal(entry.cost, reserve);
   // Every tier is populated, so within-tier probability is uniform by construction.
@@ -190,8 +190,8 @@ test('insufficient stock and insufficient value spread persist unavailable editi
   // The market effects of the publication still landed.
   assert.equal(withDatabase(dir, db => db.prepare('SELECT COUNT(*) AS count FROM market_effects').get().count), 1);
 
-  // Identical item values give no upside: the bundle reserve exceeds even a
-  // bundle of maximum-value items, so the edition freezes as unusable.
+  // Identical item values have no loss case: even the minimum bundle value
+  // exceeds the discounted reserve, so the edition freezes as unusable.
   const uniform = ['Alpha', 'Bravo', 'Charlie', 'Delta', 'Echo', 'Foxtrot']
     .map((name, index) => ({ id: 1000 + index, title: `Laptop ${name}`, category: 'Elektronik',
       currentBid: 50, image: '/assets/electronics.jpg' }));
@@ -206,10 +206,10 @@ test('insufficient stock and insufficient value spread persist unavailable editi
   assert.equal(flatPayload.availabilityReason, 'insufficient_value_spread');
   assert.equal(flatPayload.pricing.spreadOk, false);
   assert.deepEqual(flatPayload.weights, [0, 0, 0, 0, 0]);
-  // The math that makes it unusable: E0 = Et = 3·50 = 150, reserve 177, and
-  // 3·max = 150 is NOT above 177.
+  // The math that makes it unusable: E0 = Et = 3·50 = 150, reserve 90, and
+  // 3·min = 150 is NOT below 90.
   assert.ok(Math.abs(flatPayload.pricing.e0 - 150) < 1e-9);
-  assert.equal(flatPayload.pricing.referenceReserve, 177);
+  assert.equal(flatPayload.pricing.referenceReserve, 90);
 });
 
 test('editions are archive-order independent and immune to collector updates and restarts', async t => {
@@ -426,7 +426,7 @@ test('market movement is captured once at generation and flag-off valuation stil
     paletteWindows: [{ paletteId: 'electronics-smuggling', startOffsetHours: 1, durationHours: 48 }] }, day);
   const [row] = editionRows(dir, "id LIKE 'event:boom:%'");
   const payload = JSON.parse(row.payload_json);
-  const expected = Math.ceil(payload.pricing.e0 * 1.2 / .85); // full +20 at valuation time
+  const expected = Math.ceil(payload.pricing.e0 * 1.2 * .60); // full +20 at valuation time
   assert.equal(payload.pricing.referenceReserve, expected);
   assert.equal(payload.valuationAt, day);
   // The same edition later, with the effect decayed, keeps its frozen pricing.
@@ -475,15 +475,15 @@ test('bundle reference pricing matches hand-calculated expectations and reserves
   const neutral = bundleReferencePricing(items, () => 100);
   assert.ok(Math.abs(neutral.e0 - 65.7) < 1e-9);   // 3 * 21.9
   assert.ok(Math.abs(neutral.et - 65.7) < 1e-9);
-  assert.equal(neutral.referenceReserve, 78);       // ceil(65.7 / .85)
+  assert.equal(neutral.referenceReserve, 40);       // ceil(65.7 * .60)
   assert.equal(neutral.spreadOk, true);             // 3*10 < 78 < 3*1000
   const down = bundleReferencePricing(items, () => 80);
   assert.ok(Math.abs(down.e0 - 65.7) < 1e-9);
   assert.ok(Math.abs(down.et - 52.56) < 1e-9);      // 65.7 * .8
-  assert.equal(down.referenceReserve, 74);          // ceil((.75*65.7 + .25*52.56) / .85) = ceil(73.43)
+  assert.equal(down.referenceReserve, 38);          // ceil((.75*65.7 + .25*52.56) * .60)
   const up = bundleReferencePricing(items, () => 120);
   assert.ok(Math.abs(up.et - 78.84) < 1e-9);        // 65.7 * 1.2
-  assert.equal(up.referenceReserve, 93);            // ceil(78.84 / .85) = ceil(92.75)
+  assert.equal(up.referenceReserve, 48);            // ceil(78.84 * .60)
   // min/max stay PER-ITEM; the spread compares against the bundle multiple.
   assert.ok(Math.abs(up.minMarketValue - 12) < 1e-9);
   assert.ok(Math.abs(up.maxMarketValue - 1200) < 1e-9);
@@ -491,13 +491,13 @@ test('bundle reference pricing matches hand-calculated expectations and reserves
   // rewardCount is honored as a parameter, not a hardcoded literal.
   const six = bundleReferencePricing(items, () => 100, 6);
   assert.ok(Math.abs(six.e0 - 131.4) < 1e-9);
-  assert.equal(six.referenceReserve, 155);          // ceil(131.4 / .85)
+  assert.equal(six.referenceReserve, 79);           // ceil(131.4 * .60)
 });
 
 // ---------------------------------------------------------------------------
 // Bundle-pricing migration for pre-correction (v1) stored editions.
 // ---------------------------------------------------------------------------
-const PRICING_MARKER = 'palette_bundle_pricing_v2';
+const PRICING_MARKER = 'palette_bundle_pricing_v3';
 const DAY_MS = 86_400_000;
 // Five single-lot families, one per rarity, neutral token values 10..1000.
 const tieredItems = [
@@ -553,17 +553,17 @@ test('migration corrects v1 expectations exactly once and can re-enable a failed
   const at = day + 6 * hour; // stays inside the seeded edition's UTC day
   const catalog = loadPaletteCatalog(dir, { now: at });
   const entry = catalog.palettes.find(palette => palette.editionId === 'base:electronics:2026-09-12');
-  // Corrected bundle math: 3*min = 30 < 78 < 3*max = 3000 — the frozen row
+  // Corrected bundle math: 3*min = 30 < 40 < 3*max = 3000 — the frozen row
   // that v1 underpriced into unavailability becomes usable.
   assert.equal(entry.availability, 'available');
   assert.equal(entry.available, true);
-  assert.equal(entry.cost, 78);
-  assert.equal(entry.referenceReserve, 78);
+  assert.equal(entry.cost, 40);
+  assert.equal(entry.referenceReserve, 40);
   const payload = payloadOf(dir, 'base:electronics:2026-09-12');
-  assert.equal(payload.pricingVersion, 2);
+  assert.equal(payload.pricingVersion, 3);
   assert.ok(Math.abs(payload.pricing.e0 - 65.7) < 1e-9);
   assert.ok(Math.abs(payload.pricing.et - 65.7) < 1e-9);
-  assert.equal(payload.pricing.referenceReserve, 78);
+  assert.equal(payload.pricing.referenceReserve, 40);
   assert.equal(payload.pricing.spreadOk, true);
   assert.deepEqual(payload.weights, CASE_WEIGHTS);
   assert.equal(payload.available, true);
@@ -585,8 +585,8 @@ test('migration corrects v1 expectations exactly once and can re-enable a failed
   const again = payloadOf(dir, 'base:electronics:2026-09-12');
   assert.ok(Math.abs(again.pricing.e0 - 65.7) < 1e-9);
   assert.ok(Math.abs(again.pricing.et - 65.7) < 1e-9);
-  assert.equal(again.pricing.referenceReserve, 78);
-  assert.equal(again.pricingVersion, 2);
+  assert.equal(again.pricing.referenceReserve, 40);
+  assert.equal(again.pricingVersion, 3);
   assert.deepEqual(markerOf(dir), { corrected: 1, retained: 0, migratedAt: new Date(at).toISOString() });
 });
 
@@ -606,9 +606,25 @@ test('migration retains null-pricing insufficient-stock rows as unavailable', as
   assert.equal(payload.available, false);
   assert.equal(payload.availabilityReason, 'insufficient_stock');
   assert.deepEqual(payload.weights, [0, 0, 0, 0, 0]);
-  assert.equal(payload.pricingVersion, 2);
+  assert.equal(payload.pricingVersion, 3);
   assert.deepEqual(payload.items, tieredItems.slice(0, 3));
   assert.deepEqual(markerOf(dir), { corrected: 0, retained: 1, migratedAt: new Date(day + 6 * hour).toISOString() });
+});
+
+test('v3 migration reprices v2 bundle expectations without multiplying them again', async t => {
+  const dir = await fixture(t);
+  const edition = v1Edition({ id: 'base:electronics:2026-09-12', paletteId: 'electronics',
+    items: tieredItems, pricing: { e0: 65.7, et: 65.7, referenceReserve: 78,
+      minMarketValue: 10, maxMarketValue: 1000, spreadOk: true }, available: true,
+    availabilityReason: null, weights: CASE_WEIGHTS });
+  edition.payload.pricingVersion = 2;
+  seedLegacyEditions(dir, [edition]);
+  loadPaletteCatalog(dir, { now: day + 6 * hour });
+  const payload = payloadOf(dir, edition.id);
+  assert.equal(payload.pricingVersion, 3);
+  assert.ok(Math.abs(payload.pricing.e0 - 65.7) < 1e-9);
+  assert.ok(Math.abs(payload.pricing.et - 65.7) < 1e-9);
+  assert.equal(payload.pricing.referenceReserve, 40);
 });
 
 test('corrected historical pricing ignores later market and archive changes', async t => {
@@ -622,8 +638,8 @@ test('corrected historical pricing ignores later market and archive changes', as
   upsertAuctions(dir, [...stock, ...traps].map(lot => ({ ...lot, currentBid: lot.currentBid * 25 })));
   const entry = loadPaletteCatalog(dir, { now: day + 3 * hour })
     .palettes.find(palette => palette.editionId === 'base:electronics:2026-09-12');
-  assert.equal(entry.referenceReserve, 78);
-  assert.equal(entry.cost, 78);
+  assert.equal(entry.referenceReserve, 40);
+  assert.equal(entry.cost, 40);
   const payload = payloadOf(dir, 'base:electronics:2026-09-12');
   assert.ok(Math.abs(payload.pricing.e0 - 65.7) < 1e-9);
   assert.ok(Math.abs(payload.pricing.et - 65.7) < 1e-9);
@@ -653,7 +669,7 @@ test('a mid-migration failure rolls back every row and the marker', async t => {
   withDatabase(dir, db => db.exec('DROP TRIGGER sabotage_pricing'));
   loadPaletteCatalog(dir, { now: day + hour });
   assert.ok(Math.abs(payloadOf(dir, 'base:electronics:2026-09-12').pricing.e0 - 65.7) < 1e-9);
-  assert.equal(payloadOf(dir, 'base:wine:2026-09-12').pricingVersion, 2);
+  assert.equal(payloadOf(dir, 'base:wine:2026-09-12').pricingVersion, 3);
   assert.deepEqual(markerOf(dir), { corrected: 1, retained: 1, migratedAt: new Date(day + hour).toISOString() });
 });
 

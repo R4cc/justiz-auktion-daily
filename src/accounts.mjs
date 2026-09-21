@@ -19,7 +19,7 @@ const digest = value => createHash('sha256').update(value).digest('hex');
 const day = now => new Date(now).toISOString().slice(0, 10);
 const SESSION_MS = 30 * 86400000;
 export const STARTING_TOKENS = 1000;
-const DEFAULT_REWARDS = { daily: 100, higherLowerPerCorrect: 20, higherLowerMax: 200, minimumStreak: 3 };
+const DEFAULT_REWARDS = { daily: 200, higherLowerPerCorrect: 40, higherLowerMax: 400, minimumStreak: 3 };
 const fail = (code, status) => { throw new AccountError(code, status); };
 const currentItemValue = item => ({ ...item, sellValue: tokenValue(item.price), marketCategory: marketCategoryForItem(item) });
 const collectibleIdentity = item => JSON.stringify([item.auctionId, item.title, item.image, item.price, item.rarity, tokenValue(item.price)]);

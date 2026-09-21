@@ -11,7 +11,7 @@ import { loadPaletteCatalog } from '../src/palette-definitions.mjs';
 import { bidOnPaletteAuction, createPaletteAuction, getPaletteAuctionRewards, listPaletteAuctions,
   paletteAuctionsByUser, paletteBidIncrement, settleDuePaletteAuctions, PALETTE_ACTIVE_PER_EDITION } from '../src/palette-auctions.mjs';
 import { cancelListing, getResale, listItem, placeBid, settleAuction } from '../src/resale.mjs';
-import { NPC_BALANCE, NPC_BUYERS, NPC_COHORT_SIZE, npcValuation, seedNpcBuyers, tickNpcBuyers, tickPaletteBuyers } from '../src/npc-buyers.mjs';
+import { NPC_BALANCE, NPC_BUYERS, NPC_COHORT_SIZE, npcValuation, paletteBidCeiling, seedNpcBuyers, tickNpcBuyers, tickPaletteBuyers } from '../src/npc-buyers.mjs';
 import { marketState, tickMarketDrift } from '../src/market.mjs';
 import { PALETTE_DROP_PERIOD_MS, supplyPaletteAuctions, tickEconomy, startEconomyRuntime } from '../src/economy-runtime.mjs';
 import { getNewsEvent, saveNewsEvent } from '../src/news.mjs';
@@ -142,6 +142,16 @@ test('NPC buyers chase hot-market palettes and fall silent when the market cools
   tickMarketDrift(f.dir, { now: day + 4 * hour, random: () => { warmCalls++; return warmCalls === 1 ? .999999 : warmCalls === 2 ? .9 : 0; } });
   assert.ok(tickPaletteBuyers(f.dir, { now: day + 4 * hour + 6 * 60_000, unit }).bids >= 1);
   assert.throws(() => bidOnPaletteAuction(f.dir, { id: bid.bidder_id }, lot.id, bid.amount + 1, { now: day + 4 * hour + 90_000 }), /forbidden/);
+});
+
+test('palette NPC ceilings preserve upside under the discounted reserve balance', () => {
+  const items = [['common', 10], ['uncommon', 20], ['rare', 50], ['epic', 100], ['legendary', 1000]]
+    .map(([rarity, price]) => ({ rarity, price, marketCategory: 'electronics' }));
+  const snapshot = { items, rewardCount: 3, allowedMarketCategories: ['electronics'] };
+  const npc = { id: 'npc-balance', willingness: 1, categories: ['electronics'] };
+  const { maxBid, preferred } = paletteBidCeiling(snapshot, { electronics: 100 }, npc, 'lot', () => .5);
+  assert.equal(preferred, true);
+  assert.equal(maxBid, 49); // below J€65.70 expected value, but above the J€40 reserve
 });
 
 test('My bids discovers won and lost lots, settles due rewards once and keeps hidden data private', async t => {

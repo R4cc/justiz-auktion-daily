@@ -364,7 +364,7 @@ function renderLeaderboard() {
 }
 function rewardNote() {
   if (!account) return t('Log in before playing to earn J€.', 'Melde dich vor dem Spielen an, um J€ zu verdienen.');
-  const rewards = accountCatalog?.rewards || { daily: 100, higherLowerMax: 200 };
+  const rewards = accountCatalog?.rewards || { daily: 200, higherLowerMax: 400 };
   if (!account.reward) return t(`Your daily reward run is available. Finish Daily for ${justizEuro(rewards.daily)}, or earn up to ${justizEuro(rewards.higherLowerMax)} in Higher or Lower.`, `Dein täglicher J€-Lauf ist verfügbar. Schließe das Daily für ${justizEuro(rewards.daily)} ab oder verdiene bis zu ${justizEuro(rewards.higherLowerMax)} in Higher or Lower.`);
   return account.reward.complete ? t(`You earned ${justizEuro(account.reward.earned)} today. Your next reward run unlocks at 00:00 UTC.`, `Du hast heute ${justizEuro(account.reward.earned)} verdient. Dein nächster J€-Lauf startet um 00:00 UTC.`) : t(`Resume your ${account.reward.mode === 'daily' ? 'Daily' : 'Higher or Lower'} run to earn today’s J€.`, `Setze deinen ${account.reward.mode === 'daily' ? 'Daily' : 'Higher-or-Lower'}-Lauf für die heutigen J€ fort.`);
 }
