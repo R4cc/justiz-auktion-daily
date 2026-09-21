@@ -322,7 +322,9 @@ function rarityLabel(id) {
 function itemCard(item, controls = true) {
   const copies = item.copies || [item];
   const available = copies.find(copy => !copy.listed);
-  const marketValue = item.marketIndex == null ? null : item.price * item.marketIndex / 100;
+  // Market-adjusted display value, capped at two decimals so a scaled index
+  // never renders amounts like J€ 11.248.
+  const marketValue = item.marketIndex == null ? null : Math.round(item.price * item.marketIndex) / 100;
   const marketDelta = marketValue == null ? null : Math.round(item.marketIndex) - 100;
   const marketDeltaBadge = marketDelta ? `<span class="market-delta ${marketDelta > 0 ? 'is-up' : 'is-down'}" title="${t('Market movement since the last update', 'Marktbewegung seit der letzten Aktualisierung')}">${marketDelta > 0 ? '↑ +' : '↓ −'}${Math.abs(marketDelta)}%</span>` : '';
   const valueLine = marketValue == null
