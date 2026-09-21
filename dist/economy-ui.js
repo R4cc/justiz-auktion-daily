@@ -120,7 +120,8 @@ window.economyUi = (() => {
       }
       const bidInput = dialog.querySelector('input[name="amount"]');
       if (lot && bidInput) {
-        bidInput.min = String(lot.currentBid === null ? lot.reserve ?? lot.startPrice : lot.currentBid + 1);
+        bidInput.min = String(lot.currentBid === null ? lot.reserve ?? lot.startPrice
+          : lot.currentBid + (path === '/auctions' ? lot.bidIncrement ?? 1 : 1));
         if (document.activeElement !== bidInput && Number(bidInput.value) < Number(bidInput.min)) bidInput.value = bidInput.min;
         if (lot.status !== 'active' || lot.endsAt <= Date.now()) {
           const form = bidInput.closest('form');
@@ -138,7 +139,8 @@ window.economyUi = (() => {
     const image = primary ? null : lot.item.image;
     const participation = primary ? (data.mine || []).find(entry => entry.id === lot.id)
       : view === 'bid' ? lot : null;
-    const minimum = lot.currentBid === null ? lot.reserve : lot.currentBid + 1;
+    // Palettes raise in value-tiered steps (lot.bidIncrement); resale keeps J€ 1.
+    const minimum = lot.currentBid === null ? lot.reserve : lot.currentBid + (primary ? lot.bidIncrement ?? 1 : 1);
     const eligible = account && (account.progression?.level || 1) >= lot.requiredLevel
       && account.tokens + (participation?.leading ? lot.currentBid : 0) >= minimum;
     const mine = view === 'mine-live' || view === 'mine-done';
@@ -231,7 +233,8 @@ window.economyUi = (() => {
     if (lot.status !== 'active' || lot.endsAt <= Date.now()) return `<p>${status(lot)}</p>`;
     if (!primary && lot.sellerId === account.id) return `<p>${t('This is your listing.', 'Dies ist dein Angebot.')}</p>`;
     if (primary && account.progression.level < lot.requiredLevel) return `<p>${accountError('level_required')}</p>`;
-    const min = lot.currentBid === null ? primary ? lot.reserve : lot.startPrice : lot.currentBid + 1;
+    const min = lot.currentBid === null ? primary ? lot.reserve : lot.startPrice
+      : lot.currentBid + (primary ? lot.bidIncrement ?? 1 : 1);
     const hasBid = lot.currentBid !== null;
     return `<form data-economy-form="${primary ? 'primary' : 'resale'}" data-id="${esc(lot.id)}" class="economy-form auction-bid-form"><label>${t('Your bid in J€', 'Dein Gebot in J€')}
       <span class="auction-bid-entry"><input name="amount" type="number" inputmode="numeric" min="${min}" step="1" value="${min}" required><button class="primary-button" type="submit">${hasBid ? t('Raise bid', 'Gebot erhöhen') : t('Place bid', 'Gebot abgeben')}</button></span></label><p>${t('Available wallet balance', 'Verfügbares Guthaben')}: <strong>${justizEuro(account.tokens)}</strong> ${infoTip(t('Your bid is held until you are outbid or the auction settles.', 'Dein Gebot wird bis zum Überbieten oder zur Abrechnung hinterlegt.'), t('How bidding affects your balance', 'Auswirkung auf dein Guthaben'))}</p>

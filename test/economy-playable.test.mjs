@@ -9,7 +9,7 @@ import { closeDataStore, upsertAuctions, withDatabase } from '../src/database.mj
 import { featureFlags } from '../src/features.mjs';
 import { loadPaletteCatalog } from '../src/palette-definitions.mjs';
 import { bidOnPaletteAuction, createPaletteAuction, getPaletteAuctionRewards, listPaletteAuctions,
-  paletteAuctionsByUser, settleDuePaletteAuctions, PALETTE_ACTIVE_PER_EDITION } from '../src/palette-auctions.mjs';
+  paletteAuctionsByUser, paletteBidIncrement, settleDuePaletteAuctions, PALETTE_ACTIVE_PER_EDITION } from '../src/palette-auctions.mjs';
 import { cancelListing, getResale, listItem, placeBid, settleAuction } from '../src/resale.mjs';
 import { NPC_BALANCE, NPC_BUYERS, NPC_COHORT_SIZE, npcValuation, seedNpcBuyers, tickNpcBuyers, tickPaletteBuyers } from '../src/npc-buyers.mjs';
 import { marketState, tickMarketDrift } from '../src/market.mjs';
@@ -149,10 +149,10 @@ test('My bids discovers won and lost lots, settles due rewards once and keeps hi
   supplyPaletteAuctions(f.dir, { now: day });
   const lot = listPaletteAuctions(f.dir, { now: day })[0];
   bidOnPaletteAuction(f.dir, f.user('seller'), lot.id, lot.reserve, { now: day });
-  bidOnPaletteAuction(f.dir, f.user('buyer'), lot.id, lot.reserve + 1, { now: day });
+  bidOnPaletteAuction(f.dir, f.user('buyer'), lot.id, lot.reserve + paletteBidIncrement(lot.reserve), { now: day });
   assert.equal(f.accounts.profile(f.user('buyer')).activeBids, 1);
   const mine = paletteAuctionsByUser(f.dir, f.user('buyer'), { now: day });
-  assert.equal(mine[0].leading, true); assert.equal(mine[0].highestBid, lot.reserve + 1);
+  assert.equal(mine[0].leading, true); assert.equal(mine[0].highestBid, lot.reserve + paletteBidIncrement(lot.reserve));
   assert.equal(mine[0].revealAvailable, false);
   assert.equal(paletteAuctionsByUser(f.dir, f.user('other'), { now: day }).length, 0);
   const won = paletteAuctionsByUser(f.dir, f.user('buyer'), { now: day + hour });

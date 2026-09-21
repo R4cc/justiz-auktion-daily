@@ -10,7 +10,7 @@ import { saveNewsEvent } from '../src/news.mjs';
 import { notificationsForUser } from '../src/notifications.mjs';
 import {
   bidOnPaletteAuction, createPaletteAuction, ensurePaletteAuctionSchema, getPaletteAuction,
-  getPaletteAuctionRewards, listPaletteAuctions, levelForXp, settlePaletteAuction
+  getPaletteAuctionRewards, listPaletteAuctions, levelForXp, paletteBidIncrement, settlePaletteAuction
 } from '../src/palette-auctions.mjs';
 
 const hour = 3600_000;
@@ -54,6 +54,19 @@ const tokensOf = (service, user) => service.profile(user).tokens;
 const conservedTotal = dir => withDatabase(dir, db => ({
   users: db.prepare('SELECT COALESCE(SUM(tokens), 0) AS sum FROM users').get().sum,
   escrow: db.prepare('SELECT COALESCE(SUM(current_bid), 0) AS sum FROM primary_palette_auctions WHERE settled_at IS NULL').get().sum }));
+
+test('minimum raises tier with the reserve: J€ 5 under 100, capped at J€ 25', () => {
+  assert.equal(paletteBidIncrement(1), 5);
+  assert.equal(paletteBidIncrement(99), 5);
+  assert.equal(paletteBidIncrement(100), 10);
+  assert.equal(paletteBidIncrement(249), 10);
+  assert.equal(paletteBidIncrement(250), 15);
+  assert.equal(paletteBidIncrement(499), 15);
+  assert.equal(paletteBidIncrement(500), 20);
+  assert.equal(paletteBidIncrement(999), 20);
+  assert.equal(paletteBidIncrement(1000), 25);
+  assert.equal(paletteBidIncrement(1_000_000), 25);
+});
 
 test('level thresholds follow 100·(level−1)² up to the cap', () => {
   assert.equal(levelForXp(0), 1);
@@ -187,29 +200,35 @@ test('bidding escrows like resale: first bid, outbid refund, raise difference, r
   assert.equal(tokensOf(service, bidder), wallet - reserve);
   // The escrowed reserve is not spendable elsewhere.
   assert.throws(() => bidOnPaletteAuction(dir, bidder, lot.id, wallet + 1, { now: day }), /insufficient_tokens/);
+  // Raising is value-tiered: below the tiered minimum even the leader is rejected.
+  const inc = paletteBidIncrement(reserve);
+  assert.throws(() => bidOnPaletteAuction(dir, bidder, lot.id, reserve + inc - 1, { now: day }), /bid_too_low/);
+  bidOnPaletteAuction(dir, bidder, lot.id, reserve + inc, { now: day + 500 });
+  assert.equal(tokensOf(service, bidder), wallet - reserve - inc);
   // Raising as the leader charges only the difference.
-  bidOnPaletteAuction(dir, bidder, lot.id, reserve + 40, { now: day + 1000 });
-  assert.equal(tokensOf(service, bidder), wallet - reserve - 40);
-  assert.throws(() => bidOnPaletteAuction(dir, bidder, lot.id, reserve + 40, { now: day + 2000 }), /bid_too_low/);
+  bidOnPaletteAuction(dir, bidder, lot.id, reserve + 2 * inc, { now: day + 1000 });
+  assert.equal(tokensOf(service, bidder), wallet - reserve - 2 * inc);
+  assert.throws(() => bidOnPaletteAuction(dir, bidder, lot.id, reserve + 2 * inc, { now: day + 2000 }), /bid_too_low/);
   // A different bidder pays in full and refunds the prior holder exactly.
-  bidOnPaletteAuction(dir, rival, lot.id, reserve + 100, { now: day + 3000 });
+  bidOnPaletteAuction(dir, rival, lot.id, reserve + 4 * inc, { now: day + 3000 });
   assert.equal(tokensOf(service, bidder), wallet);
-  assert.equal(tokensOf(service, rival), wallet - reserve - 100);
+  assert.equal(tokensOf(service, rival), wallet - reserve - 4 * inc);
   const outbidNotice = notificationsForUser(dir, bidder.id, { now: day + 3000 });
   assert.ok(outbidNotice.fresh.some(entry => entry.type === 'outbid' && entry.href === '/auctions'));
   const rejected = tokensOf(service, rival);
   assert.throws(() => bidOnPaletteAuction(dir, rival, lot.id, wallet + 1, { now: day + 4000 }), /insufficient_tokens/);
   assert.equal(tokensOf(service, rival), rejected);
   const after = getPaletteAuction(dir, lot.id, { now: day + 4000 });
-  assert.equal(after.currentBid, reserve + 100);
-  assert.equal(after.bidCount, 3);
+  assert.equal(after.currentBid, reserve + 4 * inc);
+  assert.equal(after.bidCount, 4);
   assert.deepEqual(after.bids.map(bid => [bid.amount, bid.bidderId, bid.bidderUsername]), [
-    [reserve, bidder.id, 'Bidder'], [reserve + 40, bidder.id, 'Bidder'], [reserve + 100, rival.id, 'Rival']
+    [reserve, bidder.id, 'Bidder'], [reserve + inc, bidder.id, 'Bidder'],
+    [reserve + 2 * inc, bidder.id, 'Bidder'], [reserve + 4 * inc, rival.id, 'Rival']
   ]);
   // Exact deadline behavior: the last instant still accepts a valid bid, at
   // the deadline the lot rejects everything.
-  bidOnPaletteAuction(dir, bidder, lot.id, reserve + 101, { now: day + hour - 1 });
-  assert.throws(() => bidOnPaletteAuction(dir, bidder, lot.id, reserve + 200, { now: day + hour }), { status: 409, message: 'palette_auction_ended' });
+  bidOnPaletteAuction(dir, bidder, lot.id, reserve + 5 * inc, { now: day + hour - 1 });
+  assert.throws(() => bidOnPaletteAuction(dir, bidder, lot.id, reserve + 6 * inc, { now: day + hour }), { status: 409, message: 'palette_auction_ended' });
 });
 
 test('bids enforce the frozen requiredLevel from persisted users.xp', async t => {
@@ -384,7 +403,7 @@ test('public serializers never expose selected rewards, reserved ids or hidden v
   assert.ok(detail.items.length >= 5);
   assert.ok(detail.items.some(item => item.title === drawn.title));
   // Explicit allowlist: no stray fields beyond the public contract.
-  assert.deepEqual(Object.keys(detail).sort(), ['allowedMarketCategories', 'badge', 'bidCount', 'bids', 'closedAt',
+  assert.deepEqual(Object.keys(detail).sort(), ['allowedMarketCategories', 'badge', 'bidCount', 'bidIncrement', 'bids', 'closedAt',
     'currentBid', 'editionId', 'endsAt', 'id', 'items', 'kind', 'name', 'nameDe', 'paletteId',
     'requiredLevel', 'reserve', 'rewardCount', 'settledAt', 'startedAt', 'status', 'story', 'type', 'winnerId']);
 });
@@ -397,7 +416,7 @@ test('reward retrieval is winner-only, generic for others, and stable across res
   const lot = createPaletteAuction(dir, { editionId: baseEdition(dir).editionId, requestId: 'primary-lot-00000090' },
     { now: day, random: alwaysFirst });
   bidOnPaletteAuction(dir, loser, lot.id, lot.reserve, { now: day });
-  bidOnPaletteAuction(dir, winner, lot.id, lot.reserve + 5, { now: day + 1000 });
+  bidOnPaletteAuction(dir, winner, lot.id, lot.reserve + paletteBidIncrement(lot.reserve), { now: day + 1000 });
   // Before the deadline: unavailable, and without any reward details.
   assert.throws(() => getPaletteAuctionRewards(dir, winner, lot.id, { now: day + 2000 }), { status: 409, message: 'rewards_unavailable' });
   advance(hour);
@@ -408,7 +427,7 @@ test('reward retrieval is winner-only, generic for others, and stable across res
   // The winner sees the original three snapshots; retrieval settles on demand.
   const reveal = getPaletteAuctionRewards(dir, winner, lot.id, { now: day + hour });
   assert.equal(reveal.winnerId, winner.id);
-  assert.equal(reveal.bundleCostTokens, lot.reserve + 5);
+  assert.equal(reveal.bundleCostTokens, lot.reserve + paletteBidIncrement(lot.reserve));
   assert.deepEqual(reveal.rewards.map(reward => reward.position), [0, 1, 2]);
   for (const reward of reveal.rewards) {
     assert.ok(reward.item.paletteAuctionId === lot.id && Number.isSafeInteger(reward.item.bundleCostTokens));
@@ -438,21 +457,21 @@ test('escrow conservation across a full lifecycle with multiple lots', async t =
     { now: day + 60000, random: alwaysFirst });
   const start = conservedTotal(dir);
   assert.equal(start.escrow, 0);
-  bidOnPaletteAuction(dir, a, lotA.id, lotA.reserve + 10, { now: day + 1000 });
-  bidOnPaletteAuction(dir, b, lotA.id, lotA.reserve + 20, { now: day + 2000 });
+  bidOnPaletteAuction(dir, a, lotA.id, lotA.reserve + paletteBidIncrement(lotA.reserve), { now: day + 1000 });
+  bidOnPaletteAuction(dir, b, lotA.id, lotA.reserve + 2 * paletteBidIncrement(lotA.reserve), { now: day + 2000 });
   bidOnPaletteAuction(dir, a, lotB.id, lotB.reserve, { now: day + 3000 });
   let current = conservedTotal(dir);
   assert.equal(current.users + current.escrow, start.users);
-  assert.equal(current.escrow, lotA.reserve + 20 + lotB.reserve);
+  assert.equal(current.escrow, lotA.reserve + 2 * paletteBidIncrement(lotA.reserve) + lotB.reserve);
   advance(2 * hour);
   settlePaletteAuction(dir, lotA.id, { now: day + 2 * hour });
   current = conservedTotal(dir);
   assert.equal(current.escrow, lotB.reserve); // only unsettled escrow outstanding
-  assert.equal(start.users - (current.users + current.escrow), lotA.reserve + 20); // sunk exactly the winning bid
+  assert.equal(start.users - (current.users + current.escrow), lotA.reserve + 2 * paletteBidIncrement(lotA.reserve)); // sunk exactly the winning bid
   settlePaletteAuction(dir, lotB.id, { now: day + 2 * hour });
   current = conservedTotal(dir);
   assert.equal(current.escrow, 0);
-  assert.equal(start.users - current.users, lotA.reserve + 20 + lotB.reserve);
+  assert.equal(start.users - current.users, lotA.reserve + 2 * paletteBidIncrement(lotA.reserve) + lotB.reserve);
 });
 
 test('legacy case opening and resale remain unchanged alongside primary auctions', async t => {

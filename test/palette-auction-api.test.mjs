@@ -6,6 +6,7 @@ import path from 'node:path';
 import { createServer } from 'node:http';
 import { createAccountApi } from '../src/account-api.mjs';
 import { createEconomyApi } from '../src/economy-api.mjs';
+import { paletteBidIncrement } from '../src/palette-auctions.mjs';
 import { featureFlags } from '../src/features.mjs';
 import { setMarketIndex } from '../src/market.mjs';
 import { closeDataStore, upsertAuctions, withDatabase } from '../src/database.mjs';
@@ -109,7 +110,7 @@ test('public list and detail expose only the allowlisted auction representation'
   assert.equal(detail.auction.id, first.id);
   assert.deepEqual(detail.auction.bids, []);
   assert.ok(list.auctions.every(auction => !Object.hasOwn(auction, 'bids')));
-  assert.deepEqual(Object.keys(detail.auction).sort(), ['allowedMarketCategories', 'badge', 'bidCount', 'bids', 'closedAt',
+  assert.deepEqual(Object.keys(detail.auction).sort(), ['allowedMarketCategories', 'badge', 'bidCount', 'bidIncrement', 'bids', 'closedAt',
     'currentBid', 'editionId', 'endsAt', 'id', 'items', 'kind', 'name', 'nameDe', 'paletteId',
     'requiredLevel', 'reserve', 'rewardCount', 'settledAt', 'startedAt', 'status', 'story', 'type', 'winnerId']);
   // Hidden draws never leak: reserved inventory UUIDs and reward payloads.
@@ -143,10 +144,14 @@ test('bidding over HTTP routes through the escrow domain with CSRF and level gat
   // The domain's rules surface verbatim: lowball, then a real escrow debit.
   assert.equal((await (await post('palette-auctions/bid', { id: lot.id, amount: lot.reserve - 1 }, buyer.cookie)).json()).error, 'bid_too_low');
   assert.equal((await (await post('palette-auctions/bid', { id: lot.id, amount: 'nope' }, buyer.cookie)).json()).error, 'invalid_bid');
-  const accepted = await (await post('palette-auctions/bid', { id: lot.id, amount: lot.reserve + 10 }, buyer.cookie)).json();
-  assert.equal(accepted.auction.currentBid, lot.reserve + 10);
+  const increment = paletteBidIncrement(lot.reserve);
+  const accepted = await (await post('palette-auctions/bid', { id: lot.id, amount: lot.reserve + increment }, buyer.cookie)).json();
+  assert.equal(accepted.auction.currentBid, lot.reserve + increment);
   assert.equal(accepted.auction.bidCount, 1);
-  assert.equal(accepted.user.tokens, 100000 - lot.reserve - 10); // refreshed spendable balance
+  assert.equal(accepted.user.tokens, 100000 - lot.reserve - increment); // refreshed spendable balance
+  // Raises below the value-tiered minimum are rejected without moving tokens.
+  assert.equal((await (await post('palette-auctions/bid', { id: lot.id, amount: accepted.auction.currentBid + increment - 1 }, buyer.cookie)).json()).error, 'bid_too_low');
+  assert.equal(accepted.user.tokens, 100000 - lot.reserve - increment);
   assert.equal((await (await post('palette-auctions/bid', { id: lot.id, amount: 99_999_999 }, buyer.cookie)).json()).error, 'insufficient_tokens');
   // Level gate reads persisted xp through the shared progression module.
   const news = await (await post('admin/news', { id: 'level-api-bust', title: 'T', body: 'B', status: 'published',
@@ -160,7 +165,7 @@ test('bidding over HTTP routes through the escrow domain with CSRF and level gat
   withDatabase(dir, db => db.prepare('UPDATE users SET xp = 400 WHERE id = ?').run(buyer.user.id));
   const highEnough = await (await post('palette-auctions/bid', { id: levelled.id, amount: levelled.reserve }, buyer.cookie)).json();
   assert.equal(highEnough.user.progression.level, 3);
-  assert.equal(highEnough.user.tokens, 100000 - lot.reserve - 10 - levelled.reserve);
+  assert.equal(highEnough.user.tokens, 100000 - lot.reserve - increment - levelled.reserve);
 });
 
 test('winner reveal over HTTP stays deadline-gated, winner-only and repeat-stable', async t => {
@@ -169,7 +174,7 @@ test('winner reveal over HTTP stays deadline-gated, winner-only and repeat-stabl
   const winner = await register('Winner'), loser = await register('Loser');
   withDatabase(dir, db => db.prepare('UPDATE users SET tokens = 100000 WHERE id IN (?, ?)').run(winner.user.id, loser.user.id));
   await post('palette-auctions/bid', { id: lot.id, amount: lot.reserve }, loser.cookie);
-  await post('palette-auctions/bid', { id: lot.id, amount: lot.reserve + 5 }, winner.cookie);
+  await post('palette-auctions/bid', { id: lot.id, amount: lot.reserve + paletteBidIncrement(lot.reserve) }, winner.cookie);
   const revealRoute = `palette-auctions/${encodeURIComponent(lot.id)}/rewards`;
   assert.equal((await fetch(`${base}/api/account/${revealRoute}`)).status, 401);
   // Before the deadline: unavailable for the leader, without reward details.
@@ -186,13 +191,13 @@ test('winner reveal over HTTP stays deadline-gated, winner-only and repeat-stabl
   // The winner gets exactly the three frozen rewards; reveal settles on demand.
   const reveal = await (await fetch(`${base}/api/account/${revealRoute}`, { headers: { cookie: winner.cookie } })).json();
   assert.equal(reveal.reveal.winnerId, winner.user.id);
-  assert.equal(reveal.reveal.bundleCostTokens, lot.reserve + 5);
+  assert.equal(reveal.reveal.bundleCostTokens, lot.reserve + paletteBidIncrement(lot.reserve));
   assert.deepEqual(reveal.reveal.rewards.map(reward => reward.position), [0, 1, 2]);
   const reserved = rows(dir, 'SELECT position, inventory_id, item_json FROM primary_palette_rewards WHERE auction_id = ? ORDER BY position', lot.id);
   assert.deepEqual(reveal.reveal.rewards.map(reward => reward.inventoryId), reserved.map(row => row.inventory_id));
   for (const reward of reveal.reveal.rewards) {
     assert.equal(reward.item.paletteAuctionId, lot.id);
-    assert.equal(reward.item.bundleCostTokens, lot.reserve + 5);
+    assert.equal(reward.item.bundleCostTokens, lot.reserve + paletteBidIncrement(lot.reserve));
   }
   assert.equal(rows(dir, 'SELECT id FROM inventory').length, 3); // settlement minted the rewards
   const repeat = await (await fetch(`${base}/api/account/${revealRoute}`, { headers: { cookie: winner.cookie } })).json();

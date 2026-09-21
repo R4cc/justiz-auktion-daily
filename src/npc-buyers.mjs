@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 import { transaction, withDatabase } from './database.mjs';
 import { estimatedValueTokens, marketCategoryForItem, marketIndexes } from './market.mjs';
 import { ensureResaleSchema, placeBid } from './resale.mjs';
-import { bidOnPaletteAuction, ensurePaletteAuctionSchema } from './palette-auctions.mjs';
+import { bidOnPaletteAuction, ensurePaletteAuctionSchema, paletteBidIncrement } from './palette-auctions.mjs';
 import { bundleReferencePricing } from './palette-definitions.mjs';
 import { AccountError } from './errors.mjs';
 export { NPC_BUYERS, SPECIAL_NPC_BUYERS } from './npc-roster.mjs';
@@ -159,7 +159,9 @@ export function tickPaletteBuyers(dataDir, { now = Date.now(), unit = determinis
     if (lot.current_bidder_id === npc.id) continue;
     if (unit(`${lot.id}:${npc.id}:${slot}:palette-showup`) >= .5) continue;
     const { maxBid } = paletteBidCeiling(JSON.parse(lot.public_snapshot_json), indexes, npc, lot.id, unit);
-    const minimum = lot.current_bid ?? lot.reserve;
+    // The tiered minimum raise applies to NPCs exactly like to humans; the
+    // domain would reject anything below it anyway (bid_too_low).
+    const minimum = lot.current_bid === null ? lot.reserve : lot.current_bid + paletteBidIncrement(lot.reserve);
     if (minimum >= maxBid) continue;
     const headroom = maxBid - minimum;
     const pressure = .02 + npc.aggressiveness * .06;

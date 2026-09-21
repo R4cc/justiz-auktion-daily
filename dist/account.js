@@ -70,7 +70,7 @@ function accountError(code) {
     auction_ended: t('This auction has ended.', 'Diese Auktion ist beendet.'),
     auction_has_bids: t('This auction already has bids and cannot be cancelled.', 'Diese Auktion hat bereits Gebote und kann nicht storniert werden.'),
     own_auction: t('You cannot bid on your own auction.', 'Du kannst nicht auf deine eigene Auktion bieten.'),
-    bid_too_low: t('Your bid must beat the current highest bid.', 'Dein Gebot muss höher als das aktuelle Höchstgebot sein.'),
+    bid_too_low: t('That bid is below the next minimum bid shown in the form.', 'Das Gebot liegt unter dem nächsten Mindestgebot aus dem Formular.'),
     invalid_bid: t('Enter a whole J€ amount.', 'Gib einen ganzen J€-Betrag ein.'),
     invalid_market_effects: t('The market effect is not valid.', 'Der Markteffekt ist ungültig.'),
     invalid_palette: t('The referenced palette is not valid.', 'Die referenzierte Palette ist ungültig.'),

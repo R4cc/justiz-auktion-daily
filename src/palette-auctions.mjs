@@ -41,6 +41,18 @@ export const PALETTE_AUCTION_DURATION_MS = 3600_000;
 // varied when fewer editions are available than the target.
 export const PALETTE_ACTIVE_TARGET = 10;
 export const PALETTE_ACTIVE_PER_EDITION = 2;
+// Minimum raise on a contested lot, tiered by the lot's frozen reserve (its
+// reference value) so nobody can spam +1 raises: palettes under J€ 100 move
+// in J€ 5 steps, the requirement grows with value and caps at J€ 25. Humans
+// and NPC buyers bid under the same rule — it lives in the domain, not the
+// callers.
+export function paletteBidIncrement(reserve) {
+  if (!Number.isSafeInteger(reserve) || reserve < 100) return 5;
+  if (reserve < 250) return 10;
+  if (reserve < 500) return 15;
+  if (reserve < 1000) return 20;
+  return 25;
+}
 const fail = (code, status) => { throw new AccountError(code, status); };
 
 export function ensurePaletteAuctionSchema(db, now = Date.now()) {
@@ -114,6 +126,7 @@ function serializePublicAuction(db, row, { bids = false } = {}) {
     allowedMarketCategories: snapshot.allowedMarketCategories,
     rewardCount: snapshot.rewardCount, items: snapshot.items,
     reserve: row.reserve, currentBid: row.current_bid, bidCount,
+    bidIncrement: paletteBidIncrement(row.reserve),
     requiredLevel: row.required_level, status: row.status,
     startedAt: row.started_at, endsAt: row.ends_at, closedAt: row.closed_at || null,
     settledAt: row.settled_at || null, winnerId: row.winner_id || null,
@@ -233,7 +246,7 @@ export function bidOnPaletteAuction(dataDir, user, auctionId, amount, { now = Da
     // a bidding war against themselves. This check lives inside the write
     // transaction so concurrent runtimes are covered as well.
     if (npc && row.current_bidder_id === user.id) fail('npc_self_outbid', 409);
-    const minimum = row.current_bid === null ? row.reserve : row.current_bid + 1;
+    const minimum = row.current_bid === null ? row.reserve : row.current_bid + paletteBidIncrement(row.reserve);
     if (amount < minimum) fail('bid_too_low', 409);
     // Escrow accounting, identical in semantics to resale: the leader raising
     // pays only the difference; a different bidder pays in full and refunds
