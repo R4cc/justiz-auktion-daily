@@ -394,6 +394,21 @@ window.economyUi = (() => {
       if (action === 'archive') { archiveOpen = !archiveOpen; render(); accountContent.querySelector('[data-economy="archive"]')?.focus({ preventScroll: true }); }
       if (action === 'category') { category = id; window.history.replaceState({}, '', '/market?category=' + encodeURIComponent(id)); await loadHistory(id); accountContent.querySelector(`[data-id="${id}"]`)?.focus({ preventScroll: true }); }
       if (action === 'list') listingDialog(id);
+      if (action === 'quick-list') {
+        // One-click listing at the inventory card's default start price, one
+        // item, same 15-minute duration the listing dialog pre-selects.
+        busy = true; button.disabled = true;
+        const result = await api.listItem({ inventoryId: id, quantity: 1,
+          startPrice: Math.max(1, Number(button.dataset.price) || 1),
+          endsAt: new Date(Date.now() + 900_000).toISOString() });
+        if (visit !== accountVisit) return;
+        updateAccount(result.user); busy = false;
+        const inventory = await accountApi('inventory');
+        if (visit !== accountVisit) return;
+        accountItems = inventory.items;
+        renderAccountPage();
+        showToast(t(`Auction started at ${justizEuro(result.listing.startPrice)}.`, `Auktion bei ${justizEuro(result.listing.startPrice)} gestartet.`));
+      }
       if (action === 'primary' || action === 'resale') await showLot(id, action === 'primary');
       if (action === 'reveal') { busy = true; await startReveal(id); }
       if (action === 'next-reward') { busy = true; await revealNext(); }

@@ -41,6 +41,27 @@ test('resale inventory and legacy reward markup never render instant-sell button
   context.economyFlags = { resales: true };
   const listed = vm.runInContext(`itemCard(${JSON.stringify({ ...item, listed: true })})`, context);
   assert.match(listed, /disabled/); assert.match(listed, /Already listed/);
+  assert.match(listed, /data-economy="quick-list"[^>]*disabled/);
+});
+
+test('inventory quick list starts a one-item auction at the card default price in one click', () => {
+  const item = { id: 'item', title: 'Tool', price: 100, sellValue: 100, estimatedValueTokens: 120, rarity: 'common', image: '/tool.jpg' };
+  const context = vm.createContext({ economyFlags: { resales: true }, accountResult: item,
+    t: en => en, number: String, justizEuro: value => `J€ ${value}`, euro: value => `EUR ${value}`, accountEscape: String, rarityLabel: String });
+  vm.runInContext(extract(accountSource, 'function itemCard(', 'function groupedInventory('), context);
+  const markup = vm.runInContext(`itemCard(${JSON.stringify(item)})`, context);
+  assert.match(markup, /data-economy="quick-list" data-id="item" data-price="84"/);
+  assert.match(markup, /Quick list<small>@ J€ 84<\/small>/);
+  // The handler posts the listing dialog's defaults straight to the listing
+  // API: one item, the card's default start price, 15-minute duration.
+  const handler = extract(uiSource, "action === 'quick-list'", "if (action === 'primary'");
+  assert.match(handler, /api\.listItem\(\{ inventoryId: id, quantity: 1,/);
+  assert.match(handler, /startPrice: Math\.max\(1, Number\(button\.dataset\.price\) \|\| 1\)/);
+  assert.match(handler, /900_000/);
+  assert.match(handler, /accountApi\('inventory'\)/);
+  // Unpriced items fall back to the J€ 1 minimum instead of a NaN start price.
+  const unpriced = vm.runInContext(`itemCard(${JSON.stringify({ ...item, estimatedValueTokens: null })})`, context);
+  assert.match(unpriced, /data-price="1"/);
 });
 
 test('inventory cards show the market value with a delta badge when the market is priced', () => {

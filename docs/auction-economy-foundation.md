@@ -24,8 +24,10 @@ newly initialized NPC buyers. Automatic news publication is dormant.
   Ended bids (won or lost) leave **My current bids** into the same
   **Archived auctions** disclosure.
 - `/inventory`: list individual items, starting price and 5/15/60 minute duration
-  selection (default 15 minutes). Listed items are marked; matching copies remain
-  grouped and the next available copy can be listed.
+  selection (default 15 minutes). **Quick list** starts that default auction —
+  one copy at 70% of the estimated market value, 15 minutes — in one click.
+  Listed items are marked; matching copies remain grouped and the next available
+  copy can be listed.
 - `/market`: all category indexes, deviation from neutral 100, update timestamps,
   category selection and native SVG hourly-history chart.
 - `/profile`: XP, level, progress and remaining XP; level 20 is terminal.
