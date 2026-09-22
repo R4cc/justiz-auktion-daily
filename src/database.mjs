@@ -4,6 +4,10 @@ import { DatabaseSync } from 'node:sqlite';
 
 export const DATABASE_FILENAME = 'justizguessr.sqlite';
 
+// Newest random games to retain; the free-play endpoint is unauthenticated,
+// so its write volume has to stay bounded (children cascade with them).
+export const RANDOM_GAME_RETENTION = 2000;
+
 const openDatabases = new Map();
 
 function readLegacyJson(filename, fallback) {
@@ -388,6 +392,10 @@ export function recordRandomGame(dataDir, game) {
     for (const [position, auction] of game.auctions.entries()) {
       insert.run(gameId, position, Number(auction.id));
     }
+    // The endpoint is unauthenticated, so the table must not grow without
+    // bound: keep only the newest games (children cascade with them).
+    database.prepare(`DELETE FROM random_games WHERE id <= (SELECT MAX(id) - ? FROM random_games)`)
+      .run(RANDOM_GAME_RETENTION);
     return gameId;
   }));
 }

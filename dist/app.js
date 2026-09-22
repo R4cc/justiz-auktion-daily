@@ -544,7 +544,12 @@ async function applyGuess(guess) {
   const button = document.querySelector('#guess-form button[type="submit"]');
   if (button) button.disabled = true;
   try {
-  if (gameMode === 'daily' && accountDailyRun) accountDailyRun = await accountGameAnswer(accountDailyRun, state.round, guess);
+  if (gameMode === 'daily' && accountDailyRun) {
+    accountDailyRun = await accountGameAnswer(accountDailyRun, state.round, guess);
+    // The server seals upcoming answers; the response reveals the round just
+    // answered, so the local deck needs that refreshed price for the display.
+    AUCTIONS = accountDailyRun.auctions;
+  }
   if (state !== currentState || state.view !== 'game') return;
   const actual = AUCTIONS[state.round].actualBid;
   const score = scoreGuess(guess, actual);

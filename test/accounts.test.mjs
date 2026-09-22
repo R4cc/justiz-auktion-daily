@@ -106,6 +106,21 @@ test('leaderboard ranks the top players by retained inventory value and only sco
   assert.equal(service.leaderboard().leaders[1].score, null);
 });
 
+test('run responses seal upcoming daily answers but reveal answered rounds', async t => {
+  const { service, admin } = await fixture(t);
+  let daily = service.startGame(admin, 'daily', () => lots.slice(0, 5));
+  assert.ok(daily.auctions.every(item => !('actualBid' in item)));
+  daily = service.answer(admin, daily.id, 0, lots[0].actualBid);
+  assert.equal(daily.auctions[0].actualBid, lots[0].actualBid);
+  assert.ok(!('actualBid' in daily.auctions[1]));
+  for (let i = 1; i < 5; i++) daily = service.answer(admin, daily.id, i, lots[i].actualBid);
+  assert.deepEqual(daily.auctions.map(item => item.actualBid), lots.slice(0, 5).map(item => item.actualBid));
+  // Higher/lower keeps the current comparison price visible and future ones hidden.
+  const hl = service.startGame(admin, 'higher-lower', () => lots);
+  assert.equal(hl.auctions[0].actualBid, lots[0].actualBid);
+  assert.ok(hl.auctions.slice(1).every(item => !('actualBid' in item)));
+});
+
 test('admins ban and unban players, revoking sessions, blocking logins and hiding them from the leaderboard', async t => {
   const { service, admin, register } = await fixture(t);
   const aliceToken = await service.register({ username: 'Alice', password, code: service.codes(admin, 1)[0] });

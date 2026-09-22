@@ -161,6 +161,30 @@ let rollingTimer = null;
 let discoveryTimer = null;
 let shuttingDown = false;
 
+// /api/random writes a game record per request, so unauthenticated callers
+// must not be able to drive unbounded database growth. A generous per-IP
+// budget (a human playing free rounds needs a handful per minute) keeps
+// scripted floods from turning the endpoint into a disk-fill attack.
+const RANDOM_RATE_LIMIT = 10;
+const RANDOM_RATE_WINDOW_MS = 60_000;
+const randomRateBucket = new Map();
+
+function randomRateExceeded(ip) {
+  const now = Date.now();
+  if (randomRateBucket.size > 10_000) {
+    for (const [key, entry] of randomRateBucket) {
+      if (entry.resetAt <= now) randomRateBucket.delete(key);
+    }
+  }
+  const entry = randomRateBucket.get(ip);
+  if (!entry || entry.resetAt <= now) {
+    randomRateBucket.set(ip, { count: 1, resetAt: now + RANDOM_RATE_WINDOW_MS });
+    return false;
+  }
+  entry.count += 1;
+  return entry.count > RANDOM_RATE_LIMIT;
+}
+
 let lastRefresh = {
   status:
     'starting',
@@ -1057,6 +1081,18 @@ const server =
           url.pathname ===
             '/api/random'
         ) {
+          if (randomRateExceeded(request.socket.remoteAddress)) {
+            json(
+              response,
+              429,
+              {
+                error:
+                  'try_later'
+              }
+            );
+            return;
+          }
+
           json(
             response,
             200,

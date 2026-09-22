@@ -8,16 +8,19 @@ import { ROLLING_QUEUE_VERSION, collectAuctions, enqueueRollingDiscovery, extrac
 import { formatPublicStats } from '../src/public-stats.mjs';
 import {
   DATABASE_FILENAME,
+  RANDOM_GAME_RETENTION,
   closeDataStore,
   initializeDataStore,
   readArchive,
   readDailyGames,
   readDailyUsedIds,
   readQueue,
+  readRandomStats,
   readRandomUsage,
   recordRandomGame,
   saveDailyGame,
   upsertAuctions,
+  withDatabase,
   writeQueue
 } from '../src/database.mjs';
 
@@ -171,7 +174,6 @@ test('SQLite store migrates JSON data and persists selection history', async () 
     const randomGame = selectRandomSet([auction], 1, () => 0, readRandomUsage(dataDir));
     recordRandomGame(dataDir, randomGame);
     assert.equal(readRandomUsage(dataDir).get(300001).useCount, 1);
-
     assert.throws(() => saveDailyGame(dataDir, {
       date: '2026-09-11',
       gameNumber: 254,
@@ -182,6 +184,24 @@ test('SQLite store migrates JSON data and persists selection history', async () 
   } finally {
     closeDataStore(dataDir);
     await rm(dataDir, { recursive: true, force: true });
+  }
+});
+
+test('random game records stay bounded because the free-play endpoint is unauthenticated', () => {
+  const dataDir = path.join(tmpdir(), `jg-random-retention-${Date.now()}-${process.pid}`);
+  try {
+    initializeDataStore(dataDir);
+    for (let index = 0; index < RANDOM_GAME_RETENTION + 25; index++) {
+      recordRandomGame(dataDir, { generatedAt: '2026-09-22T00:00:00.000Z', auctions: [{ id: 300000 }] });
+    }
+    const stats = readRandomStats(dataDir);
+    assert.equal(stats.games, RANDOM_GAME_RETENTION);
+    // Pruned games take their auction rows with them, leaving one live child.
+    const children = withDatabase(dataDir, db => db.prepare('SELECT COUNT(*) AS count FROM random_game_auctions').get().count);
+    assert.equal(children, RANDOM_GAME_RETENTION);
+  } finally {
+    closeDataStore(dataDir);
+    rm(dataDir, { recursive: true, force: true }).catch(() => {});
   }
 });
 

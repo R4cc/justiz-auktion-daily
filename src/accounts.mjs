@@ -576,8 +576,13 @@ export class Accounts {
     });
   }
   publicGame(run) {
+    // Answers are sealed until a round is answered. Higher/lower keeps the
+    // current lot's price visible (it is the value the player compares
+    // against); the daily hides every round the player has not answered yet
+    // so the run API never hands over upcoming correct bids.
     return { ...run, auctions: run.auctions.map((auction, i) => {
-      if (run.mode === 'daily' || i <= run.answers.length) return auction;
+      const revealed = run.mode === 'daily' ? i < run.answers.length : i <= run.answers.length;
+      if (revealed) return auction;
       const { actualBid, ...hidden } = auction;
       return hidden;
     }) };
