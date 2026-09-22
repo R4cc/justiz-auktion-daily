@@ -115,7 +115,7 @@ html[lang="en"] .site-disclaimer [lang="de"], html[lang="de"] .site-disclaimer [
 .primary-button:active { transform: translateY(4px); box-shadow: 0 4px 0 var(--red); }
 .primary-button:disabled, .secondary-button:disabled { opacity: .58; cursor: wait; transform: none; }
 .button-arrow { font-size: 1.4rem; }
-.secondary-button { border: 1px solid var(--line); background: white; }
+.secondary-button { border: 1px solid var(--line); background: white; color: var(--ink); }
 .secondary-button:hover { background: #fafafa; transform: translateY(-1px); }
 .start-actions { display: flex; align-items: stretch; flex-wrap: wrap; gap: 13px; margin-top: 34px; }
 .start-actions .primary-button { margin: 0; }
@@ -410,7 +410,7 @@ html[lang="en"] .site-disclaimer [lang="de"], html[lang="de"] .site-disclaimer [
 .lot-step { display: grid; place-items: center; width: 36px; height: 36px; border: 1px solid var(--line); border-radius: 50%; font: .7rem 'DM Mono', monospace; color: var(--muted); }
 .lot-step.is-current { background: var(--red); color: white; border-color: var(--red); transform: rotate(-8deg); box-shadow: 2px 3px 0 #89361933; }
 .lot-step.is-complete { background: var(--ink); color: var(--paper); }
-.running-score { border-color: var(--ink); background: #eee9d5; box-shadow: none; border-radius: 5px; }
+.running-score { border-color: var(--ink); background: #eee9d5; box-shadow: none; border-radius: 5px; margin-right: 52px; }
 .auction-layout { border-radius: 8px; border-color: #c8ccbb; grid-template-columns: minmax(0, 1.12fr) minmax(390px, 1fr); }
 .auction-image-wrap { background: #e9eadf; border-right: 1px dashed #aeb8a6; }
 .auction-image { padding: 65px 30px 75px; max-height: 720px; }
@@ -564,6 +564,9 @@ button:focus-visible, a:focus-visible { outline: 3px solid var(--red); outline-o
 /* Account pages, collection and case opening. */
 .account-button { border: 1px solid var(--line); border-radius: 9px; padding: 10px 14px; background: transparent; font-size: 12px; font-weight: 800; cursor: pointer; max-width: 240px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .account-page { width: min(1040px, calc(100% - 40px)); margin: 0 auto; padding: 42px 0 72px; }
+/* Bare inline links on the account pages and in the economy dialog follow the
+   ink palette instead of the browser's default link blue. */
+#account-content a:not([class]), .economy-dialog a:not([class]) { color: var(--ink); text-underline-offset: 3px; }
 .account-value { display: flex; align-items: center; gap: 24px; padding: 18px; border: 1px solid var(--line); border-radius: 12px; background: #e8ebdd; }
 .account-value > span { flex: 0 0 auto; font: 10px 'DM Mono', monospace; }
 .account-value strong { display: block; font-size: 26px; margin-top: 8px; }
@@ -610,7 +613,7 @@ button:focus-visible, a:focus-visible { outline: 3px solid var(--red); outline-o
 .account-form h3 { font-size: 24px; margin: 0; }
 .account-form p { font-size: 12px; margin: 0; }
 .account-error { color: #b1391a; }
-.text-button { background: none; border: 0; text-decoration: underline; cursor: pointer; padding: 10px; }
+.text-button { background: none; border: 0; color: var(--ink); text-decoration: underline; cursor: pointer; padding: 10px; }
 .reward-note { padding: 14px 16px; background: #e7ecdf; border: 1px solid #d2dbca; border-radius: 10px; font-size: 13px; line-height: 1.7; }
 .earning-detail { font-size: 12px; line-height: 1.7; color: var(--muted); }
 .case-options { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px; margin: 24px 0; }
@@ -1097,6 +1100,9 @@ body { padding-left: var(--sidebar-width); }
 @media (max-width: 900px) {
   body { padding-left: 0; padding-top: 70px; }
   body.sidebar-open { overflow: hidden; }
+  /* Below the sidebar breakpoint the notification bell sits in the top bar,
+     so the score chip no longer needs to duck out of its corner. */
+  .running-score { margin-right: 0; }
   .site-header {
     inset: 0 0 auto;
     width: 100%;

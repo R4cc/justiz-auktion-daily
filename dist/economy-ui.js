@@ -16,12 +16,13 @@ window.economyUi = (() => {
   let category = null, history = [], historySequence = 0, reveal = null, revealPosition = 0, detailId = null, returnFocus;
   const name = lot => t(lot.name, lot.nameDe || lot.name);
   const date = value => new Date(value).toLocaleString(uiLocale());
+  // Kept in sync with the market category names the server exposes.
   const categoryNames = {
-    electronics: ['Electronics', 'Elektronik'], vehicles: ['Vehicles', 'Fahrzeuge'], wine: ['Wine', 'Wein'],
-    watches_jewelry: ['Watches & jewellery', 'Uhren & Schmuck'], tools: ['Tools', 'Werkzeuge'],
-    collectibles: ['Collectibles', 'Sammlerstücke'], household: ['Home & garden', 'Haus & Garten'],
-    luxury_goods: ['Luxury', 'Luxus'], bicycles: ['Bicycles', 'Fahrräder'], books_media: ['Books & media', 'Bücher & Medien'],
-    fashion: ['Fashion', 'Mode'], cosmetics: ['Beauty', 'Kosmetik'], sport_leisure: ['Sport & leisure', 'Sport & Freizeit'],
+    electronics: ['Electronics', 'Elektronik'], vehicles: ['Vehicles', 'Fahrzeuge'], wine: ['Wine & drinks', 'Wein & Getränke'],
+    watches_jewelry: ['Watches & jewelry', 'Schmuck & Uhren'], tools: ['Tools', 'Werkzeuge'],
+    collectibles: ['Collectibles', 'Sammlerstücke'], household: ['Household & home', 'Haushalt & Wohnen'],
+    luxury_goods: ['Luxury goods', 'Luxusgüter'], bicycles: ['Bicycles', 'Fahrräder'], books_media: ['Books & media', 'Bücher & Medien'],
+    fashion: ['Fashion', 'Mode'], cosmetics: ['Cosmetics', 'Kosmetik'], sport_leisure: ['Sport & leisure', 'Sport & Freizeit'],
     other: ['Other', 'Sonstiges']
   };
   const categoryName = id => categoryNames[id] ? t(...categoryNames[id]) : t('Mixed finds', 'Gemischte Fundstücke');
@@ -133,7 +134,7 @@ window.economyUi = (() => {
   }
   function bidFacts(lot, primary) {
     return `<div class="economy-bid"><strong>${justizEuro(lot.currentBid ?? (primary ? lot.reserve : lot.startPrice))}</strong><span>${lot.currentBid === null ? t('Starting bid', 'Startgebot') : t('Current bid', 'Aktuelles Gebot')}</span></div>
-      <p>${lot.bidCount} ${t('bids', 'Gebote')} · ${countdown(lot.endsAt)}</p>`;
+      <p>${lot.bidCount} ${lot.bidCount === 1 ? t('bid', 'Gebot') : t('bids', 'Gebote')} · ${countdown(lot.endsAt)}</p>`;
   }
   function lotCard(lot, primary, view = '') {
     const image = primary ? null : lot.item.image;
