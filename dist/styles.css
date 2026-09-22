@@ -804,34 +804,36 @@ button:focus-visible, a:focus-visible { outline: 3px solid var(--red); outline-o
   .auction-reveal-actions { flex-wrap: wrap; }
 }
 .inventory-heading h2 { font-size: 22px; margin: 0; }
-.economy-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 24px; margin: 24px 0; }
-.economy-lot { display: flex; flex-direction: column; border: 1px solid var(--line); border-radius: 18px; background: #fffcf4; overflow: hidden; box-shadow: 0 4px 0 #12352a10; cursor: pointer; transition: transform .18s ease, box-shadow .18s ease; }
-.economy-lot:hover { transform: translateY(-2px); }
+.economy-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 14px; margin: 18px 0; }
+.economy-lot { display: flex; flex-direction: column; border: 1px solid var(--line); border-radius: 12px; background: #fffcf4; overflow: hidden; box-shadow: 0 3px 0 #12352a10; cursor: pointer; transition: transform .18s ease, box-shadow .18s ease; }
+.economy-lot:hover { transform: translateY(-2px); box-shadow: 0 5px 0 #12352a14; }
 .economy-lot:focus-visible { outline: 3px solid var(--red); outline-offset: 3px; }
 .economy-lot.is-leading { border: 2px solid var(--green); box-shadow: 0 4px 0 #38b26d33; }
 .economy-lot.is-outbid { border: 2px solid var(--red); box-shadow: 0 4px 0 #ce461f33; }
 .economy-lot.is-owned { border: 2px solid var(--ink); box-shadow: 0 4px 0 #12352a26; }
 .economy-lot.is-ended { opacity: .82; border-style: dashed; }
-.economy-lot-image { height: 180px; position: relative; background: #e8ebdd; display: grid; place-items: center; overflow: hidden; }
+.economy-lot-image { height: 148px; position: relative; background: #e8ebdd; display: grid; place-items: center; overflow: hidden; }
 .palette-artwork { display: grid; place-items: center; width: 100%; color: var(--ink); }
 .palette-artwork svg { display: block; width: min(100%, 360px); height: auto; }
-.economy-lot-image .palette-artwork svg { width: 200px; height: 170px; }
+.economy-lot-image .palette-artwork svg { width: 176px; height: 138px; }
 .auction-room-media > .palette-artwork { flex: 1; min-height: 240px; }
 .palette-mystery-caption { text-align: center; font: 12px/1.6 'DM Mono', monospace; color: var(--muted); }
-.economy-lot-image img { display: block; width: 100%; height: 180px; min-height: 0; object-fit: contain; padding: 20px; }
-.economy-badge { position: absolute; bottom: 12px; left: 12px; padding: 6px 10px; border-radius: 6px; background: var(--ink); color: var(--paper); font: 11px 'DM Mono', monospace; }
-.auction-state-badge { position: absolute; top: 12px; right: 12px; padding: 6px 9px; border: 1px solid currentColor; border-radius: 99px; background: var(--paper); color: var(--ink); font: 800 9px/1 'DM Mono', monospace; letter-spacing: .08em; }
+.economy-lot-image img { display: block; width: 100%; height: 148px; min-height: 0; object-fit: contain; padding: 12px; }
+.economy-badge { position: absolute; bottom: 10px; left: 10px; padding: 4px 9px; border-radius: 6px; background: var(--ink); color: var(--paper); font: 10px 'DM Mono', monospace; }
+.auction-state-badge { position: absolute; top: 10px; right: 10px; padding: 5px 8px; border: 1px solid currentColor; border-radius: 99px; background: var(--paper); color: var(--ink); font: 800 9px/1 'DM Mono', monospace; letter-spacing: .08em; }
 .economy-lot.is-leading .auction-state-badge { background: var(--green); color: #fff; }
 .economy-lot.is-outbid .auction-state-badge { background: var(--red); color: #fff; }
-.economy-lot-body { display: flex; flex: 1; flex-direction: column; padding: 22px; }
+.economy-lot-body { display: flex; flex: 1; flex-direction: column; padding: 14px 16px 16px; }
 .economy-lot-body > :last-child { margin-bottom: 0; }
-.economy-lot h2 { font-size: 22px; margin: 0 0 12px; }
-.economy-lot p { font-size: 13px; line-height: 1.7; }
-.economy-bid { display: flex; flex-direction: column; gap: 4px; padding-top: 14px; border-top: 1px solid var(--line); }
-.economy-bid strong { font-size: 22px; }
+.economy-lot h2 { font-size: 16px; line-height: 1.35; margin: 0 0 6px; }
+.economy-lot p { font-size: 12px; line-height: 1.5; color: var(--muted); }
+.economy-lot p.economy-outcome { color: #bb491d; }
+.economy-bid { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 8px; padding-top: 10px; border-top: 1px solid var(--line); }
+.economy-bid strong { font-size: 20px; }
 .economy-bid span, .economy-countdown { font: 12px 'DM Mono', monospace; }
+.economy-lot .economy-countdown { color: var(--ink); font-weight: 700; }
 .economy-outcome { font-weight: 800; color: #bb491d; }
-.economy-overview { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); margin: 0 0 30px; overflow: hidden; border: 1px solid var(--line); border-radius: 14px; background: #fffcf4; box-shadow: 0 5px 0 #183e360c; }
+.economy-overview { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); margin: 0 0 24px; overflow: hidden; border: 1px solid var(--line); border-radius: 14px; background: #fffcf4; box-shadow: 0 5px 0 #183e360c; }
 .economy-overview > div { display: grid; min-width: 0; gap: 7px; padding: 20px 24px; border-left: 1px solid var(--line); }
 .economy-overview > div:first-child { border-left: 0; }
 .economy-overview span { color: var(--muted); font: 700 10px/1.2 'DM Mono', monospace; letter-spacing: .1em; }
@@ -840,34 +842,43 @@ button:focus-visible, a:focus-visible { outline: 3px solid var(--red); outline-o
 .economy-overview .economy-overview-primary span { color: #d4ddd4; }
 .economy-overview .economy-overview-primary strong { color: var(--paper); }
 .economy-news a { color: var(--ink); }
-.economy-tabs { display: flex; gap: 8px; margin: 26px 0; }
-.economy-tabs button, .market-categories button { border: 1px solid var(--line); border-radius: 10px; background: transparent; padding: 12px 18px; color: var(--ink); cursor: pointer; font: inherit; font-weight: 700; }
+.economy-tabs { display: flex; flex-wrap: wrap; gap: 6px; margin: 20px 0; }
+.economy-tabs button { border: 1px solid var(--line); border-radius: 99px; background: transparent; padding: 8px 16px; color: var(--ink); cursor: pointer; font: inherit; font-size: 13px; font-weight: 700; }
+.economy-tabs button:hover { background: #e8ebdd; }
+.market-categories button { border: 1px solid var(--line); border-radius: 10px; background: transparent; padding: 12px 14px; color: var(--ink); cursor: pointer; font: inherit; font-weight: 700; }
 .economy-tabs [aria-pressed="true"], .market-categories [aria-pressed="true"] { background: var(--ink); color: var(--paper); }
-.my-bids-board { margin: 28px 0 38px; padding: 24px; border: 2px solid var(--ink); border-radius: 18px; background: #e8ebdd; box-shadow: 7px 8px 0 #183e3617; }
+.my-bids-board { margin: 22px 0 10px; padding: 18px 20px; border: 1px solid var(--line); border-radius: 12px; background: #e8ebdd; box-shadow: 4px 5px 0 #183e3610; }
 .my-bids-board .economy-grid { margin-bottom: 0; }
+.my-bids-board.is-empty { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 14px; padding: 13px 18px; background: transparent; border: 1px dashed var(--line); box-shadow: none; }
+.my-bids-board.is-empty .auction-section-heading { gap: 12px; justify-content: flex-start; }
+.my-bids-board.is-empty .auction-section-heading > div { display: flex; flex-wrap: wrap; align-items: baseline; gap: 10px; }
+.my-bids-board.is-empty .auction-section-heading .eyebrow { margin: 0; }
+.my-bids-board.is-empty .auction-section-heading h2 { font-size: 15px; }
+.my-bids-board.is-empty .my-bids-empty { margin: 0; }
+.my-bids-board.is-empty .archive-toggle { margin: 0; padding: 0; }
 .auction-section-heading { display: flex; align-items: center; justify-content: space-between; gap: 20px; }
 .auction-section-heading .eyebrow { margin: 0 0 5px; }
-.auction-section-heading h2 { margin: 0; font-size: clamp(24px, 3vw, 34px); }
-.auction-section-heading > strong { display: grid; place-items: center; min-width: 42px; height: 42px; padding: 0 10px; border-radius: 50%; background: var(--ink); color: var(--paper); font: 700 13px 'DM Mono', monospace; }
-.live-auctions-heading { margin-top: 34px; padding-top: 28px; border-top: 1px solid var(--line); }
+.auction-section-heading h2 { margin: 0; font-size: 22px; }
+.auction-section-heading > strong { display: grid; place-items: center; min-width: 30px; height: 24px; padding: 0 10px; border-radius: 99px; background: var(--ink); color: var(--paper); font: 700 12px 'DM Mono', monospace; }
+.live-auctions-heading { margin-top: 26px; padding-top: 20px; border-top: 1px solid var(--line); }
 .live-auctions-heading > strong { background: transparent; color: var(--ink); border: 1px solid var(--line); }
-.my-bids-empty { margin: 20px 0 0; color: var(--muted); }
+.my-bids-empty { margin: 12px 0 0; color: var(--muted); font-size: 13px; }
 .archive-toggle { margin: 14px 0 0; padding: 10px 0; font-size: 13px; font-weight: 700; color: var(--muted); }
 .archive-heading { margin-top: 26px; padding-top: 22px; border-top: 1px solid #183e3622; }
 .archive-heading > strong { background: transparent; color: var(--ink); border: 1px solid var(--line); }
 .marketplace-subtitle { margin: 0; color: var(--muted); font-size: 14px; }
 .marketplace-summary { margin: 14px 0 0; color: var(--muted); font: 12px/1.9 'DM Mono', monospace; }
 .marketplace-summary strong { color: var(--ink); font-weight: 700; }
-.marketplace-tabs { margin: 18px 0 4px; }
-.marketplace-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 12px 18px; margin: 26px 0 0; }
-.marketplace-toolbar h2 { margin: 0; font-size: clamp(22px, 2.6vw, 30px); }
+.marketplace-tabs { margin: 14px 0 0; }
+.marketplace-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 16px; margin: 22px 0 0; }
+.marketplace-toolbar h2 { margin: 0; font-size: 22px; }
 .marketplace-toolbar .primary-button { min-height: 46px; margin: 0 0 0 auto; padding: 10px 18px; font-size: 13px; }
 .marketplace-count { padding: 6px 11px; border: 1px solid var(--line); border-radius: 99px; color: var(--muted); font: 700 11px 'DM Mono', monospace; }
 .marketplace-group { margin: 28px 0 0; color: var(--muted); font: 700 10px/1.2 'DM Mono', monospace; letter-spacing: .12em; text-transform: uppercase; }
 .marketplace-blank { display: grid; gap: 16px; justify-items: start; margin: 24px 0 0; color: var(--muted); }
 .marketplace-blank p { margin: 0; }
 .marketplace-blank .primary-button, .marketplace-blank .secondary-button { margin: 0; }
-.economy-lot-foot { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: auto; padding-top: 14px; }
+.economy-lot-foot { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: auto; padding-top: 10px; }
 .economy-lot-action { color: var(--ink); font: 700 12px 'DM Mono', monospace; }
 .economy-lot-foot .text-button { padding: 2px 0; color: var(--muted); font-size: 12px; font-weight: 700; }
 .economy-dialog { border: 0; border-radius: 18px; width: min(840px, calc(100vw - 28px)); max-height: calc(100dvh - 28px); background: var(--paper); color: var(--ink); padding: 0; }
@@ -938,14 +949,14 @@ button:focus-visible, a:focus-visible { outline: 3px solid var(--red); outline-o
 .progression > div { display: flex; align-items: center; justify-content: space-between; }
 .progression h2 { margin: 0 0 12px; }
 .progression progress { width: 100%; height: 16px; accent-color: var(--ink); }
-.market-categories { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
-.market-categories button { text-align: left; display: grid; gap: 10px; }
-.market-categories strong { font-size: 24px; }
+.market-categories { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
+.market-categories button { text-align: left; display: grid; gap: 8px; }
+.market-categories strong { font-size: 20px; }
 .market-categories time { font-size: 10px; font-weight: 400; }
-.market-chart { border: 1px solid var(--line); border-radius: 18px; padding: 24px; margin-top: 24px; }
+.market-chart { border: 1px solid var(--line); border-radius: 12px; padding: 20px; margin-top: 14px; }
 .market-chart svg { width: 100%; font: 12px 'DM Mono', monospace; }
 .economy-news { display: grid; gap: 24px; max-width: 800px; }
-.economy-news article { padding: 28px; border: 1px solid var(--line); border-radius: 18px; background: #fffcf4; }
+.economy-news article { padding: 20px; border: 1px solid var(--line); border-radius: 12px; background: #fffcf4; }
 .economy-news p { line-height: 1.8; }
 .economy-news time { font: 12px 'DM Mono', monospace; color: var(--muted); }
 .economy-effects { display: flex; flex-wrap: wrap; gap: 8px; margin: 18px 0; }
@@ -997,10 +1008,13 @@ button:focus-visible, a:focus-visible { outline: 3px solid var(--red); outline-o
 
 /* Auction floor: paper tickets and sealed finds. */
 .palette-win-banner, .market-guidance { padding: 24px; border: 1px solid var(--line); border-radius: 16px; background: #e8ebdd; margin: 24px 0; }
+.market-guidance { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 4px 18px; padding: 14px 20px; margin: 18px 0 0; border-radius: 12px; }
 .palette-win-banner { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 20px; border: 2px solid #b94c25; }
 .palette-win-banner h2 { margin: 8px 0; }
 .palette-seal { display: flex; gap: 10px; margin: 20px 0; }
 .palette-seal span { flex: 1; padding: 22px 8px; border: 1px dashed #747b66; background: #e8ebdd; border-radius: 8px; text-align: center; font: 14px 'DM Mono', monospace; }
+.economy-lot .palette-seal { gap: 8px; margin: 6px 0 10px; }
+.economy-lot .palette-seal span { padding: 11px 8px; font-size: 12px; }
 .palette-victory { text-align: center; padding: 24px 0; }
 .palette-victory h2 { font-size: clamp(28px, 5vw, 46px); }
 .reveal-steps { display: flex; justify-content: center; gap: 12px; margin: 20px; }

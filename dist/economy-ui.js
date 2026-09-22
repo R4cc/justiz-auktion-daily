@@ -28,7 +28,10 @@ window.economyUi = (() => {
   const categoryName = id => categoryNames[id] ? t(...categoryNames[id]) : t('Mixed finds', 'Gemischte Fundstücke');
   const remaining = end => {
     const seconds = Math.max(0, Math.ceil((end - Date.now()) / 1000));
-    return seconds ? `${Math.floor(seconds / 3600)}:${String(Math.floor(seconds / 60) % 60).padStart(2, '0')}:${String(seconds % 60).padStart(2, '0')}` : t('Ended', 'Beendet');
+    if (!seconds) return t('Ended', 'Beendet');
+    // Multi-day lot auctions read better as "2d 14h" than a 60-hour clock.
+    if (seconds >= 86_400) return `${Math.floor(seconds / 86_400)}d ${Math.floor(seconds % 86_400 / 3_600)}h`;
+    return `${Math.floor(seconds / 3_600)}:${String(Math.floor(seconds / 60) % 60).padStart(2, '0')}:${String(seconds % 60).padStart(2, '0')}`;
   };
   const countdown = end => `<time class="economy-countdown" data-economy-end="${end}" datetime="${new Date(end).toISOString()}" aria-live="off">${remaining(end)}</time>`;
   const empty = text => `<p class="collection-empty">${text}</p>`;
@@ -205,7 +208,9 @@ window.economyUi = (() => {
       const myIds = new Set(myLots.map(lot => lot.id));
       const liveLots = (data.lots || []).filter(lot => !myIds.has(lot.id) && (!paletteFilter || lot.paletteId === paletteFilter));
       if (account) {
-        accountContent.innerHTML += `<section class="my-bids-board"><div class="auction-section-heading"><div><p class="eyebrow">${t('YOUR AUCTIONS', 'DEINE AUKTIONEN')}</p><h2>${t('My bids', 'Meine Gebote')}</h2></div><strong>${myBoard.length}</strong></div>
+        // An empty board collapses to a slim note; the box only earns its
+        // border once there is something in it.
+        accountContent.innerHTML += `<section class="my-bids-board${myBoard.length ? '' : ' is-empty'}"><div class="auction-section-heading"><div><p class="eyebrow">${t('YOUR AUCTIONS', 'DEINE AUKTIONEN')}</p><h2>${t('My bids', 'Meine Gebote')}</h2></div>${myBoard.length ? `<strong>${myBoard.length}</strong>` : ''}</div>
           ${myBoard.length ? `<div class="economy-grid">${myBoard.map(lot => lotCard(lot, true)).join('')}</div>` : `<p class="my-bids-empty">${t('You have not placed a bid yet.', 'Du hast noch kein Gebot abgegeben.')}</p>`}
           ${myArchived.length ? archiveToggle(myArchived.length) : ''}
           ${myArchived.length && archiveOpen ? `<div class="auction-section-heading archive-heading"><div><p class="eyebrow">${t('ARCHIVE', 'ARCHIV')}</p><h2>${t('Archived auctions', 'Archivierte Auktionen')}</h2></div><strong>${myArchived.length}</strong></div>
