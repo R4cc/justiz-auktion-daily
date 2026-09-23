@@ -96,6 +96,8 @@ Optional environment variables:
 
 `compose.yml` runs the distroless app as UID/GID `65532`, drops every Linux capability, enables `no-new-privileges`, uses a read-only root filesystem, and exposes port 3000 only to the shared Docker network. It does not publish a host port.
 
+Compose trusts Cloudflare's `CF-Connecting-IP` header for per-visitor rate limits. Keep the app reachable only through the tunnel when `TRUST_CLOUDFLARE_IP=true`; direct clients could otherwise forge that header. Other deployments leave the setting off and use the socket IP.
+
 The final application image contains no shell or package manager. CI publishes a software bill of materials and maximum-mode provenance alongside pushed images. You can pin `JUSTIZGUESSR_TAG` and `CLOUDFLARED_TAG` to immutable versions for controlled upgrades.
 
 Set `DOCKERHUB_USERNAME` and `CLOUDFLARE_TUNNEL_TOKEN`, then run:

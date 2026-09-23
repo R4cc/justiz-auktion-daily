@@ -1,4 +1,5 @@
 import { auctionGallery } from './src/auction-images.mjs';
+import { clientIp } from './src/client-ip.mjs';
 import { createAccountApi } from './src/account-api.mjs';
 import { createEconomyApi } from './src/economy-api.mjs';
 import { startEconomyRuntime } from './src/economy-runtime.mjs';
@@ -168,6 +169,7 @@ let shuttingDown = false;
 const RANDOM_RATE_LIMIT = 10;
 const RANDOM_RATE_WINDOW_MS = 60_000;
 const randomRateBucket = new Map();
+const trustCloudflareIp = process.env.TRUST_CLOUDFLARE_IP === 'true';
 
 function randomRateExceeded(ip) {
   const now = Date.now();
@@ -1081,7 +1083,7 @@ const server =
           url.pathname ===
             '/api/random'
         ) {
-          if (randomRateExceeded(request.socket.remoteAddress)) {
+          if (randomRateExceeded(clientIp(request, trustCloudflareIp))) {
             json(
               response,
               429,

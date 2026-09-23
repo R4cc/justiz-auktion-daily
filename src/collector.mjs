@@ -27,6 +27,40 @@ import {
 const BASE_URL =
   'https://www.justiz-auktion.de';
 
+const MAX_HTML_BYTES = 5_000_000;
+const MAX_IMAGE_BYTES = 12_000_000;
+
+function auctionUrl(value) {
+  const url = new URL(value);
+  if (url.origin !== BASE_URL || url.username || url.password) {
+    throw new Error('Auction fetch destination is not allowed');
+  }
+  return url.href;
+}
+
+async function limitedBytes(response, maximum) {
+  const declared = Number(response.headers.get('content-length'));
+  if (Number.isFinite(declared) && declared > maximum) {
+    throw new Error('Auction response is too large');
+  }
+  const chunks = [];
+  let size = 0;
+  if (response.body) {
+    for await (const chunk of response.body) {
+      size += chunk.length;
+      if (size > maximum) {
+        throw new Error('Auction response is too large');
+      }
+      chunks.push(chunk);
+    }
+  }
+  return Buffer.concat(chunks, size);
+}
+
+async function htmlText(response) {
+  return (await limitedBytes(response, MAX_HTML_BYTES)).toString('utf8');
+}
+
 const USER_AGENT =
   'JUSTIZGUESSR/1.0 (+daily public auction indexer; respectful adaptive fetches)';
 
@@ -675,7 +709,7 @@ async function fetchText(
 ) {
   const response =
     await fetchImpl(
-      url,
+      auctionUrl(url),
       {
         headers: {
           'user-agent':
@@ -702,7 +736,7 @@ async function fetchText(
     );
   }
 
-  return response.text();
+  return htmlText(response);
 }
 
 function parseHtmlAttributes(
@@ -1186,7 +1220,7 @@ async function fetchWithCookieJar(
 
     const response =
       await fetchImpl(
-        requestUrl,
+        auctionUrl(requestUrl),
         {
           ...options,
           method,
@@ -1348,7 +1382,7 @@ async function submitPageSizePreference(
 
   return {
     html:
-      await response.text(),
+      await htmlText(response),
 
     url:
       url.href
@@ -1403,7 +1437,7 @@ async function fetchListingPage({
 
     return {
       html:
-        await response.text(),
+        await htmlText(response),
 
       effectivePageSize:
         LEGACY_LISTING_PAGE_SIZE,
@@ -1449,7 +1483,7 @@ async function fetchListingPage({
     }
 
     const html =
-      await response.text();
+      await htmlText(response);
 
     if (
       extractListingUrls(
@@ -1532,7 +1566,7 @@ async function fetchListingPage({
   }
 
   const initialHtml =
-    await initialResponse.text();
+    await htmlText(initialResponse);
 
   const initialUrls =
     extractListingUrls(
@@ -2235,7 +2269,7 @@ async function requestResource(
 
   const response =
     await fetchImpl(
-      task.url,
+      auctionUrl(task.url),
       {
         headers: {
           'user-agent':
@@ -2292,9 +2326,7 @@ async function saveImageResponse(
   }
 
   const bytes =
-    Buffer.from(
-      await response.arrayBuffer()
-    );
+    await limitedBytes(response, MAX_IMAGE_BYTES);
 
   if (
     bytes.length < 1000 ||
@@ -2964,7 +2996,7 @@ export async function processRollingTask({
     ) {
       const item =
         parseAuctionPage(
-          await response.text(),
+          await htmlText(response),
           task.url,
           now
         );
@@ -3048,7 +3080,7 @@ export async function processRollingTask({
 
           startAt:
             parseAuctionStart(
-              await response.text()
+              await htmlText(response)
             ) ||
             auction.startAt
         };

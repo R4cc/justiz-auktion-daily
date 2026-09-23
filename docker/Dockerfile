@@ -11,7 +11,7 @@ COPY seed ./seed
 COPY dist ./dist
 RUN mkdir /data-seed
 
-FROM gcr.io/distroless/nodejs22-debian12:nonroot
+FROM gcr.io/distroless/nodejs22-debian13:nonroot
 
 ARG JG_BUILD_ID=local
 ARG JG_VERSION=0.0.0

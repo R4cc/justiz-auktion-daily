@@ -1,4 +1,5 @@
 import { Accounts, AccountError } from './accounts.mjs';
+import { clientIp } from './client-ip.mjs';
 import { caseRewards, loadCaseCatalog, publicCaseCatalog, rotationDate } from './cases.mjs';
 import { readArchive } from './database.mjs';
 import { higherLowerDeck } from './higher-lower.mjs';
@@ -55,6 +56,7 @@ export async function createAccountApi({ dataDir, dailyPayload, json, env = proc
   const accounts = new Accounts(dataDir, { flags });
   await accounts.bootstrap(env.ADMIN_USERNAME, env.ADMIN_PASSWORD);
   const secure = env.COOKIE_SECURE !== 'false' && (env.COOKIE_SECURE === 'true' || env.NODE_ENV === 'production');
+  const trustCloudflareIp = env.TRUST_CLOUDFLARE_IP === 'true';
   const cookie = token => `jg_session=${token}; Path=/; HttpOnly; SameSite=Strict; Max-Age=${token ? 2592000 : 0}${secure ? '; Secure' : ''}`;
   let catalog;
   function getCatalog() {
@@ -119,7 +121,7 @@ export async function createAccountApi({ dataDir, dailyPayload, json, env = proc
       if (request.method !== 'POST') throw new AccountError('method_not_allowed', 405);
       // Cross-site forms cannot set this header; CORS is deliberately not enabled.
       if (request.headers['x-requested-with'] !== 'JUSTIZGUESSR' || request.headers['sec-fetch-site'] === 'cross-site') throw new AccountError('forbidden', 403);
-      if (['login', 'register'].includes(route)) accounts.throttle(`auth:${request.socket.remoteAddress}`, 60);
+      if (['login', 'register'].includes(route)) accounts.throttle(`auth:${clientIp(request, trustCloudflareIp)}`, 60);
       else if (user) accounts.throttle(`mutate:${user.id}`, 500);
       const payload = await body(request);
       if (route === 'login' || route === 'register') {

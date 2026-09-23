@@ -92,6 +92,17 @@ let galleryAuction = null;
 let galleryIndex = 0;
 const GUESS_TIME_LIMIT = 25_000;
 
+function auctionEscape(value) {
+  return String(value ?? '').replace(/[&<>"']/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[char]);
+}
+
+function originalAuctionUrl(value) {
+  try {
+    const url = new URL(value);
+    return url.origin === 'https://www.justiz-auktion.de' ? auctionEscape(url.href) : '#';
+  } catch { return '#'; }
+}
+
 function setSidebar(open) {
   sidebar.classList.toggle('is-open', open);
   sidebarToggle.setAttribute('aria-expanded', String(open));
@@ -415,23 +426,23 @@ function renderRound() {
       </div>
       <div class="auction-layout${answer ? ' auction-layout--result' : ''}">
         <div class="auction-image-wrap"${images.length > 1 ? ` role="region" aria-roledescription="${t('carousel', 'Karussell')}" aria-label="${t('Auction images', 'Auktionsbilder')}"` : ''}>
-          <img class="auction-image-backdrop" referrerpolicy="no-referrer" src="${images[galleryIndex]}" alt="" aria-hidden="true" />
-          <img class="auction-image" referrerpolicy="no-referrer" src="${images[galleryIndex]}" alt="${auction.title}${images.length > 1 ? ` – ${t('Image', 'Bild')} ${galleryIndex + 1} ${t('of', 'von')} ${images.length}` : ''}" />
+          <img class="auction-image-backdrop" referrerpolicy="no-referrer" src="${auctionEscape(images[galleryIndex])}" alt="" aria-hidden="true" />
+          <img class="auction-image" referrerpolicy="no-referrer" src="${auctionEscape(images[galleryIndex])}" alt="${auctionEscape(auction.title)}${images.length > 1 ? ` – ${t('Image', 'Bild')} ${galleryIndex + 1} ${t('of', 'von')} ${images.length}` : ''}" />
           ${images.length > 1 ? `
             <button class="carousel-arrow carousel-arrow--previous" type="button" data-action="previous-image" aria-label="${t("Previous image", "Vorheriges Bild")}">‹</button>
             <button class="carousel-arrow carousel-arrow--next" type="button" data-action="next-image" aria-label="${t("Next image", "Nächstes Bild")}">›</button>
             <span class="image-count" data-image-count role="status" aria-live="polite" aria-atomic="true">${galleryIndex + 1} / ${images.length}</span>
           ` : ''}
-          <span class="category-tag">${listingLabel(auction.category).toUpperCase()}</span>
+          <span class="category-tag">${auctionEscape(listingLabel(auction.category).toUpperCase())}</span>
           <span class="time-tag${ended ? ' time-tag--ended' : ''}"><span class="clock-icon" aria-hidden="true"></span><span data-countdown>${timeRemaining(auction.endAt)}</span></span>
         </div>
         <div class="auction-panel${answer ? ' auction-panel--result' : ''}">
-          <p class="auction-id">${answer ? t("THE HAMMER HAS FALLEN", "DER HAMMER IST GEFALLEN") : t("UNDER THE HAMMER", "UNTER DEM HAMMER")} · #${auction.id}</p>
-          <h1 class="auction-title${auctionTitleSizeClass(auction.title)}">${auction.title}</h1>
+          <p class="auction-id">${answer ? t("THE HAMMER HAS FALLEN", "DER HAMMER IST GEFALLEN") : t("UNDER THE HAMMER", "UNTER DEM HAMMER")} · #${auctionEscape(auction.id)}</p>
+          <h1 class="auction-title${auctionTitleSizeClass(auction.title)}">${auctionEscape(auction.title)}</h1>
           ${answer ? revealMarkup(auction, answer) : `
-            <p class="auction-description" tabindex="0" role="region" aria-label="${t("Auction description", "Auktionsbeschreibung")}">${censorCurrencyValues(auction.description)}</p>
+            <p class="auction-description" tabindex="0" role="region" aria-label="${t("Auction description", "Auktionsbeschreibung")}">${auctionEscape(censorCurrencyValues(auction.description))}</p>
             <div class="fact-list">
-              <div class="fact"><span>${t("CONDITION", "ZUSTAND")}</span><strong>${listingLabel(auction.condition)}</strong></div>
+              <div class="fact"><span>${t("CONDITION", "ZUSTAND")}</span><strong>${auctionEscape(listingLabel(auction.condition))}</strong></div>
             </div>
             ${guessMarkup(ended)}
           `}
@@ -498,7 +509,7 @@ function revealMarkup(auction, answer) {
       </div>
       <div class="next-row">
         <button class="primary-button" type="button" data-action="next">${state.round === 4 ? t("View results", "Ergebnis ansehen") : t("Next auction", "Nächste Auktion")}<span class="button-arrow">→</span></button>
-        <a class="auction-link" href="${auction.url}" target="_blank" rel="noreferrer">${t("View original", "Original ansehen")} ↗</a>
+        <a class="auction-link" href="${originalAuctionUrl(auction.url)}" target="_blank" rel="noreferrer">${t("View original", "Original ansehen")} ↗</a>
       </div>
     </div>`;
 }
@@ -636,8 +647,8 @@ function resultRow(auction, answer, index) {
   const level = accuracy(answer.score);
   return `
     <div class="result-row">
-      <img class="result-thumb" src="${auction.image}" alt="" />
-      <a class="result-name result-auction-link" href="${auction.url}" target="_blank" rel="noreferrer"><strong>${index + 1}. ${auction.title}</strong><span>${t(`OPEN AUCTION #${auction.id}`, `AUKTION #${auction.id} ÖFFNEN`)} ↗</span></a>
+      <img class="result-thumb" src="${auctionEscape(auction.image)}" alt="" />
+      <a class="result-name result-auction-link" href="${originalAuctionUrl(auction.url)}" target="_blank" rel="noreferrer"><strong>${index + 1}. ${auctionEscape(auction.title)}</strong><span>${auctionEscape(t(`OPEN AUCTION #${auction.id}`, `AUKTION #${auction.id} ÖFFNEN`))} ↗</span></a>
       <div class="result-cell"><strong>${answer.guess === null ? '—' : euro(answer.guess)}</strong><span>${t("YOUR GUESS", "DEIN TIPP")}</span></div>
       <div class="result-cell"><strong>${euro(auction.actualBid)}</strong><span>${t("BID", "GEBOT")}</span></div>
       <div class="result-cell"><strong>${answer.error === null ? '—' : `${number(answer.error, 1)} %`}</strong><span>${t("DIFFERENCE", "ABWEICHUNG")}</span></div>
