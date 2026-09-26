@@ -87,10 +87,32 @@ async function accountApi(route, payload) {
   if (!response.ok) { const error = new Error(accountError(result.error)); error.code = result.error; throw error; }
   return result;
 }
+const seenSidebarEntries = new Set();
+const sidebarSeenKey = entry => `jg:sidebar-seen:${entry}`;
+function sidebarEntrySeen(entry) {
+  if (seenSidebarEntries.has(entry)) return true;
+  try { return localStorage.getItem(sidebarSeenKey(entry)) === '1'; } catch { return false; }
+}
+function markSidebarEntrySeen(link) {
+  const entry = link.dataset.newEntry;
+  if (!entry || sidebarEntrySeen(entry)) return;
+  seenSidebarEntries.add(entry);
+  try { localStorage.setItem(sidebarSeenKey(entry), '1'); } catch {}
+  updateNavigation();
+}
 function updateNavigation() {
   const labels = { '/': 'Daily', '/shop': 'Shop', '/auctions': t('Palette Auctions', 'Paletten-Auktionen'), '/marketplace': t('Marketplace', 'Marktplatz'), '/market': t('Stock Market', 'Aktienmarkt'), '/businesses': t('Businesses', 'Geschaefte'), '/inventory': t('Inventory', 'Inventar'), '/leaderboard': t('Leaderboard', 'Rangliste'), '/profile': t('Profile', 'Profil'), '/admin': 'Admin' };
   for (const link of document.querySelectorAll('.site-nav a')) {
-    if (link.id !== 'header-auth') link.textContent = labels[link.getAttribute('href')];
+    if (link.id !== 'header-auth') {
+      link.textContent = labels[link.getAttribute('href')];
+      const isNew = Boolean(link.dataset.newEntry && !sidebarEntrySeen(link.dataset.newEntry));
+      link.classList.toggle('has-new-tag', isNew);
+      if (isNew) {
+        const tag = document.createElement('span');
+        tag.className = 'nav-new-tag'; tag.textContent = t('NEW', 'NEU');
+        link.append(tag);
+      }
+    }
     if (link.pathname === location.pathname) link.setAttribute('aria-current', 'page'); else link.removeAttribute('aria-current');
     if (link.dataset.feature) link.hidden = !economyFlags[link.dataset.feature];
     if (link.pathname === '/shop') link.hidden = Boolean(economyFlags.paletteAuctions);
@@ -566,12 +588,20 @@ async function pullCase(visit) {
 }
 document.addEventListener('click', event => {
   const link = event.target.closest('a[data-page]');
-  if (!link || event.button !== 0 || event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) return;
+  if (!link) return;
+  markSidebarEntrySeen(link);
+  if (event.button !== 0 || event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) return;
   event.preventDefault();
   dismissNotificationToast(link.closest('.notification-toast'));
   closeNotificationPanel();
   if (typeof closeSidebar === 'function') closeSidebar();
   if (link.pathname === '/') renderStart(); else navigateAccountPage(link.pathname + link.search);
+});
+document.addEventListener('auxclick', event => {
+  if (event.button === 1) {
+    const link = event.target.closest('.site-nav a[data-new-entry]');
+    if (link) markSidebarEntrySeen(link);
+  }
 });
 document.addEventListener('click', async event => {
   const control = event.target.closest('[data-notification]');

@@ -1221,6 +1221,8 @@ body { padding-left: var(--sidebar-width); }
 .site-nav a:hover { color: var(--ink); background: #e8ebdd; }
 .site-nav a[aria-current] { color: var(--paper); background: var(--ink); }
 .site-nav a[aria-current]::after { content: ''; width: 7px; height: 7px; flex: none; margin-left: 8px; border-radius: 50%; background: var(--red); }
+.site-nav a.has-new-tag[aria-current]::after { display: none; }
+.site-nav .nav-new-tag { flex: none; margin-left: 8px; padding: 3px 5px; border-radius: 3px; background: var(--red); color: #fff; font: 800 10px/1 "DM Mono", monospace; }
 .site-header .header-actions { display: grid; flex: none; gap: 15px; padding: 18px 2px 0; border-top: 1px solid var(--line); }
 .site-header .daily-reset { display: flex; flex-direction: row; justify-content: space-between; align-items: center; }
 .sidebar-settings { display: grid; grid-template-columns: minmax(0, 1fr) 42px; align-items: center; gap: 8px; }
