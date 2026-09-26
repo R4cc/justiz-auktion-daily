@@ -18,10 +18,10 @@ export const SHOP_TYPES = [
   { id: 'cars', name: 'Car dealership', nameDe: 'Autohaus', costFactor: 2.5, typicalValue: 2500, conversion: .06 }
 ];
 export const SHOP_SIZES = [
-  { id: 'popup', name: 'Street pop-up', nameDe: 'Strassenstand', cost: 350, capacity: 4, visitorsPerHour: 1 },
-  { id: 'tiny', name: 'Tiny shop', nameDe: 'Kleiner Laden', cost: 1700, capacity: 12, visitorsPerHour: 2 },
-  { id: 'medium', name: 'Medium shop', nameDe: 'Mittlerer Laden', cost: 6500, capacity: 30, visitorsPerHour: 5 },
-  { id: 'large', name: 'Large shop', nameDe: 'Grosser Laden', cost: 22000, capacity: 70, visitorsPerHour: 11 }
+  { id: 'popup', name: 'Street pop-up', nameDe: 'Strassenstand', cost: 350, capacity: 10, carCapacity: 1, visitorsPerHour: 1 },
+  { id: 'tiny', name: 'Small shop', nameDe: 'Kleiner Laden', cost: 1700, capacity: 25, carCapacity: 3, visitorsPerHour: 2 },
+  { id: 'medium', name: 'Medium shop', nameDe: 'Mittlerer Laden', cost: 6500, capacity: 60, carCapacity: 8, visitorsPerHour: 5 },
+  { id: 'large', name: 'Large shop', nameDe: 'Grosser Laden', cost: 22000, capacity: 150, carCapacity: 20, visitorsPerHour: 11 }
 ];
 
 // Fictional, repeatable NPC lots. Prices are per unit; bids buy the whole batch.
@@ -38,6 +38,7 @@ export const WHOLESALE_STOCK = [
 
 const shopType = id => SHOP_TYPES.find(type => type.id === id);
 const shopSize = id => SHOP_SIZES.find(size => size.id === id);
+const shopCapacity = (type, size) => type === 'cars' ? size.carCapacity : size.capacity;
 const lotId = (bucket, stockId) => `${bucket}:${stockId}`;
 const marketCategory = type => type === 'cars' ? 'vehicles' : type === 'toys' ? 'collectibles' : type;
 
@@ -104,10 +105,11 @@ function shopMetrics(row, stock) {
   const size = shopSize(row.size), type = shopType(row.type);
   const variety = new Set(stock.map(entry => entry.item.title)).size;
   const value = stock.length ? Math.round(stock.reduce((sum, entry) => sum + entry.askingPrice, 0) / stock.length) : 0;
-  const fill = stock.length / size.capacity;
+  const capacity = shopCapacity(row.type, size);
+  const fill = stock.length / capacity;
   const popularity = stock.length ? Math.min(1.5, Math.max(.3,
     (.65 + .15 * Math.min(4, variety)) * (.8 + .2 * Math.min(2, value / type.typicalValue)) * (.65 + .35 * fill))) : 0;
-  return { variety, value, popularity: Math.round(popularity * 100) / 100, capacity: size.capacity };
+  return { variety, value, popularity: Math.round(popularity * 100) / 100, capacity };
 }
 
 function advanceShop(db, row, now) {
@@ -187,12 +189,12 @@ export function buyBusiness(dataDir, user, typeId, sizeId, { now = Date.now() } 
 }
 
 export function stockBusiness(dataDir, user, shopId, inventoryIds, { now = Date.now() } = {}) {
-  if (!Array.isArray(inventoryIds) || !inventoryIds.length || inventoryIds.length > 70 || new Set(inventoryIds).size !== inventoryIds.length) fail('invalid_stock');
+  if (!Array.isArray(inventoryIds) || !inventoryIds.length || inventoryIds.length > 150 || new Set(inventoryIds).size !== inventoryIds.length) fail('invalid_stock');
   return withDatabase(dataDir, db => transaction(db, () => {
     ensureBusinessSchema(db); activeUser(db, user); advanceShops(db, now, user.id);
     const shop = db.prepare('SELECT * FROM businesses WHERE id = ? AND user_id = ?').get(shopId, user.id);
     if (!shop) fail('business_not_found', 404);
-    if (shopStock(db, shop.id).length + inventoryIds.length > shopSize(shop.size).capacity) fail('business_full', 409);
+    if (shopStock(db, shop.id).length + inventoryIds.length > shopCapacity(shop.type, shopSize(shop.size))) fail('business_full', 409);
     const sealed = sealedPaletteInventoryIds(db);
     marketIndexes(db, now);
     for (const id of inventoryIds) {

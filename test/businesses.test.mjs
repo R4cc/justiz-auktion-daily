@@ -91,15 +91,18 @@ test('store stock is exclusive, category-checked, and earns once after offline t
 test('shop categories and capacities reject unsuitable or excess stock atomically', async t => {
   const f = await fixture(t);
   const toy = buyBusiness(f.dir, f.rival, 'toys', 'popup', { now: start }).shop;
+  assert.equal(toy.capacity, 10);
   f.accounts.db(db => {
-    for (let n = 0; n < 5; n++) db.prepare('INSERT INTO inventory (id, user_id, item, created_at) VALUES (?, ?, ?, ?)')
+    for (let n = 0; n < 11; n++) db.prepare('INSERT INTO inventory (id, user_id, item, created_at) VALUES (?, ?, ?, ?)')
       .run(`toy-${n}`, 'rival', JSON.stringify({ title: 'Wooden puzzle set', price: 20, businessCategory: 'toys' }), start);
     db.prepare('INSERT INTO inventory (id, user_id, item, created_at) VALUES (?, ?, ?, ?)')
       .run('wine-1', 'rival', JSON.stringify({ title: 'Red wine', price: 20, businessCategory: 'wine' }), start);
+    for (let n = 0; n < 2; n++) db.prepare('INSERT INTO inventory (id, user_id, item, created_at) VALUES (?, ?, ?, ?)')
+      .run(`car-${n}`, 'rival', JSON.stringify({ title: 'Compact city car', price: 1900, businessCategory: 'cars' }), start);
   });
   assert.throws(() => stockBusiness(f.dir, f.rival, toy.id, ['toy-0', 'wine-1'], { now: start }), /wrong_shop_type/);
   assert.equal(f.count('business_stock'), 0);
-  assert.throws(() => stockBusiness(f.dir, f.rival, toy.id, ['toy-0', 'toy-1', 'toy-2', 'toy-3', 'toy-4'], { now: start }), /business_full/);
+  assert.throws(() => stockBusiness(f.dir, f.rival, toy.id, Array.from({ length: 11 }, (_, n) => `toy-${n}`), { now: start }), /business_full/);
   assert.equal(f.count('business_stock'), 0);
   stockBusiness(f.dir, f.rival, toy.id, ['toy-0', 'toy-1'], { now: start });
   assert.throws(() => stockBusiness(f.dir, f.rival, toy.id, ['toy-0'], { now: start }), /item_locked/);
@@ -108,6 +111,13 @@ test('shop categories and capacities reject unsuitable or excess stock atomicall
   assert.equal(f.count('business_stock'), 1);
   assert.ok(f.accounts.inventory(f.rival).some(item => item.id === 'toy-0'));
   assert.throws(() => unstockBusiness(f.dir, f.owner, toy.id, 'toy-1', { now: start }), /business_not_found/);
+  const car = buyBusiness(f.dir, f.rival, 'cars', 'popup', { now: start }).shop;
+  assert.equal(car.capacity, 1);
+  assert.throws(() => stockBusiness(f.dir, f.rival, car.id, ['car-0', 'car-1'], { now: start }), /business_full/);
+  stockBusiness(f.dir, f.rival, car.id, ['car-0'], { now: start });
+  const small = buyBusiness(f.dir, f.rival, 'wine', 'tiny', { now: start }).shop;
+  assert.equal(small.capacity, 25);
+  assert.deepEqual(businessDashboard(f.dir, f.rival, { now: start }).sizes.map(size => size.carCapacity), [1, 3, 8, 20]);
   f.accounts.resetEconomy(f.owner, 'RESET ECONOMY');
   assert.equal(f.count('businesses'), 0);
   assert.equal(f.count('business_stock'), 0);
