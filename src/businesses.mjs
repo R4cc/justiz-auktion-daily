@@ -18,10 +18,10 @@ export const SHOP_TYPES = [
   { id: 'cars', name: 'Car dealership', nameDe: 'Autohaus', costFactor: 2.5, typicalValue: 2500, conversion: .06 }
 ];
 export const SHOP_SIZES = [
-  { id: 'popup', name: 'Street pop-up', nameDe: 'Strassenstand', cost: 350, capacity: 10, carCapacity: 1, visitorsPerHour: 1 },
-  { id: 'tiny', name: 'Small shop', nameDe: 'Kleiner Laden', cost: 1700, capacity: 25, carCapacity: 3, visitorsPerHour: 2 },
-  { id: 'medium', name: 'Medium shop', nameDe: 'Mittlerer Laden', cost: 6500, capacity: 60, carCapacity: 8, visitorsPerHour: 5 },
-  { id: 'large', name: 'Large shop', nameDe: 'Grosser Laden', cost: 22000, capacity: 150, carCapacity: 20, visitorsPerHour: 11 }
+  { id: 'popup', name: 'Street pop-up', nameDe: 'Strassenstand', cost: 1000, capacity: 10, carCapacity: 1, visitorsPerHour: 1 },
+  { id: 'tiny', name: 'Small shop', nameDe: 'Kleiner Laden', cost: 4000, capacity: 25, carCapacity: 3, visitorsPerHour: 2 },
+  { id: 'medium', name: 'Medium shop', nameDe: 'Mittlerer Laden', cost: 15000, capacity: 60, carCapacity: 8, visitorsPerHour: 5 },
+  { id: 'large', name: 'Large shop', nameDe: 'Grosser Laden', cost: 50000, capacity: 150, carCapacity: 20, visitorsPerHour: 11 }
 ];
 
 // Fictional, repeatable NPC lots. Prices are per unit; bids buy the whole batch.

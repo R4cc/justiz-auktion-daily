@@ -20,7 +20,7 @@ async function fixture(t) {
   const dir = await mkdtemp(path.join(os.tmpdir(), 'jg-business-'));
   const accounts = new Accounts(dir, { now: () => start });
   accounts.db(db => {
-    for (const [id, tokens, admin] of [['owner', 1000, 1], ['rival', 5000, 0]]) {
+    for (const [id, tokens, admin] of [['owner', 1000, 1], ['rival', 10000, 0]]) {
       db.prepare(`INSERT INTO users (id, username, password_hash, tokens, created_at, admin)
         VALUES (?, ?, 'disabled', ?, ?, ?)`).run(id, id, tokens, start, admin);
     }
@@ -58,12 +58,15 @@ test('NPC bulk auctions escrow bids and mint exactly one batch at settlement', a
 
 test('store stock is exclusive, category-checked, and earns once after offline time', async t => {
   const f = await fixture(t);
+  f.accounts.db(db => db.prepare("UPDATE users SET tokens = 2000 WHERE id = 'owner'").run());
   const wineLot = listWholesale(f.dir, { now: start }).find(lot => lot.type === 'wine' && lot.quantity === 24);
   bidWholesale(f.dir, f.owner, wineLot.id, wineLot.reserve, { now: start });
   tickBusinesses(f.dir, { now: start + 2 * hour });
   const boughtAt = start + 2 * hour;
-  const shop = buyBusiness(f.dir, f.owner, 'wine', 'popup', { now: boughtAt }).shop;
-  assert.equal(f.balance('owner'), 218);
+  const purchase = buyBusiness(f.dir, f.owner, 'wine', 'popup', { now: boughtAt });
+  const shop = purchase.shop;
+  assert.equal(purchase.cost, 1000);
+  assert.equal(f.balance('owner'), 568);
   assert.throws(() => buyBusiness(f.dir, f.owner, 'wine', 'tiny', { now: boughtAt }), /insufficient_tokens/);
   const ids = f.accounts.db(db => db.prepare("SELECT id FROM inventory WHERE user_id = 'owner' ORDER BY id LIMIT 4").all().map(row => row.id));
   assert.throws(() => stockBusiness(f.dir, f.rival, shop.id, ids, { now: boughtAt }), /business_not_found/);
@@ -80,10 +83,10 @@ test('store stock is exclusive, category-checked, and earns once after offline t
   assert.equal(after.sales, 4);
   assert.ok(after.visitors > 0);
   assert.equal(after.revenue, 4 * 40);
-  assert.equal(f.balance('owner'), 218 + after.revenue);
+  assert.equal(f.balance('owner'), 568 + after.revenue);
   closeDataStore(f.dir);
   assert.equal(businessDashboard(f.dir, f.owner, { now: later }).shops[0].revenue, after.revenue);
-  assert.equal(f.balance('owner'), 218 + after.revenue);
+  assert.equal(f.balance('owner'), 568 + after.revenue);
   assert.equal(f.count('inventory', 'sold_at IS NOT NULL'), 4);
   assert.equal(f.count('business_stock', 'sold_price = 40'), 4);
 });
@@ -111,13 +114,20 @@ test('shop categories and capacities reject unsuitable or excess stock atomicall
   assert.equal(f.count('business_stock'), 1);
   assert.ok(f.accounts.inventory(f.rival).some(item => item.id === 'toy-0'));
   assert.throws(() => unstockBusiness(f.dir, f.owner, toy.id, 'toy-1', { now: start }), /business_not_found/);
-  const car = buyBusiness(f.dir, f.rival, 'cars', 'popup', { now: start }).shop;
+  const carPurchase = buyBusiness(f.dir, f.rival, 'cars', 'popup', { now: start });
+  const car = carPurchase.shop;
+  assert.equal(carPurchase.cost, 2500);
   assert.equal(car.capacity, 1);
   assert.throws(() => stockBusiness(f.dir, f.rival, car.id, ['car-0', 'car-1'], { now: start }), /business_full/);
   stockBusiness(f.dir, f.rival, car.id, ['car-0'], { now: start });
-  const small = buyBusiness(f.dir, f.rival, 'wine', 'tiny', { now: start }).shop;
+  const smallPurchase = buyBusiness(f.dir, f.rival, 'wine', 'tiny', { now: start });
+  const small = smallPurchase.shop;
+  assert.equal(smallPurchase.cost, 4000);
   assert.equal(small.capacity, 25);
-  assert.deepEqual(businessDashboard(f.dir, f.rival, { now: start }).sizes.map(size => size.carCapacity), [1, 3, 8, 20]);
+  const dashboard = businessDashboard(f.dir, f.rival, { now: start });
+  assert.deepEqual(dashboard.sizes.map(size => size.carCapacity), [1, 3, 8, 20]);
+  assert.deepEqual(dashboard.sizes.map(size => size.cost), [1000, 4000, 15000, 50000]);
+  assert.equal(dashboard.sizes[3].cost * dashboard.types.find(type => type.id === 'cars').costFactor, 125000);
   f.accounts.resetEconomy(f.owner, 'RESET ECONOMY');
   assert.equal(f.count('businesses'), 0);
   assert.equal(f.count('business_stock'), 0);
@@ -132,6 +142,7 @@ test('business HTTP routes require sessions and CSRF while bulk lots remain publ
   const json = (response, status, value) => { response.writeHead(status, { 'content-type': 'application/json' }); response.end(JSON.stringify(value)); };
   const economy = createEconomyApi({ dataDir: dir, json, flags });
   const accounts = await createAccountApi({ dataDir: dir, dailyPayload: async () => ({ auctions: [] }), json, env, flags });
+  new Accounts(dir).db(db => db.prepare("UPDATE users SET tokens = 2000 WHERE username = 'admin'").run());
   const server = createServer(async (request, response) => {
     const url = new URL(request.url, 'http://localhost');
     if (await economy(request, response, url)) return;
@@ -158,7 +169,7 @@ test('business HTTP routes require sessions and CSRF while bulk lots remain publ
   const bid = await post('wholesale/bid', { id: wine.id, amount: wine.reserve }, cookie);
   assert.equal(bid.status, 200);
   const bidResult = await bid.json();
-  assert.equal(bidResult.user.tokens, 1000 - 350 - wine.reserve);
+  assert.equal(bidResult.user.tokens, 2000 - 1000 - wine.reserve);
   assert.equal(bidResult.user.activeBids, 1);
   const hidden = createEconomyApi({ dataDir: dir, json, flags: { ...flags, businesses: false } });
   assert.equal(hidden({ method: 'GET' }, null, new URL('/api/wholesale', base)), false);
