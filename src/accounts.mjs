@@ -12,6 +12,7 @@ import { featureFlags } from './features.mjs';
 import { estimatedValueTokens, marketIndexes } from './market.mjs';
 import { progressionForXp } from './progression.mjs';
 import { ensureNotificationSchema, pushNotification } from './notifications.mjs';
+import { ensureBusinessSchema } from './businesses.mjs';
 
 export { AccountError };
 
@@ -134,6 +135,7 @@ export class Accounts {
       // Resale listings reference inventory rows; creating the tables here keeps
       // the sell/list locking consistent for every database this class opens.
       ensureResaleSchema(db, this.now());
+      ensureBusinessSchema(db);
       ensureNotificationSchema(db);
     });
   }
@@ -306,6 +308,7 @@ export class Accounts {
       // same transaction that restores balances. Authentication/social tables,
       // registration codes, passwords, bans and account_sessions are untouched.
       for (const table of ['resale_npc_interest', 'resale_bids', 'resale_auctions',
+        'business_stock', 'businesses', 'wholesale_bids', 'wholesale_auctions',
         'primary_palette_bids', 'primary_palette_rewards', 'primary_palette_auctions',
         'daily_rewards', 'xp_events', 'case_openings', 'inventory', 'account_games',
         'user_token_grants', 'token_grants', 'account_notifications']) {
@@ -418,6 +421,11 @@ export class Accounts {
         WHERE a.status = 'active' AND a.ends_at > ? AND EXISTS
         (SELECT 1 FROM resale_bids b WHERE b.auction_id = a.id AND b.bidder_id = ?)`).get(this.now(), userId).count;
     }
+    if (hasTable('wholesale_auctions') && hasTable('wholesale_bids')) {
+      activeBids += db.prepare(`SELECT COUNT(*) AS count FROM wholesale_auctions a
+        WHERE a.settled_at IS NULL AND a.ends_at > ? AND EXISTS
+        (SELECT 1 FROM wholesale_bids b WHERE b.auction_id = a.id AND b.bidder_id = ?)`).get(this.now(), userId).count;
+    }
     const daily = { status: run?.complete ? 'completed' : run?.answers.length ? 'in_progress' : 'not_started',
       completedRounds: run?.answers.length || 0,
       score: run?.complete ? run.answers.reduce((total, guess, i) => total + scoreGuess(guess, run.auctions[i].actualBid), 0) : null };
@@ -484,7 +492,7 @@ export class Accounts {
       const locked = lockedInventoryIds(db);
       const sealed = sealedPaletteInventoryIds(db);
       return db.prepare('SELECT id, item, created_at FROM inventory WHERE user_id = ? AND sold_at IS NULL ORDER BY created_at DESC, id')
-      .all(user.id).filter(row => !sealed.has(row.id))
+      .all(user.id).filter(row => !sealed.has(row.id) && !db.prepare('SELECT 1 FROM business_stock WHERE inventory_id = ? AND sold_at IS NULL').get(row.id))
       .map(row => {
         const item = currentItemValue(JSON.parse(row.item));
         return { ...item, id: row.id, createdAt: row.created_at,
@@ -528,6 +536,7 @@ export class Accounts {
       // Items in a live or ended-but-unsettled resale auction are locked; the
       // listing owns their fate until settlement moves the item to the winner.
       if (inventoryIsLocked(db, row.id)) fail('item_listed', 409);
+      if (db.prepare('SELECT 1 FROM business_stock WHERE inventory_id = ? AND sold_at IS NULL').get(row.id)) fail('item_stocked', 409);
       const item = currentItemValue(JSON.parse(row.item));
       if (row.sold_at === null) {
         db.prepare('UPDATE inventory SET sold_at = ? WHERE id = ?').run(this.now(), row.id);
@@ -548,6 +557,7 @@ export class Accounts {
       const rows = db.prepare('SELECT id, item FROM inventory WHERE user_id = ? AND sold_at IS NULL').all(user.id)
         .filter(row => collectibleIdentity(JSON.parse(row.item)) === identity && !sealed.has(row.id));
       const listed = lockedInventoryIds(db);
+      for (const row of rows) if (db.prepare('SELECT 1 FROM business_stock WHERE inventory_id = ? AND sold_at IS NULL').get(row.id)) fail('item_stocked', 409);
       if (rows.some(row => listed.has(row.id))) fail('item_listed', 409);
       const value = rows.reduce((sum, row) => sum + currentItemValue(JSON.parse(row.item)).sellValue, 0);
       const balance = db.prepare('SELECT tokens FROM users WHERE id = ?').get(user.id).tokens;

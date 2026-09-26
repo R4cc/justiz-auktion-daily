@@ -180,6 +180,7 @@ export function listItem(dataDir, user, { inventoryId, quantity = 1, startPrice,
     if (!row) fail('item_not_found', 404);
     if (row.sold_at !== null) fail('item_sold', 409);
     if (inventoryIsLocked(db, inventoryId)) fail('item_listed', 409);
+    if (db.prepare('SELECT 1 FROM business_stock WHERE inventory_id = ? AND sold_at IS NULL').get(inventoryId)) fail('item_stocked', 409);
     const identity = resaleIdentity(JSON.parse(row.item));
     // Sealed palette finds never join a batch: they are invisible in the
     // winner's inventory until their reveal stamps revealed_at.
@@ -187,7 +188,7 @@ export function listItem(dataDir, user, { inventoryId, quantity = 1, startPrice,
     const matches = db.prepare(`SELECT id, item FROM inventory
       WHERE user_id = ? AND sold_at IS NULL ORDER BY created_at, id`).all(user.id)
       .filter(candidate => resaleIdentity(JSON.parse(candidate.item)) === identity)
-      .filter(candidate => !inventoryIsLocked(db, candidate.id))
+      .filter(candidate => !inventoryIsLocked(db, candidate.id) && !db.prepare('SELECT 1 FROM business_stock WHERE inventory_id = ? AND sold_at IS NULL').get(candidate.id))
       .filter(candidate => !sealed.has(candidate.id));
     const requested = matches.find(candidate => candidate.id === inventoryId);
     const selected = requested ? [requested, ...matches.filter(candidate => candidate.id !== inventoryId)].slice(0, quantity) : [];

@@ -12,6 +12,7 @@ services:
       FEATURE_RESALES: ${FEATURE_RESALES:-true}
       FEATURE_PALETTES: ${FEATURE_PALETTES:-true}
       FEATURE_PALETTE_AUCTIONS: ${FEATURE_PALETTE_AUCTIONS:-true}
+      FEATURE_BUSINESSES: ${FEATURE_BUSINESSES:-true}
     user: "65532:65532"
     read_only: true
     cap_drop:

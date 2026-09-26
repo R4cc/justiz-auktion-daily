@@ -18,7 +18,7 @@ caseReveal.addEventListener('close', () => {
 });
 let accountSelectedCase = 'fundkiste', accountInventoryPage = 0, accountFilter = 'all';
 let currentAccountPage = null, accountVisit = 0, pageLoaded = false;
-const accountPaths = ['/auctions', '/marketplace', '/market', '/shop', '/inventory', '/profile', '/login', '/register', '/admin', '/leaderboard'];
+const accountPaths = ['/auctions', '/marketplace', '/market', '/businesses', '/shop', '/inventory', '/profile', '/login', '/register', '/admin', '/leaderboard'];
 const accountPage = document.querySelector('#account-page');
 const accountContent = document.querySelector('#account-content');
 const notificationButton = document.querySelector('#notification-button');
@@ -88,7 +88,7 @@ async function accountApi(route, payload) {
   return result;
 }
 function updateNavigation() {
-  const labels = { '/': 'Daily', '/shop': 'Shop', '/auctions': t('Palette Auctions', 'Paletten-Auktionen'), '/marketplace': t('Marketplace', 'Marktplatz'), '/market': t('Stock Market', 'Aktienmarkt'), '/inventory': t('Inventory', 'Inventar'), '/leaderboard': t('Leaderboard', 'Rangliste'), '/profile': t('Profile', 'Profil'), '/admin': 'Admin' };
+  const labels = { '/': 'Daily', '/shop': 'Shop', '/auctions': t('Palette Auctions', 'Paletten-Auktionen'), '/marketplace': t('Marketplace', 'Marktplatz'), '/market': t('Stock Market', 'Aktienmarkt'), '/businesses': t('Businesses', 'Geschaefte'), '/inventory': t('Inventory', 'Inventar'), '/leaderboard': t('Leaderboard', 'Rangliste'), '/profile': t('Profile', 'Profil'), '/admin': 'Admin' };
   for (const link of document.querySelectorAll('.site-nav a')) {
     if (link.id !== 'header-auth') link.textContent = labels[link.getAttribute('href')];
     if (link.pathname === location.pathname) link.setAttribute('aria-current', 'page'); else link.removeAttribute('aria-current');
@@ -200,6 +200,7 @@ const accountReady = Promise.all([accountApi('me'), catalogReady, economyReady])
 function showGamePage() {
   caseReveal.close(); auctionReveal.close();
   window.economyUi?.stop();
+  window.businessUi?.stop();
   currentAccountPage = null; accountVisit++; pageLoaded = false;
   accountPage.hidden = true; document.querySelector('#app').hidden = false;
   if (location.pathname !== '/') history.pushState({}, '', '/');
@@ -210,6 +211,7 @@ async function navigateAccountPage(path, push = true) {
   path = destination.pathname;
   caseReveal.close(); auctionReveal.close();
   window.economyUi?.stop();
+  window.businessUi?.stop();
   if (!accountPaths.includes(path)) { renderStart(); return; }
   if (push && location.pathname + location.search !== destination.pathname + destination.search) history.pushState({}, '', destination.pathname + destination.search);
   const visit = ++accountVisit;
@@ -238,6 +240,10 @@ async function navigateAccountPage(path, push = true) {
     const owner = account?.id;
     if (window.economyUi?.isRoute(path)) {
       await window.economyUi.load(path, visit);
+      if (visit !== accountVisit) return;
+    }
+    if (path === '/businesses') {
+      await window.businessUi.load(visit);
       if (visit !== accountVisit) return;
     }
     if (path === '/shop' || (path === '/inventory' && account)) {
@@ -288,6 +294,7 @@ function renderAccountPage() {
   // A temporary password from an admin reset allows exactly one thing next.
   if (account?.mustChangePassword) { renderPasswordChange(); return; }
   if (window.economyUi?.isRoute(currentAccountPage)) window.economyUi.render();
+  else if (currentAccountPage === '/businesses') window.businessUi.render();
   else if (currentAccountPage === '/shop') renderShop();
   else if (currentAccountPage === '/inventory') renderInventory();
   else if (currentAccountPage === '/profile') renderProfile();
@@ -335,7 +342,7 @@ function itemCard(item, controls = true) {
   const quickPrice = Math.max(1, Math.round((available || item).estimatedValueTokens * .7 || 1));
   const resaleControls = `<div class="item-actions"><button class="primary-button" data-economy="list" data-id="${listId}" ${available ? '' : 'disabled'}>${available ? t('List for auction', 'Zur Auktion anbieten') : t('Already listed', 'Bereits angeboten')}</button><button class="secondary-button" data-economy="quick-list" data-id="${listId}" data-price="${quickPrice}" ${available ? '' : 'disabled'}>${t('Quick list', 'Schnell anbieten')}<small>@ ${justizEuro(quickPrice)}</small></button></div>`;
   return `<article class="collection-item rarity-${accountEscape(item.rarity)}"><span class="rarity-label">${rarityLabel(item.rarity)}</span>${copies.length > 1 ? `<span class="item-count" aria-label="${copies.length} ${t('copies', 'Exemplare')}">×${copies.length}</span>` : ''}
-    <img src="${accountEscape(item.image)}" alt="" loading="lazy"><h3>${accountEscape(item.title)}</h3><p>${valueLine}</p>${item.estimatedValueTokens == null ? '' : `<p>${t('Estimated market value', 'Geschätzter Marktwert')} · ${justizEuro(item.estimatedValueTokens)}</p>`}
+    ${item.image ? `<img src="${accountEscape(item.image)}" alt="" loading="lazy">` : `<div class="collection-item-placeholder stock-${accountEscape(item.businessCategory || 'other')}" aria-hidden="true"><span>${accountEscape(({ wine: 'VIN', toys: 'TOY', electronics: 'TECH', cars: 'AUTO' })[item.businessCategory] || 'JG')}</span></div>`}<h3>${accountEscape(item.title)}</h3><p>${valueLine}</p>${item.estimatedValueTokens == null ? '' : `<p>${t('Estimated market value', 'Geschätzter Marktwert')} · ${justizEuro(item.estimatedValueTokens)}</p>`}
     ${economyFlags.resales && controls ? resaleControls : controls ? copies.length > 1 ? `<div class="item-actions"><button class="secondary-button" data-account="sell" data-id="${accountEscape(copies[0].id)}">${t('Sell one', 'Eins verkaufen')}<small>+${justizEuro(item.sellValue)}</small></button><button class="secondary-button" data-account="sell-all" data-id="${accountEscape(copies[0].id)}">${t('Sell all', 'Alle verkaufen')}<small>+${justizEuro(item.sellValue * copies.length)}</small></button></div>` : `<button class="secondary-button" data-account="sell" data-id="${accountEscape(item.id)}">${t('Sell', 'Verkaufen')} · ${justizEuro(item.sellValue)}</button>` : `<span class="item-value">${justizEuro(item.sellValue)}</span>`}</article>`;
 }
 function groupedInventory(items) {

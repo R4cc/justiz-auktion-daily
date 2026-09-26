@@ -14,6 +14,63 @@
   --radius: 18px;
 }
 
+.business-tabs { display: flex; gap: 0; margin: 22px 0 30px; border-bottom: 1px solid var(--line); }
+.business-tabs button { padding: 12px 18px; border: 0; border-bottom: 3px solid transparent; background: transparent; cursor: pointer; font-weight: 800; }
+.business-tabs button[aria-selected="true"] { border-bottom-color: var(--red); color: var(--red); }
+.business-purchase { display: grid; grid-template-columns: minmax(0, 1fr) minmax(300px, 420px); gap: 30px; padding: 10px 0 32px; border-bottom: 1px solid var(--line); }
+.business-purchase h2, .business-owned h2, .business-intro h2 { margin: 0 0 8px; font-size: 1.4rem; }
+.business-purchase p, .business-intro p { color: var(--muted); line-height: 1.6; }
+.business-purchase form { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; align-items: end; }
+.business-purchase label, .business-bid-form label { display: grid; gap: 6px; font-size: .82rem; font-weight: 700; }
+.business-purchase select, .business-bid-form input { width: 100%; min-width: 0; padding: 11px; border: 1px solid var(--line); background: #fff; border-radius: 4px; color: var(--ink); }
+.business-price { display: flex; flex-direction: column; gap: 3px; }
+.business-price span, .business-lot-bid span { color: var(--muted); font-size: .78rem; }
+.business-price strong { font-size: 1.4rem; }
+.business-purchase .account-error { grid-column: 1 / -1; margin: 0; }
+.business-owned { padding: 32px 0 50px; }
+.business-shop-grid, .business-lot-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 320px), 1fr)); gap: 16px; }
+.business-shop, .business-lot { min-width: 0; padding: 20px; border: 1px solid var(--line); border-radius: 6px; background: #fff; }
+.business-shop header { display: flex; align-items: start; justify-content: space-between; gap: 12px; border-bottom: 1px solid var(--line); padding-bottom: 14px; }
+.business-shop header span, .business-lot-category { color: var(--red); font-size: .71rem; font-weight: 800; text-transform: uppercase; }
+.business-shop h2 { margin: 5px 0 0; font-size: 1.1rem; }
+.business-shop header strong { white-space: nowrap; font: 700 .85rem "DM Mono", monospace; }
+.business-stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px 8px; margin: 18px 0; }
+.business-stats div { min-width: 0; }
+.business-stats dt { color: var(--muted); font-size: .7rem; }
+.business-stats dd { margin: 2px 0 0; font-size: .95rem; font-weight: 800; overflow-wrap: anywhere; }
+.business-stock { border-top: 1px solid var(--line); }
+.business-stock h3 { font-size: .85rem; }
+.business-stock ul { list-style: none; margin: 0; padding: 0; max-height: 220px; overflow: auto; }
+.business-stock li { display: flex; justify-content: space-between; gap: 10px; padding: 6px 0; font-size: .78rem; }
+.business-stock li strong { white-space: nowrap; }
+.business-stock li button { border: 0; background: transparent; color: var(--red); font-size: 1.1rem; line-height: 1; cursor: pointer; }
+.business-empty { color: var(--muted); font-size: .82rem; }
+.business-stock-form { margin-top: 18px; border-top: 1px solid var(--line); padding-top: 15px; }
+.business-stock-form fieldset { min-width: 0; padding: 0; border: 0; margin: 0 0 12px; }
+.business-stock-form legend { font-size: .85rem; font-weight: 800; margin-bottom: 8px; }
+.business-stock-choices { max-height: 220px; overflow: auto; border: 1px solid var(--line); }
+.business-stock-choices label { display: flex; gap: 8px; align-items: center; padding: 8px; border-bottom: 1px solid var(--line); font-size: .77rem; cursor: pointer; }
+.business-stock-choices label:last-child { border-bottom: 0; }
+.business-stock-choices label span { flex: 1; min-width: 0; }
+.business-stock-choices small { color: var(--muted); white-space: nowrap; }
+.business-stock-form > small { display: inline-block; margin-left: 10px; color: var(--muted); }
+.business-auctions { padding-bottom: 50px; }
+.business-intro { max-width: 680px; margin-bottom: 25px; }
+.business-bid-history { margin-bottom: 26px; border-top: 1px solid var(--line); }
+.business-bid-history h3 { font-size: 1rem; }
+.business-bid-history ul { list-style: none; padding: 0; margin: 0; }
+.business-bid-history li { display: flex; align-items: baseline; gap: 12px; padding: 9px 0; border-bottom: 1px solid var(--line); font-size: .83rem; }
+.business-bid-history li span { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.business-bid-history li small { color: var(--muted); white-space: nowrap; }
+.business-lot h3 { margin: 8px 0; font-size: 1.05rem; overflow-wrap: anywhere; }
+.business-lot > p { color: var(--muted); font-size: .78rem; line-height: 1.5; }
+.business-lot-bid { display: flex; flex-direction: column; margin: 16px 0; }
+.business-lot-bid strong { font-size: 1.35rem; }
+.business-bid-form { display: grid; grid-template-columns: 1fr auto; gap: 8px; align-items: end; }
+.business-bid-form .account-error { grid-column: 1 / -1; margin: 0; }
+@media (max-width: 700px) { .business-purchase { grid-template-columns: 1fr; gap: 12px; } }
+@media (max-width: 410px) { .business-purchase form { grid-template-columns: 1fr; } .business-stats { grid-template-columns: repeat(2, 1fr); } }
+
 
 * { box-sizing: border-box; }
 
@@ -666,6 +723,11 @@ button:focus-visible, a:focus-visible { outline: 3px solid var(--red); outline-o
 .rarity-common { --rarity: #83919c; } .rarity-uncommon { --rarity: #4d79c7; } .rarity-rare { --rarity: #8262c7; } .rarity-epic { --rarity: #c65391; } .rarity-legendary { --rarity: #c89520; }
 .rarity-label { font: 10px 'DM Mono', monospace; text-transform: uppercase; letter-spacing: 1px; border-left: 3px solid var(--rarity); padding-left: 7px; }
 .collection-item img { display: block; width: 100%; height: 130px; object-fit: contain; margin: 12px 0; border-radius: 6px; background: #fff; }
+.collection-item-placeholder { display: grid; place-items: center; height: 130px; margin: 12px 0; border-radius: 6px; background: #dce9e0; color: #234e43; font: 800 1.3rem "DM Mono", monospace; }
+.collection-item-placeholder.stock-wine { background: #eadce1; color: #823f55; }
+.collection-item-placeholder.stock-toys { background: #f6e8bb; color: #735120; }
+.collection-item-placeholder.stock-electronics { background: #dce7ed; color: #284d63; }
+.collection-item-placeholder.stock-cars { background: #e2e4e1; color: #424b45; }
 .collection-item h3 { font-size: 13px; line-height: 1.5; margin: 0 0 8px; overflow-wrap: anywhere; }
 .collection-item p { margin: auto 0 12px; font-size: 11px; color: var(--muted); }
 .market-delta { margin-left: 6px; padding: 2px 6px; border-radius: 6px; font: 700 10px 'DM Mono', monospace; white-space: nowrap; }
@@ -709,7 +771,7 @@ button:focus-visible, a:focus-visible { outline: 3px solid var(--red); outline-o
   .case-stage-heading { font-size: 8px; letter-spacing: .5px; padding: 0 12px 16px; }
   .case-result h2 { font-size: 18px; } .case-open { min-height: 48px; padding: 10px 16px; font-size: 12px; }
   .inventory-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
-  .collection-item { padding: 10px; } .collection-item img { height: 100px; }
+  .collection-item { padding: 10px; } .collection-item img, .collection-item-placeholder { height: 100px; }
   .code-form { flex-wrap: wrap; } .fresh-codes textarea { font-size: 11px; }
 }
 @media (prefers-reduced-motion: reduce) { .case-reel { will-change: auto; } }

@@ -9,6 +9,7 @@ export function featureFlags(env = process.env) {
     market: enabled(env.FEATURE_MARKET),
     resales: enabled(env.FEATURE_RESALES),
     palettes: enabled(env.FEATURE_PALETTES),
-    paletteAuctions: enabled(env.FEATURE_PALETTE_AUCTIONS)
+    paletteAuctions: enabled(env.FEATURE_PALETTE_AUCTIONS),
+    businesses: enabled(env.FEATURE_BUSINESSES)
   };
 }

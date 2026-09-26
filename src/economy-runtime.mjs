@@ -7,6 +7,7 @@ import { tickMarketDrift } from './market.mjs';
 import { tickNpcBuyers, tickPaletteBuyers } from './npc-buyers.mjs';
 import { tickWorldNews } from './world-news.mjs';
 import { AccountError } from './errors.mjs';
+import { tickBusinesses } from './businesses.mjs';
 
 // The board targets ten concurrent one-hour lots. One drop window every
 // duration/target (six minutes) keeps their ends evenly staggered, and a lot
@@ -69,12 +70,13 @@ export function tickEconomy(dataDir, { now = Date.now(), flags = featureFlags() 
     run('buyers', () => tickNpcBuyers(dataDir, { now }));
     run('paletteBuyers', () => tickPaletteBuyers(dataDir, { now }));
   }
+  if (flags.businesses) run('businesses', () => tickBusinesses(dataDir, { now }));
   return { ...result, failures };
 }
 
 export function startEconomyRuntime(dataDir, { flags = featureFlags(), now = Date.now,
   onError = result => console.error('Economy tick needs attention:', result) } = {}) {
-  if (!flags.news && !flags.paletteAuctions && !flags.resales) return () => {};
+  if (!flags.news && !flags.paletteAuctions && !flags.resales && !flags.businesses) return () => {};
   let stopped = false, timer;
   const tick = () => {
     if (stopped) return;

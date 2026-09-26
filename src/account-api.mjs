@@ -10,6 +10,7 @@ import { bidOnPaletteAuction, createPaletteAuction, getPaletteAuctionRewards, pa
 import { archivedListingsBidOnByUser, cancelListing, listItem, listingsBidOnByUser, listingsByUser, placeBid } from './resale.mjs';
 import { maskLeaderboard } from './username-privacy.mjs';
 import { markNotificationsRead, notificationsForUser } from './notifications.mjs';
+import { bidWholesale, businessDashboard, buyBusiness, stockBusiness, unstockBusiness } from './businesses.mjs';
 
 const AUCTION_PAGE_SIZE = 25;
 
@@ -88,6 +89,7 @@ export async function createAccountApi({ dataDir, dailyPayload, json, env = proc
           else if (route === 'resale/bids' && flags.resales) json(response, 200, { listings: listingsBidOnByUser(dataDir, user.id) });
           else if (route === 'resale/bids/archived' && flags.resales) json(response, 200, { listings: archivedListingsBidOnByUser(dataDir, user.id) });
           else if (route === 'palette-auctions' && flags.paletteAuctions) json(response, 200, { auctions: paletteAuctionsByUser(dataDir, user, { limit: Number(url.searchParams.get('limit')) || 50, offset: Number(url.searchParams.get('offset')) || 0 }) });
+          else if (route === 'businesses' && flags.businesses) json(response, 200, businessDashboard(dataDir, user));
           else if (route === 'friends') json(response, 200, accounts.friends(user));
           else if (route === 'codes') json(response, 200, { codes: accounts.listCodes(user) });
           else if (route === 'admin') json(response, 200, accounts.adminOverview(user));
@@ -169,6 +171,10 @@ export async function createAccountApi({ dataDir, dailyPayload, json, env = proc
         // handling all live in the domain function.
         result = { auction: bidOnPaletteAuction(dataDir, user, payload.id, payload.amount), user: accounts.profile(user) };
       }
+      else if (flags.businesses && route === 'businesses/buy') result = { ...buyBusiness(dataDir, user, payload.type, payload.size), user: accounts.profile(user) };
+      else if (flags.businesses && route === 'businesses/stock') result = { shop: stockBusiness(dataDir, user, payload.shopId, payload.inventoryIds), user: accounts.profile(user) };
+      else if (flags.businesses && route === 'businesses/unstock') result = { shop: unstockBusiness(dataDir, user, payload.shopId, payload.inventoryId), user: accounts.profile(user) };
+      else if (flags.businesses && route === 'wholesale/bid') result = { auction: bidWholesale(dataDir, user, payload.id, payload.amount), user: accounts.profile(user) };
       else if (flags.paletteAuctions && route === 'admin/palette-auctions') {
         // Narrow test/operations surface for trusted lot creation. Only
         // editionId and requestId reach the domain; callers cannot inject a

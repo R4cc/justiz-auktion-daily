@@ -312,6 +312,6 @@ test('authenticated My bids endpoint discovers a settled win without revealing r
 test('features discovery and participation history preserve independent flags', async t => {
   const { base, adminCookie } = await fixture(t, { ADMIN_USERNAME: 'admin', ADMIN_PASSWORD: password, FEATURE_RESALES: 'true' });
   const result = await fetch(base + '/api/features').then(r => r.json());
-  assert.deepEqual(result.features, { news: false, market: false, resales: true, palettes: false, paletteAuctions: false });
+  assert.deepEqual(result.features, { news: false, market: false, resales: true, palettes: false, paletteAuctions: false, businesses: true });
   assert.equal((await fetch(base + '/api/account/palette-auctions', { headers: { cookie: adminCookie } })).status, 404);
 });
