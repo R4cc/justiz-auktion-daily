@@ -245,7 +245,7 @@ test('marketplace tabs show one context at a time with ended history inside its 
 test('own live-listing cards keep the standard layout, hide the seller and cancel only without bids', () => {
   const context = vm.createContext({ account: { id: 'seller', tokens: 100, progression: { level: 1 } }, tab: 'mine', data: { mine: [] },
     t: en => en, esc: String, status: () => 'Active', justizEuro: value => `J€ ${value}`,
-    bidFacts: () => '<div class="economy-bid"></div>', categoryName: () => 'Other' });
+    bidFacts: () => '<div class="economy-bid"></div>', categoryName: () => 'Other', stockLotArtwork: () => null });
   vm.runInContext(extract(uiSource, '  function lotCard(', '  function render('), context);
   const lot = { id: 'mine', status: 'active', sellerUsername: 'Seller', estimatedValueTokens: 80,
     currentBid: null, startPrice: 20, bidCount: 0, requiredLevel: 1, quantity: 1, item: { title: 'Radio' } };
@@ -265,7 +265,7 @@ test('archived bid cards mark wins green and losses red once the auction ended',
     account: { id: 'player', tokens: 100, progression: { level: 2 } }, tab: 'public', data: { mine: [] },
     t: en => en, esc: String, name: lot => lot.name, status: () => 'Ended',
     justizEuro: value => `J€ ${value}`, bidFacts: () => '',
-    paletteArtwork: () => '<div class="palette-artwork"></div>', categoryName: () => 'Other' });
+    paletteArtwork: () => '<div class="palette-artwork"></div>', categoryName: () => 'Other', stockLotArtwork: () => null });
   vm.runInContext(extract(uiSource, '  function lotCard(', '  function render('), context);
   const item = { title: 'Radio', image: null, marketCategory: 'electronics' };
   const won = vm.runInContext(`lotCard(${JSON.stringify({ id: 'w', status: 'ended', won: true, leading: false,
@@ -439,6 +439,21 @@ test('progression terminal state and active economy routes remain in syntax veri
   assert.match(index, /id="notification-button"[\s\S]*class="notification-badge"[\s\S]*id="notification-panel"[\s\S]*id="notification-toasts"/);
   assert.match(index, /JUSTIZGUESSR is a fictional game/);
   assert.match(index, /No real money is used/);
+});
+
+test('bulk stock listings show category artwork in cards and the auction room', () => {
+  const context = vm.createContext({ t: en => en, esc: String, paletteArtwork: () => '' });
+  vm.runInContext(extract(uiSource, '  const stockSymbols =', '  const remaining =')
+    + extract(uiSource, '  function auctionMedia(', '  function auctionContents('), context);
+  for (const type of ['wine', 'toys', 'electronics', 'cars']) {
+    const listing = { item: { businessCategory: type, image: null, title: type } };
+    const card = vm.runInContext(`stockLotArtwork(${JSON.stringify(listing)})`, context);
+    const room = vm.runInContext(`auctionMedia(${JSON.stringify(listing)}, false)`, context);
+    assert.match(card, new RegExp(`stock-lot-art-${type}`));
+    assert.match(card, /<svg/);
+    assert.match(room, new RegExp(`stock-lot-art-${type}`));
+    assert.doesNotMatch(room, /◇/);
+  }
 });
 
 test('market chart labels both axes, adapts short time ranges, and keeps readable history', () => {

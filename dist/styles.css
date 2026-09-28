@@ -916,6 +916,12 @@ button:focus-visible, a:focus-visible { outline: 3px solid var(--red); outline-o
 .auction-room-media > .palette-artwork { flex: 1; min-height: 240px; }
 .palette-mystery-caption { text-align: center; font: 12px/1.6 'DM Mono', monospace; color: var(--muted); }
 .economy-lot-image img { display: block; width: 100%; height: 148px; min-height: 0; object-fit: contain; padding: 12px; }
+.stock-lot-art { display: grid; place-items: center; width: 100%; height: 100%; color: var(--ink); background: radial-gradient(circle at 50% 45%, #fffdf7 0 30%, #dce6d8 72%); }
+.stock-lot-art svg { display: block; width: 108px; height: 108px; }
+.stock-lot-art-wine { background: radial-gradient(circle at 50% 45%, #fff8ee 0 30%, #e7dbd8 72%); }
+.stock-lot-art-toys { background: radial-gradient(circle at 50% 45%, #fffaf0 0 30%, #e9e1c9 72%); }
+.stock-lot-art-electronics { background: radial-gradient(circle at 50% 45%, #f6fbfc 0 30%, #d7e4e6 72%); }
+.stock-lot-art-cars { background: radial-gradient(circle at 50% 45%, #f9fbf5 0 30%, #d7e0d6 72%); }
 .economy-badge { position: absolute; bottom: 10px; left: 10px; padding: 4px 9px; border-radius: 6px; background: var(--ink); color: var(--paper); font: 10px 'DM Mono', monospace; }
 .auction-state-badge { position: absolute; top: 10px; right: 10px; padding: 5px 8px; border: 1px solid currentColor; border-radius: 99px; background: var(--paper); color: var(--ink); font: 800 9px/1 'DM Mono', monospace; letter-spacing: .08em; }
 .economy-lot.is-leading .auction-state-badge { background: var(--green); color: #fff; }
@@ -1005,6 +1011,8 @@ button:focus-visible, a:focus-visible { outline: 3px solid var(--red); outline-o
 .auction-room-thumbs button[aria-pressed="true"] { border: 2px solid var(--red); box-shadow: 0 3px 0 #893619; }
 .auction-room-thumbs img { width: 100%; height: 100%; object-fit: contain; }
 .auction-room-placeholder { display: grid; flex: 1; min-height: 300px; place-items: center; color: var(--muted); font-size: 80px; }
+.auction-room-media > .stock-lot-art { flex: 1; min-height: 300px; border-radius: 12px; }
+.auction-room-media > .stock-lot-art svg { width: min(45%, 230px); height: auto; }
 .auction-room-story { padding: 42px 30px 30px; overflow-y: auto; }
 .auction-room-story h2 { margin: 8px 0 22px; font-size: clamp(27px, 3vw, 42px); line-height: 1.05; }
 .auction-room-story h3 { margin: 0 0 10px; font-size: 17px; }

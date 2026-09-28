@@ -37,6 +37,9 @@ test('stock batches use marketplace escrow, bid history, and inventory transfer'
   supplyStockAuctions(f.dir, { now: start });
   const lots = listResales(f.dir, { now: start });
   assert.equal(lots.length, 8);
+  assert.equal(new Set(lots.map(lot => lot.endsAt)).size, 8);
+  assert.ok(lots.every(lot => lot.endsAt - lot.startedAt === 2 * hour));
+  assert.deepEqual(new Set(lots.map(lot => lot.item.businessCategory)), new Set(['wine', 'toys', 'electronics', 'cars']));
   const wine = lots.find(lot => lot.item.title === 'Wachau Riesling 2022');
   assert.equal(wine.quantity, 24);
   assert.equal(wine.startPrice, 432);
@@ -59,6 +62,41 @@ test('stock batches use marketplace escrow, bid history, and inventory transfer'
   assert.equal(getResale(f.dir, wine.id, { now: start + 2 * hour }).winnerId, 'owner');
   assert.equal(f.count('account_notifications', "source_key LIKE 'resale:won:%'"), 1);
   assert.throws(() => placeBid(f.dir, f.rival, wine.id, 1000, { now: start + 2 * hour }), /auction_ended/);
+});
+
+test('stock supply rotates one batch every 15 minutes and fills the board after downtime', async t => {
+  const f = await fixture(t);
+  const first = listResales(f.dir, { now: start });
+  assert.equal(first.length, 0);
+  supplyStockAuctions(f.dir, { now: start });
+  const initial = listResales(f.dir, { now: start });
+  supplyStockAuctions(f.dir, { now: start + 15 * 60_000 });
+  const next = listResales(f.dir, { now: start + 15 * 60_000 });
+  assert.equal(next.length, 8);
+  assert.equal(next.filter(lot => !initial.some(previous => previous.id === lot.id)).length, 1);
+  assert.equal(next.filter(lot => !initial.some(previous => previous.id === lot.id))[0].item.title, 'Modular building set');
+  supplyStockAuctions(f.dir, { now: start + 2 * hour });
+  const nextCycle = listResales(f.dir, { now: start + 2 * hour });
+  assert.equal(nextCycle.length, 8);
+  assert.equal(new Set(nextCycle.map(lot => lot.endsAt)).size, 8);
+  const sparse = await fixture(t);
+  supplyStockAuctions(sparse.dir, { now: start + 61 * 60_000 });
+  assert.equal(listResales(sparse.dir, { now: start + 61 * 60_000 }).length, 8);
+});
+
+test('upgrade staggers a live stock listing without shortening its bid window', async t => {
+  const f = await fixture(t);
+  const at = start + 61 * 60_000;
+  supplyStockAuctions(f.dir, { now: at });
+  const blocks = listResales(f.dir, { now: at }).find(lot => lot.item.title === 'Modular building set');
+  placeBid(f.dir, f.owner, blocks.id, blocks.startPrice, { now: at + 1000 });
+  f.accounts.db(db => db.prepare('UPDATE resale_auctions SET started_at = ?, ends_at = ? WHERE id = ?')
+    .run(start, start + 2 * hour, blocks.id));
+  supplyStockAuctions(f.dir, { now: at + 2000 });
+  const updated = getResale(f.dir, blocks.id, { now: at + 2000 });
+  assert.equal(updated.endsAt, start + 2 * hour + 15 * 60_000);
+  assert.equal(updated.currentBidderId, 'owner');
+  assert.equal(f.balance('owner'), 1000 - blocks.startPrice);
 });
 
 test('existing stock bids migrate to marketplace without charging escrow twice', async t => {

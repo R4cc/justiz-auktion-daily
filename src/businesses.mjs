@@ -8,6 +8,7 @@ import { ensureNotificationSchema } from './notifications.mjs';
 
 const HOUR = 3_600_000;
 const WHOLESALE_PERIOD = 2 * HOUR;
+const WHOLESALE_SLOT = 15 * 60_000;
 const STOCK_SELLER_ID = 'npc-stock-supply';
 const fail = (code, status = 400) => { throw new AccountError(code, status); };
 const hashNumber = value => parseInt(createHash('sha256').update(value).digest('hex').slice(0, 8), 16) / 0x100000000;
@@ -28,12 +29,12 @@ export const SHOP_SIZES = [
 // Fictional, repeatable NPC lots. Prices are per unit; bids buy the whole batch.
 export const WHOLESALE_STOCK = [
   { id: 'riesling', type: 'wine', title: 'Wachau Riesling 2022', quantity: 24, price: 24 },
-  { id: 'redwine', type: 'wine', title: 'Burgenland Red 2021', quantity: 12, price: 46 },
   { id: 'blocks', type: 'toys', title: 'Modular building set', quantity: 18, price: 32 },
-  { id: 'puzzle', type: 'toys', title: 'Wooden puzzle set', quantity: 24, price: 19 },
   { id: 'headphones', type: 'electronics', title: 'Wireless headphones', quantity: 10, price: 95 },
-  { id: 'tablet', type: 'electronics', title: '10-inch tablet', quantity: 6, price: 190 },
   { id: 'citycar', type: 'cars', title: 'Compact city car', quantity: 2, price: 1900 },
+  { id: 'redwine', type: 'wine', title: 'Burgenland Red 2021', quantity: 12, price: 46 },
+  { id: 'puzzle', type: 'toys', title: 'Wooden puzzle set', quantity: 24, price: 19 },
+  { id: 'tablet', type: 'electronics', title: '10-inch tablet', quantity: 6, price: 190 },
   { id: 'estate', type: 'cars', title: 'Used estate car', quantity: 2, price: 3600 }
 ];
 
@@ -271,13 +272,33 @@ export function supplyStockAuctions(dataDir, { now = Date.now() } = {}) {
       }
       db.prepare('UPDATE wholesale_auctions SET settled_at = ? WHERE id = ?').run(now, row.id);
     }
-    const bucket = Math.floor(now / WHOLESALE_PERIOD), startsAt = bucket * WHOLESALE_PERIOD;
+    const bucket = Math.floor(now / WHOLESALE_PERIOD);
+    // Lots created by the old scheduler all started and ended together. Keep
+    // their existing bid windows intact, then extend later slots to their new
+    // staggered deadlines. A live bid is never cut short during the upgrade.
+    for (const row of db.prepare(`SELECT id, started_at, ends_at FROM resale_auctions
+      WHERE seller_id = ? AND status = 'active' AND ends_at > ?`).all(STOCK_SELLER_ID, now)) {
+      const stockIndex = WHOLESALE_STOCK.findIndex(stock => row.id === lotId(Math.floor(row.started_at / WHOLESALE_PERIOD), stock.id));
+      if (stockIndex < 1 || row.started_at % WHOLESALE_PERIOD !== 0 || row.ends_at !== row.started_at + WHOLESALE_PERIOD) continue;
+      db.prepare('UPDATE resale_auctions SET ends_at = ? WHERE id = ?')
+        .run(row.ends_at + stockIndex * WHOLESALE_SLOT, row.id);
+    }
     let supplied = 0;
-    for (const stock of WHOLESALE_STOCK) {
-      const id = lotId(bucket, stock.id);
-      if (db.prepare('SELECT 1 FROM wholesale_auctions WHERE id = ?').get(id)) continue;
-      const reserve = Math.max(1, Math.round(stock.price * stock.quantity * .75));
-      if (createStockListing(db, { id, stock, startsAt, endsAt: startsAt + WHOLESALE_PERIOD, reserve })) supplied++;
+    // At any moment one slot for each stock item is live. Include the
+    // previous cycle on cold start or after downtime so the board is filled
+    // without creating expired listings or duplicate active batches.
+    for (const cycle of [bucket - 1, bucket]) {
+      for (const [slot, stock] of WHOLESALE_STOCK.entries()) {
+        const startsAt = cycle * WHOLESALE_PERIOD + slot * WHOLESALE_SLOT;
+        const endsAt = startsAt + WHOLESALE_PERIOD;
+        if (startsAt > now || endsAt <= now) continue;
+        const id = lotId(cycle, stock.id);
+        if (cycle === bucket - 1 && db.prepare(`SELECT 1 FROM resale_auctions
+          WHERE id = ? AND status = 'active' AND ends_at > ?`).get(lotId(bucket, stock.id), now)) continue;
+        if (db.prepare('SELECT 1 FROM wholesale_auctions WHERE id = ?').get(id)) continue;
+        const reserve = Math.max(1, Math.round(stock.price * stock.quantity * .75));
+        if (createStockListing(db, { id, stock, startsAt, endsAt, reserve })) supplied++;
+      }
     }
     return { supplied };
   }));

@@ -27,6 +27,16 @@ window.economyUi = (() => {
     other: ['Other', 'Sonstiges']
   };
   const categoryName = id => categoryNames[id] ? t(...categoryNames[id]) : t('Mixed finds', 'Gemischte Fundstücke');
+  const stockSymbols = {
+    wine: '<path d="M31 9h18v13l5 9v36a7 7 0 0 1-7 7H33a7 7 0 0 1-7-7V31l5-9V9Zm-5 31h28M35 9v13h10V9M64 34h18v10c0 8-4 12-9 12s-9-4-9-12V34Zm9 22v15m-8 3h16"/>',
+    toys: '<rect x="14" y="43" width="28" height="28" rx="3"/><rect x="44" y="43" width="28" height="28" rx="3"/><rect x="29" y="13" width="28" height="28" rx="3"/><path d="M20 43v-7h7v7m9 0v-7h7m7 7v-7h7v7m9 0v-7h7v7M14 58h28m2 0h28M29 27h28"/>',
+    electronics: '<path d="M17 50V39a31 31 0 0 1 62 0v11M17 48h10a5 5 0 0 1 5 5v17a5 5 0 0 1-5 5H22a8 8 0 0 1-8-8V56a8 8 0 0 1 8-8Zm62 0H69a5 5 0 0 0-5 5v17a5 5 0 0 0 5 5h5a8 8 0 0 0 8-8V56a8 8 0 0 0-8-8ZM18 39a31 31 0 0 1 62 0"/>',
+    cars: '<path d="m14 53 8-23a8 8 0 0 1 7-5h39a8 8 0 0 1 7 5l8 23M13 53h70a6 6 0 0 1 6 6v15H7V59a6 6 0 0 1 6-6Zm8 21v7h12v-7m30 0v7h12v-7M21 61h13m28 0h13M26 36h44"/>'
+  };
+  function stockLotArtwork(lot) {
+    const type = lot.item?.businessCategory, symbol = stockSymbols[type];
+    return symbol ? `<div class="stock-lot-art stock-lot-art-${type}" aria-hidden="true"><svg viewBox="0 0 96 96" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">${symbol}</svg></div>` : null;
+  }
   const remaining = end => {
     const seconds = Math.max(0, Math.ceil((end - Date.now()) / 1000));
     if (!seconds) return t('Ended', 'Beendet');
@@ -178,7 +188,7 @@ window.economyUi = (() => {
         : view === 'mine-done' && lot.winnerId ? `${t('Final sale', 'Verkaufspreis')}: ${justizEuro(lot.currentBid)}` : '';
     // A listing with bids cannot be cancelled; the rule lives in the backend.
     const cancellable = view === 'mine-live' && lot.status === 'active' && !lot.bidCount;
-    return `<article class="economy-lot${borderState}" data-economy="${primary ? 'primary' : 'resale'}" data-id="${esc(lot.id)}" role="button" tabindex="0" aria-label="${esc(`${cardAction}: ${displayTitle}`)}"><div class="economy-lot-image">${primary ? paletteArtwork(lot) : image ? `<img src="${esc(image)}" alt="" loading="lazy">` : '<span aria-hidden="true">◇</span>'}
+    return `<article class="economy-lot${borderState}" data-economy="${primary ? 'primary' : 'resale'}" data-id="${esc(lot.id)}" role="button" tabindex="0" aria-label="${esc(`${cardAction}: ${displayTitle}`)}"><div class="economy-lot-image">${primary ? paletteArtwork(lot) : image ? `<img src="${esc(image)}" alt="" loading="lazy">` : stockLotArtwork(lot) || '<span aria-hidden="true">◇</span>'}
       ${primary ? '' : `<span class="economy-badge">${esc(categoryName(lot.item.marketCategory))}</span><span class="auction-state-badge">${resaleState}</span>`}</div>
       <div class="economy-lot-body"><h2>${esc(displayTitle)}</h2>
       ${primary ? `<div class="palette-seal" aria-hidden="true"><span>01 ◇</span><span>02 ◇</span><span>03 ◇</span></div>`
@@ -304,7 +314,7 @@ window.economyUi = (() => {
     if (primary) return `${paletteArtwork(lot)}<p class="palette-mystery-caption">${t('Sealed until your winning reveal.', 'Versiegelt bis zur Aufdeckung deines Gewinns.')}</p>`;
     const items = [lot.item];
     const images = items.filter(item => item?.image);
-    if (!images.length) return `<div class="auction-room-placeholder" aria-hidden="true">◇</div>`;
+    if (!images.length) return stockLotArtwork(lot) || `<div class="auction-room-placeholder" aria-hidden="true">◇</div>`;
     const first = images[0];
     return `<figure class="auction-room-main-image"><img data-auction-main-image src="${esc(first.image)}" alt="${esc(first.title || '')}"><figcaption data-auction-caption>${esc(first.title || '')}</figcaption></figure>
       ${images.length > 1 ? `<div class="auction-room-thumbs" role="group" aria-label="${primary ? t('Sealed palette illustration', 'Illustration der versiegelten Palette') : t('Auction pictures', 'Auktionsbilder')}">${images.map((item, index) => `<button type="button" data-economy="gallery" data-src="${esc(item.image)}" data-alt="${esc(item.title || '')}" aria-pressed="${index === 0}" aria-label="${esc(item.title || t('Auction picture', 'Auktionsbild'))}"><img src="${esc(item.image)}" alt=""></button>`).join('')}</div>` : ''}`;
