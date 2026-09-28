@@ -148,18 +148,23 @@ window.businessUi = (() => {
       `${selected} / ${space} ${t('spaces selected', 'Plätze ausgewählt')}`;
     restockDialog.querySelector('button[type="submit"]').disabled = busy || selected < 1 || selected > space;
   }
+  function renderRestockDialog(quantities = []) {
+    const shop = dashboard?.shops.find(entry => entry.id === restockShopId);
+    if (!shop) return;
+    const space = shop.capacity - shop.stock.length;
+    restockDialog.innerHTML = `<form id="business-restock-form"><header class="business-dialog-header"><div><p class="eyebrow">${t('INVENTORY', 'INVENTAR')}</p><h2 id="business-restock-title">${t('Restock', 'Waren einräumen')} · ${esc(typeName(shop.type))}</h2></div><button class="dialog-close" type="button" data-business="close-restock" aria-label="${t('Close', 'Schließen')}">×</button></header>
+      <div class="business-dialog-options"><p>${space} ${t('spaces available. Choose how many of each item to stock.', 'Plätze frei. Wähle die Anzahl je Artikel.')}</p>
+        <button class="secondary-button" type="button" data-business="auto-restock">${t('Auto fill for variety', 'Automatisch vielfältig füllen')}</button>
+        <div class="business-restock-list">${restockGroups.map((group, index) => `<label class="business-restock-row"><span><strong>${esc(group.title)}</strong><small>${group.items.length} ${t('available', 'verfügbar')} · ${justizEuro(Math.round(group.price))} ${t('each', 'pro Stück')}</small></span><input type="number" name="quantity" data-index="${index}" min="0" max="${Math.min(space, group.items.length)}" step="1" value="${quantities[index] || 0}" inputmode="numeric" aria-label="${esc(group.title)} ${t('quantity', 'Anzahl')}"></label>`).join('')}</div></div>
+      <footer class="business-dialog-footer"><div><strong data-restock-summary></strong><p class="account-error" role="alert"></p></div><button class="primary-button" type="submit" disabled>${t('Restock selected', 'Auswahl einräumen')}</button></footer></form>`;
+    updateRestockSelection();
+  }
   function openRestockDialog(button) {
     const shop = dashboard?.shops.find(entry => entry.id === button.dataset.shop);
     if (!shop || !account || shop.stock.length >= shop.capacity) return;
     restockShopId = shop.id; restockReturnFocus = button;
     restockGroups = groupedRestockItems(dashboard.inventory.filter(item => item.type === shop.type));
-    const space = shop.capacity - shop.stock.length;
-    restockDialog.innerHTML = `<form id="business-restock-form"><header class="business-dialog-header"><div><p class="eyebrow">${t('INVENTORY', 'INVENTAR')}</p><h2 id="business-restock-title">${t('Restock', 'Waren einräumen')} · ${esc(typeName(shop.type))}</h2></div><button class="dialog-close" type="button" data-business="close-restock" aria-label="${t('Close', 'Schließen')}">×</button></header>
-      <div class="business-dialog-options"><p>${space} ${t('spaces available. Choose how many of each item to stock.', 'Plätze frei. Wähle die Anzahl je Artikel.')}</p>
-        <button class="secondary-button" type="button" data-business="auto-restock">${t('Auto fill for variety', 'Automatisch vielfältig füllen')}</button>
-        <div class="business-restock-list">${restockGroups.map((group, index) => `<label class="business-restock-row"><span><strong>${esc(group.title)}</strong><small>${group.items.length} ${t('available', 'verfügbar')} · ${justizEuro(Math.round(group.price))} ${t('each', 'pro Stück')}</small></span><input type="number" name="quantity" data-index="${index}" min="0" max="${Math.min(space, group.items.length)}" step="1" value="0" inputmode="numeric" aria-label="${esc(group.title)} ${t('quantity', 'Anzahl')}"></label>`).join('')}</div></div>
-      <footer class="business-dialog-footer"><div><strong data-restock-summary></strong><p class="account-error" role="alert"></p></div><button class="primary-button" type="submit" disabled>${t('Restock selected', 'Auswahl einräumen')}</button></footer></form>`;
-    updateRestockSelection();
+    renderRestockDialog();
     restockDialog.showModal();
     restockDialog.querySelector('input[name="quantity"]')?.focus({ preventScroll: true });
   }
@@ -249,6 +254,10 @@ window.businessUi = (() => {
   document.addEventListener('jg:language', () => {
     if (currentAccountPage === '/businesses') render();
     if (purchaseDialog.open) renderPurchaseDialog();
+    if (restockDialog.open) {
+      const quantities = [...restockDialog.querySelectorAll('input[name="quantity"]')].map(input => Number(input.value));
+      renderRestockDialog(quantities);
+    }
   });
   return { load, stop, render };
 })();

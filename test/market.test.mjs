@@ -5,9 +5,10 @@ import os from 'node:os';
 import path from 'node:path';
 import { CASES, caseCatalog } from '../src/cases.mjs';
 import { Accounts } from '../src/accounts.mjs';
+import { ensureNewsSchema } from '../src/news.mjs';
 import { closeDataStore, upsertAuctions, withDatabase } from '../src/database.mjs';
 import { DEFAULT_MARKET_INDEX, MARKET_CATEGORIES, estimatedValueTokens, marketCategoryForAuction, marketCategoryForItem,
-  marketCategoryForListingCategory, marketCategoryForTheme, marketHistory, marketState,
+  marketCategoryForListingCategory, marketCategoryForTheme, markSimulationActivation, marketHistory, marketState,
   setMarketIndex, snapshotMarketState, tickMarketDrift } from '../src/market.mjs';
 
 const day = Date.parse('2026-09-12T12:00:00Z');
@@ -151,4 +152,23 @@ test('market trends persist across weeks, mix gains and losses, and stay within 
   const final = index(day + 30 * 24 * 3600_000);
   closeDataStore(dir);
   assert.deepEqual(index(day + 30 * 24 * 3600_000), final);
+});
+
+test('old drift is carried into the first trend without doubling chart history', async t => {
+  const dir = await fixture(t);
+  marketState(dir, { now: day - 4 * 3600_000 });
+  withDatabase(dir, db => {
+    ensureNewsSchema(db);
+    markSimulationActivation(db, day - 4 * 3600_000);
+    db.prepare(`INSERT INTO market_effects
+      (source_id, event_id, category, delta, starts_at, ends_at)
+      VALUES ('drift:electronics', NULL, 'electronics', 20, ?, ?)`)
+      .run(day - 3600_000, day + 71 * 3600_000);
+  });
+  tickMarketDrift(dir, { now: day + 30 * 60_000 });
+  const atBoundary = marketHistory(dir, 'electronics', { now: day + 30 * 60_000 })[0];
+  assert.equal(atBoundary.capturedAt, new Date(day).toISOString());
+  assert.ok(atBoundary.indexValue > 115 && atBoundary.indexValue < 125, atBoundary.indexValue);
+  assert.ok(marketState(dir, { now: day + 30 * 60_000 }).categories
+    .find(category => category.category === 'electronics').currentIndex < 125);
 });

@@ -100,9 +100,10 @@ export function computeCategoryIndex(db, category, at) {
   const trend = db.prepare(`SELECT index_value FROM market_trend_points
     WHERE category = ? AND bucket <= ? ORDER BY bucket DESC LIMIT 1`)
     .get(category, Math.floor(at / MARKET_DRIFT_INTERVAL_MS));
-  return indexFromEffects(db.prepare(`SELECT delta, starts_at FROM market_effects
-    WHERE category = ? AND starts_at <= ? AND ends_at > ?`).all(category, at, at),
-  at, trend?.index_value ?? DEFAULT_MARKET_INDEX);
+  const effects = db.prepare(`SELECT source_id, delta, starts_at FROM market_effects
+    WHERE category = ? AND starts_at <= ? AND ends_at > ?`).all(category, at, at)
+    .filter(effect => !trend || !effect.source_id.startsWith('drift:'));
+  return indexFromEffects(effects, at, trend?.index_value ?? DEFAULT_MARKET_INDEX);
 }
 
 // Unrounded, activation-aware index read for domain valuation (e.g. palette
@@ -304,7 +305,7 @@ function refreshMarketHistory(db, now, activationMs) {
     if (last - start > (MAX_BACKFILL_BOUNDARIES - 1) * SNAPSHOT_INTERVAL_MS) {
       start = last - (MAX_BACKFILL_BOUNDARIES - 1) * SNAPSHOT_INTERVAL_MS;
     }
-    const effects = db.prepare(`SELECT category, delta, starts_at FROM market_effects
+    const effects = db.prepare(`SELECT source_id, category, delta, starts_at FROM market_effects
       WHERE starts_at <= ? AND ends_at > ?`).all(last, start);
     const byCategory = new Map(MARKET_CATEGORIES.map(({ id }) => [id, []]));
     for (const effect of effects) byCategory.get(effect.category)?.push(effect);
@@ -329,12 +330,14 @@ function refreshMarketHistory(db, now, activationMs) {
         // start after an earlier boundary, and effectContribution clamps such
         // pre-start reads to full strength — the same rule as the live
         // computeCategoryIndex (starts_at <= at) must hold retroactively.
-        const active = byCategory.get(id).filter(effect => effect.starts_at <= boundary);
         const points = trends.get(id), atBucket = Math.floor(boundary / MARKET_DRIFT_INTERVAL_MS);
         let position = positions.get(id);
         while (position + 1 < points.length && points[position + 1].bucket <= atBucket) position++;
         positions.set(id, position);
-        const baseline = points[position]?.bucket <= atBucket ? points[position].index_value : DEFAULT_MARKET_INDEX;
+        const trend = points[position]?.bucket <= atBucket ? points[position] : null;
+        const baseline = trend?.index_value ?? DEFAULT_MARKET_INDEX;
+        const active = byCategory.get(id).filter(effect => effect.starts_at <= boundary
+          && (!trend || !effect.source_id.startsWith('drift:')));
         insert.run(id, indexFromEffects(active, boundary, baseline), capturedAt);
       }
     }
