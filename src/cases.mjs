@@ -157,3 +157,33 @@ export function drawItem(catalog, box, random = randomInt) {
   const pool = box.items.filter(item => item.rarity === RARITIES[index].id);
   return pool[random(pool.length)];
 }
+
+// Daily grants are free and separate from the paid case economy. A perfect
+// 5,000-point run has substantially better rare+ odds; even a zero-point run
+// still receives one item. Integer weights always sum to 10,000.
+export function dailyCaseWeights(score) {
+  const progress = Math.min(1, Math.max(0, Number(score) / 5000 || 0));
+  const uncommon = 2400;
+  const rare = Math.round(500 + 3400 * progress);
+  const epic = Math.round(95 + 2305 * progress);
+  const legendary = Math.round(5 + 595 * progress);
+  return [10000 - uncommon - rare - epic - legendary, uncommon, rare, epic, legendary];
+}
+
+export function drawDailyCaseItem(catalog, auctions, score, random = randomInt) {
+  const weights = dailyCaseWeights(score);
+  const mixed = catalog?.cases?.find(box => box.id === 'fundkiste');
+  if (mixed?.available && RARITIES.every(rarity => mixed.items.some(item => item.rarity === rarity.id))) {
+    return drawItem(catalog, { ...mixed, weights }, random);
+  }
+  // The Daily itself is a durable fallback if the archive cannot provide all
+  // five case tiers. Its five lots are ranked by value and mapped to tiers.
+  const ranked = [...auctions].sort((a, b) => (a.actualBid ?? a.currentBid ?? 0) - (b.actualBid ?? b.currentBid ?? 0));
+  if (!ranked.length) throw new Error('game_unavailable');
+  let roll = random(10000), tier = 0;
+  while (roll >= weights[tier]) roll -= weights[tier++];
+  const auction = ranked[Math.round(tier * (ranked.length - 1) / 4)];
+  const price = Math.max(1, Number(auction.actualBid ?? auction.currentBid ?? auction.finalPrice) || 1);
+  return { auctionId: auction.id, title: auction.title, image: auction.image || auction.images?.[0] || null,
+    price, sellValue: tokenValue(price), rarity: RARITIES[tier].id, category: auction.category };
+}

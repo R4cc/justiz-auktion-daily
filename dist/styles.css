@@ -754,6 +754,14 @@ button:focus-visible, a:focus-visible { outline: 3px solid var(--red); outline-o
 .case-reveal-actions { display: grid; gap: 12px; margin-top: 22px; }
 .case-reveal-actions button { width: 100%; white-space: normal; margin: 0; }
 .case-reveal button:disabled { opacity: .5; cursor: not-allowed; }
+.daily-case-prompt, .daily-case-opening { padding: 28px; text-align: center; }
+.daily-case-prompt h2, .daily-case-opening h2 { font-size: 24px; margin: 9px 0 12px; }
+.daily-case-prompt > p:not(.eyebrow) { color: var(--muted); font-size: 14px; line-height: 1.6; }
+.daily-case-prompt > strong { display: block; margin-top: 15px; font: 700 14px 'DM Mono', monospace; }
+.daily-case-gift { display: grid; place-items: center; width: 76px; height: 76px; margin: 0 auto 16px; border: 2px solid var(--ink); border-radius: 16px; background: #e8ebdd; color: var(--ink); font-size: 48px; }
+.daily-case-opening .case-stage { margin-top: 18px; }
+.daily-case-opening .case-stage > p { margin: 13px 0 0; color: #d5dfd4; }
+.daily-case-find-placeholder { display: grid; place-items: center; height: min(230px, 28dvh); margin: 18px 0; border-radius: 10px; background: #e8ebdd; font-size: 76px; }
 .collection-item { --rarity: #83919c; position: relative; display: flex; flex-direction: column; min-width: 0; padding: 14px; border: 1px solid var(--line); border-bottom: 4px solid var(--rarity); border-radius: 10px; background: #fffcf4; text-align: left; color: var(--ink); }
 .rarity-common { --rarity: #83919c; } .rarity-uncommon { --rarity: #4d79c7; } .rarity-rare { --rarity: #8262c7; } .rarity-epic { --rarity: #c65391; } .rarity-legendary { --rarity: #c89520; }
 .rarity-label { font: 10px 'DM Mono', monospace; text-transform: uppercase; letter-spacing: 1px; border-left: 3px solid var(--rarity); padding-left: 7px; }

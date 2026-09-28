@@ -1,7 +1,7 @@
 import { randomBytes, randomInt, randomUUID, createHash, scrypt, timingSafeEqual } from 'node:crypto';
 import { promisify } from 'node:util';
 import { withDatabase, transaction } from './database.mjs';
-import { drawItem, tokenValue } from './cases.mjs';
+import { drawDailyCaseItem, drawItem, tokenValue } from './cases.mjs';
 import { scoreGuess } from './core.mjs';
 import { AccountError } from './errors.mjs';
 import { ensureResaleSchema, inventoryIsLocked, lockedInventoryIds } from './resale.mjs';
@@ -76,6 +76,11 @@ export class Accounts {
       CREATE TABLE IF NOT EXISTS daily_rewards (
         user_id TEXT NOT NULL REFERENCES users(id), date TEXT NOT NULL, run_id TEXT NOT NULL REFERENCES account_games(id),
         earned INTEGER NOT NULL DEFAULT 0, PRIMARY KEY(user_id, date)
+      ) STRICT;
+      CREATE TABLE IF NOT EXISTS daily_case_rewards (
+        run_id TEXT PRIMARY KEY REFERENCES account_games(id), user_id TEXT NOT NULL REFERENCES users(id),
+        date TEXT NOT NULL, score INTEGER NOT NULL, item TEXT NOT NULL CHECK(json_valid(item)),
+        opened_at INTEGER, UNIQUE(user_id, date)
       ) STRICT;
       CREATE TABLE IF NOT EXISTS inventory (
         id TEXT PRIMARY KEY, user_id TEXT NOT NULL REFERENCES users(id), item TEXT NOT NULL CHECK(json_valid(item)),
@@ -310,7 +315,7 @@ export class Accounts {
       for (const table of ['resale_npc_interest', 'resale_bids', 'resale_auctions',
         'business_stock', 'businesses', 'wholesale_bids', 'wholesale_auctions',
         'primary_palette_bids', 'primary_palette_rewards', 'primary_palette_auctions',
-        'daily_rewards', 'xp_events', 'case_openings', 'inventory', 'account_games',
+        'daily_rewards', 'daily_case_rewards', 'xp_events', 'case_openings', 'inventory', 'account_games',
         'user_token_grants', 'token_grants', 'account_notifications']) {
         if (hasTable(table)) db.prepare(`DELETE FROM ${table}`).run();
       }
@@ -523,6 +528,29 @@ export class Accounts {
       return item;
     });
   }
+  grantDailyCase(db, user, run, catalog) {
+    if (run.mode !== 'daily' || !run.complete || db.prepare('SELECT 1 FROM daily_case_rewards WHERE run_id = ?').get(run.id)) return;
+    const score = run.answers.reduce((total, guess, index) => total + scoreGuess(guess, run.auctions[index].actualBid), 0);
+    const drawn = drawDailyCaseItem(catalog, run.auctions, score);
+    const item = { ...drawn, id: randomUUID(), caseId: 'daily', caseCost: 0,
+      marketCategory: marketCategoryForItem(drawn), edition: run.date, createdAt: this.now() };
+    db.prepare(`INSERT INTO daily_case_rewards (run_id, user_id, date, score, item)
+      VALUES (?, ?, ?, ?, ?)`).run(run.id, user.id, run.date, score, JSON.stringify(item));
+  }
+  openDailyCase(user, runId) {
+    return this.atomic(db => {
+      const reward = db.prepare('SELECT item, opened_at FROM daily_case_rewards WHERE run_id = ? AND user_id = ?')
+        .get(String(runId), user.id);
+      if (!reward) fail('daily_case_not_found', 404);
+      const item = JSON.parse(reward.item);
+      if (reward.opened_at === null) {
+        db.prepare('INSERT INTO inventory (id, user_id, item, created_at) VALUES (?, ?, ?, ?)')
+          .run(item.id, user.id, reward.item, this.now());
+        db.prepare('UPDATE daily_case_rewards SET opened_at = ? WHERE run_id = ?').run(this.now(), runId);
+      }
+      return currentItemValue(item);
+    });
+  }
   sell(user, id) {
     if (this.flags.resales) fail('instant_sell_disabled', 409);
     return this.atomic(db => {
@@ -565,34 +593,41 @@ export class Accounts {
       return { sold: rows.map(row => row.id), value };
     });
   }
-  startGame(user, mode, makeAuctions, rewards = DEFAULT_REWARDS) {
+  startGame(user, mode, makeAuctions, rewards = DEFAULT_REWARDS, catalog = null) {
     if (!['daily', 'higher-lower'].includes(mode)) fail('invalid_mode');
     return this.atomic(db => {
       const existing = db.prepare(`SELECT payload FROM account_games WHERE user_id = ? AND date = ? AND mode = ?
         ${mode === 'daily' ? '' : 'AND complete = 0'} ORDER BY rowid DESC LIMIT 1`).get(user.id, day(this.now()), mode);
-      if (existing) return this.publicGame(JSON.parse(existing.payload));
+      if (existing) {
+        const run = JSON.parse(existing.payload);
+        this.grantDailyCase(db, user, run, catalog);
+        return this.publicGame(run, db);
+      }
       const auctions = makeAuctions();
       if (auctions.length < 2 || (mode === 'daily' && auctions.length !== 5)) fail('game_unavailable', 503);
       const run = { id: randomUUID(), date: day(this.now()), mode, auctions, answers: [], streak: 0, complete: false, earned: 0,
         rewards: rewardRates(rewards) };
       db.prepare('INSERT INTO account_games (id, user_id, date, mode, payload) VALUES (?, ?, ?, ?, ?)')
         .run(run.id, user.id, run.date, mode, JSON.stringify(run));
-      return this.publicGame(run);
+      return this.publicGame(run, db);
     });
   }
-  publicGame(run) {
+  publicGame(run, db) {
     // Answers are sealed until a round is answered. Higher/lower keeps the
     // current lot's price visible (it is the value the player compares
     // against); the daily hides every round the player has not answered yet
     // so the run API never hands over upcoming correct bids.
-    return { ...run, auctions: run.auctions.map((auction, i) => {
+    const caseReward = run.mode === 'daily' && run.complete
+      ? db.prepare('SELECT opened_at FROM daily_case_rewards WHERE run_id = ?').get(run.id) : null;
+    return { ...run, ...(caseReward ? { dailyCase: { status: caseReward.opened_at === null ? 'ready' : 'opened' } } : {}),
+      auctions: run.auctions.map((auction, i) => {
       const revealed = run.mode === 'daily' ? i < run.answers.length : i <= run.answers.length;
       if (revealed) return auction;
       const { actualBid, ...hidden } = auction;
       return hidden;
     }) };
   }
-  answer(user, id, position, answer) {
+  answer(user, id, position, answer, catalog = null) {
     return this.atomic(db => {
       const row = db.prepare('SELECT payload FROM account_games WHERE id = ? AND user_id = ?').get(String(id), user.id);
       if (!row) fail('game_not_found', 404);
@@ -601,7 +636,8 @@ export class Accounts {
       if (!Number.isInteger(position) || position < 0 || position > run.answers.length) fail('invalid_position', 409);
       if (position < run.answers.length) {
         if (run.answers[position] !== answer) fail('answer_conflict', 409);
-        return this.publicGame(run);
+        this.grantDailyCase(db, user, run, catalog);
+        return this.publicGame(run, db);
       }
       if (run.complete) fail('game_complete', 409);
       if (run.mode === 'daily') {
@@ -631,8 +667,9 @@ export class Accounts {
         db.prepare('UPDATE daily_rewards SET earned = ? WHERE user_id = ? AND date = ?').run(run.earned, user.id, run.date);
       }
       if (run.complete && run.mode === 'daily') awardXp(db, user.id, 'daily', run.id, 150, this.now());
+      this.grantDailyCase(db, user, run, catalog);
       db.prepare('UPDATE account_games SET complete = ?, payload = ? WHERE id = ?').run(Number(run.complete), JSON.stringify(run), run.id);
-      return this.publicGame(run);
+      return this.publicGame(run, db);
     });
   }
 }

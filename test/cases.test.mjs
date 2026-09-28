@@ -3,7 +3,8 @@ import assert from 'node:assert/strict';
 import { mkdtemp, rm } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { CASE_RETURN_TARGET, DAILY_REWARD_FLOOR, caseCatalog, caseRewards, loadCaseCatalog, drawItem, publicCaseCatalog, RARITIES, tokenValue } from '../src/cases.mjs';
+import { CASE_RETURN_TARGET, DAILY_REWARD_FLOOR, caseCatalog, caseRewards, dailyCaseWeights,
+  drawDailyCaseItem, loadCaseCatalog, drawItem, publicCaseCatalog, RARITIES, tokenValue } from '../src/cases.mjs';
 import { Accounts } from '../src/accounts.mjs';
 import { closeDataStore, upsertAuctions } from '../src/database.mjs';
 
@@ -86,6 +87,27 @@ test('daily game rewards have a J€200 floor and still scale with expensive cas
   });
   assert.ok(caseRewards(catalog).daily >= 200);
   assert.deepEqual(publicCaseCatalog(catalog).rewards, caseRewards(catalog));
+});
+
+test('Daily case rarity odds rise with score and a thin archive still yields one item', () => {
+  assert.deepEqual(dailyCaseWeights(0), [7000, 2400, 500, 95, 5]);
+  assert.deepEqual(dailyCaseWeights(5000), [700, 2400, 3900, 2400, 600]);
+  assert.deepEqual(dailyCaseWeights(9999), dailyCaseWeights(5000));
+  for (const score of [0, 1000, 2500, 4000, 5000]) {
+    const weights = dailyCaseWeights(score);
+    assert.equal(weights.reduce((sum, weight) => sum + weight, 0), 10000);
+    assert.ok(weights.every(weight => weight > 0));
+  }
+  const deck = stock.slice(0, 5).map((auction, index) => ({ ...auction, actualBid: index + 10 }));
+  const thin = caseCatalog([], day);
+  const lowest = drawDailyCaseItem(thin, deck, 0, () => 0);
+  const highest = drawDailyCaseItem(thin, deck, 5000, () => 9999);
+  assert.equal(lowest.rarity, 'common');
+  assert.equal(highest.rarity, 'legendary');
+  assert.equal(highest.price, 14);
+  const full = caseCatalog(stock, day);
+  assert.ok(full.cases.find(box => box.id === 'fundkiste').items.includes(
+    drawDailyCaseItem(full, deck, 5000, () => 0)));
 });
 
 test('editions are order-independent, rotate stock and prices, and expensive stock affects pricing', () => {

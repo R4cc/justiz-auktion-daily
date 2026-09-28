@@ -44,6 +44,7 @@ function accountError(code) {
     try_later: t('Too many attempts. Try again later.', 'Zu viele Versuche. Versuche es später erneut.'),
     forbidden: t('This action is not allowed.', 'Diese Aktion ist nicht erlaubt.'),
     daily_reset: t('A new Daily is here. Please reload.', 'Ein neues Daily ist da. Bitte lade neu.'),
+    daily_case_not_found: t('This Daily case is not available. Reopen your Daily result.', 'Diese Daily-Kiste ist nicht verfügbar. Öffne dein Daily-Ergebnis erneut.'),
     insufficient_variety: t('Not enough different auctions are available.', 'Noch nicht genug unterschiedliche Auktionen verfügbar.'),
     answer_conflict: t('This guess was already made in another tab. Reopen the game.', 'Dieser Tipp wurde in einem anderen Tab abgegeben. Öffne das Spiel erneut.'),
     empty_catalog: t('No case contents are available yet.', 'Aktuell sind keine Kisteninhalte verfügbar.'),
@@ -221,6 +222,7 @@ const accountReady = Promise.all([accountApi('me'), catalogReady, economyReady])
 }).catch(() => {});
 function showGamePage() {
   caseReveal.close(); auctionReveal.close();
+  document.querySelector('.daily-case-dialog')?.close();
   window.economyUi?.stop();
   window.businessUi?.stop();
   currentAccountPage = null; accountVisit++; pageLoaded = false;
@@ -232,6 +234,7 @@ async function navigateAccountPage(path, push = true) {
   const destination = new URL(path, location.origin);
   path = destination.pathname;
   caseReveal.close(); auctionReveal.close();
+  document.querySelector('.daily-case-dialog')?.close();
   window.economyUi?.stop();
   window.businessUi?.stop();
   if (!accountPaths.includes(path)) { renderStart(); return; }
