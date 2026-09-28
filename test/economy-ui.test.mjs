@@ -44,6 +44,21 @@ test('resale inventory and legacy reward markup never render instant-sell button
   assert.match(listed, /data-economy="quick-list"[^>]*disabled/);
 });
 
+test('sealed cases show open and auction actions in inventory without a market category', () => {
+  const item = { id: 'sealed', kind: 'case', caseTier: 'rare', title: 'Rare Case', titleDe: 'Seltene Kiste',
+    rarity: 'rare', price: 90, estimatedValueTokens: 90, listed: false };
+  const context = vm.createContext({ economyFlags: { resales: true }, t: en => en,
+    number: String, justizEuro: value => `J€ ${value}`, euro: String, accountEscape: String, rarityLabel: String });
+  vm.runInContext(extract(accountSource, 'function itemCard(', 'function groupedInventory('), context);
+  const markup = vm.runInContext(`itemCard(${JSON.stringify(item)})`, context);
+  assert.match(markup, /data-account="open-inventory-case"/);
+  assert.match(markup, /data-economy="list"/);
+  assert.match(markup, /one mystery item · any category/i);
+  assert.doesNotMatch(markup, /market-delta/);
+  const locked = vm.runInContext(`itemCard(${JSON.stringify({ ...item, listed: true })})`, context);
+  assert.match(locked, /data-account="open-inventory-case"[^>]*disabled/);
+});
+
 test('inventory quick list starts a one-item auction at the card default price in one click', () => {
   const item = { id: 'item', title: 'Tool', price: 100, sellValue: 100, estimatedValueTokens: 120, rarity: 'common', image: '/tool.jpg' };
   const context = vm.createContext({ economyFlags: { resales: true }, accountResult: item,

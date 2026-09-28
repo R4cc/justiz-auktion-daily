@@ -1,7 +1,8 @@
 import { randomBytes, randomInt, randomUUID, createHash, scrypt, timingSafeEqual } from 'node:crypto';
 import { promisify } from 'node:util';
 import { withDatabase, transaction } from './database.mjs';
-import { drawDailyCaseItem, drawItem, tokenValue } from './cases.mjs';
+import { dailyCaseWeights, drawItem, tokenValue } from './cases.mjs';
+import { chooseCaseTier, ensureSealedCaseSchema, insertSealedCase, prepareSealedCase } from './sealed-cases.mjs';
 import { scoreGuess } from './core.mjs';
 import { AccountError } from './errors.mjs';
 import { ensureResaleSchema, inventoryIsLocked, lockedInventoryIds } from './resale.mjs';
@@ -117,6 +118,10 @@ export class Accounts {
         palette_auction_count INTEGER NOT NULL
       ) STRICT;
       `);
+      const dailyCaseColumns = db.prepare('PRAGMA table_info(daily_case_rewards)').all().map(column => column.name);
+      if (!dailyCaseColumns.includes('case_inventory_id'))
+        db.exec('ALTER TABLE daily_case_rewards ADD COLUMN case_inventory_id TEXT');
+      ensureSealedCaseSchema(db);
       const columns = db.prepare('PRAGMA table_info(users)').all().map(column => column.name);
       if (!columns.includes('npc')) db.exec('ALTER TABLE users ADD COLUMN npc INTEGER NOT NULL DEFAULT 0');
       ensureXpSchema(db);
@@ -315,7 +320,7 @@ export class Accounts {
       for (const table of ['resale_npc_interest', 'resale_bids', 'resale_auctions',
         'business_stock', 'businesses', 'wholesale_bids', 'wholesale_auctions',
         'primary_palette_bids', 'primary_palette_rewards', 'primary_palette_auctions',
-        'daily_rewards', 'daily_case_rewards', 'xp_events', 'case_openings', 'inventory', 'account_games',
+        'daily_rewards', 'daily_case_rewards', 'xp_events', 'case_openings', 'sealed_cases', 'inventory', 'account_games',
         'user_token_grants', 'token_grants', 'account_notifications']) {
         if (hasTable(table)) db.prepare(`DELETE FROM ${table}`).run();
       }
@@ -404,9 +409,11 @@ export class Accounts {
     });
   }
   summary(db, userId) {
-    // Sum saved item values in cents; sold items and tokens do not count as euros.
+    // Cases have a J€ reference value, not a real-auction euro value. Only
+    // revealed finds count toward the euro collection total.
     const inventory = db.prepare(`SELECT COUNT(*) AS itemCount,
-      COALESCE(SUM(CAST(ROUND(json_extract(item, '$.price') * 100) AS INTEGER)), 0) AS cents
+      COALESCE(SUM(CASE WHEN json_extract(item, '$.kind') = 'case' THEN 0
+        ELSE CAST(ROUND(json_extract(item, '$.price') * 100) AS INTEGER) END), 0) AS cents
       FROM inventory WHERE user_id = ? AND sold_at IS NULL`).get(userId);
     const game = db.prepare(`SELECT payload FROM account_games WHERE user_id = ? AND date = ? AND mode = 'daily'
       ORDER BY rowid DESC LIMIT 1`).get(userId, day(this.now()));
@@ -435,7 +442,8 @@ export class Accounts {
   leaderboard() {
     return this.db(db => {
       const players = db.prepare(`SELECT u.id, u.username,
-        COALESCE((SELECT SUM(CAST(ROUND(json_extract(i.item, '$.price') * 100) AS INTEGER))
+        COALESCE((SELECT SUM(CASE WHEN json_extract(i.item, '$.kind') = 'case' THEN 0
+          ELSE CAST(ROUND(json_extract(i.item, '$.price') * 100) AS INTEGER) END)
           FROM inventory i WHERE i.user_id = u.id AND i.sold_at IS NULL), 0) AS cents
         FROM users u WHERE u.banned = 0 AND u.npc = 0 ORDER BY cents DESC, u.username COLLATE NOCASE LIMIT 100`).all();
       const scores = new Map();
@@ -531,22 +539,49 @@ export class Accounts {
   grantDailyCase(db, user, run, catalog) {
     if (run.mode !== 'daily' || !run.complete || db.prepare('SELECT 1 FROM daily_case_rewards WHERE run_id = ?').get(run.id)) return;
     const score = run.answers.reduce((total, guess, index) => total + scoreGuess(guess, run.auctions[index].actualBid), 0);
-    const drawn = drawDailyCaseItem(catalog, run.auctions, score);
-    const item = { ...drawn, id: randomUUID(), caseId: 'daily', caseCost: 0,
-      marketCategory: marketCategoryForItem(drawn), edition: run.date, createdAt: this.now() };
+    const tier = chooseCaseTier(dailyCaseWeights(score));
+    const prepared = prepareSealedCase(catalog, tier, { fallback: run.auctions, now: this.now() });
     db.prepare(`INSERT INTO daily_case_rewards (run_id, user_id, date, score, item)
-      VALUES (?, ?, ?, ?, ?)`).run(run.id, user.id, run.date, score, JSON.stringify(item));
+      VALUES (?, ?, ?, ?, ?)`).run(run.id, user.id, run.date, score, JSON.stringify(prepared));
   }
-  openDailyCase(user, runId) {
+  claimDailyCase(user, runId) {
     return this.atomic(db => {
-      const reward = db.prepare('SELECT item, opened_at FROM daily_case_rewards WHERE run_id = ? AND user_id = ?')
+      const reward = db.prepare('SELECT item, opened_at, case_inventory_id FROM daily_case_rewards WHERE run_id = ? AND user_id = ?')
         .get(String(runId), user.id);
       if (!reward) fail('daily_case_not_found', 404);
-      const item = JSON.parse(reward.item);
-      if (reward.opened_at === null) {
+      if (reward.case_inventory_id) {
+        const row = db.prepare('SELECT item FROM inventory WHERE id = ?').get(reward.case_inventory_id);
+        return currentItemValue(JSON.parse(row.item));
+      }
+      if (reward.opened_at !== null) fail('daily_case_already_opened', 409);
+      const stored = JSON.parse(reward.item);
+      // Before physical cases, a pending Daily stored just its future find.
+      // Preserve that sealed result while upgrading the grant into a case.
+      const prepared = stored.item?.kind === 'case' ? stored : {
+        item: prepareSealedCase(null, stored.rarity, { fallback: [stored], now: this.now() }).item,
+        reward: stored
+      };
+      const item = insertSealedCase(db, user.id, prepared, this.now());
+      db.prepare('UPDATE daily_case_rewards SET opened_at = ?, case_inventory_id = ? WHERE run_id = ?')
+        .run(this.now(), item.id, runId);
+      return currentItemValue(item);
+    });
+  }
+  openSealedCase(user, inventoryId) {
+    return this.atomic(db => {
+      const row = db.prepare('SELECT item, sold_at FROM inventory WHERE id = ? AND user_id = ?')
+        .get(String(inventoryId), user.id);
+      if (!row || JSON.parse(row.item).kind !== 'case') fail('case_not_found', 404);
+      if (inventoryIsLocked(db, inventoryId)) fail('item_listed', 409);
+      const sealed = db.prepare('SELECT reward, opened_at FROM sealed_cases WHERE inventory_id = ?').get(inventoryId);
+      if (!sealed) fail('case_not_found', 404);
+      const item = JSON.parse(sealed.reward);
+      if (sealed.opened_at === null) {
+        if (row.sold_at !== null) fail('item_sold', 409);
+        db.prepare('UPDATE inventory SET sold_at = ? WHERE id = ?').run(this.now(), inventoryId);
         db.prepare('INSERT INTO inventory (id, user_id, item, created_at) VALUES (?, ?, ?, ?)')
-          .run(item.id, user.id, reward.item, this.now());
-        db.prepare('UPDATE daily_case_rewards SET opened_at = ? WHERE run_id = ?').run(this.now(), runId);
+          .run(item.id, user.id, sealed.reward, this.now());
+        db.prepare('UPDATE sealed_cases SET opened_at = ? WHERE inventory_id = ?').run(this.now(), inventoryId);
       }
       return currentItemValue(item);
     });
@@ -618,8 +653,11 @@ export class Accounts {
     // against); the daily hides every round the player has not answered yet
     // so the run API never hands over upcoming correct bids.
     const caseReward = run.mode === 'daily' && run.complete
-      ? db.prepare('SELECT opened_at FROM daily_case_rewards WHERE run_id = ?').get(run.id) : null;
-    return { ...run, ...(caseReward ? { dailyCase: { status: caseReward.opened_at === null ? 'ready' : 'opened' } } : {}),
+      ? db.prepare('SELECT item, opened_at, case_inventory_id FROM daily_case_rewards WHERE run_id = ?').get(run.id) : null;
+    const storedCase = caseReward ? JSON.parse(caseReward.item) : null;
+    const caseTier = storedCase?.item?.caseTier || storedCase?.rarity || null;
+    return { ...run, ...(caseReward ? { dailyCase: { status: caseReward.opened_at === null ? 'ready'
+      : caseReward.case_inventory_id ? 'claimed' : 'opened', tier: caseTier } } : {}),
       auctions: run.auctions.map((auction, i) => {
       const revealed = run.mode === 'daily' ? i < run.answers.length : i <= run.answers.length;
       if (revealed) return auction;

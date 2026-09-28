@@ -18,6 +18,7 @@ import { getNewsEvent, saveNewsEvent } from '../src/news.mjs';
 import { setMarketIndex } from '../src/market.mjs';
 import { tickWorldNews, WORLD_NEWS_PERIOD_MS, WORLD_SCENARIOS } from '../src/world-news.mjs';
 import { resaleXp } from '../src/xp.mjs';
+import { CASE_SUPPLY_PERIOD_MS, supplyCaseAuctions } from '../src/case-supply.mjs';
 
 const hour = 3600_000, day = Date.parse('2026-09-19T12:00:00Z');
 const stock = [['Elektronik', 'Laptop Lenovo', 40], ['Werkzeuge', 'Bohrhammer Makita', 20],
@@ -50,6 +51,35 @@ async function fixture(t, flags = {}) {
 const count = (f, table) => f.sql(`SELECT COUNT(*) AS n FROM ${table}`)[0].n;
 const balance = (f, id) => f.sql('SELECT tokens FROM users WHERE id = ?', id)[0].tokens;
 const xp = (f, id = 'seller') => f.accounts.profile(f.user(id)).progression.xp;
+
+test('NPC case supply is occasional, mixed-category, transferable, and never attracts NPC bids', async t => {
+  const f = await fixture(t);
+  let supplied, at;
+  const first = Math.floor(day / CASE_SUPPLY_PERIOD_MS);
+  for (let offset = 0; offset < 12 && !supplied?.id; offset++) {
+    at = (first + offset) * CASE_SUPPLY_PERIOD_MS + 60_000;
+    supplied = supplyCaseAuctions(f.dir, { now: at });
+  }
+  assert.ok(supplied?.id);
+  assert.equal(supplyCaseAuctions(f.dir, { now: at }).supplied, 0);
+  const lot = getResale(f.dir, supplied.id, { now: at });
+  assert.equal(lot.item.kind, 'case');
+  assert.equal(lot.item.marketCategory, null);
+  assert.ok(!JSON.stringify(lot).includes('reward'));
+  assert.ok(lot.startPrice < lot.item.price);
+  seedNpcBuyers(f.dir, { now: at });
+  tickNpcBuyers(f.dir, { now: at + 60_000 });
+  assert.equal(f.sql('SELECT COUNT(*) AS n FROM resale_npc_interest WHERE auction_id = ?', lot.id)[0].n, 0);
+  assert.throws(() => placeBid(f.dir, { id: NPC_BUYERS[0].id }, lot.id, lot.startPrice, { now: at + 70_000 }), /npc_case_bid_forbidden/);
+  placeBid(f.dir, f.user('buyer'), lot.id, lot.startPrice, { now: at + 80_000 });
+  settleAuction(f.dir, lot.id, { now: lot.endsAt + 1 });
+  assert.equal(f.accounts.inventory(f.user('buyer')).find(item => item.id === lot.inventoryId).kind, 'case');
+  const find = f.accounts.openSealedCase(f.user('buyer'), lot.inventoryId);
+  assert.ok(find.title);
+  assert.ok(find.marketCategory);
+  assert.throws(() => f.accounts.openSealedCase(f.user('seller'), lot.inventoryId), /case_not_found/);
+  assert.equal(f.accounts.inventory(f.user('buyer')).filter(item => item.kind === 'case').length, 0);
+});
 
 test('automatic supply fills the board with ten staggered lots and survives restart', async t => {
   const f = await fixture(t);

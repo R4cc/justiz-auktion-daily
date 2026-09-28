@@ -7,6 +7,7 @@ import { CASE_RETURN_TARGET, DAILY_REWARD_FLOOR, caseCatalog, caseRewards, daily
   drawDailyCaseItem, loadCaseCatalog, drawItem, publicCaseCatalog, RARITIES, tokenValue } from '../src/cases.mjs';
 import { Accounts } from '../src/accounts.mjs';
 import { closeDataStore, upsertAuctions } from '../src/database.mjs';
+import { CASE_TIERS, prepareSealedCase } from '../src/sealed-cases.mjs';
 
 const day = Date.parse('2026-09-12T12:00:00Z'), tomorrow = day + 86400000;
 const themes = [
@@ -108,6 +109,24 @@ test('Daily case rarity odds rise with score and a thin archive still yields one
   const full = caseCatalog(stock, day);
   assert.ok(full.cases.find(box => box.id === 'fundkiste').items.includes(
     drawDailyCaseItem(full, deck, 5000, () => 0)));
+});
+
+test('physical case tiers draw across categories and price below every possible find', () => {
+  const catalog = caseCatalog(stock, day);
+  const mixed = catalog.cases.find(box => box.id === 'fundkiste');
+  assert.ok(new Set(mixed.items.map(item => item.category)).size > 1);
+  const prices = [];
+  for (const tier of CASE_TIERS) {
+    const prepared = prepareSealedCase(catalog, tier.id, { now: day, random: () => 0 });
+    const eligible = mixed.items.filter(item => tier.weights[RARITIES.findIndex(rarity => rarity.id === item.rarity)] > 0);
+    assert.equal(prepared.item.kind, 'case');
+    assert.equal(prepared.item.caseTier, tier.id);
+    assert.ok(prepared.item.price < Math.min(...eligible.map(item => item.price)));
+    assert.ok(prepared.reward.price > prepared.item.price);
+    assert.ok(!('reward' in prepared.item));
+    prices.push(prepared.item.price);
+  }
+  assert.deepEqual(prices, [...prices].sort((a, b) => a - b));
 });
 
 test('editions are order-independent, rotate stock and prices, and expensive stock affects pricing', () => {

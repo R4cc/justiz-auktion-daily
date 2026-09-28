@@ -274,7 +274,7 @@ test('a timed-out guess is recorded as null, scores zero and still completes the
   assert.equal(replay.complete, true);
 });
 
-test('completing Daily grants one sealed score-based case even after another mode claimed J€', async t => {
+test('completing Daily grants one physical score-based case even after another mode claimed J€', async t => {
   const { service, dir, admin, register } = await fixture(t);
   const other = await register('other');
   const higherLower = service.startGame(admin, 'higher-lower', () => lots);
@@ -282,25 +282,50 @@ test('completing Daily grants one sealed score-based case even after another mod
   const catalog = caseCatalog(lots);
   let daily = service.startGame(admin, 'daily', () => lots.slice(0, 5), undefined, catalog);
   assert.equal(daily.dailyCase, undefined);
-  assert.throws(() => service.openDailyCase(admin, daily.id), /daily_case_not_found/);
+  assert.throws(() => service.claimDailyCase(admin, daily.id), /daily_case_not_found/);
   for (let i = 0; i < 5; i++) daily = service.answer(admin, daily.id, i, lots[i].actualBid, catalog);
   assert.equal(daily.earned, 0);
-  assert.deepEqual(daily.dailyCase, { status: 'ready' });
+  assert.equal(daily.dailyCase.status, 'ready');
+  assert.ok(daily.dailyCase.tier);
   assert.equal(service.inventory(admin).length, 0);
   assert.equal(service.db(db => db.prepare('SELECT score FROM daily_case_rewards WHERE run_id = ?').get(daily.id).score), 5000);
-  assert.throws(() => service.openDailyCase(other, daily.id), /daily_case_not_found/);
+  assert.throws(() => service.claimDailyCase(other, daily.id), /daily_case_not_found/);
   const balance = service.profile(admin).tokens;
-  const item = service.openDailyCase(admin, daily.id);
-  assert.equal(item.caseId, 'daily');
-  assert.equal(item.caseCost, 0);
+  const item = service.claimDailyCase(admin, daily.id);
+  assert.equal(item.kind, 'case');
+  assert.equal(item.caseTier, daily.dailyCase.tier);
+  assert.ok(!('reward' in item));
   assert.equal(service.inventory(admin).length, 1);
+  assert.equal(service.profile(admin).inventoryValueEur, 0);
+  assert.equal(service.profile(admin).inventoryMarketValue, item.price);
   assert.equal(service.profile(admin).tokens, balance);
-  assert.deepEqual(service.openDailyCase(admin, daily.id), item);
+  assert.deepEqual(service.claimDailyCase(admin, daily.id), item);
   assert.equal(service.inventory(admin).length, 1);
-  assert.deepEqual(service.startGame(admin, 'daily', () => []).dailyCase, { status: 'opened' });
+  assert.equal(service.startGame(admin, 'daily', () => []).dailyCase.status, 'claimed');
+  const find = service.openSealedCase(admin, item.id);
+  assert.ok(find.title);
+  assert.equal(find.kind, undefined);
+  assert.equal(service.inventory(admin).length, 1);
+  assert.equal(service.profile(admin).inventoryValueEur, find.price);
+  assert.deepEqual(service.openSealedCase(admin, item.id), find);
   closeDataStore(dir);
-  assert.deepEqual(new Accounts(dir).openDailyCase(admin, daily.id), item);
+  assert.deepEqual(new Accounts(dir).claimDailyCase(admin, daily.id), item);
   assert.equal(service.inventory(admin).length, 1);
+});
+
+test('pending Daily rewards from the prior version become sealed cases without rerolling the find', async t => {
+  const { service, admin } = await fixture(t);
+  const run = service.startGame(admin, 'daily', () => lots.slice(0, 5));
+  for (let i = 0; i < 5; i++) service.answer(admin, run.id, i, lots[i].actualBid);
+  const oldFind = { id: 'legacy-daily-find', title: 'Saved mystery find', rarity: 'rare', price: 120,
+    sellValue: 120, image: '/assets/legacy.jpg', category: 'Werkzeug' };
+  service.db(db => db.prepare('UPDATE daily_case_rewards SET item = ?, opened_at = NULL, case_inventory_id = NULL WHERE run_id = ?')
+    .run(JSON.stringify(oldFind), run.id));
+  assert.equal(service.startGame(admin, 'daily', () => []).dailyCase.tier, 'rare');
+  const claimed = service.claimDailyCase(admin, run.id);
+  assert.equal(claimed.kind, 'case');
+  assert.equal(claimed.caseTier, 'rare');
+  assert.equal(service.openSealedCase(admin, claimed.id).id, oldFind.id);
 });
 
 test('game rewards freeze the current case-priced schedule for each run', async t => {
@@ -638,22 +663,26 @@ test('HTTP API enforces authentication, CSRF headers, admin permissions and sess
   assert.equal(stillLoggedIn.user.id, player.id);
   assert.equal(stillLoggedIn.user.tokens, STARTING_TOKENS);
   assert.equal(stillLoggedIn.user.progression.xp, 0);
-  assert.equal((await post('games/daily-case/open', { id: 'missing' })).status, 401);
+  assert.equal((await post('games/daily-case/claim', { id: 'missing' })).status, 401);
   const started = await (await post('games/start', { mode: 'daily' }, playerCookie)).json();
   const runId = started.run.id;
-  assert.equal((await post('games/daily-case/open', { id: runId }, playerCookie)).status, 404);
+  assert.equal((await post('games/daily-case/claim', { id: runId }, playerCookie)).status, 404);
   let finished;
   for (let position = 0; position < 5; position++) {
     finished = await (await post('games/answer', { id: runId, position, answer: lots[position].actualBid }, playerCookie)).json();
   }
-  assert.deepEqual(finished.run.dailyCase, { status: 'ready' });
-  assert.equal((await post('games/daily-case/open', { id: runId }, cookie)).status, 404);
-  assert.equal((await post('games/daily-case/open', { id: runId }, playerCookie, { 'x-requested-with': '' })).status, 403);
-  const opened = await (await post('games/daily-case/open', { id: runId }, playerCookie)).json();
-  assert.equal(opened.item.caseId, 'daily');
-  assert.equal((await (await post('games/daily-case/open', { id: runId }, playerCookie)).json()).item.id, opened.item.id);
+  assert.equal(finished.run.dailyCase.status, 'ready');
+  assert.equal((await post('games/daily-case/claim', { id: runId }, cookie)).status, 404);
+  assert.equal((await post('games/daily-case/claim', { id: runId }, playerCookie, { 'x-requested-with': '' })).status, 403);
+  const opened = await (await post('games/daily-case/claim', { id: runId }, playerCookie)).json();
+  assert.equal(opened.item.kind, 'case');
+  assert.equal((await (await post('games/daily-case/claim', { id: runId }, playerCookie)).json()).item.id, opened.item.id);
   assert.equal((await (await fetch(base + 'inventory', { headers: { cookie: playerCookie } })).json()).items.length, 1);
-  assert.deepEqual((await (await post('games/start', { mode: 'daily' }, playerCookie)).json()).run.dailyCase, { status: 'opened' });
+  assert.equal((await (await post('games/start', { mode: 'daily' }, playerCookie)).json()).run.dailyCase.status, 'claimed');
+  assert.equal((await post('inventory/case/open', { id: opened.item.id }, cookie)).status, 404);
+  const revealed = await (await post('inventory/case/open', { id: opened.item.id }, playerCookie)).json();
+  assert.ok(revealed.item.title);
+  assert.equal((await (await post('inventory/case/open', { id: opened.item.id }, playerCookie)).json()).item.id, revealed.item.id);
   assert.equal((await post('logout', {}, playerCookie)).status, 200);
   assert.equal((await (await fetch(base + 'me', { headers: { cookie: playerCookie } })).json()).user, null);
   assert.equal((await post('login', { username: 'admin', password: 'x'.repeat(9000) })).status, 413);

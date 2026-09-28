@@ -73,6 +73,7 @@ export function marketCategoryForAuction(auction) {
 }
 
 export function marketCategoryForItem(item) {
+  if (item?.kind === 'case') return null;
   if (isMarketCategory(item?.marketCategory)) return item.marketCategory;
   return marketCategoryForListingCategory(item?.category) ?? marketCategoryForAuction(item || {});
 }

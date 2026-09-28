@@ -34,6 +34,7 @@ window.economyUi = (() => {
     cars: '<path d="m14 53 8-23a8 8 0 0 1 7-5h39a8 8 0 0 1 7 5l8 23M13 53h70a6 6 0 0 1 6 6v15H7V59a6 6 0 0 1 6-6Zm8 21v7h12v-7m30 0v7h12v-7M21 61h13m28 0h13M26 36h44"/>'
   };
   function stockLotArtwork(lot) {
+    if (lot.item?.kind === 'case') return `<div class="sealed-case-art rarity-${esc(lot.item.caseTier)}" aria-hidden="true"><span>◇</span><b>${rarityLabel(lot.item.caseTier)}</b></div>`;
     const type = lot.item?.businessCategory, symbol = stockSymbols[type];
     return symbol ? `<div class="stock-lot-art stock-lot-art-${type}" aria-hidden="true"><svg viewBox="0 0 96 96" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">${symbol}</svg></div>` : null;
   }
@@ -175,7 +176,7 @@ window.economyUi = (() => {
         : view === 'mine-done' ? lot.status === 'cancelled' ? t('CANCELLED', 'STORNIERT')
           : lot.winnerId ? t('SOLD', 'VERKAUFT') : t('UNSOLD', 'NICHT VERKAUFT')
           : t('LIVE', 'LIVE') : '';
-    const displayTitle = primary ? name(lot) : `${lot.quantity > 1 ? `${lot.quantity}× ` : ''}${lot.item.title}`;
+    const displayTitle = primary ? name(lot) : `${lot.quantity > 1 ? `${lot.quantity}× ` : ''}${t(lot.item.title, lot.item.titleDe || lot.item.title)}`;
     // The card itself is the button: one label describes the whole action.
     const cardAction = primary && lot.revealAvailable ? t('View winning palette', 'Gewonnene Palette ansehen') : primary && !eligible ? t('Explore palette', 'Palette ansehen') : t('View auction', 'Auktion ansehen');
     const outcome = primary && participation
@@ -189,7 +190,7 @@ window.economyUi = (() => {
     // A listing with bids cannot be cancelled; the rule lives in the backend.
     const cancellable = view === 'mine-live' && lot.status === 'active' && !lot.bidCount;
     return `<article class="economy-lot${borderState}" data-economy="${primary ? 'primary' : 'resale'}" data-id="${esc(lot.id)}" role="button" tabindex="0" aria-label="${esc(`${cardAction}: ${displayTitle}`)}"><div class="economy-lot-image">${primary ? paletteArtwork(lot) : image ? `<img src="${esc(image)}" alt="" loading="lazy">` : stockLotArtwork(lot) || '<span aria-hidden="true">◇</span>'}
-      ${primary ? '' : `<span class="economy-badge">${esc(categoryName(lot.item.marketCategory))}</span><span class="auction-state-badge">${resaleState}</span>`}</div>
+      ${primary ? '' : `<span class="economy-badge">${lot.item.kind === 'case' ? t('Sealed case', 'Versiegelte Kiste') : esc(categoryName(lot.item.marketCategory))}</span><span class="auction-state-badge">${resaleState}</span>`}</div>
       <div class="economy-lot-body"><h2>${esc(displayTitle)}</h2>
       ${primary ? `<div class="palette-seal" aria-hidden="true"><span>01 ◇</span><span>02 ◇</span><span>03 ◇</span></div>`
         : `${ownListing ? '' : `<p>${t('Seller', 'Verkäufer')}: ${esc(lot.sellerUsername)}</p>`}<p>${t('Market estimate', 'Marktschätzung')}: ${justizEuro(lot.estimatedValueTokens)}</p>`}
@@ -332,11 +333,11 @@ window.economyUi = (() => {
     if (participation) Object.assign(lot, { won: participation.won, leading: participation.leading,
       highestBid: participation.highestBid, revealAvailable: participation.revealAvailable });
     detailId = id;
-    const title = primary ? name(lot) : `${lot.quantity > 1 ? `${lot.quantity}× ` : ''}${lot.item.title}`;
+    const title = primary ? name(lot) : `${lot.quantity > 1 ? `${lot.quantity}× ` : ''}${t(lot.item.title, lot.item.titleDe || lot.item.title)}`;
     const winAction = primary && lot.revealAvailable ? `<div class="auction-win-panel"><h3>${t('Won palette', 'Gewonnene Palette')}</h3><div class="palette-seal" aria-hidden="true"><span>01 ◇</span><span>02 ◇</span><span>03 ◇</span></div><button class="primary-button" data-economy="reveal" data-id="${esc(lot.id)}">${t('Reveal three finds', 'Drei Funde aufdecken')} →</button></div>` : bidForm(lot, primary);
     openDialog(`<div class="auction-room"><section class="auction-room-media" aria-label="${primary ? t('Sealed palette illustration', 'Illustration der versiegelten Palette') : t('Auction pictures', 'Auktionsbilder')}">${auctionMedia(lot, primary)}</section>
       <section class="auction-room-story"><p class="eyebrow">${primary ? t('SEALED · THREE FINDS', 'VERSIEGELT · DREI FUNDE') : t('MARKETPLACE', 'MARKTPLATZ')}</p><h2 id="economy-dialog-title" tabindex="-1">${esc(title)}</h2>
-      ${primary ? `<h3>${esc(story(lot).title)}</h3><p>${esc(story(lot).body)}</p><p class="auction-room-meta">${t('Required level', 'Benötigtes Level')} <strong>${lot.requiredLevel}</strong><br>${esc((lot.allowedMarketCategories || []).map(categoryName).join(' · ') || categoryName(null))}</p>${auctionContents(lot)}` : `<p class="auction-room-meta">${t('Seller', 'Verkäufer')}: <strong>${esc(lot.sellerUsername)}</strong><br>${t('Quantity', 'Anzahl')}: <strong>${lot.quantity}</strong><br>${t('Auction value', 'Auktionswert')}: <strong>${euro(lot.item.price * lot.quantity)}</strong><br>${t('Estimated market value', 'Geschätzter Marktwert')}: <strong>${justizEuro(lot.estimatedValueTokens)}</strong></p>`}
+      ${primary ? `<h3>${esc(story(lot).title)}</h3><p>${esc(story(lot).body)}</p><p class="auction-room-meta">${t('Required level', 'Benötigtes Level')} <strong>${lot.requiredLevel}</strong><br>${esc((lot.allowedMarketCategories || []).map(categoryName).join(' · ') || categoryName(null))}</p>${auctionContents(lot)}` : `<p class="auction-room-meta">${t('Seller', 'Verkäufer')}: <strong>${esc(lot.sellerUsername)}</strong><br>${t('Quantity', 'Anzahl')}: <strong>${lot.quantity}</strong><br>${lot.item.kind === 'case' ? t('Sealed case · one item from any category', 'Versiegelte Kiste · ein Gegenstand aus jeder Kategorie') : `${t('Auction value', 'Auktionswert')}: <strong>${euro(lot.item.price * lot.quantity)}</strong>`}<br>${t('Estimated market value', 'Geschätzter Marktwert')}: <strong>${justizEuro(lot.estimatedValueTokens)}</strong></p>`}
       </section><aside class="auction-room-bidding"><header><p class="eyebrow">${t('LIVE AUCTION', 'LIVE-AUKTION')}</p><h3>${t('Bid room', 'Bietraum')}</h3></header><div data-live-facts>${bidFacts(lot, primary)}</div>
       <ol class="auction-chat" data-live-history role="log" aria-label="${t('Bid history', 'Gebotsverlauf')}">${bidHistory(lot.bids)}</ol><div class="auction-bid-dock">${winAction}</div></aside></div>`);
     const historyNode = dialog.querySelector('[data-live-history]');

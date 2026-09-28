@@ -115,7 +115,7 @@ export function lockedInventoryIds(db) {
 }
 
 const resaleIdentity = item => JSON.stringify([
-  item.auctionId, item.title, item.image || null, item.price, item.rarity, item.sellValue
+  item.kind || null, item.caseTier || null, item.auctionId, item.title, item.image || null, item.price, item.rarity, item.sellValue
 ]);
 
 function listingInventory(db, row) {
@@ -143,7 +143,8 @@ function serializeListing(db, row, { bids = false, now = Date.now(), indexes = m
   return {
     id: row.id, sellerId: row.seller_id, sellerUsername: seller?.username || null,
     inventoryId: row.inventory_id, quantity,
-    item: { title: item.title, image: item.image || null, price: item.price,
+    item: { title: item.title, ...(item.titleDe ? { titleDe: item.titleDe } : {}), image: item.image || null, price: item.price,
+      ...(item.kind ? { kind: item.kind, caseTier: item.caseTier } : {}),
       rarity: item.rarity, marketCategory: marketCategoryForItem(item),
       ...(item.businessCategory ? { businessCategory: item.businessCategory } : {}) },
     estimatedValueTokens: estimatedValueTokens(item, indexes) * quantity,
@@ -227,6 +228,7 @@ export function placeBid(dataDir, user, auctionId, amount, { now = Date.now() } 
     if (amount < minimum) fail('bid_too_low', 409);
     const bidder = db.prepare('SELECT npc FROM users WHERE id = ? AND banned = 0').get(user.id);
     if (!bidder) fail('login_required', 401);
+    if (bidder.npc && JSON.parse(listingInventory(db, row)[0].item).kind === 'case') fail('npc_case_bid_forbidden', 403);
     if (bidder.npc && row.current_bidder_id === user.id) fail('npc_self_outbid', 409);
     // Persistent timing guard, inside the economic write lock. Replaying a
     // runtime tick (or running two processes) cannot cause a bidding burst.

@@ -45,6 +45,8 @@ function accountError(code) {
     forbidden: t('This action is not allowed.', 'Diese Aktion ist nicht erlaubt.'),
     daily_reset: t('A new Daily is here. Please reload.', 'Ein neues Daily ist da. Bitte lade neu.'),
     daily_case_not_found: t('This Daily case is not available. Reopen your Daily result.', 'Diese Daily-Kiste ist nicht verfügbar. Öffne dein Daily-Ergebnis erneut.'),
+    daily_case_already_opened: t('This Daily reward was already opened.', 'Diese Daily-Belohnung wurde bereits geöffnet.'),
+    case_not_found: t('This case is no longer in your inventory.', 'Diese Kiste ist nicht mehr in deinem Inventar.'),
     insufficient_variety: t('Not enough different auctions are available.', 'Noch nicht genug unterschiedliche Auktionen verfügbar.'),
     answer_conflict: t('This guess was already made in another tab. Reopen the game.', 'Dieser Tipp wurde in einem anderen Tab abgegeben. Öffne das Spiel erneut.'),
     empty_catalog: t('No case contents are available yet.', 'Aktuell sind keine Kisteninhalte verfügbar.'),
@@ -354,6 +356,14 @@ function rarityLabel(id) {
 function itemCard(item, controls = true) {
   const copies = item.copies || [item];
   const available = copies.find(copy => !copy.listed);
+  if (item.kind === 'case') {
+    const chosen = available || item;
+    const listId = accountEscape(chosen.id);
+    const price = Math.max(1, Math.round((chosen.estimatedValueTokens || item.price) * .7));
+    return `<article class="collection-item sealed-case-item rarity-${accountEscape(item.caseTier)}"><span class="rarity-label">${rarityLabel(item.caseTier)} ${t('case', 'Kiste')}</span>${copies.length > 1 ? `<span class="item-count">×${copies.length}</span>` : ''}
+      <div class="sealed-case-art" aria-hidden="true"><span>◇</span><b>${rarityLabel(item.caseTier)}</b></div><h3>${accountEscape(t(item.title, item.titleDe || item.title))}</h3><p>${t('One mystery item · any category', 'Ein geheimer Gegenstand · jede Kategorie')}</p><p>${t('Case value', 'Kistenwert')} · ${justizEuro(item.estimatedValueTokens || item.price)}</p>
+      ${controls ? `<div class="item-actions"><button class="primary-button" data-account="open-inventory-case" data-id="${listId}" ${available ? '' : 'disabled'}>${t('Open case', 'Kiste öffnen')}</button>${economyFlags.resales ? `<button class="secondary-button" data-economy="list" data-id="${listId}" ${available ? '' : 'disabled'}>${t('List for auction', 'Zur Auktion anbieten')}</button><button class="secondary-button" data-economy="quick-list" data-id="${listId}" data-price="${price}" ${available ? '' : 'disabled'}>${t('Quick list', 'Schnell anbieten')}<small>@ ${justizEuro(price)}</small></button>` : ''}</div>` : ''}</article>`;
+  }
   // Market-adjusted display value, capped at two decimals so a scaled index
   // never renders amounts like J€ 11.248.
   const marketValue = item.marketIndex == null ? null : Math.round(item.price * item.marketIndex) / 100;
@@ -373,7 +383,7 @@ function itemCard(item, controls = true) {
 function groupedInventory(items) {
   const groups = new Map();
   for (const item of items) {
-    const key = JSON.stringify([item.auctionId, item.title, item.image, item.price, item.rarity, item.sellValue]);
+    const key = JSON.stringify([item.kind, item.caseTier, item.auctionId, item.title, item.image, item.price, item.rarity, item.sellValue]);
     if (!groups.has(key)) groups.set(key, { ...item, copies: [] });
     groups.get(key).copies.push(item);
   }
@@ -643,6 +653,24 @@ document.addEventListener('click', async event => {
     if (action === 'select-case') { accountSelectedCase = button.dataset.id; accountResult = null; renderAccountPage(); }
     if (action === 'close-reveal') caseReveal.close();
     if (action === 'pull') { caseReveal.close(); await pullCase(visit); }
+    if (action === 'open-inventory-case') {
+      const owner = account.id;
+      const result = await accountApi('inventory/case/open', { id: button.dataset.id });
+      if (account?.id !== owner) return;
+      updateAccount(result.user);
+      accountItems = (await accountApi('inventory')).items;
+      if (visit !== accountVisit || account?.id !== owner) return;
+      renderAccountPage();
+      caseReveal.innerHTML = `<div class="case-reveal-content rarity-${accountEscape(result.item.rarity)}"><h2 id="case-reveal-title">${t('Opening case…', 'Kiste wird geöffnet …')}</h2><div class="case-window"><div class="case-marker"></div><div class="case-reel"></div></div></div>`;
+      caseReveal.showModal();
+      const pool = accountCatalog?.cases?.find(box => box.id === 'fundkiste')?.items || [result.item];
+      try { await spinCaseReel(caseReveal.querySelector('.case-reel'), caseReveal.querySelector('.case-window'), result.item,
+        pool.length ? pool : [result.item], () => caseReveal.open && visit === accountVisit && account?.id === owner); }
+      catch { /* The awarded item is already in inventory; still show it. */ }
+      if (visit !== accountVisit || account?.id !== owner || !caseReveal.open) return;
+      caseReveal.innerHTML = `<div class="case-reveal-content rarity-${accountEscape(result.item.rarity)}"><h2 id="case-reveal-title">${accountEscape(result.item.title)}</h2>${result.item.image ? `<img src="${accountEscape(result.item.image)}" alt="">` : ''}<p class="rarity-label">${rarityLabel(result.item.rarity)}</p><p>${t('Auction value', 'Auktionswert')} ${euro(result.item.price)}</p><p>${t('Added to inventory.', 'Zum Inventar hinzugefügt.')}</p><div class="case-reveal-actions"><button class="primary-button" data-account="close-reveal">${t('Continue to inventory', 'Weiter zum Inventar')}</button></div></div>`;
+      caseReveal.querySelector('[data-account="close-reveal"]').focus({ preventScroll: true });
+    }
     if (action === 'sell' || action === 'sell-all' || action === 'sell-result') {
       const owner = account.id, result = await accountApi(action === 'sell-all' ? 'inventory/sell-all' : 'inventory/sell', { id: button.dataset.id });
       if (account?.id !== owner) return;

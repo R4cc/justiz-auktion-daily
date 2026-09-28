@@ -11,6 +11,8 @@ import {
   listResales, placeBid, settleAuction, settleDueListings
 } from '../src/resale.mjs';
 import { notificationsForUser } from '../src/notifications.mjs';
+import { insertSealedCase, prepareSealedCase } from '../src/sealed-cases.mjs';
+import { NPC_BUYERS, seedNpcBuyers, tickNpcBuyers } from '../src/npc-buyers.mjs';
 
 const day = Date.parse('2026-09-12T12:00:00Z');
 const hour = 3600_000;
@@ -88,6 +90,25 @@ test('listing references the owned inventory row without copying or minting it',
   assert.equal(owner.user_id, admin.id);
   assert.equal(owner.sold_at, null);
   assert.deepEqual(listResales(dir, { now: day }).map(row => row.id), [listing.id]);
+});
+
+test('a player can auction a sealed case but cannot open it until the listing ends', async t => {
+  const { dir, service, admin, register } = await fixture(t);
+  const buyer = await register('CaseBuyer');
+  const prepared = prepareSealedCase(catalog, 'rare', { now: day });
+  service.atomic(db => insertSealedCase(db, admin.id, prepared, day));
+  const listing = listItem(dir, admin, { inventoryId: prepared.item.id, startPrice: 1, endsAt: endsIn(1) }, { now: day });
+  assert.equal(listing.item.kind, 'case');
+  assert.equal(listing.item.marketCategory, null);
+  assert.throws(() => service.openSealedCase(admin, prepared.item.id), /item_listed/);
+  seedNpcBuyers(dir, { now: day });
+  tickNpcBuyers(dir, { now: day + 60_000 });
+  assert.equal(rowCount(service, 'resale_npc_interest', 'auction_id = ?', listing.id), 0);
+  assert.throws(() => placeBid(dir, NPC_BUYERS[0], listing.id, 1, { now: day + 61_000 }), /npc_case_bid_forbidden/);
+  placeBid(dir, buyer, listing.id, 1, { now: day + 70_000 });
+  settleAuction(dir, listing.id, { now: day + 2 * hour });
+  assert.throws(() => service.openSealedCase(admin, prepared.item.id), /case_not_found/);
+  assert.equal(service.openSealedCase(buyer, prepared.item.id).id, prepared.reward.id);
 });
 
 test('one listing can auction any available quantity of an identical item as one atomic batch', async t => {

@@ -201,7 +201,8 @@ export async function createAccountApi({ dataDir, dailyPayload, json, env = proc
           () => auctions || higherLowerDeck(readArchive(dataDir).auctions, Math.random, Date.now(), dailyIds).auctions,
           caseRewards(getCatalog()), getCatalog()), user: accounts.profile(user) };
       } else if (route === 'games/answer') result = { run: accounts.answer(user, payload.id, payload.position, payload.answer, getCatalog()), user: accounts.profile(user) };
-      else if (route === 'games/daily-case/open') result = { item: accounts.openDailyCase(user, payload.id), user: accounts.profile(user) };
+      else if (route === 'games/daily-case/claim') result = { item: accounts.claimDailyCase(user, payload.id), user: accounts.profile(user) };
+      else if (route === 'inventory/case/open') result = { item: accounts.openSealedCase(user, payload.id), user: accounts.profile(user) };
       else throw new AccountError('not_found', 404);
       json(response, 200, result);
     } catch (error) {
