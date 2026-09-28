@@ -1051,7 +1051,21 @@ button:focus-visible, a:focus-visible { outline: 3px solid var(--red); outline-o
 .market-categories strong { font-size: 20px; }
 .market-categories time { font-size: 10px; font-weight: 400; }
 .market-chart { border: 1px solid var(--line); border-radius: 12px; padding: 20px; margin-top: 14px; }
-.market-chart svg { width: 100%; font: 12px 'DM Mono', monospace; }
+.market-chart-hint { margin: 12px 0 4px; color: var(--muted); font-size: 12px; }
+.market-plot-scroll { overflow-x: auto; }
+.market-plot-wrap { position: relative; min-width: 620px; }
+.market-chart svg { display: block; width: 100%; height: auto; font: 12px 'DM Mono', monospace; overflow: visible; cursor: crosshair; }
+.market-chart svg:focus-visible { outline: 2px solid var(--ink); outline-offset: -3px; border-radius: 6px; }
+.market-chart-grid { stroke: var(--line); stroke-width: 1; }
+.market-chart-grid.is-neutral { stroke: var(--muted); stroke-dasharray: 5 5; }
+.market-chart-axis { fill: none; stroke: var(--muted); stroke-width: 1.5; }
+.market-chart-axis-label { fill: var(--muted); font-weight: 500; }
+.market-chart-line { fill: none; stroke: var(--ink); stroke-width: 2.5; stroke-linecap: round; stroke-linejoin: round; }
+.market-chart-latest, .market-chart-marker { fill: var(--paper); stroke: var(--ink); stroke-width: 2.5; }
+.market-chart-crosshair { stroke: var(--muted); stroke-width: 1.5; stroke-dasharray: 4 4; }
+.market-chart-tooltip { position: absolute; z-index: 1; transform: translate(-50%, calc(-100% - 12px)); max-width: 230px; padding: 8px 11px; border: 1px solid var(--ink); border-radius: 7px; background: var(--paper); box-shadow: 0 5px 14px #12352a24; color: var(--ink); font: 12px 'DM Mono', monospace; line-height: 1.45; pointer-events: none; text-align: center; }
+.market-chart-tooltip.is-below { transform: translate(-50%, 12px); }
+.market-chart-tooltip[hidden] { display: none; }
 .economy-news { display: grid; gap: 24px; max-width: 800px; }
 .economy-news article { padding: 20px; border: 1px solid var(--line); border-radius: 12px; background: #fffcf4; }
 .economy-news p { line-height: 1.8; }

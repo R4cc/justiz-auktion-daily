@@ -441,9 +441,18 @@ test('progression terminal state and active economy routes remain in syntax veri
   assert.match(index, /No real money is used/);
 });
 
-test('market chart renders a single observation visibly and exposes readable history', () => {
+test('market chart labels both axes, adapts short time ranges, and keeps readable history', () => {
   const context = vm.createContext({ t: en => en, esc: String, number: String, uiLocale: () => 'en-GB', date: String, empty: String });
   vm.runInContext(extract(uiSource, '  function chart(', "  document.addEventListener('click'"), context);
   const markup = vm.runInContext(`chart([{capturedAt:'2026-09-19T12:00:00Z',indexValue:107}])`, context);
   assert.match(markup, /<circle/); assert.match(markup, /<table>/); assert.match(markup, /107/); assert.doesNotMatch(markup, /NaN/);
+  assert.match(markup, /data-market-plot tabindex="0"/);
+  assert.match(markup, /market-chart-axis-label">Date/);
+  assert.match(markup, /market-chart-axis-label">Index/);
+  assert.equal((markup.match(/y="251"/g) || []).length, 1);
+  const intraday = vm.runInContext(`chart([
+    {capturedAt:'2026-09-19T15:00:00Z',indexValue:107},
+    {capturedAt:'2026-09-19T12:00:00Z',indexValue:101}])`, context);
+  assert.equal((intraday.match(/y="251"/g) || []).length, 4);
+  assert.match(intraday, /12:00/); assert.match(intraday, /15:00/);
 });
