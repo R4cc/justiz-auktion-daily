@@ -14,13 +14,9 @@
   --radius: 18px;
 }
 
-.business-tabs { display: flex; gap: 0; margin: 22px 0 30px; border-bottom: 1px solid var(--line); }
-.business-tabs button { padding: 12px 18px; border: 0; border-bottom: 3px solid transparent; background: transparent; cursor: pointer; font-weight: 800; }
-.business-tabs button[aria-selected="true"] { border-bottom-color: var(--red); color: var(--red); }
 .business-purchase { display: flex; align-items: center; justify-content: space-between; gap: 18px; padding: 10px 0 32px; border-bottom: 1px solid var(--line); }
-.business-purchase h2, .business-owned h2, .business-intro h2 { margin: 0 0 8px; font-size: 1.4rem; }
+.business-purchase h2, .business-owned h2 { margin: 0 0 8px; font-size: 1.4rem; }
 .business-purchase .primary-button { margin: 0; white-space: nowrap; }
-.business-intro p { color: var(--muted); line-height: 1.6; }
 .business-buy-dialog { width: min(1120px, calc(100vw - 24px)); max-width: none; max-height: calc(100dvh - 24px); padding: 0; border: 1px solid var(--ink); border-radius: 8px; background: var(--paper); color: var(--ink); box-shadow: 0 24px 80px #0c211d77; }
 .business-buy-dialog::backdrop { background: #0c211dcc; }
 .business-buy-dialog form { display: flex; flex-direction: column; max-height: calc(100dvh - 26px); }
@@ -59,14 +55,11 @@
 .business-dialog-footer strong { font-size: .85rem; overflow-wrap: anywhere; }
 .business-dialog-footer .account-error { margin: 3px 0 0; font-size: .75rem; }
 .business-dialog-footer .primary-button { margin: 0; min-width: 210px; white-space: nowrap; }
-.business-lot-bid span { color: var(--muted); font-size: .78rem; }
-.business-bid-form label { display: grid; gap: 6px; font-size: .82rem; font-weight: 700; }
-.business-bid-form input { width: 100%; min-width: 0; padding: 11px; border: 1px solid var(--line); background: #fff; border-radius: 4px; color: var(--ink); }
 .business-owned { padding: 32px 0 50px; }
-.business-shop-grid, .business-lot-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 320px), 1fr)); gap: 16px; }
-.business-shop, .business-lot { min-width: 0; padding: 20px; border: 1px solid var(--line); border-radius: 6px; background: #fff; }
+.business-shop-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 320px), 1fr)); gap: 16px; }
+.business-shop { min-width: 0; padding: 20px; border: 1px solid var(--line); border-radius: 6px; background: #fff; }
 .business-shop header { display: flex; align-items: start; justify-content: space-between; gap: 12px; border-bottom: 1px solid var(--line); padding-bottom: 14px; }
-.business-shop header span, .business-lot-category { color: var(--red); font-size: .71rem; font-weight: 800; text-transform: uppercase; }
+.business-shop header span { color: var(--red); font-size: .71rem; font-weight: 800; text-transform: uppercase; }
 .business-owned-title { display: flex; align-items: center; gap: 12px; min-width: 0; }
 .business-shop header .business-owned-icon { position: relative; flex: none; display: grid; place-items: center; width: 56px; height: 56px; border-radius: 5px; background: var(--choice-tint); color: var(--choice-accent); }
 .business-owned-icon > .business-type-icon { width: 40px; height: 40px; }
@@ -85,29 +78,15 @@
 .business-stock li strong { white-space: nowrap; }
 .business-stock li button { border: 0; background: transparent; color: var(--red); font-size: 1.1rem; line-height: 1; cursor: pointer; }
 .business-empty { color: var(--muted); font-size: .82rem; }
-.business-stock-form { margin-top: 18px; border-top: 1px solid var(--line); padding-top: 15px; }
-.business-stock-form fieldset { min-width: 0; padding: 0; border: 0; margin: 0 0 12px; }
-.business-stock-form legend { font-size: .85rem; font-weight: 800; margin-bottom: 8px; }
-.business-stock-choices { max-height: 220px; overflow: auto; border: 1px solid var(--line); }
-.business-stock-choices label { display: flex; gap: 8px; align-items: center; padding: 8px; border-bottom: 1px solid var(--line); font-size: .77rem; cursor: pointer; }
-.business-stock-choices label:last-child { border-bottom: 0; }
-.business-stock-choices label span { flex: 1; min-width: 0; }
-.business-stock-choices small { color: var(--muted); white-space: nowrap; }
-.business-stock-form > small { display: inline-block; margin-left: 10px; color: var(--muted); }
-.business-auctions { padding-bottom: 50px; }
-.business-intro { max-width: 680px; margin-bottom: 25px; }
-.business-bid-history { margin-bottom: 26px; border-top: 1px solid var(--line); }
-.business-bid-history h3 { font-size: 1rem; }
-.business-bid-history ul { list-style: none; padding: 0; margin: 0; }
-.business-bid-history li { display: flex; align-items: baseline; gap: 12px; padding: 9px 0; border-bottom: 1px solid var(--line); font-size: .83rem; }
-.business-bid-history li span { flex: 1; min-width: 0; overflow-wrap: anywhere; }
-.business-bid-history li small { color: var(--muted); white-space: nowrap; }
-.business-lot h3 { margin: 8px 0; font-size: 1.05rem; overflow-wrap: anywhere; }
-.business-lot > p { color: var(--muted); font-size: .78rem; line-height: 1.5; }
-.business-lot-bid { display: flex; flex-direction: column; margin: 16px 0; }
-.business-lot-bid strong { font-size: 1.35rem; }
-.business-bid-form { display: grid; grid-template-columns: 1fr auto; gap: 8px; align-items: end; }
-.business-bid-form .account-error { grid-column: 1 / -1; margin: 0; }
+.business-restock-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; margin-top: 18px; border-top: 1px solid var(--line); padding-top: 15px; }
+.business-restock-actions small { color: var(--muted); }
+.business-restock-actions p { flex-basis: 100%; margin: 0; }
+.business-restock-list { display: grid; gap: 8px; margin-top: 18px; }
+.business-restock-row { display: flex; justify-content: space-between; align-items: center; gap: 16px; padding: 12px; border: 1px solid var(--line); border-radius: 5px; background: #fff; }
+.business-restock-row > span { display: grid; gap: 4px; min-width: 0; }
+.business-restock-row strong { overflow-wrap: anywhere; }
+.business-restock-row small { color: var(--muted); }
+.business-restock-row input { flex: none; width: 76px; padding: 9px; border: 1px solid var(--line); border-radius: 4px; color: var(--ink); font: 700 1rem 'DM Mono', monospace; }
 @media (max-width: 700px) {
   .business-choice-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .business-dialog-header { min-height: 76px; padding: 14px 64px 12px 16px; }

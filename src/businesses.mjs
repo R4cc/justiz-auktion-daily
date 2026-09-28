@@ -2,12 +2,13 @@ import { createHash, randomUUID } from 'node:crypto';
 import { withDatabase, transaction } from './database.mjs';
 import { AccountError } from './errors.mjs';
 import { marketCategoryForItem, marketIndexAt, marketIndexes } from './market.mjs';
-import { inventoryIsLocked } from './resale.mjs';
+import { ensureResaleSchema, inventoryIsLocked } from './resale.mjs';
 import { sealedPaletteInventoryIds } from './palette-auctions.mjs';
-import { pushNotification } from './notifications.mjs';
+import { ensureNotificationSchema } from './notifications.mjs';
 
 const HOUR = 3_600_000;
 const WHOLESALE_PERIOD = 2 * HOUR;
+const STOCK_SELLER_ID = 'npc-stock-supply';
 const fail = (code, status = 400) => { throw new AccountError(code, status); };
 const hashNumber = value => parseInt(createHash('sha256').update(value).digest('hex').slice(0, 8), 16) / 0x100000000;
 
@@ -159,12 +160,6 @@ export function businessDashboard(dataDir, user, { now = Date.now() } = {}) {
     ensureBusinessSchema(db); activeUser(db, user); advanceShops(db, now, user.id);
     const sealed = sealedPaletteInventoryIds(db);
     return { types: SHOP_TYPES, sizes: SHOP_SIZES,
-      bids: db.prepare(`SELECT a.*, MAX(b.amount) AS highest_bid FROM wholesale_auctions a
-        JOIN wholesale_bids b ON b.auction_id = a.id WHERE b.bidder_id = ? GROUP BY a.id
-        ORDER BY a.ends_at DESC LIMIT 50`).all(user.id)
-        .map(row => ({ ...lotSnapshot(db, row), highestBid: row.highest_bid,
-          leading: row.settled_at === null && row.bidder_id === user.id,
-          won: row.settled_at !== null && row.winner_id === user.id })),
       shops: db.prepare('SELECT * FROM businesses WHERE user_id = ? ORDER BY bought_at, id').all(user.id).map(row => publicShop(db, row, now)),
       inventory: db.prepare('SELECT id, item FROM inventory WHERE user_id = ? AND sold_at IS NULL ORDER BY created_at DESC').all(user.id)
         .filter(row => !db.prepare('SELECT 1 FROM business_stock WHERE inventory_id = ? AND sold_at IS NULL').get(row.id)
@@ -223,82 +218,76 @@ export function unstockBusiness(dataDir, user, shopId, inventoryId, { now = Date
   }));
 }
 
-function lotSnapshot(db, row) {
-  const stock = WHOLESALE_STOCK.find(item => item.id === row.stock_id);
-  return { id: row.id, title: stock.title, type: stock.type, quantity: stock.quantity,
-    unitValue: stock.price, reserve: row.reserve, currentBid: row.current_bid,
-    bidIncrement: Math.max(1, Math.ceil(row.reserve * .02)), endsAt: row.ends_at,
-    status: row.settled_at === null ? 'active' : 'ended', winnerId: row.winner_id,
-    bidCount: db.prepare('SELECT COUNT(*) AS count FROM wholesale_bids WHERE auction_id = ?').get(row.id).count };
+function createStockListing(db, { id, stock, startsAt, endsAt, reserve, currentBid = null, bidderId = null }) {
+  if (db.prepare('SELECT 1 FROM resale_auctions WHERE id = ?').get(id)) return false;
+  const item = { title: stock.title, price: stock.price, sellValue: stock.price,
+    marketCategory: marketCategory(stock.type), businessCategory: stock.type,
+    rarity: 'common', wholesaleAuctionId: id };
+  const insertInventory = db.prepare('INSERT INTO inventory (id, user_id, item, created_at) VALUES (?, ?, ?, ?)');
+  const insertItem = db.prepare('INSERT INTO resale_auction_items (auction_id, inventory_id, position) VALUES (?, ?, ?)');
+  const inventoryIds = Array.from({ length: stock.quantity }, () => randomUUID());
+  inventoryIds.forEach((inventoryId, position) =>
+    insertInventory.run(inventoryId, STOCK_SELLER_ID, JSON.stringify({ ...item, wholesaleUnit: position + 1 }), startsAt));
+  db.prepare(`INSERT INTO resale_auctions
+    (id, seller_id, inventory_id, start_price, current_bid, current_bidder_id, status, started_at, ends_at)
+    VALUES (?, ?, ?, ?, ?, ?, 'active', ?, ?)`)
+    .run(id, STOCK_SELLER_ID, inventoryIds[0], reserve, currentBid, bidderId, startsAt, endsAt);
+  inventoryIds.forEach((inventoryId, position) => insertItem.run(id, inventoryId, position));
+  return true;
 }
 
-function settleLot(db, row, now) {
-  if (row.settled_at !== null || now < row.ends_at) return;
-  if (row.bidder_id) {
-    const stock = WHOLESALE_STOCK.find(item => item.id === row.stock_id);
-    for (let i = 0; i < stock.quantity; i++) {
-      const item = { title: stock.title, price: stock.price, sellValue: stock.price,
-        marketCategory: marketCategory(stock.type), businessCategory: stock.type,
-        rarity: 'common', wholesaleAuctionId: row.id, wholesaleUnit: i + 1 };
-      db.prepare('INSERT INTO inventory (id, user_id, item, created_at) VALUES (?, ?, ?, ?)')
-        .run(randomUUID(), row.bidder_id, JSON.stringify(item), now);
+export function supplyStockAuctions(dataDir, { now = Date.now() } = {}) {
+  return withDatabase(dataDir, db => transaction(db, () => {
+    ensureBusinessSchema(db); ensureResaleSchema(db, now); ensureNotificationSchema(db);
+    db.prepare(`UPDATE account_notifications SET href =
+      CASE WHEN source_key LIKE 'wholesale:won:%' THEN '/inventory' ELSE '/marketplace?view=bids' END
+      WHERE href = '/businesses' AND source_key LIKE 'wholesale:%'`).run();
+    db.prepare(`INSERT OR IGNORE INTO users (id, username, password_hash, npc, tokens, created_at)
+      VALUES (?, 'Stock Supply', 'disabled', 1, 0, ?)`).run(STOCK_SELLER_ID, now);
+    // Unbid batches are never owned by a player. Retire them after a day so
+    // recurring stock supply does not grow abandoned NPC inventory forever.
+    const stale = db.prepare(`SELECT id FROM resale_auctions WHERE seller_id = ?
+      AND status = 'ended' AND settled_at IS NOT NULL AND winner_id IS NULL AND ends_at < ?`)
+      .all(STOCK_SELLER_ID, now - 24 * HOUR);
+    const hasInterest = Boolean(db.prepare("SELECT 1 FROM sqlite_schema WHERE type = 'table' AND name = 'resale_npc_interest'").get());
+    for (const { id } of stale) {
+      const inventoryIds = db.prepare('SELECT inventory_id FROM resale_auction_items WHERE auction_id = ?').all(id).map(row => row.inventory_id);
+      if (hasInterest) db.prepare('DELETE FROM resale_npc_interest WHERE auction_id = ?').run(id);
+      db.prepare('DELETE FROM resale_auctions WHERE id = ?').run(id);
+      const remove = db.prepare('DELETE FROM inventory WHERE id = ? AND user_id = ?');
+      for (const inventoryId of inventoryIds) remove.run(inventoryId, STOCK_SELLER_ID);
     }
-    pushNotification(db, row.bidder_id, {
-      type: 'won', sourceKey: `wholesale:won:${row.id}`, href: '/businesses',
-      titleEn: 'Stock auction won', titleDe: 'Warenauktion gewonnen',
-      bodyEn: `${stock.quantity} × ${stock.title} is in your inventory.`,
-      bodyDe: `${stock.quantity} × ${stock.title} ist in deinem Inventar.`
-    }, now);
-  }
-  db.prepare('UPDATE wholesale_auctions SET winner_id = bidder_id, settled_at = ? WHERE id = ? AND settled_at IS NULL').run(now, row.id);
+    // Move any escrowed bids from the old stock-auction table exactly once.
+    // Its deterministic id is retained so existing links and bids keep working.
+    for (const row of db.prepare('SELECT * FROM wholesale_auctions WHERE settled_at IS NULL ORDER BY starts_at, id').all()) {
+      const stock = WHOLESALE_STOCK.find(entry => entry.id === row.stock_id);
+      if (!stock) continue;
+      if (createStockListing(db, { id: row.id, stock, startsAt: row.starts_at,
+        endsAt: row.ends_at, reserve: row.reserve, currentBid: row.current_bid, bidderId: row.bidder_id })) {
+        for (const bid of db.prepare('SELECT bidder_id, amount, created_at FROM wholesale_bids WHERE auction_id = ? ORDER BY id').all(row.id)) {
+          db.prepare('INSERT INTO resale_bids (auction_id, bidder_id, amount, created_at) VALUES (?, ?, ?, ?)')
+            .run(row.id, bid.bidder_id, bid.amount, bid.created_at);
+        }
+      }
+      db.prepare('UPDATE wholesale_auctions SET settled_at = ? WHERE id = ?').run(now, row.id);
+    }
+    const bucket = Math.floor(now / WHOLESALE_PERIOD), startsAt = bucket * WHOLESALE_PERIOD;
+    let supplied = 0;
+    for (const stock of WHOLESALE_STOCK) {
+      const id = lotId(bucket, stock.id);
+      if (db.prepare('SELECT 1 FROM wholesale_auctions WHERE id = ?').get(id)) continue;
+      const reserve = Math.max(1, Math.round(stock.price * stock.quantity * .75));
+      if (createStockListing(db, { id, stock, startsAt, endsAt: startsAt + WHOLESALE_PERIOD, reserve })) supplied++;
+    }
+    return { supplied };
+  }));
 }
 
 export function tickBusinesses(dataDir, { now = Date.now() } = {}) {
-  return withDatabase(dataDir, db => transaction(db, () => {
+  const supply = supplyStockAuctions(dataDir, { now });
+  withDatabase(dataDir, db => transaction(db, () => {
     ensureBusinessSchema(db);
-    const bucket = Math.floor(now / WHOLESALE_PERIOD), startsAt = bucket * WHOLESALE_PERIOD;
-    for (const stock of WHOLESALE_STOCK) {
-      const reserve = Math.max(1, Math.round(stock.price * stock.quantity * .75));
-      db.prepare(`INSERT OR IGNORE INTO wholesale_auctions (id, stock_id, starts_at, ends_at, reserve)
-        VALUES (?, ?, ?, ?, ?)`).run(lotId(bucket, stock.id), stock.id, startsAt, startsAt + WHOLESALE_PERIOD, reserve);
-    }
-    for (const row of db.prepare('SELECT * FROM wholesale_auctions WHERE settled_at IS NULL AND ends_at <= ?').all(now)) settleLot(db, row, now);
     advanceShops(db, now);
-    return { supplied: WHOLESALE_STOCK.length };
   }));
-}
-
-export function listWholesale(dataDir, { now = Date.now() } = {}) {
-  tickBusinesses(dataDir, { now });
-  return withDatabase(dataDir, db => db.prepare('SELECT * FROM wholesale_auctions WHERE settled_at IS NULL AND ends_at > ? ORDER BY ends_at, id').all(now)
-    .map(row => lotSnapshot(db, row)));
-}
-
-export function bidWholesale(dataDir, user, id, amount, { now = Date.now() } = {}) {
-  if (!Number.isSafeInteger(amount) || amount < 1) fail('invalid_bid');
-  return withDatabase(dataDir, db => transaction(db, () => {
-    ensureBusinessSchema(db); activeUser(db, user);
-    const row = db.prepare('SELECT * FROM wholesale_auctions WHERE id = ?').get(id);
-    if (!row) fail('wholesale_not_found', 404);
-    if (row.settled_at !== null || now >= row.ends_at) fail('auction_ended', 409);
-    const minimum = row.current_bid === null ? row.reserve : row.current_bid + Math.max(1, Math.ceil(row.reserve * .02));
-    if (amount < minimum) fail('bid_too_low', 409);
-    const charge = row.bidder_id === user.id ? amount - row.current_bid : amount;
-    if (!db.prepare('UPDATE users SET tokens = tokens - ? WHERE id = ? AND tokens >= ?').run(charge, user.id, charge).changes) fail('insufficient_tokens', 409);
-    if (row.bidder_id && row.bidder_id !== user.id) {
-      const previous = db.prepare('SELECT tokens FROM users WHERE id = ?').get(row.bidder_id);
-      if (!previous || !Number.isSafeInteger(previous.tokens + row.current_bid)) fail('token_balance_limit', 409);
-      db.prepare('UPDATE users SET tokens = tokens + ? WHERE id = ?').run(row.current_bid, row.bidder_id);
-      const stock = WHOLESALE_STOCK.find(item => item.id === row.stock_id);
-      pushNotification(db, row.bidder_id, {
-        type: 'outbid', sourceKey: `wholesale:outbid:${id}:${amount}`, href: '/businesses',
-        titleEn: 'You were outbid', titleDe: 'Du wurdest ueberboten',
-        bodyEn: `${stock.quantity} × ${stock.title} is now at J€ ${amount}.`,
-        bodyDe: `${stock.quantity} × ${stock.title} steht jetzt bei J€ ${amount}.`
-      }, now);
-    }
-    db.prepare('INSERT INTO wholesale_bids (auction_id, bidder_id, amount, created_at) VALUES (?, ?, ?, ?)').run(id, user.id, amount, now);
-    db.prepare('UPDATE wholesale_auctions SET current_bid = ?, bidder_id = ? WHERE id = ?').run(amount, user.id, id);
-    return lotSnapshot(db, db.prepare('SELECT * FROM wholesale_auctions WHERE id = ?').get(id));
-  }));
+  return supply;
 }

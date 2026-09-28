@@ -82,12 +82,13 @@ precedes runtime startup in `server.mjs`.
   settlement remains as a correctness fallback for reads.
 - Primary sweep: bounded 100 by default (maximum 1000), independent transaction
   per lot; corrupt domain state is reported and other lots can settle.
-- Market drift (under `FEATURE_MARKET`): with news dormant, indexes would sit
-  at neutral forever. Every two hours each category moves to a fresh random
-  regime of ±25 index points (±25%) with a squared draw — small moves are
-  common, full swings rare. A regime is an ordinary market effect that decays
-  back toward neutral over one effect duration and is replaced on the next
-  window; the first drift also performs the one-time simulation activation.
+- Market trends (under `FEATURE_MARKET`): each category records a price point
+  every two hours. Momentum and week-long regimes produce sustained gains and
+  losses; small noise varies the path, and rare shocks produce jumps or crashes.
+  Deterministic category/window draws let a restarted runtime reconstruct
+  missed points. The combined index, including short-lived news effects, stays
+  between 50 and 150 (±50% of neutral 100). The market chart retains 30 days.
+  The first trend tick also performs the one-time simulation activation.
 - Palette NPC buyers (under `FEATURE_RESALES`): every five minutes each active
   lot gets at most one deterministic consideration from a rotating cohort of
   the twelve NPC buyers. Their ceiling is the market-adjusted expected bundle

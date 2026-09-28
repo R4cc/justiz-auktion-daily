@@ -6,9 +6,10 @@ import os from 'node:os';
 import path from 'node:path';
 import { Accounts } from '../src/accounts.mjs';
 import { closeDataStore } from '../src/database.mjs';
-import { bidWholesale, businessDashboard, buyBusiness, listWholesale, stockBusiness, tickBusinesses, unstockBusiness } from '../src/businesses.mjs';
-import { listItem } from '../src/resale.mjs';
+import { businessDashboard, buyBusiness, stockBusiness, supplyStockAuctions, tickBusinesses, unstockBusiness } from '../src/businesses.mjs';
+import { getResale, listItem, listResales, listingsBidOnByUser, placeBid, settleDueListings } from '../src/resale.mjs';
 import { setMarketIndex } from '../src/market.mjs';
+import { tickNpcBuyers } from '../src/npc-buyers.mjs';
 import { createAccountApi } from '../src/account-api.mjs';
 import { createEconomyApi } from '../src/economy-api.mjs';
 import { featureFlags } from '../src/features.mjs';
@@ -31,37 +32,77 @@ async function fixture(t) {
     count: (table, condition = '1 = 1') => accounts.db(db => db.prepare(`SELECT COUNT(*) AS count FROM ${table} WHERE ${condition}`).get().count) };
 }
 
-test('NPC bulk auctions escrow bids and mint exactly one batch at settlement', async t => {
+test('stock batches use marketplace escrow, bid history, and inventory transfer', async t => {
   const f = await fixture(t);
-  const lots = listWholesale(f.dir, { now: start });
+  supplyStockAuctions(f.dir, { now: start });
+  const lots = listResales(f.dir, { now: start });
   assert.equal(lots.length, 8);
-  const wine = lots.find(lot => lot.type === 'wine' && lot.quantity === 24);
-  assert.equal(wine.reserve, 432);
-  bidWholesale(f.dir, f.owner, wine.id, 432, { now: start + 1000 });
+  const wine = lots.find(lot => lot.item.title === 'Wachau Riesling 2022');
+  assert.equal(wine.quantity, 24);
+  assert.equal(wine.startPrice, 432);
+  assert.equal(wine.sellerUsername, 'Stock Supply');
+  assert.equal(f.count('inventory'), 98);
+  placeBid(f.dir, f.owner, wine.id, 432, { now: start + 1000 });
   assert.equal(f.balance('owner'), 568);
-  bidWholesale(f.dir, f.rival, wine.id, 441, { now: start + 2000 });
+  placeBid(f.dir, f.rival, wine.id, 433, { now: start + 2000 });
   assert.equal(f.balance('owner'), 1000);
-  bidWholesale(f.dir, f.owner, wine.id, 450, { now: start + 3000 });
+  placeBid(f.dir, f.owner, wine.id, 450, { now: start + 3000 });
   assert.equal(f.balance('owner'), 550);
-  assert.throws(() => bidWholesale(f.dir, f.rival, wine.id, 450, { now: start + 4000 }), /bid_too_low/);
-  tickBusinesses(f.dir, { now: start + 2 * hour });
-  assert.equal(f.count('inventory'), 24);
+  assert.throws(() => placeBid(f.dir, f.rival, wine.id, 450, { now: start + 4000 }), /bid_too_low/);
+  assert.equal(getResale(f.dir, wine.id, { now: start + 5000 }).bids.length, 3);
+  assert.equal(listingsBidOnByUser(f.dir, f.owner.id, { now: start + 5000 })[0].leading, true);
+  settleDueListings(f.dir, { now: start + 2 * hour });
+  assert.equal(f.count('inventory'), 98);
   assert.equal(f.count('inventory', "user_id = 'owner'"), 24);
-  tickBusinesses(f.dir, { now: start + 2 * hour + 1000 });
-  assert.equal(f.count('inventory'), 24);
+  settleDueListings(f.dir, { now: start + 2 * hour + 1000 });
   assert.equal(f.balance('owner'), 550);
-  assert.equal(businessDashboard(f.dir, f.owner, { now: start + 2 * hour }).bids[0].won, true);
-  assert.equal(businessDashboard(f.dir, f.rival, { now: start + 2 * hour }).bids[0].won, false);
-  assert.equal(f.count('account_notifications', "source_key LIKE 'wholesale:won:%'"), 1);
-  assert.throws(() => bidWholesale(f.dir, f.rival, wine.id, 1000, { now: start + 2 * hour }), /auction_ended/);
+  assert.equal(getResale(f.dir, wine.id, { now: start + 2 * hour }).winnerId, 'owner');
+  assert.equal(f.count('account_notifications', "source_key LIKE 'resale:won:%'"), 1);
+  assert.throws(() => placeBid(f.dir, f.rival, wine.id, 1000, { now: start + 2 * hour }), /auction_ended/);
+});
+
+test('existing stock bids migrate to marketplace without charging escrow twice', async t => {
+  const f = await fixture(t);
+  const id = `${Math.floor(start / (2 * hour))}:riesling`;
+  f.accounts.db(db => {
+    db.prepare(`INSERT INTO wholesale_auctions
+      (id, stock_id, starts_at, ends_at, reserve, current_bid, bidder_id)
+      VALUES (?, 'riesling', ?, ?, 432, 432, 'owner')`).run(id, start, start + 2 * hour);
+    db.prepare(`INSERT INTO wholesale_bids (auction_id, bidder_id, amount, created_at)
+      VALUES (?, 'owner', 432, ?)`).run(id, start + 1000);
+    db.prepare("UPDATE users SET tokens = tokens - 432 WHERE id = 'owner'").run();
+  });
+  supplyStockAuctions(f.dir, { now: start + 2000 });
+  assert.equal(f.balance('owner'), 568);
+  assert.equal(getResale(f.dir, id, { now: start + 2000 }).bids.length, 1);
+  supplyStockAuctions(f.dir, { now: start + 3000 });
+  assert.equal(getResale(f.dir, id, { now: start + 3000 }).bids.length, 1);
+  placeBid(f.dir, f.rival, id, 433, { now: start + 4000 });
+  assert.equal(f.balance('owner'), 1000);
+  settleDueListings(f.dir, { now: start + 2 * hour });
+  assert.equal(f.count('inventory', "user_id = 'rival'"), 24);
+});
+
+test('unbid stock batches are retired after settlement instead of accumulating NPC inventory', async t => {
+  const f = await fixture(t);
+  supplyStockAuctions(f.dir, { now: start });
+  tickNpcBuyers(f.dir, { now: start + hour });
+  assert.equal(f.count('resale_npc_interest'), 0);
+  const oldId = listResales(f.dir, { now: start })[0].id;
+  settleDueListings(f.dir, { now: start + 2 * hour });
+  assert.equal(f.count('inventory'), 98);
+  supplyStockAuctions(f.dir, { now: start + 26 * hour + 60_000 });
+  assert.equal(f.count('inventory'), 98);
+  assert.equal(f.count('resale_auctions', `id = '${oldId}'`), 0);
 });
 
 test('store stock is exclusive, category-checked, and earns once after offline time', async t => {
   const f = await fixture(t);
   f.accounts.db(db => db.prepare("UPDATE users SET tokens = 2000 WHERE id = 'owner'").run());
-  const wineLot = listWholesale(f.dir, { now: start }).find(lot => lot.type === 'wine' && lot.quantity === 24);
-  bidWholesale(f.dir, f.owner, wineLot.id, wineLot.reserve, { now: start });
-  tickBusinesses(f.dir, { now: start + 2 * hour });
+  supplyStockAuctions(f.dir, { now: start });
+  const wineLot = listResales(f.dir, { now: start }).find(lot => lot.item.title === 'Wachau Riesling 2022');
+  placeBid(f.dir, f.owner, wineLot.id, wineLot.startPrice, { now: start });
+  settleDueListings(f.dir, { now: start + 2 * hour });
   const boughtAt = start + 2 * hour;
   const purchase = buyBusiness(f.dir, f.owner, 'wine', 'popup', { now: boughtAt });
   const shop = purchase.shop;
@@ -134,7 +175,7 @@ test('shop categories and capacities reject unsuitable or excess stock atomicall
   assert.equal(f.count('inventory'), 0);
 });
 
-test('business HTTP routes require sessions and CSRF while bulk lots remain public', async t => {
+test('business HTTP routes require sessions and stock lots appear through marketplace APIs', async t => {
   const dir = await mkdtemp(path.join(os.tmpdir(), 'jg-business-http-'));
   const password = 'business-http-password';
   const env = { ADMIN_USERNAME: 'admin', ADMIN_PASSWORD: password };
@@ -156,8 +197,9 @@ test('business HTTP routes require sessions and CSRF while bulk lots remain publ
   const post = (route, payload, cookie = '', csrf = true) => fetch(`${base}/api/account/${route}`, { method: 'POST',
     headers: { 'content-type': 'application/json', ...(csrf ? { 'x-requested-with': 'JUSTIZGUESSR' } : {}), cookie },
     body: JSON.stringify(payload) });
-  const lots = await (await fetch(`${base}/api/wholesale`)).json();
-  assert.equal(lots.auctions.length, 8);
+  const lots = await (await fetch(`${base}/api/resales`)).json();
+  assert.equal(lots.listings.length, 8);
+  assert.equal((await fetch(`${base}/api/wholesale`)).status, 404);
   assert.equal((await fetch(`${base}/api/account/businesses`)).status, 401);
   const login = await post('login', { username: 'admin', password });
   const cookie = login.headers.get('set-cookie');
@@ -165,11 +207,11 @@ test('business HTTP routes require sessions and CSRF while bulk lots remain publ
   assert.equal((await post('businesses/buy', { type: 'wine', size: 'popup' }, cookie)).status, 200);
   const shops = await (await fetch(`${base}/api/account/businesses`, { headers: { cookie } })).json();
   assert.equal(shops.shops.length, 1);
-  const wine = lots.auctions.find(lot => lot.type === 'wine' && lot.quantity === 24);
-  const bid = await post('wholesale/bid', { id: wine.id, amount: wine.reserve }, cookie);
+  const wine = lots.listings.find(lot => lot.item.title === 'Wachau Riesling 2022');
+  const bid = await post('resale/bid', { id: wine.id, amount: wine.startPrice }, cookie);
   assert.equal(bid.status, 200);
   const bidResult = await bid.json();
-  assert.equal(bidResult.user.tokens, 2000 - 1000 - wine.reserve);
+  assert.equal(bidResult.user.tokens, 2000 - 1000 - wine.startPrice);
   assert.equal(bidResult.user.activeBids, 1);
   const hidden = createEconomyApi({ dataDir: dir, json, flags: { ...flags, businesses: false } });
   assert.equal(hidden({ method: 'GET' }, null, new URL('/api/wholesale', base)), false);

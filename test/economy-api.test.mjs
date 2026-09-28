@@ -98,14 +98,18 @@ test('economy endpoints expose news, global market, palettes and resale listings
     revision: catalogResponse.revision }, cookie)).json();
   const listing = await (await post(base, 'resale/listings', { inventoryId: opened.item.id, startPrice: 40, endsAt }, cookie)).json();
   assert.equal(listing.listing.status, 'active');
-  assert.deepEqual((await (await fetch(`${base}/api/resales`)).json()).listings.map(row => row.id), [listing.listing.id]);
+  const marketplace = (await (await fetch(`${base}/api/resales`)).json()).listings;
+  assert.ok(marketplace.some(row => row.id === listing.listing.id));
+  assert.equal(marketplace.filter(row => row.sellerUsername === 'St****').length, 8);
   const detail = await (await fetch(`${base}/api/resales/${listing.listing.id}`)).json();
   assert.equal(detail.listing.item.marketCategory, 'tools');
   assert.deepEqual(detail.listing.bids, []);
   // Guests only ever see censored seller names; sessions see the real ones.
-  assert.equal((await (await fetch(`${base}/api/resales`)).json()).listings[0].sellerUsername, 'ad****');
+  assert.equal((await (await fetch(`${base}/api/resales`)).json()).listings
+    .find(row => row.id === listing.listing.id).sellerUsername, 'ad****');
   assert.equal((await (await fetch(`${base}/api/resales/${listing.listing.id}`)).json()).listing.sellerUsername, 'ad****');
-  assert.equal((await (await fetch(`${base}/api/resales`, { headers: { cookie } })).json()).listings[0].sellerUsername, 'admin');
+  assert.equal((await (await fetch(`${base}/api/resales`, { headers: { cookie } })).json()).listings
+    .find(row => row.id === listing.listing.id).sellerUsername, 'admin');
   assert.equal((await (await post(base, 'inventory/sell', { id: opened.item.id }, cookie)).json()).error, 'instant_sell_disabled');
   assert.equal((await fetch(`${base}/api/account/resale/listings`)).status, 401);
   assert.equal((await post(base, 'resale/listings', { inventoryId: opened.item.id, startPrice: 40, endsAt })).status, 401);

@@ -291,14 +291,14 @@ function settleListingRow(db, row, now) {
     || row.current_bid < 1 || row.winner_id === row.seller_id) fail('escrow_inconsistent', 500);
   const items = listingInventory(db, row);
   if (!items.length || items.some(item => item.user_id !== row.seller_id || item.sold_at !== null)) fail('settlement_conflict', 409);
-  const seller = db.prepare('SELECT tokens FROM users WHERE id = ?').get(row.seller_id);
+  const seller = db.prepare('SELECT tokens, npc FROM users WHERE id = ?').get(row.seller_id);
   if (!seller || !Number.isSafeInteger(seller.tokens + row.current_bid)) fail('token_balance_limit', 409);
   // Transfer every existing inventory row — never insert or mint copies — and
   // release the escrow (paid by the winner at bid time) to the seller.
   const transfer = db.prepare('UPDATE inventory SET user_id = ? WHERE id = ? AND user_id = ? AND sold_at IS NULL');
   for (const item of items) if (!transfer.run(row.winner_id, item.id, row.seller_id).changes) fail('settlement_conflict', 409);
   db.prepare('UPDATE users SET tokens = tokens + ? WHERE id = ?').run(row.current_bid, row.seller_id);
-  awardXp(db, row.seller_id, 'resale', row.id, resaleXp(row.current_bid), now);
+  if (!seller.npc) awardXp(db, row.seller_id, 'resale', row.id, resaleXp(row.current_bid), now);
   // The guarded UPDATE plus the surrounding transaction is the database-level
   // idempotency guarantee: a second settlement can never pay or transfer again.
   if (!db.prepare(`UPDATE resale_auctions SET settled_at = ? WHERE id = ? AND settled_at IS NULL`)

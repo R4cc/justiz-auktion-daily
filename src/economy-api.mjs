@@ -7,7 +7,7 @@ import { getPaletteAuction, listPaletteAuctions } from './palette-auctions.mjs';
 import { AccountError } from './errors.mjs';
 import { Accounts } from './accounts.mjs';
 import { maskListing } from './username-privacy.mjs';
-import { listWholesale } from './businesses.mjs';
+import { supplyStockAuctions } from './businesses.mjs';
 
 // Read-only public endpoints for the flag-gated economy foundation.
 // Every route is off until its feature flag is enabled; disabled routes fall
@@ -69,12 +69,9 @@ export function createEconomyApi({ dataDir, json, flags = featureFlags(), accoun
         return true;
       }
       if (flags.resales && url.pathname === '/api/resales') {
+        if (flags.businesses) supplyStockAuctions(dataDir);
         const listings = listResales(dataDir, { limit: limited(url.searchParams.get('limit'), 50, 200) });
         json(response, 200, { listings: signedIn(request) ? listings : listings.map(maskListing) });
-        return true;
-      }
-      if (flags.businesses && url.pathname === '/api/wholesale') {
-        json(response, 200, { auctions: listWholesale(dataDir) });
         return true;
       }
       if (flags.resales && url.pathname.startsWith('/api/resales/')) {

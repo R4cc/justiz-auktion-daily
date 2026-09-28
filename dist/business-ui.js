@@ -1,11 +1,15 @@
 window.businessUi = (() => {
   const esc = accountEscape;
-  let dashboard = null, auctions = [], timer = null, request = 0, mode = 'shops', busy = false;
-  let selectedOffer = null, purchaseReturnFocus = null;
+  let dashboard = null, timer = null, request = 0, busy = false;
+  let selectedOffer = null, purchaseReturnFocus = null, restockReturnFocus = null, restockShopId = null, restockGroups = [];
   const purchaseDialog = document.createElement('dialog');
   purchaseDialog.className = 'business-buy-dialog';
   purchaseDialog.setAttribute('aria-labelledby', 'business-buy-title');
   document.body.append(purchaseDialog);
+  const restockDialog = document.createElement('dialog');
+  restockDialog.className = 'business-buy-dialog business-restock-dialog';
+  restockDialog.setAttribute('aria-labelledby', 'business-restock-title');
+  document.body.append(restockDialog);
   const names = { wine: ['Wine store', 'Weinhandlung'], toys: ['Toy store', 'Spielwarenladen'],
     electronics: ['Electronics store', 'Elektronikladen'], cars: ['Car dealership', 'Autohaus'] };
   const sizeNames = { popup: ['Street pop-up', 'Strassenstand'], tiny: ['Small shop', 'Kleiner Laden'],
@@ -29,23 +33,20 @@ window.businessUi = (() => {
   const sizeIcon = id => icon(sizeIcons[id], 'business-size-icon');
   const offerCost = (type, size) => Math.round(size.cost * type.costFactor);
   const offerCapacity = (type, size) => type.id === 'cars' ? size.carCapacity : size.capacity;
-  const hourText = value => {
-    const minutes = Math.max(0, Math.ceil((value - Date.now()) / 60000));
-    return minutes < 60 ? `${minutes} min` : `${Math.floor(minutes / 60)} h ${minutes % 60} min`;
-  };
   async function refresh(visit, repaint = true) {
     const current = ++request, owner = account?.id;
-    const [lots, shops] = await Promise.all([fetch('/api/wholesale').then(r => r.ok ? r.json() : null), owner ? accountApi('businesses') : null]);
+    const shops = owner ? await accountApi('businesses') : null;
     if (current !== request || visit !== accountVisit || account?.id !== owner) return;
-    if (!lots) throw new Error(t('Stock auctions are unavailable.', 'Warenauktionen sind nicht verfuegbar.'));
-    auctions = lots.auctions; dashboard = shops;
+    dashboard = shops;
     if (owner) { const session = await accountApi('me'); if (current !== request || visit !== accountVisit || account?.id !== owner) return; updateAccount(session.user); }
     if (purchaseDialog.open) updatePurchaseSelection();
-    if (repaint && !busy) render();
+    if (restockDialog.open) updateRestockSelection();
+    if (repaint && !busy && !restockDialog.open) render();
   }
   function stop() {
-    clearInterval(timer); timer = null; request++; dashboard = null; auctions = [];
+    clearInterval(timer); timer = null; request++; dashboard = null;
     purchaseReturnFocus = null; if (purchaseDialog.open) purchaseDialog.close();
+    restockReturnFocus = null; restockShopId = null; if (restockDialog.open) restockDialog.close();
   }
   async function load(visit) {
     await refresh(visit, false);
@@ -58,7 +59,7 @@ window.businessUi = (() => {
     return `<article class="business-shop"><header><div class="business-owned-title"><span class="business-owned-icon business-type-${esc(shop.type)}">${typeIcon(shop.type)}<span class="business-owned-size">${sizeIcon(shop.size)}</span></span><div><span>${esc(typeName(shop.type))} / ${esc(sizeName(shop.size))}</span><h2>${esc(typeName(shop.type))}</h2></div></div><strong>${shop.stock.length}/${shop.capacity}</strong></header>
       <dl class="business-stats"><div><dt>${t('Visitors', 'Besucher')}</dt><dd>${number(shop.visitors)}</dd></div><div><dt>${t('Popularity', 'Beliebtheit')}</dt><dd>${number(Math.round(shop.popularity * 100))}%</dd></div><div><dt>${t('Variety', 'Vielfalt')}</dt><dd>${number(shop.variety)}</dd></div><div><dt>${t('Avg. value', 'Durchschnittswert')}</dt><dd>${justizEuro(shop.value)}</dd></div><div><dt>${t('Sales', 'Verkaeufe')}</dt><dd>${number(shop.sales)}</dd></div><div><dt>${t('Revenue', 'Umsatz')}</dt><dd>${justizEuro(shop.revenue)}</dd></div></dl>
       ${shop.stock.length ? `<div class="business-stock"><h3>${t('On shelves', 'Im Regal')}</h3><ul>${shop.stock.map(entry => `<li><span>${esc(entry.item.title)}</span><strong>${justizEuro(entry.askingPrice)}</strong><button type="button" data-business="unstock" data-shop="${esc(shop.id)}" data-item="${esc(entry.id)}" aria-label="${esc(t('Remove from store', 'Aus Geschaeft nehmen'))}: ${esc(entry.item.title)}">×</button></li>`).join('')}</ul></div>` : `<p class="business-empty">${t('Shelves are empty.', 'Die Regale sind leer.')}</p>`}
-      ${space && available.length ? `<form class="business-stock-form" data-shop="${esc(shop.id)}"><fieldset><legend>${t('Stock from inventory', 'Aus Inventar einraeumen')}</legend><div class="business-stock-choices">${available.map(item => `<label><input type="checkbox" name="inventoryId" value="${esc(item.id)}"><span>${esc(item.title)}</span><small>${justizEuro(Math.round(item.price))}</small></label>`).join('')}</div></fieldset><button class="secondary-button" type="submit">${t('Stock selected', 'Auswahl einraeumen')}</button><small>${space} ${t('spaces free', 'Plaetze frei')}</small><p class="account-error" role="alert"></p></form>` : space ? `<p class="business-empty">${t('Win stock auctions or collect matching items to fill this shop.', 'Gewinne Warenauktionen oder sammle passende Artikel.')}</p>` : ''}</article>`;
+      ${space ? `<div class="business-restock-actions"><button class="secondary-button" type="button" data-business="open-restock" data-shop="${esc(shop.id)}" ${available.length ? '' : 'disabled'}>${t('Restock', 'Waren einräumen')}</button><small>${space} ${t('spaces free', 'Plätze frei')}</small>${available.length ? '' : `<p class="business-empty">${t('Buy matching items on the marketplace to restock.', 'Kaufe passende Artikel auf dem Marktplatz, um nachzufüllen.')} <a href="/marketplace" data-page>${t('Browse marketplace', 'Marktplatz ansehen')}</a></p>`}</div>` : ''}</article>`;
   }
   function shopsView() {
     if (!account) return `<section class="collection-empty"><h2>${t('Sign in to open a business.', 'Melde dich an, um ein Geschaeft zu eroeffnen.')}</h2><a class="primary-button" href="/login" data-page>${t('Log in', 'Anmelden')}</a></section>`;
@@ -101,21 +102,94 @@ window.businessUi = (() => {
     purchaseReturnFocus = null;
   });
   purchaseDialog.addEventListener('click', event => { if (event.target === purchaseDialog) purchaseDialog.close(); });
-  function auctionsView() {
-    const bids = dashboard?.bids || [];
-    return `<section class="business-auctions"><div class="business-intro"><h2>${t('NPC direct auctions', 'NPC-Direktauktionen')}</h2><p>${t('Each winning bid buys the complete batch. Units arrive separately in your inventory when the auction ends.', 'Jedes Gewinnergebot kauft das gesamte Los. Nach Auktionsende landen die Stuecke einzeln im Inventar.')}</p></div>${bids.length ? `<div class="business-bid-history"><h3>${t('Your bids', 'Deine Gebote')}</h3><ul>${bids.map(lot => `<li><span>${lot.quantity} × ${esc(lot.title)}</span><strong>${lot.status === 'active' ? lot.leading ? t('Leading', 'Du fuehrst') : t('Outbid', 'Ueberboten') : lot.won ? t('Won', 'Gewonnen') : t('Lost', 'Verloren')}</strong><small>${justizEuro(lot.highestBid)}</small></li>`).join('')}</ul></div>` : ''}<div class="business-lot-grid">${auctions.map(lot => {
-      const next = lot.currentBid === null ? lot.reserve : lot.currentBid + lot.bidIncrement;
-      return `<article class="business-lot"><span class="business-lot-category">${esc(typeName(lot.type))}</span><h3>${lot.quantity} × ${esc(lot.title)}</h3><p>${t('Market value', 'Marktwert')} ${justizEuro(lot.unitValue)} ${t('each', 'pro Stueck')} · ${hourText(lot.endsAt)}</p><div class="business-lot-bid"><strong>${justizEuro(lot.currentBid ?? lot.reserve)}</strong><span>${lot.currentBid === null ? t('Reserve', 'Startpreis') : t('Current bid', 'Aktuelles Gebot')}</span></div>${account ? `<form class="business-bid-form" data-lot="${esc(lot.id)}"><label>${t('Your bid', 'Dein Gebot')}<input name="amount" type="number" min="${next}" step="1" value="${next}" required></label><button class="secondary-button" type="submit">${t('Bid', 'Bieten')}</button><p class="account-error" role="alert"></p></form>` : `<a class="secondary-button" href="/login" data-page>${t('Log in to bid', 'Zum Bieten anmelden')}</a>`}</article>`;
-    }).join('')}</div></section>`;
+  function groupedRestockItems(items) {
+    const groups = new Map();
+    for (const item of items) {
+      const key = JSON.stringify([item.title, item.price]);
+      if (!groups.has(key)) groups.set(key, { title: item.title, price: item.price, items: [] });
+      groups.get(key).items.push(item);
+    }
+    return [...groups.values()].sort((a, b) => a.title.localeCompare(b.title) || a.price - b.price);
   }
+  function autoRestockCounts(groups, shelfTitles, space) {
+    const counts = groups.map(() => 0), seen = new Set(shelfTitles);
+    let left = space;
+    // First choose a unit of each title absent from the shelf. Then distribute
+    // remaining room round-robin so one large stack cannot crowd out variety.
+    groups.forEach((group, index) => {
+      if (left && !seen.has(group.title)) { counts[index]++; seen.add(group.title); left--; }
+    });
+    while (left) {
+      let added = false;
+      groups.forEach((group, index) => {
+        if (left && counts[index] < group.items.length) { counts[index]++; left--; added = true; }
+      });
+      if (!added) break;
+    }
+    return counts;
+  }
+  function updateRestockSelection(changed = null) {
+    const shop = dashboard?.shops.find(entry => entry.id === restockShopId);
+    if (!shop) return;
+    const space = Math.max(0, shop.capacity - shop.stock.length);
+    const inputs = [...restockDialog.querySelectorAll('input[name="quantity"]')];
+    const values = inputs.map((input, index) => Math.max(0, Math.min(restockGroups[index].items.length, Math.floor(Number(input.value) || 0))));
+    if (changed) {
+      const index = inputs.indexOf(changed);
+      if (index >= 0) values[index] = Math.min(values[index], Math.max(0, space - values.reduce((sum, value, at) => sum + (at === index ? 0 : value), 0)));
+    }
+    inputs.forEach((input, index) => {
+      input.value = values[index];
+      input.max = Math.max(values[index], Math.min(restockGroups[index].items.length,
+        space - values.reduce((sum, value, at) => sum + (at === index ? 0 : value), 0)));
+    });
+    const selected = values.reduce((sum, value) => sum + value, 0);
+    restockDialog.querySelector('[data-restock-summary]').textContent =
+      `${selected} / ${space} ${t('spaces selected', 'Plätze ausgewählt')}`;
+    restockDialog.querySelector('button[type="submit"]').disabled = busy || selected < 1 || selected > space;
+  }
+  function openRestockDialog(button) {
+    const shop = dashboard?.shops.find(entry => entry.id === button.dataset.shop);
+    if (!shop || !account || shop.stock.length >= shop.capacity) return;
+    restockShopId = shop.id; restockReturnFocus = button;
+    restockGroups = groupedRestockItems(dashboard.inventory.filter(item => item.type === shop.type));
+    const space = shop.capacity - shop.stock.length;
+    restockDialog.innerHTML = `<form id="business-restock-form"><header class="business-dialog-header"><div><p class="eyebrow">${t('INVENTORY', 'INVENTAR')}</p><h2 id="business-restock-title">${t('Restock', 'Waren einräumen')} · ${esc(typeName(shop.type))}</h2></div><button class="dialog-close" type="button" data-business="close-restock" aria-label="${t('Close', 'Schließen')}">×</button></header>
+      <div class="business-dialog-options"><p>${space} ${t('spaces available. Choose how many of each item to stock.', 'Plätze frei. Wähle die Anzahl je Artikel.')}</p>
+        <button class="secondary-button" type="button" data-business="auto-restock">${t('Auto fill for variety', 'Automatisch vielfältig füllen')}</button>
+        <div class="business-restock-list">${restockGroups.map((group, index) => `<label class="business-restock-row"><span><strong>${esc(group.title)}</strong><small>${group.items.length} ${t('available', 'verfügbar')} · ${justizEuro(Math.round(group.price))} ${t('each', 'pro Stück')}</small></span><input type="number" name="quantity" data-index="${index}" min="0" max="${Math.min(space, group.items.length)}" step="1" value="0" inputmode="numeric" aria-label="${esc(group.title)} ${t('quantity', 'Anzahl')}"></label>`).join('')}</div></div>
+      <footer class="business-dialog-footer"><div><strong data-restock-summary></strong><p class="account-error" role="alert"></p></div><button class="primary-button" type="submit" disabled>${t('Restock selected', 'Auswahl einräumen')}</button></footer></form>`;
+    updateRestockSelection();
+    restockDialog.showModal();
+    restockDialog.querySelector('input[name="quantity"]')?.focus({ preventScroll: true });
+  }
+  restockDialog.addEventListener('close', () => {
+    const shopId = restockShopId;
+    restockShopId = null; restockGroups = [];
+    if (shopId && currentAccountPage === '/businesses') render();
+    const focus = shopId ? accountContent.querySelector(`[data-business="open-restock"][data-shop="${CSS.escape(shopId)}"]`) : null;
+    if (focus || restockReturnFocus?.isConnected) (focus || restockReturnFocus).focus({ preventScroll: true });
+    restockReturnFocus = null;
+  });
+  restockDialog.addEventListener('click', event => { if (event.target === restockDialog) restockDialog.close(); });
   function render() {
     if (currentAccountPage !== '/businesses') return;
-    accountContent.innerHTML = pageHeading(t('Businesses', 'Geschaefte')) + `<div class="business-tabs" role="tablist" aria-label="${t('Business views', 'Geschaeftsansichten')}"><button type="button" role="tab" aria-selected="${mode === 'shops'}" data-business="shops">${t('My stores', 'Meine Geschaefte')}</button><button type="button" role="tab" aria-selected="${mode === 'auctions'}" data-business="auctions">${t('Stock auctions', 'Warenauktionen')}</button></div>${mode === 'shops' ? shopsView() : auctionsView()}`;
+    accountContent.innerHTML = pageHeading(t('Businesses', 'Geschaefte')) + shopsView();
   }
   document.addEventListener('click', async event => {
     const button = event.target.closest('[data-business]'); if (!button || currentAccountPage !== '/businesses') return;
     if (button.dataset.business === 'open-buy') { openPurchaseDialog(button); return; }
     if (button.dataset.business === 'close-buy') { purchaseDialog.close(); return; }
+    if (button.dataset.business === 'open-restock') { openRestockDialog(button); return; }
+    if (button.dataset.business === 'close-restock') { restockDialog.close(); return; }
+    if (button.dataset.business === 'auto-restock') {
+      const shop = dashboard?.shops.find(entry => entry.id === restockShopId);
+      if (!shop) return;
+      const counts = autoRestockCounts(restockGroups, shop.stock.map(entry => entry.item.title), shop.capacity - shop.stock.length);
+      restockDialog.querySelectorAll('input[name="quantity"]').forEach((input, index) => { input.value = counts[index]; });
+      updateRestockSelection();
+      return;
+    }
     if (button.dataset.business === 'unstock') {
       if (busy) return; busy = true; button.disabled = true;
       const visit = accountVisit, owner = account?.id;
@@ -126,13 +200,25 @@ window.businessUi = (() => {
       finally { busy = false; if (visit === accountVisit) render(); }
       return;
     }
-    mode = button.dataset.business; render();
   });
   document.addEventListener('change', event => { if (event.target.matches('input[name="business-option"]')) updatePurchaseSelection(); });
+  document.addEventListener('input', event => {
+    if (restockDialog.open && event.target.matches('input[name="quantity"]')) updateRestockSelection(event.target);
+  });
   document.addEventListener('submit', async event => {
     const form = event.target;
-    if (currentAccountPage !== '/businesses' || !['business-buy-form', 'business-stock-form', 'business-bid-form'].some(name => form.classList.contains(name) || form.id === name)) return;
-    event.preventDefault(); if (busy || (form.id === 'business-buy-form' && !selectedOffer)) return; busy = true;
+    if (currentAccountPage !== '/businesses' || !['business-buy-form', 'business-restock-form'].includes(form.id)) return;
+    event.preventDefault();
+    if (busy || (form.id === 'business-buy-form' && !selectedOffer)) return;
+    const quantities = form.id === 'business-restock-form'
+      ? [...form.querySelectorAll('input[name="quantity"]')].map(input => Number(input.value)) : [];
+    const shop = dashboard?.shops.find(entry => entry.id === restockShopId);
+    const space = shop ? shop.capacity - shop.stock.length : 0;
+    if (form.id === 'business-restock-form' && (!shop || quantities.some((value, index) =>
+      !Number.isSafeInteger(value) || value < 0 || value > restockGroups[index].items.length)
+      || quantities.reduce((sum, value) => sum + value, 0) < 1
+      || quantities.reduce((sum, value) => sum + value, 0) > space)) return;
+    busy = true;
     const visit = accountVisit, owner = account?.id, button = form.querySelector('button[type="submit"]');
     button.disabled = true;
     let completed = false;
@@ -142,18 +228,20 @@ window.businessUi = (() => {
         const [type, size] = selectedOffer.split(':');
         result = await accountApi('businesses/buy', { type, size });
       }
-      else if (form.classList.contains('business-stock-form')) result = await accountApi('businesses/stock', { shopId: form.dataset.shop, inventoryIds: [...form.querySelectorAll('input:checked')].map(input => input.value) });
-      else result = await accountApi('wholesale/bid', { id: form.dataset.lot, amount: Number(form.elements.amount.value) });
+      else result = await accountApi('businesses/stock', { shopId: restockShopId,
+        inventoryIds: restockGroups.flatMap((group, index) => group.items.slice(0, quantities[index]).map(item => item.id)) });
       if (account?.id !== owner || visit !== accountVisit) return;
       if (result.user) updateAccount(result.user);
       await refresh(visit);
       completed = true;
       if (form.id === 'business-buy-form' && purchaseDialog.open) purchaseDialog.close();
+      if (form.id === 'business-restock-form' && restockDialog.open) restockDialog.close();
       showToast(t('Done.', 'Erledigt.'));
     } catch (error) { if (visit === accountVisit) form.querySelector('.account-error').textContent = error.message; }
     finally {
       busy = false;
       if (form.id === 'business-buy-form' && purchaseDialog.open) updatePurchaseSelection();
+      else if (form.id === 'business-restock-form' && restockDialog.open) updateRestockSelection();
       else if (button.isConnected) button.disabled = false;
       if (completed && visit === accountVisit) render();
     }

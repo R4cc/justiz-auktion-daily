@@ -146,7 +146,7 @@ test('legacy news and manual indexes migrate exactly once at activation', async 
     insert.run('old-arch', 'Old archived', 'B', 'archived', iso, '[]', '[]', '{}', iso, iso);
   });
   setMarketIndex(dir, 'electronics', 96.5, { now: day });  // fractional, in range
-  setMarketIndex(dir, 'wine', 200, { now: day });          // out of range: bounded to 130
+  setMarketIndex(dir, 'wine', 200, { now: day });          // out of range: bounded to 150
   // Activation happens with the first publication under the new rules.
   publish(dir, 'fresh', [{ category: 'tools', direction: 'up', magnitude: 5 }], day + 2000);
   // Legacy published/archived news received receipts; drafts did not.
@@ -155,7 +155,7 @@ test('legacy news and manual indexes migrate exactly once at activation', async 
   // Bounded manual indexes became decaying bootstrap effects; neutral
   // categories got none. Fractional deltas are preserved.
   assert.deepEqual(rows(dir, `SELECT source_id, delta FROM market_effects WHERE event_id IS NULL ORDER BY source_id`)
-    .map(row => [row.source_id, row.delta]), [['bootstrap:electronics', -3.5], ['bootstrap:wine', 30]]);
+    .map(row => [row.source_id, row.delta]), [['bootstrap:electronics', -3.5], ['bootstrap:wine', 50]]);
   assert.deepEqual(rows(dir, `SELECT starts_at, ends_at FROM market_effects WHERE source_id = 'bootstrap:electronics'`)
     .map(row => [row.starts_at, row.ends_at]), [[day + 2000, day + 2000 + EFFECT_DURATION_MS]]);
   // The market reflects bounded legacy values plus the fresh publication —
@@ -163,7 +163,7 @@ test('legacy news and manual indexes migrate exactly once at activation', async 
   const state = marketState(dir, { now: day + 2000 });
   const by = Object.fromEntries(state.categories.map(category => [category.category, category.currentIndex]));
   assert.equal(by.electronics, 96.5);
-  assert.equal(by.wine, 130);
+  assert.equal(by.wine, 150);
   assert.equal(by.tools, 105);
   assert.ok(state.categories.every(category => category.baseIndex === 100));
   // Manual index writes are rejected once the simulation owns the market.
@@ -192,7 +192,7 @@ test('legacy news and manual indexes migrate exactly once at activation', async 
   const modernized = saveNewsEvent(dir, { id: 'old-draft', title: 'T', body: 'B', status: 'published',
     marketEffects: [{ category: 'vehicles', direction: 'up', magnitude: 2 }] }, { now: day + 7000 });
   assert.equal(modernized.publishedAt, new Date(day + 7000).toISOString());
-  // Bootstrap +30 on wine still consumes the absolute budget there.
+  // Bootstrap +50 on wine still consumes the absolute budget there.
   assert.throws(() => publish(dir, 'over-wine', [{ category: 'wine', direction: 'up', magnitude: 1 }], day + 8000),
     /market_effect_budget/);
 });

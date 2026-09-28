@@ -5,8 +5,8 @@ import os from 'node:os';
 import path from 'node:path';
 import { CASES, caseCatalog } from '../src/cases.mjs';
 import { Accounts } from '../src/accounts.mjs';
-import { closeDataStore, upsertAuctions } from '../src/database.mjs';
-import { DEFAULT_MARKET_INDEX, MARKET_CATEGORIES, MARKET_DRIFT_INTERVAL_MS, estimatedValueTokens, marketCategoryForAuction, marketCategoryForItem,
+import { closeDataStore, upsertAuctions, withDatabase } from '../src/database.mjs';
+import { DEFAULT_MARKET_INDEX, MARKET_CATEGORIES, estimatedValueTokens, marketCategoryForAuction, marketCategoryForItem,
   marketCategoryForListingCategory, marketCategoryForTheme, marketHistory, marketState,
   setMarketIndex, snapshotMarketState, tickMarketDrift } from '../src/market.mjs';
 
@@ -125,28 +125,30 @@ test('inventory items carry their frozen market category and legacy items derive
   assert.equal(service.inventory(admin)[0].sellValue, item.sellValue);
 });
 
-test('market drift samples ±25% regimes once per window and moves computed indexes', async t => {
+test('market trends persist across weeks, mix gains and losses, and stay within ±50%', async t => {
   const dir = await fixture(t);
-  // The sampler draws magnitude then sign per category; the stub targets the
-  // first registry category (electronics) and leaves the rest at neutral.
-  const regime = (magnitude, sign) => {
-    let calls = 0;
-    return () => { calls++; return calls === 1 ? magnitude : calls === 2 ? sign : 0; };
-  };
   const index = (now = day) => Object.fromEntries(
     marketState(dir, { now }).categories.map(c => [c.category, c.currentIndex]));
-  // electronics: a full +25 swing, every other category unchanged.
-  const first = tickMarketDrift(dir, { now: day, random: regime(.999999, .9) });
+  const first = tickMarketDrift(dir, { now: day });
   assert.equal(first.applied, true);
-  assert.equal(index().electronics, 125);
-  assert.ok(Object.entries(index()).every(([id, value]) => id === 'electronics' || value === 100));
-  // The same window never resamples; the next window moves to a fresh regime.
-  assert.equal(tickMarketDrift(dir, { now: day + 1000, random: regime(0, 0) }).applied, false);
-  tickMarketDrift(dir, { now: day + MARKET_DRIFT_INTERVAL_MS + 1000, random: regime(.999999, .1) });
-  assert.equal(index(day + MARKET_DRIFT_INTERVAL_MS + 1000).electronics, 75);
-  // Real randomness stays inside the ±25% band and keeps the world moving.
-  for (let window = 2; window <= 8; window++) tickMarketDrift(dir, { now: day + window * MARKET_DRIFT_INTERVAL_MS });
-  const values = marketState(dir, { now: day + 8 * MARKET_DRIFT_INTERVAL_MS }).categories.map(c => c.currentIndex);
-  assert.ok(values.every(value => value >= 75 && value <= 125), JSON.stringify(values));
-  assert.ok(values.some(value => value !== 100));
+  const initial = index();
+  assert.ok(Object.values(initial).some(value => value > 100));
+  assert.ok(Object.values(initial).some(value => value < 100));
+  assert.equal(tickMarketDrift(dir, { now: day + 1000 }).applied, false);
+  for (const days of [7, 14, 30]) {
+    tickMarketDrift(dir, { now: day + days * 24 * 3600_000 });
+    const values = Object.values(index(day + days * 24 * 3600_000));
+    assert.ok(values.every(value => value >= 50 && value <= 150), JSON.stringify(values));
+    assert.ok(values.some(value => value > 100) && values.some(value => value < 100));
+  }
+  const sevenDays = index(day + 7 * 24 * 3600_000);
+  assert.ok(Math.abs(sevenDays.electronics - initial.electronics) > 10);
+  // Sparse ticks backfill the same persisted path, including occasional jumps.
+  const points = withDatabase(dir, db => db.prepare(`SELECT a.index_value - b.index_value AS move
+    FROM market_trend_points a JOIN market_trend_points b
+      ON a.category = b.category AND a.bucket = b.bucket + 1`).all());
+  assert.ok(points.some(point => Math.abs(point.move) >= 6));
+  const final = index(day + 30 * 24 * 3600_000);
+  closeDataStore(dir);
+  assert.deepEqual(index(day + 30 * 24 * 3600_000), final);
 });

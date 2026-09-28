@@ -421,11 +421,6 @@ export class Accounts {
         WHERE a.status = 'active' AND a.ends_at > ? AND EXISTS
         (SELECT 1 FROM resale_bids b WHERE b.auction_id = a.id AND b.bidder_id = ?)`).get(this.now(), userId).count;
     }
-    if (hasTable('wholesale_auctions') && hasTable('wholesale_bids')) {
-      activeBids += db.prepare(`SELECT COUNT(*) AS count FROM wholesale_auctions a
-        WHERE a.settled_at IS NULL AND a.ends_at > ? AND EXISTS
-        (SELECT 1 FROM wholesale_bids b WHERE b.auction_id = a.id AND b.bidder_id = ?)`).get(this.now(), userId).count;
-    }
     const daily = { status: run?.complete ? 'completed' : run?.answers.length ? 'in_progress' : 'not_started',
       completedRounds: run?.answers.length || 0,
       score: run?.complete ? run.answers.reduce((total, guess, i) => total + scoreGuess(guess, run.auctions[i].actualBid), 0) : null };

@@ -10,7 +10,7 @@ import { bidOnPaletteAuction, createPaletteAuction, getPaletteAuctionRewards, pa
 import { archivedListingsBidOnByUser, cancelListing, listItem, listingsBidOnByUser, listingsByUser, placeBid } from './resale.mjs';
 import { maskLeaderboard } from './username-privacy.mjs';
 import { markNotificationsRead, notificationsForUser } from './notifications.mjs';
-import { bidWholesale, businessDashboard, buyBusiness, stockBusiness, unstockBusiness } from './businesses.mjs';
+import { businessDashboard, buyBusiness, stockBusiness, unstockBusiness } from './businesses.mjs';
 
 const AUCTION_PAGE_SIZE = 25;
 
@@ -174,7 +174,6 @@ export async function createAccountApi({ dataDir, dailyPayload, json, env = proc
       else if (flags.businesses && route === 'businesses/buy') result = { ...buyBusiness(dataDir, user, payload.type, payload.size), user: accounts.profile(user) };
       else if (flags.businesses && route === 'businesses/stock') result = { shop: stockBusiness(dataDir, user, payload.shopId, payload.inventoryIds), user: accounts.profile(user) };
       else if (flags.businesses && route === 'businesses/unstock') result = { shop: unstockBusiness(dataDir, user, payload.shopId, payload.inventoryId), user: accounts.profile(user) };
-      else if (flags.businesses && route === 'wholesale/bid') result = { auction: bidWholesale(dataDir, user, payload.id, payload.amount), user: accounts.profile(user) };
       else if (flags.paletteAuctions && route === 'admin/palette-auctions') {
         // Narrow test/operations surface for trusted lot creation. Only
         // editionId and requestId reach the domain; callers cannot inject a

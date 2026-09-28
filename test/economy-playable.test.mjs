@@ -115,8 +115,12 @@ test('NPC buyers chase hot-market palettes and fall silent when the market cools
   // then moves the market and the NPC ceilings float against the frozen lot.
   const lot = createPaletteAuction(f.dir, { editionId: edition.editionId, requestId: 'palette-npc-fixture-1', endsAt: day + 8 * hour }, { now: day });
   const unit = key => key.includes(':palette-showup') ? 0 : 0.5;
-  let hotCalls = 0;
-  tickMarketDrift(f.dir, { now: day, random: () => { hotCalls++; return hotCalls === 1 ? .999999 : hotCalls === 2 ? .9 : 0; } });
+  const setTrend = (at, value) => {
+    tickMarketDrift(f.dir, { now: at });
+    f.mutate(`UPDATE market_trend_points SET index_value = ${value}, momentum = 0
+      WHERE category = 'electronics' AND bucket = ${Math.floor(at / (2 * hour))}`);
+  };
+  setTrend(day, 125);
   assert.equal(marketState(f.dir, { now: day }).categories.find(c => c.category === 'electronics').currentIndex, 125);
   assert.ok(tickPaletteBuyers(f.dir, { now: day + 30_000, unit }).bids >= 1);
   const bid = f.sql('SELECT * FROM primary_palette_bids ORDER BY id DESC LIMIT 1')[0];
@@ -132,14 +136,12 @@ test('NPC buyers chase hot-market palettes and fall silent when the market cools
     { now: day + 90_000, npc: true }), /npc_self_outbid/);
   assert.equal(count(f, 'primary_palette_bids'), bidsInSlot);
   // A cold market drops every ceiling below the standing bid: silence.
-  let coldCalls = 0;
-  tickMarketDrift(f.dir, { now: day + 2 * hour, random: () => { coldCalls++; return coldCalls === 1 ? .999999 : coldCalls === 2 ? .1 : 0; } });
+  setTrend(day + 2 * hour, 75);
   const bidsBefore = count(f, 'primary_palette_bids');
   assert.equal(tickPaletteBuyers(f.dir, { now: day + 2 * hour + 60_000, unit }).bids, 0);
   assert.equal(count(f, 'primary_palette_bids'), bidsBefore);
   // A recovered market resumes bidding; the player-facing API still rejects NPCs.
-  let warmCalls = 0;
-  tickMarketDrift(f.dir, { now: day + 4 * hour, random: () => { warmCalls++; return warmCalls === 1 ? .999999 : warmCalls === 2 ? .9 : 0; } });
+  setTrend(day + 4 * hour, 125);
   assert.ok(tickPaletteBuyers(f.dir, { now: day + 4 * hour + 6 * 60_000, unit }).bids >= 1);
   assert.throws(() => bidOnPaletteAuction(f.dir, { id: bid.bidder_id }, lot.id, bid.amount + 1, { now: day + 4 * hour + 90_000 }), /forbidden/);
 });

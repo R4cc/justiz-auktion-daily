@@ -1,4 +1,5 @@
 import { AccountError } from './errors.mjs';
+import { createHash } from 'node:crypto';
 import { auctionSelectionCategory } from './auction-selection.mjs';
 import { tokenValue } from './cases.mjs';
 import { getState, setState, transaction, withDatabase } from './database.mjs';
@@ -34,8 +35,8 @@ const CATEGORY_IDS = new Map(MARKET_CATEGORIES.map(category => [category.id, cat
 export const DEFAULT_MARKET_INDEX = 100;
 export const EFFECT_DURATION_MS = 72 * 3600_000;     // every effect expires exactly 72h after it starts
 export const EFFECT_BUDGET = 30;                     // max absolute active contribution per category
-export const INDEX_MIN = 70;
-export const INDEX_MAX = 130;
+export const INDEX_MIN = 50;
+export const INDEX_MAX = 150;
 export const SNAPSHOT_INTERVAL_MS = 3600_000;        // hourly UTC snapshot grid
 export const SNAPSHOT_RETENTION_MS = 30 * 24 * 3600_000;
 export const MAX_BACKFILL_BOUNDARIES = 720;          // per refresh, matching the 30-day retention window
@@ -80,32 +81,32 @@ export function marketCategoryForTheme(theme) {
   return theme in THEME_MARKET_CATEGORIES ? THEME_MARKET_CATEGORIES[theme] : null;
 }
 
-// Deterministic index computation, always derived from persisted effects —
-// never by applying deltas onto a running value. An effect contributes its
-// signed magnitude (index points), linearly decaying to zero over exactly
-// EFFECT_DURATION_MS. Reads hold no randomness of their own: randomness only
-// enters as written effects (news publications, market drift below), so any
-// moment reconstructs identically from the table.
+// News effects contribute signed index points and decay linearly over 72h.
+// The persistent trend point is the baseline; reads reconstruct it and the
+// effects from stored rows, without sampling randomness.
 export function effectContribution(delta, startsAt, at) {
   const remaining = Math.min(1, Math.max(0, 1 - (at - startsAt) / EFFECT_DURATION_MS));
   return delta * remaining;
 }
 
-function indexFromEffects(effects, at) {
-  const index = DEFAULT_MARKET_INDEX
+function indexFromEffects(effects, at, base = DEFAULT_MARKET_INDEX) {
+  const index = base
     + effects.reduce((sum, effect) => sum + effectContribution(effect.delta, effect.starts_at, at), 0);
-  // The budget already guarantees the range by construction; the clamp keeps
-  // the promise even for corrupted or hand-edited effect rows.
+  // News can push a trending category beyond its allowed price band.
   return Math.min(INDEX_MAX, Math.max(INDEX_MIN, index));
 }
 
 export function computeCategoryIndex(db, category, at) {
+  const trend = db.prepare(`SELECT index_value FROM market_trend_points
+    WHERE category = ? AND bucket <= ? ORDER BY bucket DESC LIMIT 1`)
+    .get(category, Math.floor(at / MARKET_DRIFT_INTERVAL_MS));
   return indexFromEffects(db.prepare(`SELECT delta, starts_at FROM market_effects
-    WHERE category = ? AND starts_at <= ? AND ends_at > ?`).all(category, at, at), at);
+    WHERE category = ? AND starts_at <= ? AND ends_at > ?`).all(category, at, at),
+  at, trend?.index_value ?? DEFAULT_MARKET_INDEX);
 }
 
 // Unrounded, activation-aware index read for domain valuation (e.g. palette
-// edition pricing): computed from effects after activation, the stored
+// edition pricing): computed from trend points and effects after activation, the stored
 // placeholder value before it. Deliberately not gated by feature flags —
 // persisted global market state is always the valuation source of truth.
 export function marketIndexAt(db, category, at) {
@@ -153,6 +154,15 @@ export function ensureMarketEffectsSchema(db) {
     UNIQUE(event_id, category)
   ) STRICT`);
   db.exec(`CREATE INDEX IF NOT EXISTS market_effects_active ON market_effects(category, starts_at, ends_at)`);
+  db.exec(`CREATE TABLE IF NOT EXISTS market_trend_points (
+    category TEXT NOT NULL REFERENCES market_categories(category),
+    bucket INTEGER NOT NULL,
+    index_value REAL NOT NULL,
+    momentum REAL NOT NULL,
+    direction INTEGER NOT NULL,
+    regime_until INTEGER NOT NULL,
+    PRIMARY KEY(category, bucket)
+  ) STRICT`);
 }
 
 // The durable activation marker in app_state. Its presence switches reads from
@@ -208,20 +218,17 @@ export function insertNewsMarketEffects(db, eventId, effects, now) {
   }
 }
 
-// Random background movement. With news dormant the indexes would otherwise
-// sit at neutral forever. Every MARKET_DRIFT_INTERVAL_MS each category moves
-// to a fresh random regime of ±MARKET_DRIFT_MAX_POINTS (index points, so
-// ±25 points ≈ ±25% around the neutral 100). The squared draw makes larger
-// fluctuations deliberately unlikely; a regime is an ordinary effect row that
-// decays back toward neutral over one effect duration if drift ever stops,
-// and it is replaced (never stacked) on the next regime change. All reads —
-// valuation, snapshots, history — go through the same effect computation as
-// news, so no read path needs drift-specific handling.
+// Persistent two-hour trend points make price paths move over weeks. Momentum
+// carries a category through a multi-day regime; small noise varies the path,
+// while rare shocks create a visible jump or crash. All draws are keyed by
+// category and bucket, so a restart or sparse runtime produces the same path.
+// News remains a separate, short-lived effect on top of this baseline.
 export const MARKET_DRIFT_INTERVAL_MS = 2 * 3600_000;
-export const MARKET_DRIFT_MAX_POINTS = 25;
-const DRIFT_MARKER = 'market_drift_v1';
+const TREND_BACKFILL_BUCKETS = 360; // 30 days, matching history retention
+const trendDraw = key => parseInt(createHash('sha256').update(key).digest('hex').slice(0, 8), 16) / 0x100000000;
+const clamp = (value, low, high) => Math.min(high, Math.max(low, value));
 
-export function applyMarketDrift(db, now, random = Math.random) {
+export function applyMarketDrift(db, now, random = null) {
   ensureNewsSchema(db);
   ensureMarketSchema(db, now);
   ensureMarketEffectsSchema(db);
@@ -230,24 +237,55 @@ export function applyMarketDrift(db, now, random = Math.random) {
     markSimulationActivation(db, now);
   }
   const bucket = Math.floor(now / MARKET_DRIFT_INTERVAL_MS);
-  const state = getState(db, DRIFT_MARKER, null);
-  if (state?.bucket === bucket) return { applied: false, bucket };
-  const replace = db.prepare('DELETE FROM market_effects WHERE source_id = ?');
-  const insert = db.prepare(`INSERT INTO market_effects
-    (source_id, event_id, category, delta, starts_at, ends_at) VALUES (?, NULL, ?, ?, ?, ?)`);
-  for (const { id } of MARKET_CATEGORIES) {
-    const deviation = roundIndex(MARKET_DRIFT_MAX_POINTS * random() ** 2) * (random() < 0.5 ? -1 : 1);
-    replace.run(`drift:${id}`);
-    insert.run(`drift:${id}`, id, deviation, now, now + EFFECT_DURATION_MS);
+  const insert = db.prepare(`INSERT INTO market_trend_points
+    (category, bucket, index_value, momentum, direction, regime_until) VALUES (?, ?, ?, ?, ?, ?)`);
+  let applied = false, earliestStep = Infinity;
+  for (const [ordinal, { id }] of MARKET_CATEGORIES.entries()) {
+    let previous = db.prepare(`SELECT * FROM market_trend_points WHERE category = ?
+      ORDER BY bucket DESC LIMIT 1`).get(id);
+    if (!previous) {
+      // Carry the old two-hour drift forward without a discontinuity. End its
+      // effect at this boundary so it still reconstructs older snapshots.
+      const old = db.prepare(`SELECT delta, starts_at FROM market_effects
+        WHERE source_id = ? AND starts_at <= ? AND ends_at > ?`).get(`drift:${id}`, now, now);
+      const carry = old ? effectContribution(old.delta, old.starts_at, now) : 0;
+      db.prepare('UPDATE market_effects SET ends_at = ? WHERE source_id = ? AND ends_at > ?')
+        .run(now, `drift:${id}`, now);
+      const direction = ordinal % 2 ? -1 : 1;
+      previous = { bucket: bucket - 1, index_value: clamp(100 + carry, INDEX_MIN, INDEX_MAX),
+        momentum: direction * .24, direction, regime_until: bucket + 120 + Math.floor(trendDraw(`${id}:initial`) * 96) };
+    }
+    const first = Math.max(previous.bucket + 1, bucket - TREND_BACKFILL_BUCKETS + 1);
+    for (let step = first; step <= bucket; step++) {
+      const draw = name => random ? random() : trendDraw(`${id}:${step}:${name}`);
+      let direction = previous.direction, regimeUntil = previous.regime_until;
+      if (step >= regimeUntil) {
+        direction = previous.index_value > 130 ? -1 : previous.index_value < 70 ? 1 : draw('regime') < .5 ? -1 : 1;
+        regimeUntil = step + 84 + Math.floor(draw('duration') * 132); // 7–18 days
+      }
+      let momentum = clamp(previous.momentum * .94 + direction * .025 + (draw('noise') - .5) * .12, -.7, .7);
+      const shock = draw('shock') < .007
+        ? (draw('shock-sign') < .5 ? -1 : 1) * (6 + draw('shock-size') * 12) : 0;
+      const index = clamp(previous.index_value + momentum + shock, INDEX_MIN, INDEX_MAX);
+      if ((index === INDEX_MAX && momentum > 0) || (index === INDEX_MIN && momentum < 0)) {
+        direction = -direction;
+        momentum = -momentum * .65;
+        regimeUntil = step + 84 + Math.floor(draw('rebound') * 84);
+      }
+      insert.run(id, step, index, momentum, direction, regimeUntil);
+      previous = { bucket: step, index_value: index, momentum, direction, regime_until: regimeUntil };
+      applied = true; earliestStep = Math.min(earliestStep, step);
+    }
   }
-  setState(db, DRIFT_MARKER, { bucket, appliedAt: new Date(now).toISOString() });
-  return { applied: true, bucket };
+  if (applied) db.prepare('DELETE FROM market_snapshots WHERE captured_at >= ?')
+    .run(new Date(earliestStep * MARKET_DRIFT_INTERVAL_MS).toISOString());
+  return { applied, bucket };
 }
 
 // Runtime wrapper: one transaction per tick. The persisted bucket marker
 // makes the 30-second economy ticks and restarts inside the same window
 // idempotent — a regime is sampled exactly once per category per window.
-export function tickMarketDrift(dataDir, { now = Date.now(), random = Math.random } = {}) {
+export function tickMarketDrift(dataDir, { now = Date.now(), random = null } = {}) {
   return withDatabase(dataDir, db => transaction(db, () => applyMarketDrift(db, now, random)));
 }
 
@@ -270,6 +308,19 @@ function refreshMarketHistory(db, now, activationMs) {
       WHERE starts_at <= ? AND ends_at > ?`).all(last, start);
     const byCategory = new Map(MARKET_CATEGORIES.map(({ id }) => [id, []]));
     for (const effect of effects) byCategory.get(effect.category)?.push(effect);
+    const trends = new Map(MARKET_CATEGORIES.map(({ id }) => [id, []]));
+    const firstBucket = Math.floor(start / MARKET_DRIFT_INTERVAL_MS);
+    const lastBucket = Math.floor(last / MARKET_DRIFT_INTERVAL_MS);
+    for (const point of db.prepare(`SELECT category, bucket, index_value FROM market_trend_points
+      WHERE bucket BETWEEN ? AND ? ORDER BY category, bucket`).all(firstBucket, lastBucket)) {
+      trends.get(point.category)?.push(point);
+    }
+    for (const { id } of MARKET_CATEGORIES) {
+      const prior = db.prepare(`SELECT category, bucket, index_value FROM market_trend_points
+        WHERE category = ? AND bucket < ? ORDER BY bucket DESC LIMIT 1`).get(id, firstBucket);
+      if (prior) trends.get(id).unshift(prior);
+    }
+    const positions = new Map(MARKET_CATEGORIES.map(({ id }) => [id, 0]));
     const insert = db.prepare('INSERT OR IGNORE INTO market_snapshots (category, index_value, captured_at) VALUES (?, ?, ?)');
     for (let boundary = start; boundary <= last; boundary += SNAPSHOT_INTERVAL_MS) {
       const capturedAt = new Date(boundary).toISOString();
@@ -279,7 +330,12 @@ function refreshMarketHistory(db, now, activationMs) {
         // pre-start reads to full strength — the same rule as the live
         // computeCategoryIndex (starts_at <= at) must hold retroactively.
         const active = byCategory.get(id).filter(effect => effect.starts_at <= boundary);
-        insert.run(id, indexFromEffects(active, boundary), capturedAt);
+        const points = trends.get(id), atBucket = Math.floor(boundary / MARKET_DRIFT_INTERVAL_MS);
+        let position = positions.get(id);
+        while (position + 1 < points.length && points[position + 1].bucket <= atBucket) position++;
+        positions.set(id, position);
+        const baseline = points[position]?.bucket <= atBucket ? points[position].index_value : DEFAULT_MARKET_INDEX;
+        insert.run(id, indexFromEffects(active, boundary, baseline), capturedAt);
       }
     }
   }
