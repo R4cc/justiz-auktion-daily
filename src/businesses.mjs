@@ -181,8 +181,13 @@ function advanceShops(db, now, userId = null) {
 
 function publicShop(db, row, now = Date.now()) {
   const stock = shopStock(db, row.id, row.type, row.profit_margin, now);
+  const dayStart = Math.floor(now / (24 * HOUR)) * 24 * HOUR;
+  const today = db.prepare(`SELECT COUNT(*) AS sales, COALESCE(SUM(COALESCE(sold_price, asking_price)), 0) AS revenue
+    FROM business_stock WHERE business_id = ? AND sold_at >= ? AND sold_at < ?`)
+    .get(row.id, dayStart, dayStart + 24 * HOUR);
   return { id: row.id, type: row.type, size: row.size, boughtAt: row.bought_at,
-    visitors: row.visitors, sales: row.sales, revenue: row.revenue, profitMargin: row.profit_margin,
+    visitors: row.visitors, sales: row.sales, salesToday: today.sales,
+    revenue: row.revenue, revenueToday: today.revenue, profitMargin: row.profit_margin,
     buyChancePercent: Math.round(businessSaleChance(shopType(row.type).conversion, row.profit_margin) * 1000) / 10,
     ...shopMetrics(db, row, stock, now), popularity: row.traffic_popularity, stock };
 }

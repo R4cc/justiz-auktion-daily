@@ -1,7 +1,7 @@
 window.businessUi = (() => {
   const esc = accountEscape;
   let dashboard = null, timer = null, request = 0, busy = false;
-  let selectedOffer = null, purchaseReturnFocus = null, restockReturnFocus = null, restockShopId = null, restockGroups = [];
+  let selectedOffer = null, purchaseReturnFocus = null, restockReturnFocus = null, restockShopId = null, restockGroups = [], restockSignature = null;
   const purchaseDialog = document.createElement('dialog');
   purchaseDialog.className = 'business-buy-dialog';
   purchaseDialog.setAttribute('aria-labelledby', 'business-buy-title');
@@ -40,13 +40,16 @@ window.businessUi = (() => {
     dashboard = shops;
     if (owner) { const session = await accountApi('me'); if (current !== request || visit !== accountVisit || account?.id !== owner) return; updateAccount(session.user); }
     if (purchaseDialog.open) updatePurchaseSelection();
-    if (restockDialog.open) updateRestockSelection();
+    if (restockDialog.open) {
+      if (stockManagerSignature() !== restockSignature) syncRestockDialog();
+      else updateRestockSelection();
+    }
     if (repaint && !busy && !restockDialog.open && !document.activeElement?.closest('[data-business-margin-form]')) render();
   }
   function stop() {
     clearInterval(timer); timer = null; request++; dashboard = null;
     purchaseReturnFocus = null; if (purchaseDialog.open) purchaseDialog.close();
-    restockReturnFocus = null; restockShopId = null; if (restockDialog.open) restockDialog.close();
+    restockReturnFocus = null; restockShopId = null; restockSignature = null; if (restockDialog.open) restockDialog.close();
   }
   async function load(visit) {
     await refresh(visit, false);
@@ -54,13 +57,11 @@ window.businessUi = (() => {
     timer = setInterval(() => { if (!document.hidden && !busy) refresh(visit).catch(() => {}); }, 30_000);
   }
   function shopCard(shop) {
-    const available = dashboard.inventory.filter(item => item.type === shop.type);
-    const space = shop.capacity - shop.stock.length;
-    return `<article class="business-shop"><header><div class="business-owned-title"><span class="business-owned-icon business-type-${esc(shop.type)}">${typeIcon(shop.type)}<span class="business-owned-size">${sizeIcon(shop.size)}</span></span><div><span>${esc(typeName(shop.type))} / ${esc(sizeName(shop.size))}</span><h2>${esc(typeName(shop.type))}</h2></div></div><strong>${shop.stock.length}/${shop.capacity}</strong></header>
-      <dl class="business-stats"><div><dt>${t('Visitors', 'Besucher')}</dt><dd>${number(shop.visitors)}</dd></div><div><dt>${t('Popularity', 'Beliebtheit')}</dt><dd>${number(Math.round(shop.popularity * 100))}%</dd></div><div><dt>${t('Variety', 'Vielfalt')}</dt><dd>${number(shop.variety)}</dd></div><div><dt>${t('Avg. market value', 'Ø Marktwert')}</dt><dd>${justizEuro(shop.value)}</dd></div><div><dt>${t('Sales', 'Verkaeufe')}</dt><dd>${number(shop.sales)}</dd></div><div><dt>${t('Revenue', 'Umsatz')}</dt><dd>${justizEuro(shop.revenue)}</dd></div></dl>
-      <form class="business-margin" data-business-margin-form data-shop="${esc(shop.id)}"><label>${t('Profit margin over market value', 'Gewinnspanne auf den Marktwert')}<span><input name="profitMargin" type="number" min="0" max="100" step="1" value="${shop.profitMargin}" inputmode="numeric" required> %</span></label><button class="secondary-button" type="submit">${t('Save margin', 'Gewinnspanne speichern')}</button><p>${t('Estimated buying rate per visitor', 'Geschätzte Kaufrate pro Besucher')}: <strong>${number(shop.buyChancePercent, 1)}%</strong>. ${t('Higher margins reduce buying, while visitor traffic stays the same.', 'Höhere Gewinnspannen senken die Kaufrate; die Besucherzahl bleibt gleich.')}</p><p class="account-error" role="alert"></p></form>
-      ${shop.stock.length ? `<div class="business-stock"><h3>${t('On shelves', 'Im Regal')}</h3><ul>${shop.stock.map(entry => `<li><span>${esc(entry.item.title)}<small>${t('Market', 'Markt')} ${justizEuro(entry.referencePrice)}</small></span><strong>${justizEuro(entry.askingPrice)}</strong><button type="button" data-business="unstock" data-shop="${esc(shop.id)}" data-item="${esc(entry.id)}" aria-label="${esc(t('Remove from store', 'Aus Geschaeft nehmen'))}: ${esc(entry.item.title)}">×</button></li>`).join('')}</ul></div>` : `<p class="business-empty">${t('Shelves are empty.', 'Die Regale sind leer.')}</p>`}
-      ${space ? `<div class="business-restock-actions"><button class="secondary-button" type="button" data-business="open-restock" data-shop="${esc(shop.id)}" ${available.length ? '' : 'disabled'}>${t('Restock', 'Waren einräumen')}</button><small>${space} ${t('spaces free', 'Plätze frei')}</small>${available.length ? '' : `<p class="business-empty">${t('Buy matching items on the marketplace to restock.', 'Kaufe passende Artikel auf dem Marktplatz, um nachzufüllen.')} <a href="/marketplace" data-page>${t('Browse marketplace', 'Marktplatz ansehen')}</a></p>`}</div>` : ''}</article>`;
+    const available = dashboard.inventory.filter(item => item.type === shop.type).length;
+    return `<article class="business-shop"><header><div class="business-owned-title"><span class="business-owned-icon business-type-${esc(shop.type)}">${typeIcon(shop.type)}<span class="business-owned-size">${sizeIcon(shop.size)}</span></span><div><span>${esc(sizeName(shop.size))}</span><h2>${esc(typeName(shop.type))}</h2></div></div></header>
+      <dl class="business-stats"><div><dt>${t('Visitors', 'Besucher')}</dt><dd>${number(shop.visitors)}</dd></div><div><dt>${t('Popularity', 'Beliebtheit')}</dt><dd>${number(Math.round(shop.popularity * 100))}%</dd></div><div><dt>${t('Total sales', 'Verkäufe gesamt')}</dt><dd>${number(shop.sales)}</dd></div><div><dt>${t('Sales today', 'Verkäufe heute')}</dt><dd>${number(shop.salesToday)}</dd></div><div><dt>${t('Total revenue', 'Umsatz gesamt')}</dt><dd>${justizEuro(shop.revenue)}</dd></div><div><dt>${t('Revenue today', 'Umsatz heute')}</dt><dd>${justizEuro(shop.revenueToday)}</dd></div><div><dt>${t('Margin', 'Gewinnspanne')}</dt><dd>${number(shop.profitMargin)}%</dd></div><div><dt>${t('Stock', 'Warenbestand')}</dt><dd>${number(shop.stock.length)} / ${number(shop.capacity)}</dd></div></dl>
+      <form class="business-margin" data-business-margin-form data-shop="${esc(shop.id)}"><label>${t('Set margin over market value', 'Gewinnspanne auf Marktwert festlegen')}<span><input name="profitMargin" type="number" min="0" max="100" step="1" value="${shop.profitMargin}" inputmode="numeric" required> %</span></label><button class="secondary-button" type="submit">${t('Save margin', 'Gewinnspanne speichern')}</button><p>${t('Estimated buying rate per visitor', 'Geschätzte Kaufrate pro Besucher')}: <strong>${number(shop.buyChancePercent, 1)}%</strong>. ${t('Higher margins reduce buying, while visitor traffic stays the same.', 'Höhere Gewinnspannen senken die Kaufrate; die Besucherzahl bleibt gleich.')}</p><p class="account-error" role="alert"></p></form>
+      <div class="business-stock-actions"><div><strong>${t('Inventory', 'Inventar')}</strong><small>${available} ${t('available to add', 'zum Einräumen verfügbar')} · ${Math.max(0, shop.capacity - shop.stock.length)} ${t('spaces free', 'Plätze frei')}</small></div><button class="secondary-button" type="button" data-business="open-restock" data-shop="${esc(shop.id)}">${t('Manage stock', 'Warenbestand verwalten')}</button></div></article>`;
   }
   function shopsView() {
     if (!account) return `<section class="collection-empty"><h2>${t('Sign in to open a business.', 'Melde dich an, um ein Geschaeft zu eroeffnen.')}</h2><a class="primary-button" href="/login" data-page>${t('Log in', 'Anmelden')}</a></section>`;
@@ -149,29 +150,45 @@ window.businessUi = (() => {
       `${selected} / ${space} ${t('spaces selected', 'Plätze ausgewählt')}`;
     restockDialog.querySelector('button[type="submit"]').disabled = busy || selected < 1 || selected > space;
   }
+  function stockManagerSignature() {
+    const shop = dashboard?.shops.find(entry => entry.id === restockShopId);
+    return JSON.stringify([shop?.stock.map(entry => entry.id),
+      dashboard?.inventory.filter(item => item.type === shop?.type).map(item => item.id)]);
+  }
+  function syncRestockDialog() {
+    const selected = new Map(restockGroups.map((group, index) => [JSON.stringify([group.title, group.price]),
+      Number(restockDialog.querySelectorAll('input[name="quantity"]')[index]?.value) || 0]));
+    const shop = dashboard?.shops.find(entry => entry.id === restockShopId);
+    if (!shop) { restockDialog.close(); return; }
+    restockGroups = groupedRestockItems(dashboard.inventory.filter(item => item.type === shop.type));
+    renderRestockDialog(restockGroups.map(group => selected.get(JSON.stringify([group.title, group.price])) || 0));
+    restockSignature = stockManagerSignature();
+  }
   function renderRestockDialog(quantities = []) {
     const shop = dashboard?.shops.find(entry => entry.id === restockShopId);
     if (!shop) return;
     const space = shop.capacity - shop.stock.length;
-    restockDialog.innerHTML = `<form id="business-restock-form"><header class="business-dialog-header"><div><p class="eyebrow">${t('INVENTORY', 'INVENTAR')}</p><h2 id="business-restock-title">${t('Restock', 'Waren einräumen')} · ${esc(typeName(shop.type))}</h2></div><button class="dialog-close" type="button" data-business="close-restock" aria-label="${t('Close', 'Schließen')}">×</button></header>
-      <div class="business-dialog-options"><p>${space} ${t('spaces available. Choose how many of each item to stock.', 'Plätze frei. Wähle die Anzahl je Artikel.')}</p>
-        <button class="secondary-button" type="button" data-business="auto-restock">${t('Auto fill for variety', 'Automatisch vielfältig füllen')}</button>
-        <div class="business-restock-list">${restockGroups.map((group, index) => `<label class="business-restock-row"><span><strong>${esc(group.title)}</strong><small>${group.items.length} ${t('available', 'verfügbar')} · ${justizEuro(Math.round(group.price))} ${t('each', 'pro Stück')}</small></span><input type="number" name="quantity" data-index="${index}" min="0" max="${Math.min(space, group.items.length)}" step="1" value="${quantities[index] || 0}" inputmode="numeric" aria-label="${esc(group.title)} ${t('quantity', 'Anzahl')}"></label>`).join('')}</div></div>
-      <footer class="business-dialog-footer"><div><strong data-restock-summary></strong><p class="account-error" role="alert"></p></div><button class="primary-button" type="submit" disabled>${t('Restock selected', 'Auswahl einräumen')}</button></footer></form>`;
+    restockDialog.innerHTML = `<form id="business-restock-form"><header class="business-dialog-header"><div><p class="eyebrow">${t('INVENTORY', 'INVENTAR')}</p><h2 id="business-restock-title">${t('Manage stock', 'Warenbestand verwalten')} · ${esc(typeName(shop.type))}</h2><small>${shop.stock.length} / ${shop.capacity} ${t('on shelves', 'im Regal')}</small></div><button class="dialog-close" type="button" data-business="close-restock" aria-label="${t('Close', 'Schließen')}">×</button></header>
+      <div class="business-dialog-options business-stock-manager"><section class="business-stock-panel" aria-labelledby="business-available-title"><div class="business-stock-panel-heading"><div><p class="eyebrow">${t('FROM YOUR INVENTORY', 'AUS DEINEM INVENTAR')}</p><h3 id="business-available-title">${t('Available to add', 'Zum Einräumen verfügbar')}</h3><small>${restockGroups.reduce((sum, group) => sum + group.items.length, 0)} ${t('items', 'Artikel')} · ${space} ${t('spaces free', 'Plätze frei')}</small></div><button class="secondary-button" type="button" data-business="auto-restock" ${space && restockGroups.length ? '' : 'disabled'}>${t('Auto fill', 'Automatisch füllen')}</button></div>
+        ${restockGroups.length ? `<div class="business-restock-list">${restockGroups.map((group, index) => `<label class="business-restock-row"><span><strong>${esc(group.title)}</strong><small>${group.items.length} ${t('available', 'verfügbar')} · ${justizEuro(Math.round(group.price))} ${t('each', 'pro Stück')}</small></span><input type="number" name="quantity" data-index="${index}" min="0" max="${Math.min(space, group.items.length)}" step="1" value="${quantities[index] || 0}" inputmode="numeric" aria-label="${esc(group.title)} ${t('quantity to add', 'Anzahl zum Einräumen')}"></label>`).join('')}</div>` : `<p class="business-panel-empty">${t('No matching inventory is available.', 'Keine passenden Artikel im Inventar verfügbar.')} <a href="/marketplace" data-page>${t('Browse marketplace', 'Marktplatz ansehen')}</a></p>`}</section>
+        <section class="business-stock-panel" aria-labelledby="business-shelves-title"><div class="business-stock-panel-heading"><div><p class="eyebrow">${t('IN THIS STORE', 'IN DIESEM GESCHÄFT')}</p><h3 id="business-shelves-title">${t('On shelves', 'Im Regal')}</h3><small>${shop.stock.length} / ${shop.capacity} ${t('stocked', 'eingeräumt')}</small></div></div>
+        ${shop.stock.length ? `<ul class="business-shelf-list">${shop.stock.map(entry => `<li><span><strong>${esc(entry.item.title)}</strong><small>${t('Market', 'Markt')} ${justizEuro(entry.referencePrice)} · ${t('Shelf', 'Regal')} ${justizEuro(entry.askingPrice)}</small></span><button class="secondary-button" type="button" data-business="unstock" data-shop="${esc(shop.id)}" data-item="${esc(entry.id)}" aria-label="${esc(t('Remove from store', 'Aus Geschäft nehmen'))}: ${esc(entry.item.title)}">${t('Remove', 'Entfernen')}</button></li>`).join('')}</ul>` : `<p class="business-panel-empty">${t('The shelves are empty. Add items from your inventory.', 'Die Regale sind leer. Räume Artikel aus deinem Inventar ein.')}</p>`}</section></div>
+      <footer class="business-dialog-footer"><div><strong data-restock-summary></strong><p class="account-error" role="alert"></p></div><button class="primary-button" type="submit" disabled>${t('Add selected stock', 'Ausgewählte Artikel einräumen')}</button></footer></form>`;
     updateRestockSelection();
   }
   function openRestockDialog(button) {
     const shop = dashboard?.shops.find(entry => entry.id === button.dataset.shop);
-    if (!shop || !account || shop.stock.length >= shop.capacity) return;
+    if (!shop || !account) return;
     restockShopId = shop.id; restockReturnFocus = button;
     restockGroups = groupedRestockItems(dashboard.inventory.filter(item => item.type === shop.type));
     renderRestockDialog();
+    restockSignature = stockManagerSignature();
     restockDialog.showModal();
-    restockDialog.querySelector('input[name="quantity"]')?.focus({ preventScroll: true });
+    (restockDialog.querySelector('input[name="quantity"]') || restockDialog.querySelector('.dialog-close'))?.focus({ preventScroll: true });
   }
   restockDialog.addEventListener('close', () => {
     const shopId = restockShopId;
-    restockShopId = null; restockGroups = [];
+    restockShopId = null; restockGroups = []; restockSignature = null;
     if (shopId && currentAccountPage === '/businesses') render();
     const focus = shopId ? accountContent.querySelector(`[data-business="open-restock"][data-shop="${CSS.escape(shopId)}"]`) : null;
     if (focus || restockReturnFocus?.isConnected) (focus || restockReturnFocus).focus({ preventScroll: true });
@@ -201,9 +218,16 @@ window.businessUi = (() => {
       const visit = accountVisit, owner = account?.id;
       try {
         await accountApi('businesses/unstock', { shopId: button.dataset.shop, inventoryId: button.dataset.item });
-        if (visit === accountVisit && account?.id === owner) await refresh(visit);
+        if (visit === accountVisit && account?.id === owner) {
+          await refresh(visit);
+          if (restockDialog.open) restockDialog.querySelector('.dialog-close')?.focus({ preventScroll: true });
+        }
       } catch (error) { if (visit === accountVisit) showToast(error.message); }
-      finally { busy = false; if (visit === accountVisit) render(); }
+      finally {
+        busy = false;
+        if (restockDialog.open) updateRestockSelection();
+        if (visit === accountVisit) render();
+      }
       return;
     }
   });

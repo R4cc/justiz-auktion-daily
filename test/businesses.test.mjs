@@ -252,6 +252,37 @@ test('profit margin changes sales without changing visitors, even when stock sel
   assert.ok(high.sales < low.sales);
 });
 
+test('business dashboard reports sales and revenue for the current UTC day', async t => {
+  const f = await fixture(t);
+  const shop = buyBusiness(f.dir, f.rival, 'toys', 'popup', { now: start }).shop;
+  f.accounts.db(db => {
+    for (const id of ['yesterday-toy', 'today-toy']) db.prepare('INSERT INTO inventory (id, user_id, item, created_at) VALUES (?, ?, ?, ?)')
+      .run(id, 'rival', JSON.stringify({ title: 'Wooden puzzle set', price: 100, businessCategory: 'toys' }), start);
+  });
+  stockBusiness(f.dir, f.rival, shop.id, ['yesterday-toy', 'today-toy'], { now: start });
+  f.accounts.db(db => {
+    db.prepare('UPDATE business_stock SET sold_at = ?, sold_price = NULL WHERE inventory_id = ?')
+      .run(start + 11 * hour, 'yesterday-toy');
+    db.prepare('UPDATE business_stock SET sold_at = ?, sold_price = 190 WHERE inventory_id = ?')
+      .run(start + 12 * hour, 'today-toy');
+    db.prepare('UPDATE inventory SET sold_at = ? WHERE id = ?').run(start + 11 * hour, 'yesterday-toy');
+    db.prepare('UPDATE inventory SET sold_at = ? WHERE id = ?').run(start + 12 * hour, 'today-toy');
+    db.prepare('UPDATE businesses SET sales = 2, revenue = 320, last_tick_at = ? WHERE id = ?')
+      .run(start + 23 * hour, shop.id);
+  });
+  const yesterday = businessDashboard(f.dir, f.rival, { now: start + 11 * hour }).shops[0];
+  assert.equal(yesterday.salesToday, 1);
+  assert.equal(yesterday.revenueToday, 130);
+  const today = businessDashboard(f.dir, f.rival, { now: start + 23 * hour }).shops[0];
+  assert.equal(today.sales, 2);
+  assert.equal(today.revenue, 320);
+  assert.equal(today.salesToday, 1);
+  assert.equal(today.revenueToday, 190);
+  const nextDay = businessDashboard(f.dir, f.rival, { now: start + 36 * hour }).shops[0];
+  assert.equal(nextDay.salesToday, 0);
+  assert.equal(nextDay.revenueToday, 0);
+});
+
 test('older stocked stores gain a stable visitor rate during schema upgrade', async t => {
   const f = await fixture(t);
   const shop = buyBusiness(f.dir, f.rival, 'toys', 'popup', { now: start }).shop;

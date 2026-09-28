@@ -56,9 +56,9 @@
 .business-dialog-footer .account-error { margin: 3px 0 0; font-size: .75rem; }
 .business-dialog-footer .primary-button { margin: 0; min-width: 210px; white-space: nowrap; }
 .business-owned { padding: 32px 0 50px; }
-.business-shop-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 320px), 1fr)); gap: 16px; }
+.business-shop-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 520px), 1fr)); gap: 16px; }
 .business-shop { min-width: 0; padding: 20px; border: 1px solid var(--line); border-radius: 6px; background: #fff; }
-.business-shop header { display: flex; align-items: start; justify-content: space-between; gap: 12px; border-bottom: 1px solid var(--line); padding-bottom: 14px; }
+.business-shop header { display: flex; align-items: center; justify-content: space-between; gap: 12px; border-bottom: 1px solid var(--line); padding-bottom: 14px; }
 .business-shop header span { color: var(--red); font-size: .71rem; font-weight: 800; text-transform: uppercase; }
 .business-owned-title { display: flex; align-items: center; gap: 12px; min-width: 0; }
 .business-shop header .business-owned-icon { position: relative; flex: none; display: grid; place-items: center; width: 56px; height: 56px; border-radius: 5px; background: var(--choice-tint); color: var(--choice-accent); }
@@ -66,11 +66,11 @@
 .business-shop header .business-owned-size { position: absolute; display: grid; place-items: center; right: -6px; bottom: -5px; width: 23px; height: 23px; border: 1px solid currentColor; border-radius: 4px; background: #fff; color: var(--choice-accent); }
 .business-owned-size .business-size-icon { width: 17px; height: 17px; }
 .business-shop h2 { margin: 5px 0 0; font-size: 1.1rem; }
-.business-shop header strong { white-space: nowrap; font: 700 .85rem "DM Mono", monospace; }
-.business-stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px 8px; margin: 18px 0; }
-.business-stats div { min-width: 0; }
-.business-stats dt { color: var(--muted); font-size: .7rem; }
-.business-stats dd { margin: 2px 0 0; font-size: .95rem; font-weight: 800; overflow-wrap: anywhere; }
+.business-stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; margin: 18px 0; }
+.business-stats div { min-width: 0; min-height: 70px; padding: 10px; border: 1px solid var(--line); border-radius: 5px; background: var(--paper); }
+.business-stats dt { color: var(--muted); font-size: .7rem; line-height: 1.25; }
+.business-stats dd { margin: 7px 0 0; font-size: .95rem; font-weight: 800; overflow-wrap: anywhere; }
+.business-stats div:nth-child(4), .business-stats div:nth-child(6) { background: #f1f8ed; }
 .business-margin { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: end; gap: 8px 10px; padding: 14px 0; border-top: 1px solid var(--line); }
 .business-margin label { display: grid; gap: 5px; color: var(--muted); font-size: .75rem; }
 .business-margin label span { display: flex; align-items: center; gap: 5px; color: var(--ink); font-weight: 800; }
@@ -78,36 +78,53 @@
 .business-margin button { margin: 0; padding: 9px 11px; white-space: normal; }
 .business-margin p { grid-column: 1 / -1; margin: 0; font-size: .73rem; line-height: 1.5; color: var(--muted); }
 .business-margin .account-error { color: var(--red); }
-.business-stock { border-top: 1px solid var(--line); }
-.business-stock h3 { font-size: .85rem; }
-.business-stock ul { list-style: none; margin: 0; padding: 0; max-height: 220px; overflow: auto; }
-.business-stock li { display: flex; justify-content: space-between; gap: 10px; padding: 6px 0; font-size: .78rem; }
-.business-stock li strong { white-space: nowrap; }
-.business-stock li span { min-width: 0; }
-.business-stock li small { display: block; color: var(--muted); font-size: .68rem; }
-.business-stock li button { border: 0; background: transparent; color: var(--red); font-size: 1.1rem; line-height: 1; cursor: pointer; }
-.business-empty { color: var(--muted); font-size: .82rem; }
-.business-restock-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; margin-top: 18px; border-top: 1px solid var(--line); padding-top: 15px; }
-.business-restock-actions small { color: var(--muted); }
-.business-restock-actions p { flex-basis: 100%; margin: 0; }
-.business-restock-list { display: grid; gap: 8px; margin-top: 18px; }
+.business-stock-actions { display: flex; align-items: center; justify-content: space-between; gap: 14px; padding-top: 16px; border-top: 1px solid var(--line); }
+.business-stock-actions > div { display: grid; gap: 4px; min-width: 0; }
+.business-stock-actions strong { font-size: .85rem; }
+.business-stock-actions small { color: var(--muted); font-size: .7rem; }
+.business-stock-actions button { flex: none; margin: 0; }
+.business-stock-manager { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; height: min(64dvh, 620px); overflow: hidden; padding-top: 18px; }
+.business-stock-panel { display: flex; flex-direction: column; min-width: 0; min-height: 0; border: 1px solid var(--line); border-radius: 6px; background: #fff; }
+.business-stock-panel-heading { flex: none; display: flex; align-items: start; justify-content: space-between; gap: 12px; padding: 16px; border-bottom: 1px solid var(--line); }
+.business-stock-panel-heading .eyebrow { margin: 0 0 4px; font-size: .65rem; }
+.business-stock-panel-heading h3 { margin: 0 0 5px; font-size: 1rem; }
+.business-stock-panel-heading small { color: var(--muted); font-size: .73rem; }
+.business-stock-panel-heading button { flex: none; margin: 0; font-size: .72rem; }
+.business-restock-list, .business-shelf-list { min-height: 0; overflow-y: auto; overscroll-behavior: contain; margin: 0; padding: 10px; }
+.business-restock-list { display: grid; align-content: start; gap: 8px; }
 .business-restock-row { display: flex; justify-content: space-between; align-items: center; gap: 16px; padding: 12px; border: 1px solid var(--line); border-radius: 5px; background: #fff; }
 .business-restock-row > span { display: grid; gap: 4px; min-width: 0; }
 .business-restock-row strong { overflow-wrap: anywhere; }
 .business-restock-row small { color: var(--muted); }
 .business-restock-row input { flex: none; width: 76px; padding: 9px; border: 1px solid var(--line); border-radius: 4px; color: var(--ink); font: 700 1rem 'DM Mono', monospace; }
+.business-shelf-list { list-style: none; }
+.business-shelf-list li { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 6px; border-bottom: 1px solid var(--line); }
+.business-shelf-list li:last-child { border-bottom: 0; }
+.business-shelf-list li span { display: grid; gap: 4px; min-width: 0; }
+.business-shelf-list li strong { font-size: .79rem; overflow-wrap: anywhere; }
+.business-shelf-list li small { color: var(--muted); font-size: .68rem; }
+.business-shelf-list li button { flex: none; margin: 0; font-size: .7rem; }
+.business-panel-empty { margin: 0; padding: 18px; color: var(--muted); font-size: .8rem; line-height: 1.5; }
 @media (max-width: 700px) {
   .business-choice-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .business-dialog-header { min-height: 76px; padding: 14px 64px 12px 16px; }
   .business-dialog-header .dialog-close { top: 14px; right: 14px; }
   .business-dialog-options { padding: 0 16px 18px; }
+  .business-stock-manager { display: block; height: auto; max-height: calc(100dvh - 180px); overflow-y: auto; padding-top: 12px; }
+  .business-stock-panel + .business-stock-panel { margin-top: 12px; }
+  .business-restock-list, .business-shelf-list { max-height: 240px; }
   .business-dialog-footer { padding: 12px 16px; }
+}
+@media (max-width: 600px) {
+  .business-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 @media (max-width: 410px) {
   .business-purchase { align-items: stretch; flex-direction: column; }
-  .business-stats { grid-template-columns: repeat(2, 1fr); }
   .business-margin { grid-template-columns: 1fr; }
   .business-margin button { width: 100%; }
+  .business-stock-actions { align-items: stretch; flex-direction: column; }
+  .business-stock-actions button { width: 100%; }
+  .business-stock-panel-heading { flex-wrap: wrap; }
   .business-choice { min-height: 154px; padding: 10px; }
   .business-choice.is-selected { padding: 9px; }
   .business-choice > strong { font-size: .78rem; }
