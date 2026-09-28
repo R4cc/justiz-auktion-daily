@@ -71,11 +71,20 @@
 .business-stats div { min-width: 0; }
 .business-stats dt { color: var(--muted); font-size: .7rem; }
 .business-stats dd { margin: 2px 0 0; font-size: .95rem; font-weight: 800; overflow-wrap: anywhere; }
+.business-margin { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: end; gap: 8px 10px; padding: 14px 0; border-top: 1px solid var(--line); }
+.business-margin label { display: grid; gap: 5px; color: var(--muted); font-size: .75rem; }
+.business-margin label span { display: flex; align-items: center; gap: 5px; color: var(--ink); font-weight: 800; }
+.business-margin input { width: 76px; padding: 8px; border: 1px solid var(--line); border-radius: 4px; color: var(--ink); font: 700 .9rem 'DM Mono', monospace; }
+.business-margin button { margin: 0; padding: 9px 11px; white-space: normal; }
+.business-margin p { grid-column: 1 / -1; margin: 0; font-size: .73rem; line-height: 1.5; color: var(--muted); }
+.business-margin .account-error { color: var(--red); }
 .business-stock { border-top: 1px solid var(--line); }
 .business-stock h3 { font-size: .85rem; }
 .business-stock ul { list-style: none; margin: 0; padding: 0; max-height: 220px; overflow: auto; }
 .business-stock li { display: flex; justify-content: space-between; gap: 10px; padding: 6px 0; font-size: .78rem; }
 .business-stock li strong { white-space: nowrap; }
+.business-stock li span { min-width: 0; }
+.business-stock li small { display: block; color: var(--muted); font-size: .68rem; }
 .business-stock li button { border: 0; background: transparent; color: var(--red); font-size: 1.1rem; line-height: 1; cursor: pointer; }
 .business-empty { color: var(--muted); font-size: .82rem; }
 .business-restock-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; margin-top: 18px; border-top: 1px solid var(--line); padding-top: 15px; }
@@ -97,6 +106,8 @@
 @media (max-width: 410px) {
   .business-purchase { align-items: stretch; flex-direction: column; }
   .business-stats { grid-template-columns: repeat(2, 1fr); }
+  .business-margin { grid-template-columns: 1fr; }
+  .business-margin button { width: 100%; }
   .business-choice { min-height: 154px; padding: 10px; }
   .business-choice.is-selected { padding: 9px; }
   .business-choice > strong { font-size: .78rem; }

@@ -33,3 +33,21 @@ test('restocking is a per-store modal with quantity inputs and capacity checks',
   assert.match(source, /selected > space/);
   assert.doesNotMatch(source, /business-stock-form|business-bid-form|business-tabs/);
 });
+
+test('each store exposes its own margin, market reference and buying rate', () => {
+  const cardSource = source.slice(source.indexOf('  function shopCard('), source.indexOf('  function shopsView('));
+  const context = vm.createContext({ dashboard: { inventory: [] }, esc: String, t: en => en,
+    number: String, justizEuro: value => `J€ ${value}`, typeName: () => 'Toy store', sizeName: () => 'Small shop',
+    typeIcon: () => '', sizeIcon: () => '' });
+  vm.runInContext(`${cardSource}\nthis.shopCard = shopCard;`, context);
+  const markup = context.shopCard({ id: 'shop-1', type: 'toys', size: 'tiny', capacity: 25,
+    profitMargin: 45, buyChancePercent: 22.8, visitors: 11, popularity: 1,
+    variety: 1, value: 120, sales: 2, revenue: 300,
+    stock: [{ id: 'unit-1', item: { title: 'Puzzle' }, referencePrice: 120, askingPrice: 174 }] });
+  assert.match(markup, /data-business-margin-form data-shop="shop-1"/);
+  assert.match(markup, /name="profitMargin"[^>]*value="45"/);
+  assert.match(markup, /Estimated buying rate per visitor/);
+  assert.match(markup, /Market J€ 120/);
+  assert.match(markup, /J€ 174/);
+  assert.match(source, /accountApi\('businesses\/margin'/);
+});

@@ -41,7 +41,7 @@ window.businessUi = (() => {
     if (owner) { const session = await accountApi('me'); if (current !== request || visit !== accountVisit || account?.id !== owner) return; updateAccount(session.user); }
     if (purchaseDialog.open) updatePurchaseSelection();
     if (restockDialog.open) updateRestockSelection();
-    if (repaint && !busy && !restockDialog.open) render();
+    if (repaint && !busy && !restockDialog.open && !document.activeElement?.closest('[data-business-margin-form]')) render();
   }
   function stop() {
     clearInterval(timer); timer = null; request++; dashboard = null;
@@ -57,8 +57,9 @@ window.businessUi = (() => {
     const available = dashboard.inventory.filter(item => item.type === shop.type);
     const space = shop.capacity - shop.stock.length;
     return `<article class="business-shop"><header><div class="business-owned-title"><span class="business-owned-icon business-type-${esc(shop.type)}">${typeIcon(shop.type)}<span class="business-owned-size">${sizeIcon(shop.size)}</span></span><div><span>${esc(typeName(shop.type))} / ${esc(sizeName(shop.size))}</span><h2>${esc(typeName(shop.type))}</h2></div></div><strong>${shop.stock.length}/${shop.capacity}</strong></header>
-      <dl class="business-stats"><div><dt>${t('Visitors', 'Besucher')}</dt><dd>${number(shop.visitors)}</dd></div><div><dt>${t('Popularity', 'Beliebtheit')}</dt><dd>${number(Math.round(shop.popularity * 100))}%</dd></div><div><dt>${t('Variety', 'Vielfalt')}</dt><dd>${number(shop.variety)}</dd></div><div><dt>${t('Avg. value', 'Durchschnittswert')}</dt><dd>${justizEuro(shop.value)}</dd></div><div><dt>${t('Sales', 'Verkaeufe')}</dt><dd>${number(shop.sales)}</dd></div><div><dt>${t('Revenue', 'Umsatz')}</dt><dd>${justizEuro(shop.revenue)}</dd></div></dl>
-      ${shop.stock.length ? `<div class="business-stock"><h3>${t('On shelves', 'Im Regal')}</h3><ul>${shop.stock.map(entry => `<li><span>${esc(entry.item.title)}</span><strong>${justizEuro(entry.askingPrice)}</strong><button type="button" data-business="unstock" data-shop="${esc(shop.id)}" data-item="${esc(entry.id)}" aria-label="${esc(t('Remove from store', 'Aus Geschaeft nehmen'))}: ${esc(entry.item.title)}">×</button></li>`).join('')}</ul></div>` : `<p class="business-empty">${t('Shelves are empty.', 'Die Regale sind leer.')}</p>`}
+      <dl class="business-stats"><div><dt>${t('Visitors', 'Besucher')}</dt><dd>${number(shop.visitors)}</dd></div><div><dt>${t('Popularity', 'Beliebtheit')}</dt><dd>${number(Math.round(shop.popularity * 100))}%</dd></div><div><dt>${t('Variety', 'Vielfalt')}</dt><dd>${number(shop.variety)}</dd></div><div><dt>${t('Avg. market value', 'Ø Marktwert')}</dt><dd>${justizEuro(shop.value)}</dd></div><div><dt>${t('Sales', 'Verkaeufe')}</dt><dd>${number(shop.sales)}</dd></div><div><dt>${t('Revenue', 'Umsatz')}</dt><dd>${justizEuro(shop.revenue)}</dd></div></dl>
+      <form class="business-margin" data-business-margin-form data-shop="${esc(shop.id)}"><label>${t('Profit margin over market value', 'Gewinnspanne auf den Marktwert')}<span><input name="profitMargin" type="number" min="0" max="100" step="1" value="${shop.profitMargin}" inputmode="numeric" required> %</span></label><button class="secondary-button" type="submit">${t('Save margin', 'Gewinnspanne speichern')}</button><p>${t('Estimated buying rate per visitor', 'Geschätzte Kaufrate pro Besucher')}: <strong>${number(shop.buyChancePercent, 1)}%</strong>. ${t('Higher margins reduce buying, while visitor traffic stays the same.', 'Höhere Gewinnspannen senken die Kaufrate; die Besucherzahl bleibt gleich.')}</p><p class="account-error" role="alert"></p></form>
+      ${shop.stock.length ? `<div class="business-stock"><h3>${t('On shelves', 'Im Regal')}</h3><ul>${shop.stock.map(entry => `<li><span>${esc(entry.item.title)}<small>${t('Market', 'Markt')} ${justizEuro(entry.referencePrice)}</small></span><strong>${justizEuro(entry.askingPrice)}</strong><button type="button" data-business="unstock" data-shop="${esc(shop.id)}" data-item="${esc(entry.id)}" aria-label="${esc(t('Remove from store', 'Aus Geschaeft nehmen'))}: ${esc(entry.item.title)}">×</button></li>`).join('')}</ul></div>` : `<p class="business-empty">${t('Shelves are empty.', 'Die Regale sind leer.')}</p>`}
       ${space ? `<div class="business-restock-actions"><button class="secondary-button" type="button" data-business="open-restock" data-shop="${esc(shop.id)}" ${available.length ? '' : 'disabled'}>${t('Restock', 'Waren einräumen')}</button><small>${space} ${t('spaces free', 'Plätze frei')}</small>${available.length ? '' : `<p class="business-empty">${t('Buy matching items on the marketplace to restock.', 'Kaufe passende Artikel auf dem Marktplatz, um nachzufüllen.')} <a href="/marketplace" data-page>${t('Browse marketplace', 'Marktplatz ansehen')}</a></p>`}</div>` : ''}</article>`;
   }
   function shopsView() {
@@ -212,6 +213,26 @@ window.businessUi = (() => {
   });
   document.addEventListener('submit', async event => {
     const form = event.target;
+    if (currentAccountPage === '/businesses' && form.matches('[data-business-margin-form]')) {
+      event.preventDefault();
+      if (busy) return;
+      const input = form.elements.profitMargin, profitMargin = Number(input.value);
+      if (!Number.isSafeInteger(profitMargin) || profitMargin < 0 || profitMargin > 100) {
+        form.querySelector('.account-error').textContent = accountError('invalid_profit_margin'); return;
+      }
+      busy = true;
+      const visit = accountVisit, owner = account?.id, button = form.querySelector('button[type="submit"]');
+      button.disabled = true;
+      try {
+        const result = await accountApi('businesses/margin', { shopId: form.dataset.shop, profitMargin });
+        if (visit !== accountVisit || account?.id !== owner) return;
+        updateAccount(result.user);
+        await refresh(visit, false);
+        if (visit === accountVisit) showToast(t('Margin saved.', 'Gewinnspanne gespeichert.'));
+      } catch (error) { if (visit === accountVisit) form.querySelector('.account-error').textContent = error.message; }
+      finally { busy = false; if (visit === accountVisit) render(); }
+      return;
+    }
     if (currentAccountPage !== '/businesses' || !['business-buy-form', 'business-restock-form'].includes(form.id)) return;
     event.preventDefault();
     if (busy || (form.id === 'business-buy-form' && !selectedOffer)) return;

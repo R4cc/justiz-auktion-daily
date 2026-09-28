@@ -47,6 +47,7 @@ function accountError(code) {
     daily_case_not_found: t('This Daily case is not available. Reopen your Daily result.', 'Diese Daily-Kiste ist nicht verfügbar. Öffne dein Daily-Ergebnis erneut.'),
     daily_case_already_opened: t('This Daily reward was already opened.', 'Diese Daily-Belohnung wurde bereits geöffnet.'),
     case_not_found: t('This case is no longer in your inventory.', 'Diese Kiste ist nicht mehr in deinem Inventar.'),
+    invalid_profit_margin: t('Choose a profit margin from 0% to 100%.', 'Wähle eine Gewinnspanne von 0 % bis 100 %.'),
     insufficient_variety: t('Not enough different auctions are available.', 'Noch nicht genug unterschiedliche Auktionen verfügbar.'),
     answer_conflict: t('This guess was already made in another tab. Reopen the game.', 'Dieser Tipp wurde in einem anderen Tab abgegeben. Öffne das Spiel erneut.'),
     empty_catalog: t('No case contents are available yet.', 'Aktuell sind keine Kisteninhalte verfügbar.'),

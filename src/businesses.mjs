@@ -10,6 +10,8 @@ const HOUR = 3_600_000;
 const WHOLESALE_PERIOD = 2 * HOUR;
 const WHOLESALE_SLOT = 15 * 60_000;
 const STOCK_SELLER_ID = 'npc-stock-supply';
+export const DEFAULT_PROFIT_MARGIN = 30;
+export const MAX_PROFIT_MARGIN = 100;
 const fail = (code, status = 400) => { throw new AccountError(code, status); };
 const hashNumber = value => parseInt(createHash('sha256').update(value).digest('hex').slice(0, 8), 16) / 0x100000000;
 
@@ -49,7 +51,9 @@ export function ensureBusinessSchema(db) {
     id TEXT PRIMARY KEY, user_id TEXT NOT NULL REFERENCES users(id), type TEXT NOT NULL,
     size TEXT NOT NULL, bought_at INTEGER NOT NULL, last_tick_at INTEGER NOT NULL,
     visitors INTEGER NOT NULL DEFAULT 0, sales INTEGER NOT NULL DEFAULT 0,
-    revenue INTEGER NOT NULL DEFAULT 0
+    revenue INTEGER NOT NULL DEFAULT 0,
+    profit_margin INTEGER NOT NULL DEFAULT 30 CHECK(profit_margin BETWEEN 0 AND 100),
+    traffic_popularity REAL NOT NULL DEFAULT 0 CHECK(traffic_popularity BETWEEN 0 AND 1.5)
   ) STRICT;
   CREATE INDEX IF NOT EXISTS businesses_user ON businesses(user_id);
   CREATE TABLE IF NOT EXISTS business_stock (
@@ -70,6 +74,19 @@ export function ensureBusinessSchema(db) {
   if (!db.prepare('PRAGMA table_info(business_stock)').all().some(column => column.name === 'sold_price')) {
     db.exec('ALTER TABLE business_stock ADD COLUMN sold_price INTEGER');
   }
+  if (!db.prepare('PRAGMA table_info(businesses)').all().some(column => column.name === 'profit_margin')) {
+    db.exec('ALTER TABLE businesses ADD COLUMN profit_margin INTEGER NOT NULL DEFAULT 30 CHECK(profit_margin BETWEEN 0 AND 100)');
+  }
+  if (!db.prepare('PRAGMA table_info(businesses)').all().some(column => column.name === 'traffic_popularity')) {
+    db.exec('ALTER TABLE businesses ADD COLUMN traffic_popularity REAL NOT NULL DEFAULT 0 CHECK(traffic_popularity BETWEEN 0 AND 1.5)');
+    // Existing stores inherit the appeal of their current assortment once.
+    marketIndexes(db, Date.now());
+    for (const row of db.prepare('SELECT * FROM businesses').all()) {
+      const stock = shopStock(db, row.id, row.type, row.profit_margin);
+      const popularity = shopMetrics(db, row, stock, Date.now()).popularity;
+      db.prepare('UPDATE businesses SET traffic_popularity = ? WHERE id = ?').run(popularity, row.id);
+    }
+  }
 }
 
 function activeUser(db, user) {
@@ -88,25 +105,40 @@ function stockType(item) {
   return null;
 }
 
-function shelfPrice(db, item, type, at) {
-  const reference = Math.max(1, Math.round(item.price * marketIndexAt(db, marketCategory(type), at) / 100));
-  return Math.max(reference + 1, Math.round(reference * 1.3));
+export function businessSaleChance(baseConversion, profitMargin) {
+  // Preserve the old buying rate at 30%. Discounting improves turnover, while
+  // very high margins still sell occasionally. Visitors are calculated apart.
+  return Math.max(.01, Math.min(.85, baseConversion * Math.exp(-1.6 * (profitMargin - DEFAULT_PROFIT_MARGIN) / 100)));
 }
 
-function shopStock(db, id, now = Date.now()) {
+function referencePrice(db, item, type, at) {
+  const category = marketCategoryForItem(item) || marketCategory(type);
+  return Math.max(1, Math.round(item.price * marketIndexAt(db, category, at) / 100));
+}
+
+function shelfPrice(db, item, type, profitMargin, at) {
+  const reference = referencePrice(db, item, type, at);
+  return profitMargin ? Math.max(reference + 1, Math.round(reference * (1 + profitMargin / 100))) : reference;
+}
+
+function shopStock(db, id, type, profitMargin, now = Date.now()) {
   return db.prepare(`SELECT s.inventory_id AS id, s.asking_price AS askingPrice, s.stocked_at AS stockedAt,
     i.item FROM business_stock s JOIN inventory i ON i.id = s.inventory_id
     WHERE s.business_id = ? AND s.sold_at IS NULL ORDER BY s.stocked_at, s.inventory_id`).all(id)
     .map(row => {
       const item = JSON.parse(row.item);
-      return { id: row.id, askingPrice: shelfPrice(db, item, stockType(item), now), stockedAt: row.stockedAt, item };
+      return { id: row.id, referencePrice: referencePrice(db, item, type, now),
+        askingPrice: shelfPrice(db, item, type, profitMargin, now), stockedAt: row.stockedAt, item };
     });
 }
 
-function shopMetrics(row, stock) {
+function shopMetrics(db, row, stock, at) {
   const size = shopSize(row.size), type = shopType(row.type);
   const variety = new Set(stock.map(entry => entry.item.title)).size;
-  const value = stock.length ? Math.round(stock.reduce((sum, entry) => sum + entry.askingPrice, 0) / stock.length) : 0;
+  // Assortment appeal is captured when the owner stocks or removes goods.
+  // Sales consume items but do not rewrite foot traffic or popularity.
+  const value = stock.length ? Math.round(stock.reduce((sum, entry) =>
+    sum + referencePrice(db, entry.item, row.type, at), 0) / stock.length) : 0;
   const capacity = shopCapacity(row.type, size);
   const fill = stock.length / capacity;
   const popularity = stock.length ? Math.min(1.5, Math.max(.3,
@@ -115,20 +147,19 @@ function shopMetrics(row, stock) {
 }
 
 function advanceShop(db, row, now) {
-  let stock = shopStock(db, row.id, now);
+  let stock = shopStock(db, row.id, row.type, row.profit_margin, now);
   let visitors = 0, sales = 0, revenue = 0;
   const until = Math.floor(now / HOUR) * HOUR;
   for (let hour = row.last_tick_at + HOUR; hour <= until; hour += HOUR) {
-    if (!stock.length) break;
-    const metrics = shopMetrics(row, stock);
-    const base = shopSize(row.size).visitorsPerHour * metrics.popularity;
+    if (!stock.length && !row.traffic_popularity) break;
+    const base = shopSize(row.size).visitorsPerHour * row.traffic_popularity;
     const count = Math.floor(base) + (hashNumber(`${row.id}:${hour}:visitors`) < base % 1 ? 1 : 0);
     visitors += count;
     for (let n = 0; n < count && stock.length; n++) {
-      if (hashNumber(`${row.id}:${hour}:${n}:buy`) >= shopType(row.type).conversion) continue;
+      if (hashNumber(`${row.id}:${hour}:${n}:buy`) >= businessSaleChance(shopType(row.type).conversion, row.profit_margin)) continue;
       const index = Math.floor(hashNumber(`${row.id}:${hour}:${n}:item`) * stock.length);
       const [sold] = stock.splice(index, 1);
-      const salePrice = shelfPrice(db, sold.item, row.type, hour);
+      const salePrice = shelfPrice(db, sold.item, row.type, row.profit_margin, hour);
       db.prepare('UPDATE business_stock SET sold_at = ?, sold_price = ? WHERE inventory_id = ? AND sold_at IS NULL')
         .run(hour, salePrice, sold.id);
       if (!db.prepare('UPDATE inventory SET sold_at = ? WHERE id = ? AND sold_at IS NULL AND user_id = ?')
@@ -149,10 +180,11 @@ function advanceShops(db, now, userId = null) {
 }
 
 function publicShop(db, row, now = Date.now()) {
-  const stock = shopStock(db, row.id, now);
+  const stock = shopStock(db, row.id, row.type, row.profit_margin, now);
   return { id: row.id, type: row.type, size: row.size, boughtAt: row.bought_at,
-    visitors: row.visitors, sales: row.sales, revenue: row.revenue,
-    ...shopMetrics(row, stock), stock };
+    visitors: row.visitors, sales: row.sales, revenue: row.revenue, profitMargin: row.profit_margin,
+    buyChancePercent: Math.round(businessSaleChance(shopType(row.type).conversion, row.profit_margin) * 1000) / 10,
+    ...shopMetrics(db, row, stock, now), popularity: row.traffic_popularity, stock };
 }
 
 export function businessDashboard(dataDir, user, { now = Date.now() } = {}) {
@@ -184,13 +216,26 @@ export function buyBusiness(dataDir, user, typeId, sizeId, { now = Date.now() } 
   }));
 }
 
+export function setBusinessMargin(dataDir, user, shopId, profitMargin, { now = Date.now() } = {}) {
+  if (!Number.isSafeInteger(profitMargin) || profitMargin < 0 || profitMargin > MAX_PROFIT_MARGIN) fail('invalid_profit_margin');
+  return withDatabase(dataDir, db => transaction(db, () => {
+    ensureBusinessSchema(db); activeUser(db, user);
+    const shop = db.prepare('SELECT * FROM businesses WHERE id = ? AND user_id = ?').get(shopId, user.id);
+    if (!shop) fail('business_not_found', 404);
+    // Settle elapsed hours with the old margin before changing future sales.
+    advanceShop(db, shop, now);
+    db.prepare('UPDATE businesses SET profit_margin = ? WHERE id = ?').run(profitMargin, shop.id);
+    return publicShop(db, db.prepare('SELECT * FROM businesses WHERE id = ?').get(shop.id), now);
+  }));
+}
+
 export function stockBusiness(dataDir, user, shopId, inventoryIds, { now = Date.now() } = {}) {
   if (!Array.isArray(inventoryIds) || !inventoryIds.length || inventoryIds.length > 150 || new Set(inventoryIds).size !== inventoryIds.length) fail('invalid_stock');
   return withDatabase(dataDir, db => transaction(db, () => {
     ensureBusinessSchema(db); activeUser(db, user); advanceShops(db, now, user.id);
     const shop = db.prepare('SELECT * FROM businesses WHERE id = ? AND user_id = ?').get(shopId, user.id);
     if (!shop) fail('business_not_found', 404);
-    if (shopStock(db, shop.id).length + inventoryIds.length > shopCapacity(shop.type, shopSize(shop.size))) fail('business_full', 409);
+    if (shopStock(db, shop.id, shop.type, shop.profit_margin, now).length + inventoryIds.length > shopCapacity(shop.type, shopSize(shop.size))) fail('business_full', 409);
     const sealed = sealedPaletteInventoryIds(db);
     marketIndexes(db, now);
     for (const id of inventoryIds) {
@@ -200,11 +245,14 @@ export function stockBusiness(dataDir, user, shopId, inventoryIds, { now = Date.
       if (stockType(item) !== shop.type) fail('wrong_shop_type', 409);
       if (sealed.has(id) || inventoryIsLocked(db, id) || db.prepare('SELECT 1 FROM business_stock WHERE inventory_id = ?').get(id)) fail('item_locked', 409);
       if (!Number.isFinite(item.price) || item.price <= 0) fail('invalid_stock', 409);
-      const askingPrice = shelfPrice(db, item, shop.type, now);
+      const askingPrice = shelfPrice(db, item, shop.type, shop.profit_margin, now);
       db.prepare('INSERT INTO business_stock (inventory_id, business_id, stocked_at, asking_price) VALUES (?, ?, ?, ?)')
         .run(id, shop.id, now, askingPrice);
     }
-    return publicShop(db, shop, now);
+    const stock = shopStock(db, shop.id, shop.type, shop.profit_margin, now);
+    db.prepare('UPDATE businesses SET traffic_popularity = ? WHERE id = ?')
+      .run(shopMetrics(db, shop, stock, now).popularity, shop.id);
+    return publicShop(db, db.prepare('SELECT * FROM businesses WHERE id = ?').get(shop.id), now);
   }));
 }
 
@@ -215,7 +263,10 @@ export function unstockBusiness(dataDir, user, shopId, inventoryId, { now = Date
     if (!shop) fail('business_not_found', 404);
     if (!db.prepare('DELETE FROM business_stock WHERE business_id = ? AND inventory_id = ? AND sold_at IS NULL')
       .run(shop.id, inventoryId).changes) fail('stock_not_found', 404);
-    return publicShop(db, shop, now);
+    const stock = shopStock(db, shop.id, shop.type, shop.profit_margin, now);
+    db.prepare('UPDATE businesses SET traffic_popularity = ? WHERE id = ?')
+      .run(shopMetrics(db, shop, stock, now).popularity, shop.id);
+    return publicShop(db, db.prepare('SELECT * FROM businesses WHERE id = ?').get(shop.id), now);
   }));
 }
 

@@ -6,7 +6,8 @@ import os from 'node:os';
 import path from 'node:path';
 import { Accounts } from '../src/accounts.mjs';
 import { closeDataStore } from '../src/database.mjs';
-import { businessDashboard, buyBusiness, stockBusiness, supplyStockAuctions, tickBusinesses, unstockBusiness } from '../src/businesses.mjs';
+import { businessDashboard, businessSaleChance, buyBusiness, ensureBusinessSchema, setBusinessMargin,
+  stockBusiness, supplyStockAuctions, tickBusinesses, unstockBusiness } from '../src/businesses.mjs';
 import { getResale, listItem, listResales, listingsBidOnByUser, placeBid, settleDueListings } from '../src/resale.mjs';
 import { setMarketIndex } from '../src/market.mjs';
 import { tickNpcBuyers } from '../src/npc-buyers.mjs';
@@ -170,6 +171,105 @@ test('store stock is exclusive, category-checked, and earns once after offline t
   assert.equal(f.count('business_stock', 'sold_price = 40'), 4);
 });
 
+test('profit margin changes buying rate and shelf prices against the current category index, not visitors', async t => {
+  const f = await fixture(t);
+  const shop = buyBusiness(f.dir, f.rival, 'toys', 'popup', { now: start }).shop;
+  assert.equal(shop.profitMargin, 30);
+  assert.equal(businessSaleChance(.28, 30), .28);
+  assert.ok(businessSaleChance(.28, 0) > businessSaleChance(.28, 30));
+  assert.ok(businessSaleChance(.28, 30) > businessSaleChance(.28, 60));
+  assert.ok(businessSaleChance(.28, 60) > businessSaleChance(.28, 100));
+  // Expected profit per visitor has a middle sweet spot instead of rewarding
+  // either a free markup or the highest possible price.
+  assert.ok(60 * businessSaleChance(.28, 60) > 30 * businessSaleChance(.28, 30));
+  assert.ok(60 * businessSaleChance(.28, 60) > 100 * businessSaleChance(.28, 100));
+  f.accounts.db(db => db.prepare('INSERT INTO inventory (id, user_id, item, created_at) VALUES (?, ?, ?, ?)')
+    .run('priced-toy', 'rival', JSON.stringify({ title: 'Wooden puzzle set', price: 100,
+      businessCategory: 'toys', marketCategory: 'collectibles' }), start));
+  stockBusiness(f.dir, f.rival, shop.id, ['priced-toy'], { now: start });
+  setMarketIndex(f.dir, 'collectibles', 150, { now: start });
+  const baseline = businessDashboard(f.dir, f.rival, { now: start }).shops[0];
+  assert.equal(baseline.stock[0].referencePrice, 150);
+  assert.equal(baseline.stock[0].askingPrice, 195);
+  const high = setBusinessMargin(f.dir, f.rival, shop.id, 60, { now: start });
+  assert.equal(high.stock[0].referencePrice, 150);
+  assert.equal(high.stock[0].askingPrice, 240);
+  assert.equal(high.popularity, baseline.popularity);
+  assert.equal(high.visitors, baseline.visitors);
+  assert.ok(high.buyChancePercent < baseline.buyChancePercent);
+  const low = setBusinessMargin(f.dir, f.rival, shop.id, 0, { now: start });
+  assert.equal(low.stock[0].askingPrice, 150);
+  assert.ok(low.buyChancePercent > baseline.buyChancePercent);
+  assert.throws(() => setBusinessMargin(f.dir, f.owner, shop.id, 50, { now: start }), /business_not_found/);
+  for (const invalid of [-1, 101, 2.5, '50', null])
+    assert.throws(() => setBusinessMargin(f.dir, f.rival, shop.id, invalid, { now: start }), /invalid_profit_margin/);
+  closeDataStore(f.dir);
+  assert.equal(businessDashboard(f.dir, f.rival, { now: start }).shops[0].profitMargin, 0);
+});
+
+test('margin changes keep earlier sales at the old price and existing stores migrate to 30%', async t => {
+  const f = await fixture(t);
+  const shop = buyBusiness(f.dir, f.rival, 'toys', 'tiny', { now: start }).shop;
+  f.accounts.db(db => {
+    db.exec('ALTER TABLE businesses DROP COLUMN profit_margin');
+    ensureBusinessSchema(db);
+    for (let n = 0; n < 25; n++) db.prepare('INSERT INTO inventory (id, user_id, item, created_at) VALUES (?, ?, ?, ?)')
+      .run(`margin-toy-${n}`, 'rival', JSON.stringify({ title: `Puzzle ${n}`, price: 100,
+        businessCategory: 'toys', marketCategory: 'collectibles' }), start);
+  });
+  assert.equal(businessDashboard(f.dir, f.rival, { now: start }).shops[0].profitMargin, 30);
+  stockBusiness(f.dir, f.rival, shop.id, Array.from({ length: 25 }, (_, n) => `margin-toy-${n}`), { now: start });
+  const changed = setBusinessMargin(f.dir, f.rival, shop.id, 100, { now: start + 24 * hour });
+  assert.equal(changed.profitMargin, 100);
+  assert.ok(changed.sales > 0);
+  const oldSales = f.accounts.db(db => db.prepare('SELECT sold_price FROM business_stock WHERE sold_at IS NOT NULL').all());
+  assert.ok(oldSales.every(row => row.sold_price === 130));
+  const remaining = changed.stock;
+  assert.ok(remaining.length > 0);
+  assert.ok(remaining.every(entry => entry.askingPrice === 200));
+});
+
+test('profit margin changes sales without changing visitors, even when stock sells out', async t => {
+  const f = await fixture(t);
+  const shop = buyBusiness(f.dir, f.rival, 'toys', 'tiny', { now: start }).shop;
+  f.accounts.db(db => {
+    for (let n = 0; n < 25; n++) db.prepare('INSERT INTO inventory (id, user_id, item, created_at) VALUES (?, ?, ?, ?)')
+      .run(`traffic-toy-${n}`, 'rival', JSON.stringify({ title: `Puzzle ${n}`, price: 100,
+        businessCategory: 'toys', marketCategory: 'collectibles' }), start);
+  });
+  stockBusiness(f.dir, f.rival, shop.id, Array.from({ length: 25 }, (_, n) => `traffic-toy-${n}`), { now: start });
+  setBusinessMargin(f.dir, f.rival, shop.id, 0, { now: start });
+  const low = businessDashboard(f.dir, f.rival, { now: start + 24 * hour }).shops[0];
+  assert.equal(low.stock.length, 0);
+  f.accounts.db(db => {
+    db.prepare('UPDATE businesses SET visitors = 0, sales = 0, revenue = 0, last_tick_at = ?, profit_margin = 100 WHERE id = ?')
+      .run(start, shop.id);
+    db.prepare('UPDATE business_stock SET sold_at = NULL, sold_price = NULL WHERE business_id = ?').run(shop.id);
+    db.prepare("UPDATE inventory SET sold_at = NULL WHERE user_id = 'rival' AND id LIKE 'traffic-toy-%'").run();
+  });
+  const high = businessDashboard(f.dir, f.rival, { now: start + 24 * hour }).shops[0];
+  assert.equal(high.visitors, low.visitors);
+  assert.ok(high.sales < low.sales);
+});
+
+test('older stocked stores gain a stable visitor rate during schema upgrade', async t => {
+  const f = await fixture(t);
+  const shop = buyBusiness(f.dir, f.rival, 'toys', 'popup', { now: start }).shop;
+  f.accounts.db(db => db.prepare('INSERT INTO inventory (id, user_id, item, created_at) VALUES (?, ?, ?, ?)')
+    .run('legacy-toy', 'rival', JSON.stringify({ title: 'Wooden puzzle set', price: 100,
+      businessCategory: 'toys', marketCategory: 'collectibles' }), start));
+  stockBusiness(f.dir, f.rival, shop.id, ['legacy-toy'], { now: start });
+  f.accounts.db(db => {
+    db.exec('ALTER TABLE businesses DROP COLUMN traffic_popularity');
+    db.exec('ALTER TABLE businesses DROP COLUMN profit_margin');
+    ensureBusinessSchema(db);
+  });
+  const upgraded = businessDashboard(f.dir, f.rival, { now: start }).shops[0];
+  assert.equal(upgraded.profitMargin, 30);
+  assert.ok(upgraded.popularity > 0);
+  assert.equal(unstockBusiness(f.dir, f.rival, shop.id, 'legacy-toy', { now: start }).popularity, 0);
+});
+
 test('shop categories and capacities reject unsuitable or excess stock atomically', async t => {
   const f = await fixture(t);
   const toy = buyBusiness(f.dir, f.rival, 'toys', 'popup', { now: start }).shop;
@@ -245,6 +345,11 @@ test('business HTTP routes require sessions and stock lots appear through market
   assert.equal((await post('businesses/buy', { type: 'wine', size: 'popup' }, cookie)).status, 200);
   const shops = await (await fetch(`${base}/api/account/businesses`, { headers: { cookie } })).json();
   assert.equal(shops.shops.length, 1);
+  assert.equal((await post('businesses/margin', { shopId: shops.shops[0].id, profitMargin: 50 }, cookie, false)).status, 403);
+  assert.equal((await post('businesses/margin', { shopId: shops.shops[0].id, profitMargin: 101 }, cookie)).status, 400);
+  const margin = await (await post('businesses/margin', { shopId: shops.shops[0].id, profitMargin: 50 }, cookie)).json();
+  assert.equal(margin.shop.profitMargin, 50);
+  assert.ok(margin.shop.buyChancePercent < shops.shops[0].buyChancePercent);
   const wine = lots.listings.find(lot => lot.item.title === 'Wachau Riesling 2022');
   const bid = await post('resale/bid', { id: wine.id, amount: wine.startPrice }, cookie);
   assert.equal(bid.status, 200);
