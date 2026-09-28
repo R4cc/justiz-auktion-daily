@@ -7,6 +7,7 @@ import { bundleReferencePricing, ensurePaletteEditionSchema } from './palette-de
 import { paletteStoryForAuction } from './palette-stories.mjs';
 import { levelForXp } from './progression.mjs';
 import { pushNotification } from './notifications.mjs';
+import { proxyMinimum, resolveProxyBid } from './proxy-bids.mjs';
 
 // Re-exported for backwards compatibility with the pre-extraction imports;
 // the curve itself is owned by src/progression.mjs.
@@ -65,6 +66,7 @@ export function ensurePaletteAuctionSchema(db, now = Date.now()) {
     edition_id TEXT NOT NULL REFERENCES palette_editions(id),
     reserve INTEGER NOT NULL CHECK(reserve > 0),
     current_bid INTEGER NULL,
+    max_bid INTEGER NULL,
     current_bidder_id TEXT NULL REFERENCES users(id),
     status TEXT NOT NULL CHECK(status IN ('active','ended')),
     started_at INTEGER NOT NULL,
@@ -84,6 +86,10 @@ export function ensurePaletteAuctionSchema(db, now = Date.now()) {
   if (!columns.includes('revealed_at')) {
     db.exec('ALTER TABLE primary_palette_auctions ADD COLUMN revealed_at INTEGER NULL');
   }
+  if (!columns.includes('max_bid')) {
+    db.exec('ALTER TABLE primary_palette_auctions ADD COLUMN max_bid INTEGER NULL');
+    db.exec('UPDATE primary_palette_auctions SET max_bid = current_bid WHERE current_bidder_id IS NOT NULL');
+  }
   db.exec(`CREATE TABLE IF NOT EXISTS primary_palette_rewards (
     auction_id TEXT NOT NULL REFERENCES primary_palette_auctions(id),
     position INTEGER NOT NULL CHECK(position BETWEEN 0 AND 2),
@@ -96,8 +102,12 @@ export function ensurePaletteAuctionSchema(db, now = Date.now()) {
     auction_id TEXT NOT NULL REFERENCES primary_palette_auctions(id),
     bidder_id TEXT NOT NULL REFERENCES users(id),
     amount INTEGER NOT NULL CHECK(amount > 0),
+    visible_amount INTEGER,
     created_at INTEGER NOT NULL
   ) STRICT`);
+  if (!db.prepare('PRAGMA table_info(primary_palette_bids)').all().some(column => column.name === 'visible_amount')) {
+    db.exec('ALTER TABLE primary_palette_bids ADD COLUMN visible_amount INTEGER');
+  }
   db.exec(`CREATE INDEX IF NOT EXISTS primary_palette_bids_auction ON primary_palette_bids(auction_id, id)`);
 }
 
@@ -144,7 +154,7 @@ function serializePublicAuction(db, row, { bids = false } = {}) {
     requiredLevel: row.required_level, status: row.status,
     startedAt: row.started_at, endsAt: row.ends_at, closedAt: row.closed_at || null,
     settledAt: row.settled_at || null, winnerId: row.winner_id || null,
-    ...(bids ? { bids: db.prepare(`SELECT b.id, b.amount, b.created_at AS createdAt,
+    ...(bids ? { bids: db.prepare(`SELECT b.id, COALESCE(b.visible_amount, b.amount) AS amount, b.created_at AS createdAt,
       u.id AS bidderId, u.username AS bidderUsername
       FROM primary_palette_bids b JOIN users u ON u.id = b.bidder_id
       WHERE b.auction_id = ? ORDER BY b.created_at ASC, b.id ASC`).all(row.id) } : {})
@@ -250,6 +260,9 @@ export function bidOnPaletteAuction(dataDir, user, auctionId, amount, { now = Da
     ensurePaletteAuctionSchema(db, now);
     const row = loadAuction(db, auctionId);
     if (now >= row.ends_at) fail('palette_auction_ended', 409);
+    if (row.current_bidder_id === null ? row.current_bid !== null || row.max_bid !== null
+      : !Number.isSafeInteger(row.current_bid) || !Number.isSafeInteger(row.max_bid ?? row.current_bid)
+        || (row.max_bid ?? row.current_bid) < row.current_bid) fail('palette_auction_inconsistent', 500);
     const account = currentUser(db, user.id, { npc });
     // The frozen requiredLevel gates bidding; the level derives from the
     // persisted users.xp, never from a client-supplied level. Trusted NPC
@@ -260,30 +273,37 @@ export function bidOnPaletteAuction(dataDir, user, auctionId, amount, { now = Da
     // a bidding war against themselves. This check lives inside the write
     // transaction so concurrent runtimes are covered as well.
     if (npc && row.current_bidder_id === user.id) fail('npc_self_outbid', 409);
-    const minimum = row.current_bid === null ? row.reserve : row.current_bid + paletteBidIncrement(row.reserve);
+    const increment = paletteBidIncrement(row.reserve);
+    const minimum = proxyMinimum(row.current_bid, row.max_bid, row.current_bidder_id, user.id, row.reserve, increment);
     if (amount < minimum) fail('bid_too_low', 409);
-    // Escrow accounting, identical in semantics to resale: the leader raising
-    // pays only the difference; a different bidder pays in full and refunds
-    // the previous holder; a rejected bid changes nothing at all.
+    const outcome = resolveProxyBid(row.current_bid, row.max_bid, row.current_bidder_id,
+      user.id, amount, row.reserve, increment);
+    const oldMax = row.max_bid ?? row.current_bid;
     const raise = row.current_bidder_id === user.id;
-    const charge = raise ? amount - row.current_bid : amount;
-    if (!db.prepare('UPDATE users SET tokens = tokens - ? WHERE id = ? AND tokens >= ?')
+    const takesLead = outcome.leaderId === user.id;
+    const charge = !takesLead ? 0 : raise ? amount - oldMax : amount;
+    if (account.tokens < (raise ? charge : amount)) fail('insufficient_tokens', 409);
+    if (charge && !db.prepare('UPDATE users SET tokens = tokens - ? WHERE id = ? AND tokens >= ?')
       .run(charge, user.id, charge).changes) fail('insufficient_tokens', 409);
-    if (!raise && row.current_bidder_id !== null) {
+    if (takesLead && !raise && row.current_bidder_id !== null) {
       const previous = db.prepare('SELECT tokens FROM users WHERE id = ?').get(row.current_bidder_id);
-      if (!previous || !Number.isSafeInteger(previous.tokens + row.current_bid)) fail('token_balance_limit', 409);
-      db.prepare('UPDATE users SET tokens = tokens + ? WHERE id = ?').run(row.current_bid, row.current_bidder_id);
+      if (!previous || !Number.isSafeInteger(previous.tokens + oldMax)) fail('token_balance_limit', 409);
+      db.prepare('UPDATE users SET tokens = tokens + ? WHERE id = ?').run(oldMax, row.current_bidder_id);
     }
-    const bid = db.prepare('INSERT INTO primary_palette_bids (auction_id, bidder_id, amount, created_at) VALUES (?, ?, ?, ?)')
-      .run(row.id, user.id, amount, now);
-    db.prepare('UPDATE primary_palette_auctions SET current_bid = ?, current_bidder_id = ? WHERE id = ?')
-      .run(amount, user.id, row.id);
-    if (!raise && row.current_bidder_id !== null) {
+    const bid = db.prepare(`INSERT INTO primary_palette_bids
+      (auction_id, bidder_id, amount, visible_amount, created_at) VALUES (?, ?, ?, ?, ?)`)
+      .run(row.id, user.id, amount, outcome.challengerBid, now);
+    if (outcome.autoBid !== null) db.prepare(`INSERT INTO primary_palette_bids
+      (auction_id, bidder_id, amount, visible_amount, created_at) VALUES (?, ?, ?, ?, ?)`)
+      .run(row.id, row.current_bidder_id, oldMax, outcome.autoBid, now);
+    db.prepare('UPDATE primary_palette_auctions SET current_bid = ?, max_bid = ?, current_bidder_id = ? WHERE id = ?')
+      .run(outcome.visibleBid, outcome.maxBid, outcome.leaderId, row.id);
+    if (takesLead && !raise && row.current_bidder_id !== null) {
       const snapshot = JSON.parse(row.public_snapshot_json);
       pushNotification(db, row.current_bidder_id, {
         type: 'outbid', sourceKey: `palette:outbid:${row.id}:${bid.lastInsertRowid}`, href: '/auctions',
         titleEn: 'You were outbid', titleDe: 'Du wurdest überboten',
-        bodyEn: `${snapshot.name} is now at J€ ${amount}.`, bodyDe: `${snapshot.nameDe || snapshot.name} steht jetzt bei J€ ${amount}.`
+        bodyEn: `${snapshot.name} is now at J€ ${outcome.visibleBid}.`, bodyDe: `${snapshot.nameDe || snapshot.name} steht jetzt bei J€ ${outcome.visibleBid}.`
       }, now);
     }
     return serializePublicAuction(db, db.prepare('SELECT * FROM primary_palette_auctions WHERE id = ?').get(row.id));
@@ -299,8 +319,8 @@ function composeRewardItem(snapshotJson, auction, reward, winningBid) {
     paletteEditionId: auction.edition_id, rewardPosition: reward.position, bundleCostTokens: winningBid };
 }
 
-// Terminal settlement. The winning escrow is consumed (a currency sink: no
-// seller payout, no second debit for the winner); exactly the three reserved
+// Terminal settlement. Only the visible winning price is consumed (a currency
+// sink); the unused maximum returns to the winner. Exactly the three reserved
 // inventory rows are created for the winner with full provenance. Idempotent:
 // repeat calls return the same terminal state and create nothing further.
 function settleAuctionRow(db, row, now) {
@@ -314,6 +334,10 @@ function settleAuctionRow(db, row, now) {
     return db.prepare('SELECT * FROM primary_palette_auctions WHERE id = ?').get(row.id);
   }
   if (!Number.isSafeInteger(winningBid) || winningBid < 1) fail('palette_auction_inconsistent', 500);
+  const held = row.max_bid ?? winningBid;
+  const winner = db.prepare('SELECT tokens FROM users WHERE id = ?').get(winnerId);
+  if (!Number.isSafeInteger(held) || held < winningBid || !winner
+    || !Number.isSafeInteger(winner.tokens + (held - winningBid))) fail('palette_auction_inconsistent', 500);
   const rewards = db.prepare(`SELECT position, inventory_id, item_json FROM primary_palette_rewards
     WHERE auction_id = ? ORDER BY position`).all(row.id);
   if (rewards.length !== 3 || rewards.some((reward, index) => reward.position !== index)) {
@@ -333,6 +357,8 @@ function settleAuctionRow(db, row, now) {
     insertInventory.run(reward.inventory_id, winnerId,
       JSON.stringify(composeRewardItem(reward.item_json, row, reward, winningBid)), now);
   }
+  if (held > winningBid) db.prepare('UPDATE users SET tokens = tokens + ? WHERE id = ?')
+    .run(held - winningBid, winnerId);
   if (!db.prepare('UPDATE primary_palette_auctions SET settled_at = ? WHERE id = ? AND settled_at IS NULL')
     .run(now, row.id).changes) fail('palette_auction_inconsistent', 500);
   const snapshot = JSON.parse(row.public_snapshot_json);

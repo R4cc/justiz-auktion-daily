@@ -158,12 +158,12 @@ test('finished bids stay discoverable in the archive with won and lost outcomes'
   assert.deepEqual(wonArchive.map(row => row.id), [listing.id]);
   assert.equal(wonArchive[0].won, true);
   assert.equal(wonArchive[0].leading, false);
-  assert.equal(wonArchive[0].currentBid, 60);
+  assert.equal(wonArchive[0].currentBid, 56);
   assert.equal(wonArchive[0].highestBid, 60);
   const lostArchive = archivedListingsBidOnByUser(dir, loser.id, { now: day + 26 * hour });
   assert.deepEqual(lostArchive.map(row => row.id), [listing.id]);
   assert.equal(lostArchive[0].won, false);
-  assert.equal(lostArchive[0].currentBid, 60);
+  assert.equal(lostArchive[0].currentBid, 56);
   assert.equal(lostArchive[0].highestBid, 55);
   // The ended listing has left the current-bids list and the live board.
   assert.deepEqual(listingsBidOnByUser(dir, winner.id, { now: day + 26 * hour }), []);
@@ -232,12 +232,12 @@ test('bids escrow exact amounts, refund on outbid, charge only the difference on
   assert.equal(tokensOf(service, bidder), bidderStart);
   assert.equal(tokensOf(service, rival), rivalStart - 900);
   assert.ok(notificationsForUser(dir, bidder.id, { now: day + 2000 }).fresh
-    .some(entry => entry.type === 'outbid' && entry.bodyEn.includes('J€ 900')));
+    .some(entry => entry.type === 'outbid' && entry.bodyEn.includes('J€ 701')));
   const escalated = getResale(dir, a.id, { now: day + 3000 });
-  assert.equal(escalated.currentBid, 900);
+  assert.equal(escalated.currentBid, 701);
   assert.deepEqual(escalated.bids.map(bid => [bid.amount, bid.bidderUsername]),
-    [[900, 'Rival'], [700, 'Bidder'], [500, 'Bidder']]);
-  // While the auction is live, exactly the current bid is out of circulation.
+    [[701, 'Rival'], [50, 'Bidder'], [50, 'Bidder']]);
+  // While the auction is live, the private maximum is out of circulation.
   assert.equal(totalTokens(service), totalBefore - 900);
   // A rejected bid leaves balances, current bid and history untouched.
   const poor = await register('Poor');
@@ -246,13 +246,62 @@ test('bids escrow exact amounts, refund on outbid, charge only the difference on
   assert.equal(tokensOf(service, poor), 5);
   assert.equal(tokensOf(service, rival), rivalStart - 900);
   const unchanged = getResale(dir, a.id, { now: day + 5000 });
-  assert.equal(unchanged.currentBid, 900);
+  assert.equal(unchanged.currentBid, 701);
   assert.equal(unchanged.bidCount, 3);
   const top = unchanged.bids[0];
-  assert.equal(top.amount, 900);
+  assert.equal(top.amount, 701);
   assert.equal(top.bidderId, rival.id);
   assert.equal(top.bidderUsername, 'Rival');
   assert.equal(top.createdAt, day + 2000);
+});
+
+test('proxy bids keep a raised maximum private until competing offers move the price', async t => {
+  const { dir, service, admin, register } = await fixture(t);
+  const item = service.openCase(admin, catalog, 'fundkiste', 'proxy-item-000001');
+  const listing = listItem(dir, admin, { inventoryId: item.id, startPrice: 20, endsAt: endsIn(24) }, { now: day });
+  const leader = await register('ProxyLeader'), rival = await register('ProxyRival');
+  const sellerBefore = tokensOf(service, admin), leaderBefore = tokensOf(service, leader), rivalBefore = tokensOf(service, rival);
+  placeBid(dir, leader, listing.id, 20, { now: day });
+  const raised = placeBid(dir, leader, listing.id, 80, { now: day + 1000 });
+  assert.equal(raised.currentBid, 20);
+  assert.equal(raised.currentBidderId, leader.id);
+  assert.equal(tokensOf(service, leader), leaderBefore - 80);
+  assert.deepEqual(raised.bids.map(bid => bid.amount), [20, 20]);
+  assert.equal(listingsBidOnByUser(dir, leader.id, { now: day + 1000 })[0].highestBid, 80);
+  assert.ok(!('maxBid' in listResales(dir, { now: day + 1000 })[0]));
+  const challenged = placeBid(dir, rival, listing.id, 30, { now: day + 2000 });
+  assert.equal(challenged.currentBid, 31);
+  assert.equal(challenged.currentBidderId, leader.id);
+  assert.equal(tokensOf(service, rival), rivalBefore);
+  assert.deepEqual(challenged.bids.map(bid => bid.amount), [31, 30, 20, 20]);
+  const ceiling = placeBid(dir, rival, listing.id, 80, { now: day + 3000 });
+  assert.equal(ceiling.currentBid, 80);
+  assert.equal(ceiling.currentBidderId, leader.id);
+  const overbid = placeBid(dir, rival, listing.id, 90, { now: day + 4000 });
+  assert.equal(overbid.currentBid, 81);
+  assert.equal(overbid.currentBidderId, rival.id);
+  assert.equal(tokensOf(service, leader), leaderBefore);
+  assert.equal(tokensOf(service, rival), rivalBefore - 90);
+  settleAuction(dir, listing.id, { now: day + 25 * hour });
+  assert.equal(tokensOf(service, rival), rivalBefore - 81);
+  assert.equal(tokensOf(service, admin), sellerBefore + 81);
+});
+
+test('existing live bids migrate their displayed amount into the proxy ceiling', async t => {
+  const { dir, service, admin, register } = await fixture(t);
+  const item = service.openCase(admin, catalog, 'fundkiste', 'proxy-legacy-00001');
+  const listing = listItem(dir, admin, { inventoryId: item.id, startPrice: 20, endsAt: endsIn(24) }, { now: day });
+  const leader = await register('LegacyLeader'), rival = await register('LegacyRival');
+  placeBid(dir, leader, listing.id, 20, { now: day });
+  service.db(db => {
+    db.exec('ALTER TABLE resale_auctions DROP COLUMN max_bid');
+    db.exec('ALTER TABLE resale_bids DROP COLUMN visible_amount');
+  });
+  const migrated = getResale(dir, listing.id, { now: day + 1000 });
+  assert.equal(migrated.currentBid, 20);
+  assert.equal(service.db(db => db.prepare('SELECT max_bid FROM resale_auctions WHERE id = ?').get(listing.id).max_bid), 20);
+  assert.deepEqual(migrated.bids.map(bid => bid.amount), [20]);
+  assert.equal(placeBid(dir, rival, listing.id, 21, { now: day + 2000 }).currentBid, 21);
 });
 
 test('won auctions settle lazily: item transfers, seller is paid, winner is never charged again', async t => {
@@ -329,19 +378,19 @@ test('settlement is idempotent: repeat calls never pay, transfer or settle twice
   const first = settleAuction(dir, listing.id, { now: closeTime });
   assert.equal(first.status, 'ended');
   assert.ok(first.settledAt);
-  assert.equal(tokensOf(service, admin), sellerBefore + amount);
+  assert.equal(tokensOf(service, admin), sellerBefore + listing.startPrice);
   assert.deepEqual(inventoryRow(service, item.id), { user_id: bidder.id, sold_at: null });
   // Calling again — directly and through the sweep — changes nothing.
   const second = settleAuction(dir, listing.id, { now: closeTime + hour });
   assert.equal(second.settledAt, first.settledAt);
-  assert.equal(tokensOf(service, admin), sellerBefore + amount);
-  assert.equal(tokensOf(service, bidder), winnerBefore);
+  assert.equal(tokensOf(service, admin), sellerBefore + listing.startPrice);
+  assert.equal(tokensOf(service, bidder), winnerBefore + amount - listing.startPrice);
   assert.equal(rowCount(service, 'inventory', 'id = ?', item.id), 1);
   assert.deepEqual(inventoryRow(service, item.id), { user_id: bidder.id, sold_at: null });
   assert.equal(rowCount(service, 'resale_bids', 'auction_id = ?', listing.id), 1);
   assert.deepEqual(settleDueListings(dir, { now: closeTime + 2 * hour }), { settled: 0, failed: [] });
-  assert.equal(tokensOf(service, admin), sellerBefore + amount);
-  assert.equal(tokensOf(service, bidder), winnerBefore);
+  assert.equal(tokensOf(service, admin), sellerBefore + listing.startPrice);
+  assert.equal(tokensOf(service, bidder), winnerBefore + amount - listing.startPrice);
 });
 
 test('ended-but-unsettled winners block instant sale, sell-all and relisting until settlement', async t => {

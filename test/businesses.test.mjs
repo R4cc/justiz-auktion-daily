@@ -52,14 +52,14 @@ test('stock batches use marketplace escrow, bid history, and inventory transfer'
   assert.equal(f.balance('owner'), 1000);
   placeBid(f.dir, f.owner, wine.id, 450, { now: start + 3000 });
   assert.equal(f.balance('owner'), 550);
-  assert.throws(() => placeBid(f.dir, f.rival, wine.id, 450, { now: start + 4000 }), /bid_too_low/);
+  assert.throws(() => placeBid(f.dir, f.rival, wine.id, 434, { now: start + 4000 }), /bid_too_low/);
   assert.equal(getResale(f.dir, wine.id, { now: start + 5000 }).bids.length, 3);
   assert.equal(listingsBidOnByUser(f.dir, f.owner.id, { now: start + 5000 })[0].leading, true);
   settleDueListings(f.dir, { now: start + 2 * hour });
   assert.equal(f.count('inventory'), 98);
   assert.equal(f.count('inventory', "user_id = 'owner'"), 24);
   settleDueListings(f.dir, { now: start + 2 * hour + 1000 });
-  assert.equal(f.balance('owner'), 550);
+  assert.equal(f.balance('owner'), 1000 - getResale(f.dir, wine.id, { now: start + 2 * hour }).currentBid);
   assert.equal(getResale(f.dir, wine.id, { now: start + 2 * hour }).winnerId, 'owner');
   assert.equal(f.count('account_notifications', "source_key LIKE 'resale:won:%'"), 1);
   assert.throws(() => placeBid(f.dir, f.rival, wine.id, 1000, { now: start + 2 * hour }), /auction_ended/);
@@ -219,7 +219,7 @@ test('margin changes keep earlier sales at the old price and existing stores mig
   });
   assert.equal(businessDashboard(f.dir, f.rival, { now: start }).shops[0].profitMargin, 30);
   stockBusiness(f.dir, f.rival, shop.id, Array.from({ length: 25 }, (_, n) => `margin-toy-${n}`), { now: start });
-  const changed = setBusinessMargin(f.dir, f.rival, shop.id, 100, { now: start + 24 * hour });
+  const changed = setBusinessMargin(f.dir, f.rival, shop.id, 100, { now: start + 12 * hour });
   assert.equal(changed.profitMargin, 100);
   assert.ok(changed.sales > 0);
   const oldSales = f.accounts.db(db => db.prepare('SELECT sold_price FROM business_stock WHERE sold_at IS NOT NULL').all());

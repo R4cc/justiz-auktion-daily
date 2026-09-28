@@ -5,6 +5,7 @@ import { awardXp, resaleXp } from './xp.mjs';
 import { estimatedValueTokens, marketIndexes, marketCategoryForItem } from './market.mjs';
 import { pushNotification } from './notifications.mjs';
 import { sealedPaletteInventoryIds } from './palette-auctions.mjs';
+import { proxyMinimum, resolveProxyBid } from './proxy-bids.mjs';
 
 // Player resale auctions: eBay-like listings of one or more identical items.
 //
@@ -19,16 +20,16 @@ import { sealedPaletteInventoryIds } from './palette-auctions.mjs';
 //    settled sale only the winner, as the new owner, may relist it.
 //  - A partial unique index guarantees at most one active listing per item.
 //
-// Escrow invariant (escrow at bid time): an auction row's current_bid together
-// with its current_bidder_id IS the escrow. Those tokens were deducted from the
-// bidder's users.tokens balance the moment the bid was placed and are held by
+// Escrow invariant: max_bid belongs to current_bidder_id and is held in full.
+// Those tokens were deducted from the bidder's users.tokens balance and held by
 // the auction row until settlement — users.tokens is always spendable balance
 // and never counts tokens locked in bids. Bidding therefore moves tokens
 // bidder → auction (a first bid or another bidder's outbid reserves the full
-// amount, the current bidder raising their own bid reserves only the
-// difference, an outbid refunds the previous holder's exact amount), and
-// settlement moves the held amount auction → seller. Normal bid transitions
-// and settlement never create or destroy tokens, and the winner is never
+// maximum, the leader raising their ceiling reserves only the difference,
+// an outbid refunds the previous holder's exact ceiling), and settlement
+// refunds the winner's unused ceiling and moves the visible price to the
+// seller. Normal bid transitions and settlement never create or destroy
+// tokens, and the winner is never
 // charged a second time at settlement.
 //
 // Runtime and lazy reads both settle due listings through the same path.
@@ -45,6 +46,7 @@ export function ensureResaleSchema(db, now = Date.now()) {
     inventory_id TEXT NOT NULL REFERENCES inventory(id),
     start_price INTEGER NOT NULL CHECK(start_price > 0),
     current_bid INTEGER,
+    max_bid INTEGER,
     current_bidder_id TEXT REFERENCES users(id),
     status TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('active','ended','cancelled')),
     started_at INTEGER NOT NULL,
@@ -62,6 +64,7 @@ export function ensureResaleSchema(db, now = Date.now()) {
     auction_id TEXT NOT NULL REFERENCES resale_auctions(id) ON DELETE CASCADE,
     bidder_id TEXT NOT NULL REFERENCES users(id),
     amount INTEGER NOT NULL CHECK(amount > 0),
+    visible_amount INTEGER,
     created_at INTEGER NOT NULL
   ) STRICT`);
   db.exec(`CREATE INDEX IF NOT EXISTS resale_bids_auction ON resale_bids(auction_id, amount)`);
@@ -77,6 +80,13 @@ export function ensureResaleSchema(db, now = Date.now()) {
   db.exec(`INSERT OR IGNORE INTO resale_auction_items (auction_id, inventory_id, position)
     SELECT id, inventory_id, 0 FROM resale_auctions`);
   const columns = db.prepare('PRAGMA table_info(resale_auctions)').all().map(column => column.name);
+  if (!columns.includes('max_bid')) {
+    db.exec('ALTER TABLE resale_auctions ADD COLUMN max_bid INTEGER');
+    db.exec('UPDATE resale_auctions SET max_bid = current_bid WHERE current_bidder_id IS NOT NULL');
+  }
+  if (!db.prepare('PRAGMA table_info(resale_bids)').all().some(column => column.name === 'visible_amount')) {
+    db.exec('ALTER TABLE resale_bids ADD COLUMN visible_amount INTEGER');
+  }
   if (!columns.includes('settled_at')) {
     db.exec('ALTER TABLE resale_auctions ADD COLUMN settled_at INTEGER');
     // One-time cleanup for foundation-version rows: their bids were advisory
@@ -153,9 +163,10 @@ function serializeListing(db, row, { bids = false, now = Date.now(), indexes = m
     status: row.status, startedAt: row.started_at, endsAt: row.ends_at,
     winnerId: row.winner_id || null, closedAt: row.closed_at || null,
     settledAt: row.settled_at || null,
-    ...(bids ? { bids: db.prepare(`SELECT b.id, b.amount, b.created_at AS createdAt, u.id AS bidderId, u.username AS bidderUsername
+    ...(bids ? { bids: db.prepare(`SELECT b.id, COALESCE(b.visible_amount, b.amount) AS amount,
+      b.created_at AS createdAt, u.id AS bidderId, u.username AS bidderUsername
       FROM resale_bids b JOIN users u ON u.id = b.bidder_id WHERE b.auction_id = ?
-      ORDER BY b.amount DESC, b.created_at ASC, b.id ASC`).all(row.id) } : {})
+      ORDER BY COALESCE(b.visible_amount, b.amount) DESC, b.created_at ASC, b.id ASC`).all(row.id) } : {})
   };
 }
 
@@ -224,44 +235,52 @@ export function placeBid(dataDir, user, auctionId, amount, { now = Date.now() } 
     const row = loadListing(db, auctionId, now);
     if (row.status !== 'active') fail('auction_ended', 409);
     if (row.seller_id === user.id) fail('own_auction', 409);
-    const minimum = row.current_bid === null ? row.start_price : row.current_bid + 1;
-    if (amount < minimum) fail('bid_too_low', 409);
-    const bidder = db.prepare('SELECT npc FROM users WHERE id = ? AND banned = 0').get(user.id);
+    if (row.current_bidder_id === null ? row.current_bid !== null || row.max_bid !== null
+      : !Number.isSafeInteger(row.current_bid) || !Number.isSafeInteger(row.max_bid ?? row.current_bid)
+        || (row.max_bid ?? row.current_bid) < row.current_bid) fail('escrow_inconsistent', 500);
+    const bidder = db.prepare('SELECT npc, tokens FROM users WHERE id = ? AND banned = 0').get(user.id);
     if (!bidder) fail('login_required', 401);
     if (bidder.npc && JSON.parse(listingInventory(db, row)[0].item).kind === 'case') fail('npc_case_bid_forbidden', 403);
     if (bidder.npc && row.current_bidder_id === user.id) fail('npc_self_outbid', 409);
+    const minimum = proxyMinimum(row.current_bid, row.max_bid, row.current_bidder_id, user.id, row.start_price, 1);
+    if (amount < minimum) fail('bid_too_low', 409);
     // Persistent timing guard, inside the economic write lock. Replaying a
     // runtime tick (or running two processes) cannot cause a bidding burst.
     if (bidder.npc && db.prepare(`SELECT 1 FROM resale_bids b JOIN users u ON u.id = b.bidder_id
       WHERE b.auction_id = ? AND u.npc = 1 AND b.created_at > ? LIMIT 1`).get(row.id, now - 30_000)) {
       fail('npc_bid_wait', 409);
     }
-    // Escrow at bid time. The conditional UPDATE is the debit itself, so an
-    // insufficient balance fails atomically without touching anything else.
-    // Raising your own bid reserves only the difference; a different bidder
-    // reserves the full amount and releases the previous holder's escrow in
-    // the same transaction — a rejected bid can never leave tokens moved,
-    // bids recorded, or the current bidder changed.
+    const outcome = resolveProxyBid(row.current_bid, row.max_bid, row.current_bidder_id,
+      user.id, amount, row.start_price, 1);
+    const oldMax = row.max_bid ?? row.current_bid;
     const raise = row.current_bidder_id === user.id;
-    const charge = raise ? amount - row.current_bid : amount;
-    if (!db.prepare('UPDATE users SET tokens = tokens - ? WHERE id = ? AND tokens >= ?')
+    const takesLead = outcome.leaderId === user.id;
+    // A losing challenger must be able to cover the offer, but no J€ stay
+    // escrowed after the existing ceiling automatically beats it.
+    const charge = !takesLead ? 0 : raise ? amount - oldMax : amount;
+    if (bidder.tokens < (raise ? charge : amount)) fail('insufficient_tokens', 409);
+    if (charge && !db.prepare('UPDATE users SET tokens = tokens - ? WHERE id = ? AND tokens >= ?')
       .run(charge, user.id, charge).changes) fail('insufficient_tokens', 409);
-    if (!raise && row.current_bidder_id !== null) {
+    if (takesLead && !raise && row.current_bidder_id !== null) {
       const previous = db.prepare('SELECT tokens FROM users WHERE id = ?').get(row.current_bidder_id);
-      if (!Number.isSafeInteger(previous.tokens + row.current_bid)) fail('token_balance_limit', 409);
-      db.prepare('UPDATE users SET tokens = tokens + ? WHERE id = ?').run(row.current_bid, row.current_bidder_id);
+      if (!previous || !Number.isSafeInteger(previous.tokens + oldMax)) fail('token_balance_limit', 409);
+      db.prepare('UPDATE users SET tokens = tokens + ? WHERE id = ?').run(oldMax, row.current_bidder_id);
     }
-    const bid = db.prepare('INSERT INTO resale_bids (auction_id, bidder_id, amount, created_at) VALUES (?, ?, ?, ?)')
-      .run(row.id, user.id, amount, now);
-    db.prepare('UPDATE resale_auctions SET current_bid = ?, current_bidder_id = ? WHERE id = ?')
-      .run(amount, user.id, row.id);
-    if (!raise && row.current_bidder_id !== null) {
+    const bid = db.prepare(`INSERT INTO resale_bids
+      (auction_id, bidder_id, amount, visible_amount, created_at) VALUES (?, ?, ?, ?, ?)`)
+      .run(row.id, user.id, amount, outcome.challengerBid, now);
+    if (outcome.autoBid !== null) db.prepare(`INSERT INTO resale_bids
+      (auction_id, bidder_id, amount, visible_amount, created_at) VALUES (?, ?, ?, ?, ?)`)
+      .run(row.id, row.current_bidder_id, oldMax, outcome.autoBid, now);
+    db.prepare('UPDATE resale_auctions SET current_bid = ?, max_bid = ?, current_bidder_id = ? WHERE id = ?')
+      .run(outcome.visibleBid, outcome.maxBid, outcome.leaderId, row.id);
+    if (takesLead && !raise && row.current_bidder_id !== null) {
       const items = listingInventory(db, row);
       const item = JSON.parse(items[0].item), title = quantityTitle(item.title, items.length);
       pushNotification(db, row.current_bidder_id, {
         type: 'outbid', sourceKey: `resale:outbid:${row.id}:${bid.lastInsertRowid}`, href: '/marketplace?view=bids',
         titleEn: 'You were outbid', titleDe: 'Du wurdest überboten',
-        bodyEn: `${title} is now at J€ ${amount}.`, bodyDe: `${title} steht jetzt bei J€ ${amount}.`
+        bodyEn: `${title} is now at J€ ${outcome.visibleBid}.`, bodyDe: `${title} steht jetzt bei J€ ${outcome.visibleBid}.`
       }, now);
     }
     return serializeListing(db, db.prepare('SELECT * FROM resale_auctions WHERE id = ?').get(row.id), { bids: true, now });
@@ -289,18 +308,24 @@ function settleListingRow(db, row, now) {
     }, now);
     return db.prepare('SELECT * FROM resale_auctions WHERE id = ?').get(row.id);
   }
-  // The winner must be the escrow holder of a positive winning amount.
+  // The winner must hold at least the visible price in escrow.
   if (row.current_bidder_id !== row.winner_id || !Number.isSafeInteger(row.current_bid)
     || row.current_bid < 1 || row.winner_id === row.seller_id) fail('escrow_inconsistent', 500);
+  const held = row.max_bid ?? row.current_bid;
+  if (!Number.isSafeInteger(held) || held < row.current_bid) fail('escrow_inconsistent', 500);
   const items = listingInventory(db, row);
   if (!items.length || items.some(item => item.user_id !== row.seller_id || item.sold_at !== null)) fail('settlement_conflict', 409);
   const seller = db.prepare('SELECT tokens, npc FROM users WHERE id = ?').get(row.seller_id);
   if (!seller || !Number.isSafeInteger(seller.tokens + row.current_bid)) fail('token_balance_limit', 409);
+  const winner = db.prepare('SELECT tokens FROM users WHERE id = ?').get(row.winner_id);
+  if (!winner || !Number.isSafeInteger(winner.tokens + (held - row.current_bid))) fail('token_balance_limit', 409);
   // Transfer every existing inventory row — never insert or mint copies — and
-  // release the escrow (paid by the winner at bid time) to the seller.
+  // release the visible price to the seller and unused maximum to the winner.
   const transfer = db.prepare('UPDATE inventory SET user_id = ? WHERE id = ? AND user_id = ? AND sold_at IS NULL');
   for (const item of items) if (!transfer.run(row.winner_id, item.id, row.seller_id).changes) fail('settlement_conflict', 409);
   db.prepare('UPDATE users SET tokens = tokens + ? WHERE id = ?').run(row.current_bid, row.seller_id);
+  if (held > row.current_bid) db.prepare('UPDATE users SET tokens = tokens + ? WHERE id = ?')
+    .run(held - row.current_bid, row.winner_id);
   if (!seller.npc) awardXp(db, row.seller_id, 'resale', row.id, resaleXp(row.current_bid), now);
   // The guarded UPDATE plus the surrounding transaction is the database-level
   // idempotency guarantee: a second settlement can never pay or transfer again.

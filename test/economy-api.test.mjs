@@ -133,7 +133,7 @@ test('marketplace bidder names are censored for guests and full for signed-in pl
     revision: catalogResponse.revision }, cookie)).json();
   const listing = await (await post(base, 'resale/listings', { inventoryId: opened.item.id, startPrice: 5, endsAt }, cookie)).json();
   const bid = await (await post(base, 'resale/bid', { id: listing.listing.id, amount: 7 }, bidderCookie)).json();
-  assert.equal(bid.listing.currentBid, 7);
+  assert.equal(bid.listing.currentBid, 5);
   const guest = await (await fetch(`${base}/api/resales/${listing.listing.id}`)).json();
   assert.equal(guest.listing.sellerUsername, 'ad****');
   assert.deepEqual(guest.listing.bids.map(row => row.bidderUsername), ['Bi****']);

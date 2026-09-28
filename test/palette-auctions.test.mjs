@@ -10,7 +10,7 @@ import { saveNewsEvent } from '../src/news.mjs';
 import { notificationsForUser } from '../src/notifications.mjs';
 import {
   bidOnPaletteAuction, createPaletteAuction, ensurePaletteAuctionSchema, getPaletteAuction,
-  getPaletteAuctionRewards, listPaletteAuctions, levelForXp, paletteBidIncrement, settlePaletteAuction
+  getPaletteAuctionRewards, listPaletteAuctions, levelForXp, paletteAuctionsByUser, paletteBidIncrement, settlePaletteAuction
 } from '../src/palette-auctions.mjs';
 
 const hour = 3600_000;
@@ -53,7 +53,7 @@ const tokensOf = (service, user) => service.profile(user).tokens;
 // Conservation: all user balances plus unsettled primary escrow.
 const conservedTotal = dir => withDatabase(dir, db => ({
   users: db.prepare('SELECT COALESCE(SUM(tokens), 0) AS sum FROM users').get().sum,
-  escrow: db.prepare('SELECT COALESCE(SUM(current_bid), 0) AS sum FROM primary_palette_auctions WHERE settled_at IS NULL').get().sum }));
+  escrow: db.prepare('SELECT COALESCE(SUM(COALESCE(max_bid, current_bid)), 0) AS sum FROM primary_palette_auctions WHERE settled_at IS NULL').get().sum }));
 
 test('minimum raises tier with the reserve: J€ 5 under 100, capped at J€ 25', () => {
   assert.equal(paletteBidIncrement(1), 5);
@@ -219,16 +219,56 @@ test('bidding escrows like resale: first bid, outbid refund, raise difference, r
   assert.throws(() => bidOnPaletteAuction(dir, rival, lot.id, wallet + 1, { now: day + 4000 }), /insufficient_tokens/);
   assert.equal(tokensOf(service, rival), rejected);
   const after = getPaletteAuction(dir, lot.id, { now: day + 4000 });
-  assert.equal(after.currentBid, reserve + 4 * inc);
+  assert.equal(after.currentBid, reserve + 3 * inc);
   assert.equal(after.bidCount, 4);
   assert.deepEqual(after.bids.map(bid => [bid.amount, bid.bidderId, bid.bidderUsername]), [
-    [reserve, bidder.id, 'Bidder'], [reserve + inc, bidder.id, 'Bidder'],
-    [reserve + 2 * inc, bidder.id, 'Bidder'], [reserve + 4 * inc, rival.id, 'Rival']
+    [reserve, bidder.id, 'Bidder'], [reserve, bidder.id, 'Bidder'],
+    [reserve, bidder.id, 'Bidder'], [reserve + 3 * inc, rival.id, 'Rival']
   ]);
   // Exact deadline behavior: the last instant still accepts a valid bid, at
   // the deadline the lot rejects everything.
   bidOnPaletteAuction(dir, bidder, lot.id, reserve + 5 * inc, { now: day + hour - 1 });
   assert.throws(() => bidOnPaletteAuction(dir, bidder, lot.id, reserve + 6 * inc, { now: day + hour }), { status: 409, message: 'palette_auction_ended' });
+});
+
+test('palette proxy ceiling waits for rivals and refunds unused reserve at settlement', async t => {
+  const { dir, service, admin, register } = await fixture(t);
+  const leader = await register('PaletteLeader'), rival = await register('PaletteRival');
+  service.db(db => db.prepare('UPDATE users SET tokens = 100000 WHERE id IN (?, ?)').run(leader.id, rival.id));
+  const lot = createPaletteAuction(dir, { editionId: baseEdition(dir).editionId, requestId: 'primary-proxy-00001' },
+    { now: day, random: alwaysFirst });
+  const inc = paletteBidIncrement(lot.reserve), ceiling = lot.reserve + 4 * inc;
+  bidOnPaletteAuction(dir, leader, lot.id, lot.reserve, { now: day });
+  const raised = bidOnPaletteAuction(dir, leader, lot.id, ceiling, { now: day + 1000 });
+  assert.equal(raised.currentBid, lot.reserve);
+  assert.deepEqual(getPaletteAuction(dir, lot.id, { now: day + 1000 }).bids.map(bid => bid.amount),
+    [lot.reserve, lot.reserve]);
+  assert.equal(tokensOf(service, leader), 100000 - ceiling);
+  const challenged = bidOnPaletteAuction(dir, rival, lot.id, lot.reserve + inc, { now: day + 2000 });
+  assert.equal(challenged.currentBid, lot.reserve + 2 * inc);
+  assert.equal(tokensOf(service, rival), 100000);
+  assert.equal(paletteAuctionsByUser(dir, leader, { now: day + 2000 })[0].highestBid, ceiling);
+  settlePaletteAuction(dir, lot.id, { now: day + hour });
+  assert.equal(tokensOf(service, leader), 100000 - lot.reserve - 2 * inc);
+});
+
+test('existing palette bids retain their escrow when proxy columns are added', async t => {
+  const { dir, service, admin, register } = await fixture(t);
+  const leader = await register('LegacyPaletteLeader'), rival = await register('LegacyPaletteRival');
+  service.db(db => db.prepare('UPDATE users SET tokens = 100000 WHERE id IN (?, ?)').run(leader.id, rival.id));
+  const lot = createPaletteAuction(dir, { editionId: baseEdition(dir).editionId, requestId: 'primary-proxy-legacy' },
+    { now: day, random: alwaysFirst });
+  bidOnPaletteAuction(dir, leader, lot.id, lot.reserve, { now: day });
+  service.db(db => {
+    db.exec('ALTER TABLE primary_palette_auctions DROP COLUMN max_bid');
+    db.exec('ALTER TABLE primary_palette_bids DROP COLUMN visible_amount');
+  });
+  assert.equal(getPaletteAuction(dir, lot.id, { now: day + 1000 }).currentBid, lot.reserve);
+  assert.equal(service.db(db => db.prepare('SELECT max_bid FROM primary_palette_auctions WHERE id = ?').get(lot.id).max_bid), lot.reserve);
+  const inc = paletteBidIncrement(lot.reserve);
+  assert.equal(bidOnPaletteAuction(dir, rival, lot.id, lot.reserve + inc, { now: day + 2000 }).currentBid,
+    lot.reserve + inc);
+  assert.equal(tokensOf(service, leader), 100000);
 });
 
 test('bids enforce the frozen requiredLevel from persisted users.xp', async t => {
@@ -312,6 +352,7 @@ test('winning settlement creates exactly three provenance-stamped inventory rows
   bidOnPaletteAuction(dir, loser, lot.id, lot.reserve, { now: day });
   bidOnPaletteAuction(dir, winner, lot.id, lot.reserve + 25, { now: day + 1000 });
   const before = conservedTotal(dir);
+  const price = lot.reserve + paletteBidIncrement(lot.reserve);
   assert.equal(before.escrow, lot.reserve + 25);
   advance(hour);
   const settled = getPaletteAuction(dir, lot.id, { now: day + hour }); // public read settles
@@ -326,17 +367,16 @@ test('winning settlement creates exactly three provenance-stamped inventory rows
     const item = JSON.parse(row.item);
     assert.equal(item.paletteAuctionId, lot.id);
     assert.equal(item.paletteEditionId, edition.editionId);
-    assert.equal(item.bundleCostTokens, lot.reserve + 25); // entire winning bid
+    assert.equal(item.bundleCostTokens, price); // visible winning price
     assert.ok([0, 1, 2].includes(item.rewardPosition));
     assert.ok(Number.isFinite(item.price) && item.rarity && Number.isSafeInteger(item.sellValue) && item.marketCategory);
     assert.ok(!('caseId' in item) && !('caseCost' in item)); // no fabricated legacy fields
   }
-  // The escrowed winning payment is consumed: the conserved sum drops by
-  // exactly the winning bid; the winner is NOT charged again.
+  // The visible payment is consumed; unused maximum returns to the winner.
   const after = conservedTotal(dir);
   assert.equal(after.escrow, 0);
-  assert.equal(before.users + before.escrow - (after.users + after.escrow), lot.reserve + 25);
-  assert.equal(tokensOf(service, winner), 100000 - lot.reserve - 25);
+  assert.equal(before.users + before.escrow - (after.users + after.escrow), price);
+  assert.equal(tokensOf(service, winner), 100000 - price);
   assert.equal(tokensOf(service, loser), 100000); // refunded at outbid, never charged again
   const winnerNotices = notificationsForUser(dir, winner.id, { now: day + hour });
   assert.ok(winnerNotices.fresh.some(entry => entry.type === 'won' && entry.bodyEn.includes('ready to reveal')));

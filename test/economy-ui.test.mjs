@@ -7,7 +7,12 @@ const accountSource = await readFile(new URL('../dist/account.js', import.meta.u
 const uiSource = await readFile(new URL('../dist/economy-ui.js', import.meta.url), 'utf8');
 const dataSource = await readFile(new URL('../dist/economy.js', import.meta.url), 'utf8');
 const i18nSource = await readFile(new URL('../dist/i18n.js', import.meta.url), 'utf8');
-const extract = (source, from, to) => source.slice(source.indexOf(from), source.indexOf(to, source.indexOf(from)));
+const extract = (source, from, to) => {
+  const fragment = source.slice(source.indexOf(from), source.indexOf(to, source.indexOf(from)));
+  return source === uiSource && fragment.includes('bidMinimum(')
+    ? source.slice(source.indexOf('  const bidMinimum ='), source.indexOf('  const empty =')) + fragment
+    : fragment;
+};
 
 test('economy helpers use authenticated history/list/bid/cancel contracts and safe encoded IDs', async () => {
   const calls = [], reads = [];
@@ -362,6 +367,21 @@ test('auction detail uses media, story and bid-room columns with the bid form be
   assert.doesNotMatch(markup, /Customs warehouse bust/);
   assert.doesNotMatch(markup, /PARODY CASE/);
   assert.doesNotMatch(markup, /auction-story-badges/);
+});
+
+test('leading bidder form raises the private maximum instead of the visible price', () => {
+  const context = vm.createContext({ account: { id: 'leader', tokens: 200, progression: { level: 5 } },
+    t: en => en, esc: String, justizEuro: value => `J€ ${value}`,
+    infoTip: text => text, accountError: String });
+  vm.runInContext(extract(uiSource, '  function bidForm(', '  function paletteArtwork('), context);
+  const resale = vm.runInContext(`bidForm({ id: 'lot', status: 'active', endsAt: Date.now() + 60_000,
+    sellerId: 'seller', currentBid: 31, leading: true, highestBid: 80 }, false)`, context);
+  assert.match(resale, /Your maximum bid in J€/);
+  assert.match(resale, /min="81"/);
+  assert.match(resale, /Your current maximum: <strong>J€ 80/);
+  const palette = vm.runInContext(`bidForm({ id: 'palette', status: 'active', endsAt: Date.now() + 60_000,
+    reserve: 20, bidIncrement: 5, requiredLevel: 1, currentBid: 30, leading: true, highestBid: 60 }, true)`, context);
+  assert.match(palette, /min="65"/);
 });
 
 test('mystery cards never read candidate items and resale media keeps its item photo', () => {

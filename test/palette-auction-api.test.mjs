@@ -146,7 +146,7 @@ test('bidding over HTTP routes through the escrow domain with CSRF and level gat
   assert.equal((await (await post('palette-auctions/bid', { id: lot.id, amount: 'nope' }, buyer.cookie)).json()).error, 'invalid_bid');
   const increment = paletteBidIncrement(lot.reserve);
   const accepted = await (await post('palette-auctions/bid', { id: lot.id, amount: lot.reserve + increment }, buyer.cookie)).json();
-  assert.equal(accepted.auction.currentBid, lot.reserve + increment);
+  assert.equal(accepted.auction.currentBid, lot.reserve);
   assert.equal(accepted.auction.bidCount, 1);
   assert.equal(accepted.user.tokens, 100000 - lot.reserve - increment); // refreshed spendable balance
   // Raises below the value-tiered minimum are rejected without moving tokens.

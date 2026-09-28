@@ -46,6 +46,11 @@ window.economyUi = (() => {
     return `${Math.floor(seconds / 3_600)}:${String(Math.floor(seconds / 60) % 60).padStart(2, '0')}:${String(seconds % 60).padStart(2, '0')}`;
   };
   const countdown = end => `<time class="economy-countdown" data-economy-end="${end}" datetime="${new Date(end).toISOString()}" aria-live="off">${remaining(end)}</time>`;
+  const bidMinimum = (lot, primary) => {
+    const increment = primary ? lot.bidIncrement ?? 1 : 1;
+    return lot.currentBid === null ? primary ? lot.reserve : lot.startPrice
+      : lot.leading && Number.isSafeInteger(lot.highestBid) ? lot.highestBid + increment : lot.currentBid + increment;
+  };
   const empty = text => `<p class="collection-empty">${text}</p>`;
   const status = lot => lot.status === 'cancelled' ? t('Cancelled', 'Storniert') : lot.status === 'active' ? t('Active', 'Aktiv') : lot.winnerId ? t('Sold', 'Verkauft') : t('Unsold', 'Nicht verkauft');
   const bidHistory = bids => [...(bids || [])].sort((a, b) => a.createdAt - b.createdAt || String(a.id).localeCompare(String(b.id)))
@@ -128,6 +133,8 @@ window.economyUi = (() => {
         .find(el => el.dataset.economy === focusAction && el.dataset.id === focusKey)?.focus({ preventScroll: true });
       // Refresh visible bid facts without destroying an in-progress bid input.
       const lot = detailRequest === dialogSequence && detailId === currentDetail ? detail : null;
+      const participation = lot && (path === '/auctions' ? next.mine : next.bids)?.find(entry => entry.id === lot.id);
+      if (lot && participation) Object.assign(lot, { leading: participation.leading, highestBid: participation.highestBid });
       const facts = dialog.querySelector('[data-live-facts]');
       if (lot && facts) facts.innerHTML = bidFacts(lot, path === '/auctions');
       const historyNode = dialog.querySelector('[data-live-history]');
@@ -138,8 +145,7 @@ window.economyUi = (() => {
       }
       const bidInput = dialog.querySelector('input[name="amount"]');
       if (lot && bidInput) {
-        bidInput.min = String(lot.currentBid === null ? lot.reserve ?? lot.startPrice
-          : lot.currentBid + (path === '/auctions' ? lot.bidIncrement ?? 1 : 1));
+        bidInput.min = String(bidMinimum(lot, path === '/auctions'));
         if (document.activeElement !== bidInput && Number(bidInput.value) < Number(bidInput.min)) bidInput.value = bidInput.min;
         if (lot.status !== 'active' || lot.endsAt <= Date.now()) {
           const form = bidInput.closest('form');
@@ -158,9 +164,9 @@ window.economyUi = (() => {
     const participation = primary ? (data.mine || []).find(entry => entry.id === lot.id)
       : view === 'bid' ? lot : null;
     // Palettes raise in value-tiered steps (lot.bidIncrement); resale keeps J€ 1.
-    const minimum = lot.currentBid === null ? lot.reserve : lot.currentBid + (primary ? lot.bidIncrement ?? 1 : 1);
+    const minimum = bidMinimum(participation ? { ...lot, ...participation } : lot, primary);
     const eligible = account && (account.progression?.level || 1) >= lot.requiredLevel
-      && account.tokens + (participation?.leading ? lot.currentBid : 0) >= minimum;
+      && account.tokens + (participation?.leading ? participation.highestBid : 0) >= minimum;
     const ownListing = view === 'mine-live' || view === 'mine-done';
     // Green border while the player leads (or has won), red while overbid.
     const borderState = primary && participation
@@ -277,11 +283,10 @@ window.economyUi = (() => {
     if (lot.status !== 'active' || lot.endsAt <= Date.now()) return `<p>${status(lot)}</p>`;
     if (!primary && lot.sellerId === account.id) return `<p>${t('This is your listing.', 'Dies ist dein Angebot.')}</p>`;
     if (primary && account.progression.level < lot.requiredLevel) return `<p>${accountError('level_required')}</p>`;
-    const min = lot.currentBid === null ? primary ? lot.reserve : lot.startPrice
-      : lot.currentBid + (primary ? lot.bidIncrement ?? 1 : 1);
+    const min = bidMinimum(lot, primary);
     const hasBid = lot.currentBid !== null;
-    return `<form data-economy-form="${primary ? 'primary' : 'resale'}" data-id="${esc(lot.id)}" class="economy-form auction-bid-form"><label>${t('Your bid in J€', 'Dein Gebot in J€')}
-      <span class="auction-bid-entry"><input name="amount" type="number" inputmode="numeric" min="${min}" step="1" value="${min}" required><button class="primary-button" type="submit">${hasBid ? t('Raise bid', 'Gebot erhöhen') : t('Place bid', 'Gebot abgeben')}</button></span></label><p>${t('Available wallet balance', 'Verfügbares Guthaben')}: <strong>${justizEuro(account.tokens)}</strong> ${infoTip(t('Your bid is held until you are outbid or the auction settles.', 'Dein Gebot wird bis zum Überbieten oder zur Abrechnung hinterlegt.'), t('How bidding affects your balance', 'Auswirkung auf dein Guthaben'))}</p>
+    return `<form data-economy-form="${primary ? 'primary' : 'resale'}" data-id="${esc(lot.id)}" class="economy-form auction-bid-form"><label>${t('Your maximum bid in J€', 'Dein Höchstgebot in J€')}
+      <span class="auction-bid-entry"><input name="amount" type="number" inputmode="numeric" min="${min}" step="1" value="${min}" required><button class="primary-button" type="submit">${hasBid ? t('Raise bid', 'Gebot erhöhen') : t('Place bid', 'Gebot abgeben')}</button></span></label>${lot.leading ? `<p>${t('Your current maximum', 'Dein aktuelles Höchstgebot')}: <strong>${justizEuro(lot.highestBid)}</strong></p>` : ''}<p>${t('Available wallet balance', 'Verfügbares Guthaben')}: <strong>${justizEuro(account.tokens)}</strong> ${infoTip(t('Your maximum is held in escrow. Automatic bids raise the visible price only as needed. It is returned if you are outbid; if you win, unused J€ return at settlement.', 'Dein Höchstgebot wird hinterlegt. Automatische Gebote erhöhen den sichtbaren Preis nur bei Bedarf. Wirst du überboten, erhältst du es zurück; beim Gewinn werden übrige J€ nach der Abrechnung erstattet.'), t('How proxy bidding works', 'So funktioniert automatisches Bieten'))}</p>
       <p class="account-error" role="alert"></p></form>`;
   }
   function paletteArtwork(lot) {
@@ -329,7 +334,7 @@ window.economyUi = (() => {
     if (request !== dialogSequence || visit !== accountVisit) return;
     const lot = primary ? result?.auction : result?.listing;
     if (!lot) throw new Error(accountError('auction_not_found'));
-    const participation = primary ? (data.mine || []).find(entry => entry.id === lot.id) : null;
+    const participation = (primary ? data.mine || [] : data.bids || []).find(entry => entry.id === lot.id);
     if (participation) Object.assign(lot, { won: participation.won, leading: participation.leading,
       highestBid: participation.highestBid, revealAvailable: participation.revealAvailable });
     detailId = id;
@@ -565,7 +570,10 @@ window.economyUi = (() => {
         await refresh(currentAccountPage, visit, true);
         if (visit !== accountVisit || owner !== account?.id) return;
         if (request === dialogSequence && dialog.open) await showLot(id, type === 'primary');
-        showToast(t('Bid placed. Your J€ are held in escrow.', 'Gebot abgegeben. Deine J€ sind hinterlegt.'));
+        const participation = (type === 'primary' ? data.mine || [] : data.bids || []).find(entry => entry.id === id);
+        showToast(participation?.leading
+          ? t('Maximum saved. Automatic bids will defend it; unused J€ return after settlement.', 'Höchstgebot gespeichert. Automatische Gebote verteidigen es; übrige J€ erhältst du nach der Abrechnung zurück.')
+          : t('Your offer was immediately outbid by an existing maximum. No J€ were held.', 'Dein Gebot wurde sofort von einem bestehenden Höchstgebot überboten. Es wurden keine J€ hinterlegt.'));
       }
     } catch (error) { if (visit === accountVisit) form.querySelector('.account-error').textContent = error.message; }
     finally { if (visit === accountVisit) busy = false; if (button.isConnected) button.disabled = false; }

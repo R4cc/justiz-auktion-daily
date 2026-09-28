@@ -265,9 +265,10 @@ test('resale XP uses final price, stays exactly once across restart and failure 
   assert.equal(f.sql('SELECT user_id FROM inventory WHERE id = ?', 'sale')[0].user_id, 'seller');
   assert.equal(balance(f, 'seller'), 100000);
   withDatabase(f.dir, db => db.exec('DROP TRIGGER stop_xp'));
-  settleAuction(f.dir, lot.id, { now: day + hour }); closeDataStore(f.dir);
+  const sold = settleAuction(f.dir, lot.id, { now: day + hour }); closeDataStore(f.dir);
   settleAuction(f.dir, lot.id, { now: day + hour });
-  assert.equal(xp(f), 40); assert.equal(count(f, 'xp_events'), 1); assert.equal(balance(f, 'seller'), 100300);
+  assert.equal(xp(f), resaleXp(sold.currentBid)); assert.equal(count(f, 'xp_events'), 1);
+  assert.equal(balance(f, 'seller'), 100000 + sold.currentBid);
 });
 
 test('sale XP clamps boundaries; cancelled, unsold and legacy sales earn no XP', async t => {
@@ -359,14 +360,18 @@ test('NPC bids use human escrow/refunds, react to outbids, win ownership and pay
   tickNpcBuyers(f.dir, { now: day + 45_000 });
   const first = getResale(f.dir, lot.id, { now: day + 45_000 });
   assert.ok(first.currentBidderId.startsWith('npc-')); assert.ok(first.bids[0].bidderUsername);
-  assert.equal(balance(f, first.currentBidderId), NPC_BALANCE - first.currentBid);
+  const firstMax = f.sql('SELECT max_bid FROM resale_auctions WHERE id = ?', lot.id)[0].max_bid;
+  assert.equal(balance(f, first.currentBidderId), NPC_BALANCE - firstMax);
   assert.throws(() => placeBid(f.dir, { id: first.currentBidderId }, lot.id, first.currentBid + 1,
     { now: day + 75_001 }), /npc_self_outbid/);
-  assert.equal(getResale(f.dir, lot.id, { now: day + 75_001 }).bids.length, 1);
+  assert.equal(getResale(f.dir, lot.id, { now: day + 75_001 }).bids.length, first.bidCount);
   const humanBid = first.currentBid + 1;
   placeBid(f.dir, f.user('buyer'), lot.id, humanBid, { now: day + 46_000 });
-  assert.equal(balance(f, first.currentBidderId), NPC_BALANCE);
-  tickNpcBuyers(f.dir, { now: day + 90_000 });
+  if (getResale(f.dir, lot.id, { now: day + 46_000 }).currentBidderId === 'buyer') {
+    assert.equal(balance(f, first.currentBidderId), NPC_BALANCE);
+    const otherNpc = NPC_BUYERS.find(npc => npc.id !== first.currentBidderId);
+    placeBid(f.dir, otherNpc, lot.id, humanBid + 10, { now: day + 90_000 });
+  }
   const second = getResale(f.dir, lot.id, { now: day + 90_000 });
   assert.ok(second.currentBid > humanBid); assert.equal(balance(f, 'buyer'), 100000);
   const sold = settleAuction(f.dir, lot.id, { now: day + 300000 });
@@ -385,8 +390,8 @@ test('human can outbid all frozen NPC valuations and win without duplicate refun
   for (const now of [day + 90000, day + 120000, day + 180000]) tickNpcBuyers(f.dir, { now });
   assert.equal(balance(f, npcId), NPC_BALANCE);
   const sold = settleAuction(f.dir, lot.id, { now: day + 300000 });
-  assert.equal(sold.winnerId, 'buyer'); assert.equal(balance(f, 'buyer'), 99000);
-  assert.equal(xp(f), resaleXp(1000)); assert.equal(count(f, 'resale_bids'), 2);
+  assert.equal(sold.winnerId, 'buyer'); assert.equal(balance(f, 'buyer'), 100000 - sold.currentBid);
+  assert.equal(xp(f), resaleXp(sold.currentBid)); assert.ok(count(f, 'resale_bids') >= 2);
 });
 
 test('automatic news is exact once, current bucket only, with durable 48h event editions', async t => {

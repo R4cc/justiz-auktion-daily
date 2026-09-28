@@ -286,9 +286,9 @@ function createStockListing(db, { id, stock, startsAt, endsAt, reserve, currentB
   inventoryIds.forEach((inventoryId, position) =>
     insertInventory.run(inventoryId, STOCK_SELLER_ID, JSON.stringify({ ...item, wholesaleUnit: position + 1 }), startsAt));
   db.prepare(`INSERT INTO resale_auctions
-    (id, seller_id, inventory_id, start_price, current_bid, current_bidder_id, status, started_at, ends_at)
-    VALUES (?, ?, ?, ?, ?, ?, 'active', ?, ?)`)
-    .run(id, STOCK_SELLER_ID, inventoryIds[0], reserve, currentBid, bidderId, startsAt, endsAt);
+    (id, seller_id, inventory_id, start_price, current_bid, max_bid, current_bidder_id, status, started_at, ends_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, 'active', ?, ?)`)
+    .run(id, STOCK_SELLER_ID, inventoryIds[0], reserve, currentBid, currentBid, bidderId, startsAt, endsAt);
   inventoryIds.forEach((inventoryId, position) => insertItem.run(id, inventoryId, position));
   return true;
 }
