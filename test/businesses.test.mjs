@@ -5,7 +5,7 @@ import { createServer } from 'node:http';
 import os from 'node:os';
 import path from 'node:path';
 import { Accounts } from '../src/accounts.mjs';
-import { closeDataStore } from '../src/database.mjs';
+import { closeDataStore, upsertAuctions } from '../src/database.mjs';
 import { businessDashboard, businessSaleChance, buyBusiness, ensureBusinessSchema, setBusinessMargin,
   stockBusiness, supplyStockAuctions, tickBusinesses, unstockBusiness } from '../src/businesses.mjs';
 import { getResale, listItem, listResales, listingsBidOnByUser, placeBid, settleDueListings } from '../src/resale.mjs';
@@ -17,9 +17,21 @@ import { featureFlags } from '../src/features.mjs';
 
 const start = Date.parse('2026-09-26T12:00:00Z');
 const hour = 3_600_000;
+const auctionStock = [
+  ['Getränke', 'Wachau Riesling 2022', 24],
+  ['Sammlerstücke', 'Modular building set Lego', 32],
+  ['Elektronik', 'Wireless headphones computer', 95],
+  ['Fahrzeuge', 'Compact city car', 1900],
+  ['Getränke', 'Burgenland Red Wine 2021', 46],
+  ['Sammlerstücke', 'Wooden puzzle set', 19],
+  ['Elektronik', '10-inch tablet', 190],
+  ['Fahrzeuge', 'Used estate car', 3600]
+].map(([category, title, currentBid], index) => ({ id: 7000 + index, title, category,
+  currentBid, finalPrice: currentBid, image: `/archive/${7000 + index}.jpg` }));
 
 async function fixture(t) {
   const dir = await mkdtemp(path.join(os.tmpdir(), 'jg-business-'));
+  upsertAuctions(dir, auctionStock);
   const accounts = new Accounts(dir, { now: () => start });
   accounts.db(db => {
     for (const [id, tokens, admin] of [['owner', 1000, 1], ['rival', 10000, 0]]) {
@@ -41,11 +53,21 @@ test('stock batches use marketplace escrow, bid history, and inventory transfer'
   assert.equal(new Set(lots.map(lot => lot.endsAt)).size, 8);
   assert.ok(lots.every(lot => lot.endsAt - lot.startedAt === 2 * hour));
   assert.deepEqual(new Set(lots.map(lot => lot.item.businessCategory)), new Set(['wine', 'toys', 'electronics', 'cars']));
+  assert.ok(lots.every(lot => auctionStock.some(auction => auction.id === lot.item.auctionId
+    && auction.title === lot.item.title && auction.image === lot.item.image
+    && auction.finalPrice === lot.item.price)));
   const wine = lots.find(lot => lot.item.title === 'Wachau Riesling 2022');
   assert.equal(wine.quantity, 24);
   assert.equal(wine.startPrice, 432);
   assert.equal(wine.sellerUsername, 'Stock Supply');
-  assert.equal(f.count('inventory'), 98);
+  const suppliedUnits = lots.reduce((sum, lot) => sum + lot.quantity, 0);
+  assert.equal(f.count('inventory'), suppliedUnits);
+  const physicalItems = f.accounts.db(db => db.prepare("SELECT item FROM inventory WHERE user_id = 'npc-stock-supply'").all());
+  assert.ok(physicalItems.every(row => {
+    const item = JSON.parse(row.item);
+    return auctionStock.some(auction => auction.id === item.auctionId
+      && auction.title === item.title && auction.finalPrice === item.price);
+  }));
   placeBid(f.dir, f.owner, wine.id, 432, { now: start + 1000 });
   assert.equal(f.balance('owner'), 568);
   placeBid(f.dir, f.rival, wine.id, 433, { now: start + 2000 });
@@ -56,7 +78,7 @@ test('stock batches use marketplace escrow, bid history, and inventory transfer'
   assert.equal(getResale(f.dir, wine.id, { now: start + 5000 }).bids.length, 3);
   assert.equal(listingsBidOnByUser(f.dir, f.owner.id, { now: start + 5000 })[0].leading, true);
   settleDueListings(f.dir, { now: start + 2 * hour });
-  assert.equal(f.count('inventory'), 98);
+  assert.equal(f.count('inventory'), suppliedUnits);
   assert.equal(f.count('inventory', "user_id = 'owner'"), 24);
   settleDueListings(f.dir, { now: start + 2 * hour + 1000 });
   assert.equal(f.balance('owner'), 1000 - getResale(f.dir, wine.id, { now: start + 2 * hour }).currentBid);
@@ -75,7 +97,7 @@ test('stock supply rotates one batch every 15 minutes and fills the board after 
   const next = listResales(f.dir, { now: start + 15 * 60_000 });
   assert.equal(next.length, 8);
   assert.equal(next.filter(lot => !initial.some(previous => previous.id === lot.id)).length, 1);
-  assert.equal(next.filter(lot => !initial.some(previous => previous.id === lot.id))[0].item.title, 'Modular building set');
+  assert.equal(next.filter(lot => !initial.some(previous => previous.id === lot.id))[0].item.businessCategory, 'toys');
   supplyStockAuctions(f.dir, { now: start + 2 * hour });
   const nextCycle = listResales(f.dir, { now: start + 2 * hour });
   assert.equal(nextCycle.length, 8);
@@ -85,12 +107,44 @@ test('stock supply rotates one batch every 15 minutes and fills the board after 
   assert.equal(listResales(sparse.dir, { now: start + 61 * 60_000 }).length, 8);
 });
 
+test('stock supply never invents products when the auction archive is empty', async t => {
+  const f = await fixture(t);
+  f.accounts.db(db => db.prepare('DELETE FROM auctions').run());
+  assert.equal(supplyStockAuctions(f.dir, { now: start }).supplied, 0);
+  assert.equal(listResales(f.dir, { now: start }).length, 0);
+  assert.equal(f.count('inventory'), 0);
+});
+
+test('old unbid fictional stock retires while escrowed legacy stock remains', async t => {
+  const f = await fixture(t);
+  f.accounts.db(db => {
+    for (const [id, stockId, bid, bidder] of [['old-free', 'riesling', null, null], ['old-bid', 'blocks', 432, 'owner']]) {
+      db.prepare(`INSERT INTO wholesale_auctions
+        (id, stock_id, starts_at, ends_at, reserve, current_bid, bidder_id)
+        VALUES (?, ?, ?, ?, 432, ?, ?)`).run(id, stockId, start, start + 2 * hour, bid, bidder);
+    }
+    db.prepare("UPDATE users SET tokens = tokens - 432 WHERE id = 'owner'").run();
+  });
+  supplyStockAuctions(f.dir, { now: start });
+  assert.equal(f.count('resale_auctions', "id = 'old-free'"), 0);
+  assert.equal(f.count('resale_auctions', "id = 'old-bid'"), 1);
+  assert.equal(f.balance('owner'), 568);
+});
+
 test('upgrade staggers a live stock listing without shortening its bid window', async t => {
   const f = await fixture(t);
   const at = start + 61 * 60_000;
+  const oldId = `${Math.floor(start / (2 * hour))}:blocks`;
+  f.accounts.db(db => {
+    db.prepare(`INSERT INTO wholesale_auctions
+      (id, stock_id, starts_at, ends_at, reserve, current_bid, bidder_id)
+      VALUES (?, 'blocks', ?, ?, 432, 432, 'owner')`).run(oldId, start, start + 2 * hour);
+    db.prepare(`INSERT INTO wholesale_bids (auction_id, bidder_id, amount, created_at)
+      VALUES (?, 'owner', 432, ?)`).run(oldId, start + 1000);
+    db.prepare("UPDATE users SET tokens = tokens - 432 WHERE id = 'owner'").run();
+  });
   supplyStockAuctions(f.dir, { now: at });
-  const blocks = listResales(f.dir, { now: at }).find(lot => lot.item.title === 'Modular building set');
-  placeBid(f.dir, f.owner, blocks.id, blocks.startPrice, { now: at + 1000 });
+  const blocks = getResale(f.dir, oldId, { now: at });
   f.accounts.db(db => db.prepare('UPDATE resale_auctions SET started_at = ?, ends_at = ? WHERE id = ?')
     .run(start, start + 2 * hour, blocks.id));
   supplyStockAuctions(f.dir, { now: at + 2000 });
@@ -125,13 +179,14 @@ test('existing stock bids migrate to marketplace without charging escrow twice',
 test('unbid stock batches are retired after settlement instead of accumulating NPC inventory', async t => {
   const f = await fixture(t);
   supplyStockAuctions(f.dir, { now: start });
+  const initialUnits = f.count('inventory');
   tickNpcBuyers(f.dir, { now: start + hour });
   assert.equal(f.count('resale_npc_interest'), 0);
   const oldId = listResales(f.dir, { now: start })[0].id;
   settleDueListings(f.dir, { now: start + 2 * hour });
-  assert.equal(f.count('inventory'), 98);
+  assert.equal(f.count('inventory'), initialUnits);
   supplyStockAuctions(f.dir, { now: start + 26 * hour + 60_000 });
-  assert.equal(f.count('inventory'), 98);
+  assert.equal(f.count('inventory'), listResales(f.dir, { now: start + 26 * hour + 60_000 }).reduce((sum, lot) => sum + lot.quantity, 0));
   assert.equal(f.count('resale_auctions', `id = '${oldId}'`), 0);
 });
 
@@ -346,6 +401,7 @@ test('shop categories and capacities reject unsuitable or excess stock atomicall
 
 test('business HTTP routes require sessions and stock lots appear through marketplace APIs', async t => {
   const dir = await mkdtemp(path.join(os.tmpdir(), 'jg-business-http-'));
+  upsertAuctions(dir, auctionStock);
   const password = 'business-http-password';
   const env = { ADMIN_USERNAME: 'admin', ADMIN_PASSWORD: password };
   const flags = featureFlags(env);

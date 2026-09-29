@@ -153,7 +153,8 @@ function serializeListing(db, row, { bids = false, now = Date.now(), indexes = m
   return {
     id: row.id, sellerId: row.seller_id, sellerUsername: seller?.username || null,
     inventoryId: row.inventory_id, quantity,
-    item: { title: item.title, ...(item.titleDe ? { titleDe: item.titleDe } : {}), image: item.image || null, price: item.price,
+    item: { title: item.title, ...(item.auctionId != null ? { auctionId: item.auctionId } : {}),
+      ...(item.titleDe ? { titleDe: item.titleDe } : {}), image: item.image || null, price: item.price,
       ...(item.kind ? { kind: item.kind, caseTier: item.caseTier } : {}),
       rarity: item.rarity, marketCategory: marketCategoryForItem(item),
       ...(item.businessCategory ? { businessCategory: item.businessCategory } : {}) },

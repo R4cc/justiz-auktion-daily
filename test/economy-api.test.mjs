@@ -100,7 +100,9 @@ test('economy endpoints expose news, global market, palettes and resale listings
   assert.equal(listing.listing.status, 'active');
   const marketplace = (await (await fetch(`${base}/api/resales`)).json()).listings;
   assert.ok(marketplace.some(row => row.id === listing.listing.id));
-  assert.equal(marketplace.filter(row => row.sellerUsername === 'St****').length, 8);
+  // This fixture has only tools, so the business supplier has no eligible
+  // auction records and must not invent stock lots.
+  assert.equal(marketplace.filter(row => row.sellerUsername === 'St****').length, 0);
   const detail = await (await fetch(`${base}/api/resales/${listing.listing.id}`)).json();
   assert.equal(detail.listing.item.marketCategory, 'tools');
   assert.deepEqual(detail.listing.bids, []);

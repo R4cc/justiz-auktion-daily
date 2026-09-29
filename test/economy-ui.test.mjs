@@ -84,6 +84,23 @@ test('inventory quick list starts a one-item auction at the card default price i
   assert.match(unpriced, /data-price="1"/);
 });
 
+test('inventory copy badge counts copies still available after quick listing', () => {
+  const item = { title: 'Laptop', auctionId: 42, price: 100, sellValue: 100,
+    estimatedValueTokens: 120, rarity: 'common', image: '/laptop.jpg' };
+  const context = vm.createContext({ economyFlags: { resales: true }, t: en => en,
+    number: String, justizEuro: String, euro: String, accountEscape: String, rarityLabel: String });
+  vm.runInContext(extract(accountSource, 'function itemCard(', 'function renderInventory()'), context);
+  const before = vm.runInContext(`itemCard(groupedInventory(${JSON.stringify([
+    { ...item, id: 'a', listed: false }, { ...item, id: 'b', listed: false }, { ...item, id: 'c', listed: false }
+  ])})[0])`, context);
+  assert.match(before, /item-count[^>]*>×3</);
+  const after = vm.runInContext(`itemCard(groupedInventory(${JSON.stringify([
+    { ...item, id: 'a', listed: true }, { ...item, id: 'b', listed: false }, { ...item, id: 'c', listed: false }
+  ])})[0])`, context);
+  assert.match(after, /item-count[^>]*>×2</);
+  assert.match(after, /data-economy="quick-list" data-id="b"/);
+});
+
 test('inventory cards show the market value with a delta badge when the market is priced', () => {
   const item = { id: 'item', title: 'Tool', price: 100, sellValue: 100, estimatedValueTokens: 125, marketCategory: 'electronics', marketIndex: 125, rarity: 'common', image: '/tool.jpg' };
   const context = vm.createContext({ economyFlags: { resales: true }, accountResult: item,

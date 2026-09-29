@@ -5,6 +5,8 @@ import { marketCategoryForItem, marketIndexAt, marketIndexes } from './market.mj
 import { ensureResaleSchema, inventoryIsLocked } from './resale.mjs';
 import { sealedPaletteInventoryIds } from './palette-auctions.mjs';
 import { ensureNotificationSchema } from './notifications.mjs';
+import { auctionSelectionCategory } from './auction-selection.mjs';
+import { auctionGallery } from './auction-images.mjs';
 
 const HOUR = 3_600_000;
 const WHOLESALE_PERIOD = 2 * HOUR;
@@ -28,8 +30,8 @@ export const SHOP_SIZES = [
   { id: 'large', name: 'Large shop', nameDe: 'Grosser Laden', cost: 50000, capacity: 150, carCapacity: 20, visitorsPerHour: 11 }
 ];
 
-// Fictional, repeatable NPC lots. Prices are per unit; bids buy the whole batch.
-export const WHOLESALE_STOCK = [
+// Retained only to migrate bids on stock auctions created by older versions.
+const LEGACY_WHOLESALE_STOCK = [
   { id: 'riesling', type: 'wine', title: 'Wachau Riesling 2022', quantity: 24, price: 24 },
   { id: 'blocks', type: 'toys', title: 'Modular building set', quantity: 18, price: 32 },
   { id: 'headphones', type: 'electronics', title: 'Wireless headphones', quantity: 10, price: 95 },
@@ -39,6 +41,13 @@ export const WHOLESALE_STOCK = [
   { id: 'tablet', type: 'electronics', title: '10-inch tablet', quantity: 6, price: 190 },
   { id: 'estate', type: 'cars', title: 'Used estate car', quantity: 2, price: 3600 }
 ];
+const STOCK_SLOTS = ['wine', 'toys', 'electronics', 'cars', 'wine', 'toys', 'electronics', 'cars'];
+const STOCK_BATCHES = {
+  wine: { quantity: 24, budget: 576, maxPrice: 250 },
+  toys: { quantity: 24, budget: 576, maxPrice: 250 },
+  electronics: { quantity: 10, budget: 950, maxPrice: 1500 },
+  cars: { quantity: 2, budget: 3800, maxPrice: 25000 }
+};
 
 const shopType = id => SHOP_TYPES.find(type => type.id === id);
 const shopSize = id => SHOP_SIZES.find(size => size.id === id);
@@ -277,8 +286,9 @@ export function unstockBusiness(dataDir, user, shopId, inventoryId, { now = Date
 
 function createStockListing(db, { id, stock, startsAt, endsAt, reserve, currentBid = null, bidderId = null }) {
   if (db.prepare('SELECT 1 FROM resale_auctions WHERE id = ?').get(id)) return false;
-  const item = { title: stock.title, price: stock.price, sellValue: stock.price,
-    marketCategory: marketCategory(stock.type), businessCategory: stock.type,
+  const item = { auctionId: stock.auctionId, title: stock.title, image: stock.image || null,
+    category: stock.category, price: stock.price, sellValue: stock.price,
+    marketCategory: stock.marketCategory || marketCategory(stock.type), businessCategory: stock.type,
     rarity: 'common', wholesaleAuctionId: id };
   const insertInventory = db.prepare('INSERT INTO inventory (id, user_id, item, created_at) VALUES (?, ?, ?, ?)');
   const insertItem = db.prepare('INSERT INTO resale_auction_items (auction_id, inventory_id, position) VALUES (?, ?, ?)');
@@ -291,6 +301,26 @@ function createStockListing(db, { id, stock, startsAt, endsAt, reserve, currentB
     .run(id, STOCK_SELLER_ID, inventoryIds[0], reserve, currentBid, currentBid, bidderId, startsAt, endsAt);
   inventoryIds.forEach((inventoryId, position) => insertItem.run(id, inventoryId, position));
   return true;
+}
+
+function archivedStock(db) {
+  const groups = Object.fromEntries(SHOP_TYPES.map(type => [type.id, []]));
+  for (const row of db.prepare(`SELECT payload_json FROM auctions
+    WHERE title <> '' AND COALESCE(final_price, current_bid) > 0 ORDER BY id`).all()) {
+    const auction = JSON.parse(row.payload_json);
+    const price = Number(auction.finalPrice ?? auction.currentBid);
+    if (!Number.isFinite(price) || price <= 0 || !Number.isSafeInteger(Number(auction.id))) continue;
+    const category = auctionSelectionCategory(auction);
+    const type = category === 'Getränke' ? 'wine' : stockType({ title: auction.title, category });
+    if (!type) continue;
+    const limits = STOCK_BATCHES[type];
+    if (price > limits.maxPrice) continue;
+    groups[type].push({ auctionId: Number(auction.id), type, title: auction.title,
+      image: auctionGallery(auction)[0] || null, category,
+      marketCategory: marketCategory(type), price: Math.max(1, Math.round(price)),
+      quantity: Math.max(1, Math.min(limits.quantity, Math.floor(limits.budget / price) || 1)) });
+  }
+  return groups;
 }
 
 export function supplyStockAuctions(dataDir, { now = Date.now() } = {}) {
@@ -317,7 +347,7 @@ export function supplyStockAuctions(dataDir, { now = Date.now() } = {}) {
     // Move any escrowed bids from the old stock-auction table exactly once.
     // Its deterministic id is retained so existing links and bids keep working.
     for (const row of db.prepare('SELECT * FROM wholesale_auctions WHERE settled_at IS NULL ORDER BY starts_at, id').all()) {
-      const stock = WHOLESALE_STOCK.find(entry => entry.id === row.stock_id);
+      const stock = LEGACY_WHOLESALE_STOCK.find(entry => entry.id === row.stock_id);
       if (!stock) continue;
       if (createStockListing(db, { id: row.id, stock, startsAt: row.starts_at,
         endsAt: row.ends_at, reserve: row.reserve, currentBid: row.current_bid, bidderId: row.bidder_id })) {
@@ -328,30 +358,47 @@ export function supplyStockAuctions(dataDir, { now = Date.now() } = {}) {
       }
       db.prepare('UPDATE wholesale_auctions SET settled_at = ? WHERE id = ?').run(now, row.id);
     }
+    // Remove old fictional supply only when nobody has bid. Escrowed lots
+    // finish normally so a player's bid and its history remain intact.
+    for (const { id } of db.prepare(`SELECT a.id FROM resale_auctions a
+      JOIN inventory i ON i.id = a.inventory_id
+      WHERE a.seller_id = ? AND a.status = 'active' AND a.current_bidder_id IS NULL
+        AND json_extract(i.item, '$.auctionId') IS NULL`).all(STOCK_SELLER_ID)) {
+      const inventoryIds = db.prepare('SELECT inventory_id FROM resale_auction_items WHERE auction_id = ?').all(id);
+      if (hasInterest) db.prepare('DELETE FROM resale_npc_interest WHERE auction_id = ?').run(id);
+      db.prepare('DELETE FROM resale_auctions WHERE id = ?').run(id);
+      for (const item of inventoryIds) db.prepare('DELETE FROM inventory WHERE id = ? AND user_id = ?').run(item.inventory_id, STOCK_SELLER_ID);
+    }
     const bucket = Math.floor(now / WHOLESALE_PERIOD);
     // Lots created by the old scheduler all started and ended together. Keep
     // their existing bid windows intact, then extend later slots to their new
     // staggered deadlines. A live bid is never cut short during the upgrade.
     for (const row of db.prepare(`SELECT id, started_at, ends_at FROM resale_auctions
       WHERE seller_id = ? AND status = 'active' AND ends_at > ?`).all(STOCK_SELLER_ID, now)) {
-      const stockIndex = WHOLESALE_STOCK.findIndex(stock => row.id === lotId(Math.floor(row.started_at / WHOLESALE_PERIOD), stock.id));
+      const stockIndex = LEGACY_WHOLESALE_STOCK.findIndex(stock => row.id === lotId(Math.floor(row.started_at / WHOLESALE_PERIOD), stock.id));
       if (stockIndex < 1 || row.started_at % WHOLESALE_PERIOD !== 0 || row.ends_at !== row.started_at + WHOLESALE_PERIOD) continue;
       db.prepare('UPDATE resale_auctions SET ends_at = ? WHERE id = ?')
         .run(row.ends_at + stockIndex * WHOLESALE_SLOT, row.id);
     }
     let supplied = 0;
-    // At any moment one slot for each stock item is live. Include the
+    let sources;
+    // At any moment one listing for each category slot is live. Include the
     // previous cycle on cold start or after downtime so the board is filled
     // without creating expired listings or duplicate active batches.
     for (const cycle of [bucket - 1, bucket]) {
-      for (const [slot, stock] of WHOLESALE_STOCK.entries()) {
+      for (const [slot, type] of STOCK_SLOTS.entries()) {
         const startsAt = cycle * WHOLESALE_PERIOD + slot * WHOLESALE_SLOT;
         const endsAt = startsAt + WHOLESALE_PERIOD;
         if (startsAt > now || endsAt <= now) continue;
-        const id = lotId(cycle, stock.id);
+        const id = lotId(cycle, `archive:${slot}`);
         if (cycle === bucket - 1 && db.prepare(`SELECT 1 FROM resale_auctions
-          WHERE id = ? AND status = 'active' AND ends_at > ?`).get(lotId(bucket, stock.id), now)) continue;
+          WHERE id = ? AND status = 'active' AND ends_at > ?`).get(lotId(bucket, `archive:${slot}`), now)) continue;
         if (db.prepare('SELECT 1 FROM wholesale_auctions WHERE id = ?').get(id)) continue;
+        if (db.prepare('SELECT 1 FROM resale_auctions WHERE id = ?').get(id)) continue;
+        sources ||= archivedStock(db);
+        const candidates = sources[type];
+        if (!candidates.length) continue;
+        const stock = candidates[((cycle + Math.floor(slot / 4)) % candidates.length + candidates.length) % candidates.length];
         const reserve = Math.max(1, Math.round(stock.price * stock.quantity * .75));
         if (createStockListing(db, { id, stock, startsAt, endsAt, reserve })) supplied++;
       }
