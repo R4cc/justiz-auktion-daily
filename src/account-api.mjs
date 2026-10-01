@@ -1,6 +1,6 @@
 import { Accounts, AccountError } from './accounts.mjs';
 import { clientIp } from './client-ip.mjs';
-import { caseRewards, loadCaseCatalog, publicCaseCatalog, rotationDate } from './cases.mjs';
+import { caseRewards, loadCaseCatalog, publicCaseCatalog, quoteCaseCatalog, rotationDate } from './cases.mjs';
 import { readArchive } from './database.mjs';
 import { higherLowerDeck } from './higher-lower.mjs';
 import { auctionGallery } from './auction-images.mjs';
@@ -62,7 +62,7 @@ export async function createAccountApi({ dataDir, dailyPayload, json, env = proc
   let catalog;
   function getCatalog() {
     if (!catalog || catalog.rotationDate !== rotationDate()) catalog = loadCaseCatalog(dataDir);
-    return catalog;
+    return quoteCaseCatalog(dataDir, catalog);
   }
   return async (request, response, url) => {
     if (!url.pathname.startsWith('/api/account/')) return false;

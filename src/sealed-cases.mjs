@@ -1,12 +1,13 @@
 import { randomInt, randomUUID } from 'node:crypto';
 import { RARITIES, drawItem, tokenValue } from './cases.mjs';
+import { ECONOMY_BALANCE, expectedItemValue } from './economy-balance.mjs';
 import { marketCategoryForItem } from './market.mjs';
 
 export const CASE_TIERS = [
-  { id: 'common', name: 'Standard Case', nameDe: 'Standard-Kiste', weights: [6000, 3000, 800, 190, 10] },
-  { id: 'uncommon', name: 'Improved Case', nameDe: 'Verbesserte Kiste', weights: [0, 6000, 3000, 900, 100] },
-  { id: 'rare', name: 'Rare Case', nameDe: 'Seltene Kiste', weights: [0, 0, 7000, 2500, 500] },
-  { id: 'epic', name: 'Epic Case', nameDe: 'Epische Kiste', weights: [0, 0, 0, 8500, 1500] },
+  { id: 'common', name: 'Standard Case', nameDe: 'Standard-Kiste', weights: [7500, 2000, 450, 49, 1] },
+  { id: 'uncommon', name: 'Improved Case', nameDe: 'Verbesserte Kiste', weights: [0, 8000, 1750, 245, 5] },
+  { id: 'rare', name: 'Rare Case', nameDe: 'Seltene Kiste', weights: [0, 0, 9000, 980, 20] },
+  { id: 'epic', name: 'Epic Case', nameDe: 'Epische Kiste', weights: [0, 0, 0, 9950, 50] },
   { id: 'legendary', name: 'Legendary Case', nameDe: 'Legendäre Kiste', weights: [0, 0, 0, 0, 10000] }
 ];
 
@@ -42,8 +43,8 @@ function mixedPool(catalog, fallback) {
 }
 
 // All tiers draw from the mixed archive pool, across every market category.
-// Each tier has a minimum rarity. Face values stay at or below the cheapest
-// possible find in that tier, giving the owner upside at the reference price.
+// Each tier has a minimum rarity. Face value is 80% of the probability-weighted
+// contents, independent of the sealed winner; opening carries loss and upside.
 export function prepareSealedCase(catalog, tierId, { fallback = [], now = Date.now(), random = randomInt } = {}) {
   const tier = CASE_TIERS.find(entry => entry.id === tierId);
   if (!tier) throw new Error('invalid_case_tier');
@@ -52,7 +53,7 @@ export function prepareSealedCase(catalog, tierId, { fallback = [], now = Date.n
   const available = items.filter(item => tier.weights[RARITIES.findIndex(rarity => rarity.id === item.rarity)] > 0);
   if (!available.length) throw new Error('empty_catalog');
   const winner = drawItem(catalog, { items, weights: tier.weights }, random);
-  const price = Math.max(1, Math.floor(Math.min(...available.map(item => item.price)) * .6));
+  const price = Math.max(1, Math.round(expectedItemValue(items, tier.weights) * ECONOMY_BALANCE.sealedCaseValueRate));
   const id = randomUUID();
   return {
     item: { id, kind: 'case', caseTier: tier.id, title: tier.name, titleDe: tier.nameDe,

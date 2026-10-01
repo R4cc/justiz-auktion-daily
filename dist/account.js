@@ -51,7 +51,7 @@ function accountError(code) {
     insufficient_variety: t('Not enough different auctions are available.', 'Noch nicht genug unterschiedliche Auktionen verfügbar.'),
     answer_conflict: t('This guess was already made in another tab. Reopen the game.', 'Dieser Tipp wurde in einem anderen Tab abgegeben. Öffne das Spiel erneut.'),
     empty_catalog: t('No case contents are available yet.', 'Aktuell sind keine Kisteninhalte verfügbar.'),
-    catalog_changed: t('Case contents have changed. Please try again.', 'Die Kisteninhalte wurden aktualisiert. Bitte versuche es erneut.'),
+    catalog_changed: t('Case price or contents changed. Review the refreshed offer and try again.', 'Preis oder Inhalt der Kiste wurde aktualisiert. Prüfe das neue Angebot und versuche es erneut.'),
     user_not_found: t('That username was not found.', 'Dieser Benutzername wurde nicht gefunden.'),
     friend_self: t('You cannot add yourself.', 'Du kannst dich nicht selbst hinzufügen.'),
     friend_limit: t('The limit of 100 friends and pending requests has been reached.', 'Das Limit von 100 Freunden und offenen Anfragen wurde erreicht.'),
@@ -412,9 +412,11 @@ function renderLeaderboard() {
 }
 function rewardNote() {
   if (!account) return t('Log in before playing to earn J€.', 'Melde dich vor dem Spielen an, um J€ zu verdienen.');
-  const rewards = accountCatalog?.rewards || { daily: 200, higherLowerMax: 400 };
-  if (!account.reward) return t(`Your daily reward run is available. Finish Daily for ${justizEuro(rewards.daily)}, or earn up to ${justizEuro(rewards.higherLowerMax)} in Higher or Lower.`, `Dein täglicher J€-Lauf ist verfügbar. Schließe das Daily für ${justizEuro(rewards.daily)} ab oder verdiene bis zu ${justizEuro(rewards.higherLowerMax)} in Higher or Lower.`);
-  return account.reward.complete ? t(`You earned ${justizEuro(account.reward.earned)} today. Your next reward run unlocks at 00:00 UTC.`, `Du hast heute ${justizEuro(account.reward.earned)} verdient. Dein nächster J€-Lauf startet um 00:00 UTC.`) : t(`Resume your ${account.reward.mode === 'daily' ? 'Daily' : 'Higher or Lower'} run to earn today’s J€.`, `Setze deinen ${account.reward.mode === 'daily' ? 'Daily' : 'Higher-or-Lower'}-Lauf für die heutigen J€ fort.`);
+  const rewards = accountCatalog?.rewards || { daily: 200, dailyScoreBonus: 150, higherLowerMax: 250 };
+  const daily = account.rewardsByMode?.daily?.earned || 0;
+  const higherLower = account.rewardsByMode?.['higher-lower']?.earned || 0;
+  return t(`Daily pays ${justizEuro(rewards.daily)}–${justizEuro(rewards.daily + (rewards.dailyScoreBonus || 0))} plus one case. Higher or Lower pays up to ${justizEuro(rewards.higherLowerMax)} separately; better streaks pay the difference. Earned today: ${justizEuro(daily + higherLower)}. Resets at 00:00 UTC.`,
+    `Das Daily zahlt ${justizEuro(rewards.daily)}–${justizEuro(rewards.daily + (rewards.dailyScoreBonus || 0))} und eine Kiste. Higher or Lower zahlt separat bis zu ${justizEuro(rewards.higherLowerMax)}; bessere Serien zahlen die Differenz. Heute verdient: ${justizEuro(daily + higherLower)}. Reset um 00:00 UTC.`);
 }
 function rewardBanner() { return `<p class="reward-note">${accountEscape(rewardNote())}</p>`; }
 function renderProfile() {
@@ -513,7 +515,7 @@ function renderShop() {
   const result = accountResult?.caseId === box.id ? accountResult : null;
   accountContent.innerHTML = pageHeading('Shop') +
     `<div class="shop-balance">${account ? `${justizEuro(account.tokens)} ${t('available', 'verfügbar')}` : `${t('Browse the cases. Log in to earn J€ and open one.', 'Entdecke die Kisten. Melde dich an, um J€ zu verdienen und eine zu öffnen.')} <a href="/login" data-page>${t('Log in', 'Anmelden')} →</a>`}</div>
-    <p class="shop-edition"><span>${t('DAILY EDITION', 'TAGESAUSGABE')} · ${accountCatalog.rotationDate}</span>${infoTip(t('New prices and finds at 00:00 UTC. Today’s offers stay fixed until then.', 'Neue Preise und Fundstücke um 00:00 UTC. Bis dahin gelten die heutigen Angebote.'), t('Edition timing', 'Ausgabenwechsel'))}</p>
+    <p class="shop-edition"><span>${t('DAILY EDITION', 'TAGESAUSGABE')} · ${accountCatalog.rotationDate}</span>${infoTip(t('New finds at 00:00 UTC. Contents stay fixed; prices follow the market.', 'Neue Fundstücke um 00:00 UTC. Die Inhalte bleiben gleich; Preise folgen dem Markt.'), t('Edition timing', 'Ausgabenwechsel'))}</p>
     <div class="case-options">${accountCatalog.cases.map(option => `<button class="case-option case-theme-${option.category} ${box.id === option.id ? 'is-selected' : ''} ${option.available ? '' : 'is-restocking'}" data-account="select-case" data-id="${option.id}" aria-pressed="${box.id === option.id}"><span class="case-art" aria-hidden="true"><b>${option.badge}</b></span><span><strong>${caseName(option)}</strong><small>${option.available ? justizEuro(option.cost) : t('Restocking', 'Wird aufgefüllt')}</small></span></button>`).join('')}</div>
     <section class="case-stage" aria-label="${t('Case opening', 'Kistenöffnung')}"><div class="case-stage-heading"><span>${caseName(box).toUpperCase()}</span><span>${box.available ? `${box.items.length} ${t('FINDS IN THIS EDITION', 'FUNDE IN DIESER AUSGABE')}` : t('MORE FINDS ON THE WAY', 'NEUE FUNDE UNTERWEGS')}</span></div>
     ${box.available ? `<div class="case-window" aria-hidden="true"><div class="case-marker"></div><div class="case-reel">${box.items.slice(0, 10).map(item => tierCard(item.rarity)).join('')}</div></div>` : ''}

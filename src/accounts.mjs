@@ -1,8 +1,9 @@
 import { randomBytes, randomInt, randomUUID, createHash, scrypt, timingSafeEqual } from 'node:crypto';
 import { promisify } from 'node:util';
 import { withDatabase, transaction } from './database.mjs';
-import { dailyCaseWeights, drawItem, tokenValue } from './cases.mjs';
+import { dailyCaseWeights, drawItem, tokenValue, priceCaseCatalog, dailyRewardCatalog } from './cases.mjs';
 import { chooseCaseTier, ensureSealedCaseSchema, insertSealedCase, prepareSealedCase } from './sealed-cases.mjs';
+import { ECONOMY_BALANCE, GAME_REWARDS, scoreReward } from './economy-balance.mjs';
 import { scoreGuess } from './core.mjs';
 import { AccountError } from './errors.mjs';
 import { ensureResaleSchema, inventoryIsLocked, lockedInventoryIds } from './resale.mjs';
@@ -21,13 +22,17 @@ const derive = promisify(scrypt);
 const digest = value => createHash('sha256').update(value).digest('hex');
 const day = now => new Date(now).toISOString().slice(0, 10);
 const SESSION_MS = 30 * 86400000;
-export const STARTING_TOKENS = 1000;
-const DEFAULT_REWARDS = { daily: 200, higherLowerPerCorrect: 40, higherLowerMax: 400, minimumStreak: 3 };
+export const STARTING_TOKENS = ECONOMY_BALANCE.startingTokens;
+const DEFAULT_REWARDS = GAME_REWARDS;
 const fail = (code, status) => { throw new AccountError(code, status); };
 const currentItemValue = item => ({ ...item, sellValue: tokenValue(item.price), marketCategory: marketCategoryForItem(item) });
 const collectibleIdentity = item => JSON.stringify([item.auctionId, item.title, item.image, item.price, item.rarity, tokenValue(item.price)]);
-const rewardRates = value => Object.fromEntries(Object.entries(DEFAULT_REWARDS).map(([key, fallback]) =>
-  [key, Number.isSafeInteger(value?.[key]) && value[key] > 0 ? value[key] : fallback]));
+const rewardRates = value => ({
+  ...Object.fromEntries(Object.entries(DEFAULT_REWARDS).filter(([key]) => key !== 'dailyScoreBonus').map(([key, fallback]) =>
+    [key, Number.isSafeInteger(value?.[key]) && value[key] > 0 ? value[key] : fallback])),
+  // Existing runs retain their saved flat payout. New default runs carry the bonus.
+  ...(Number.isSafeInteger(value?.dailyScoreBonus) && value.dailyScoreBonus >= 0 ? { dailyScoreBonus: value.dailyScoreBonus } : {})
+});
 
 function credentials(username, password) {
   if (typeof username !== 'string' || !/^[a-zA-Z0-9_-]{3,32}$/.test(username)) fail('invalid_username');
@@ -75,8 +80,10 @@ export class Accounts {
       ) STRICT;
       CREATE INDEX IF NOT EXISTS account_games_user ON account_games(user_id, date, mode);
       CREATE TABLE IF NOT EXISTS daily_rewards (
-        user_id TEXT NOT NULL REFERENCES users(id), date TEXT NOT NULL, run_id TEXT NOT NULL REFERENCES account_games(id),
-        earned INTEGER NOT NULL DEFAULT 0, PRIMARY KEY(user_id, date)
+        user_id TEXT NOT NULL REFERENCES users(id), date TEXT NOT NULL,
+        mode TEXT NOT NULL CHECK(mode IN ('daily', 'higher-lower')),
+        run_id TEXT NOT NULL REFERENCES account_games(id),
+        earned INTEGER NOT NULL DEFAULT 0, PRIMARY KEY(user_id, date, mode)
       ) STRICT;
       CREATE TABLE IF NOT EXISTS daily_case_rewards (
         run_id TEXT PRIMARY KEY REFERENCES account_games(id), user_id TEXT NOT NULL REFERENCES users(id),
@@ -118,6 +125,20 @@ export class Accounts {
         palette_auction_count INTEGER NOT NULL
       ) STRICT;
       `);
+      if (!db.prepare('PRAGMA table_info(daily_rewards)').all().some(column => column.name === 'mode')) {
+        transaction(db, () => {
+          db.exec(`ALTER TABLE daily_rewards RENAME TO legacy_daily_rewards;
+            CREATE TABLE daily_rewards (
+              user_id TEXT NOT NULL REFERENCES users(id), date TEXT NOT NULL,
+              mode TEXT NOT NULL CHECK(mode IN ('daily', 'higher-lower')),
+              run_id TEXT NOT NULL REFERENCES account_games(id), earned INTEGER NOT NULL DEFAULT 0,
+              PRIMARY KEY(user_id, date, mode)
+            ) STRICT;
+            INSERT INTO daily_rewards SELECT r.user_id, r.date, g.mode, r.run_id, r.earned
+              FROM legacy_daily_rewards r JOIN account_games g ON g.id = r.run_id;
+            DROP TABLE legacy_daily_rewards;`);
+        });
+      }
       const dailyCaseColumns = db.prepare('PRAGMA table_info(daily_case_rewards)').all().map(column => column.name);
       if (!dailyCaseColumns.includes('case_inventory_id'))
         db.exec('ALTER TABLE daily_case_rewards ADD COLUMN case_inventory_id TEXT');
@@ -394,8 +415,12 @@ export class Accounts {
   profile(user) {
     return this.db(db => {
       const row = db.prepare('SELECT id, username, admin, tokens, xp, created_at, grants_seen_at, must_change_password FROM users WHERE id = ?').get(user.id);
-      const reward = db.prepare(`SELECT daily_rewards.earned, account_games.mode, account_games.complete FROM daily_rewards
-        JOIN account_games ON run_id = account_games.id WHERE daily_rewards.user_id = ? AND daily_rewards.date = ?`).get(user.id, day(this.now()));
+      const rewardsByMode = Object.fromEntries(db.prepare(`SELECT r.earned, r.mode, g.complete FROM daily_rewards r
+        JOIN account_games g ON r.run_id = g.id WHERE r.user_id = ? AND r.date = ?`)
+        .all(user.id, day(this.now())).map(reward => [reward.mode, reward]));
+      const rewardRows = Object.values(rewardsByMode);
+      const reward = rewardRows.length ? { earned: rewardRows.reduce((sum, row) => sum + row.earned, 0),
+        complete: rewardRows.every(row => row.complete), mode: rewardRows[0].mode } : null;
       // Token gifts are consumed on read, so every grant is announced exactly once.
       const gifts = [...db.prepare('SELECT amount, created_at FROM user_token_grants WHERE user_id = ? AND created_at > ?').all(user.id, row.grants_seen_at),
         ...db.prepare('SELECT amount, created_at FROM token_grants WHERE created_at > ? AND created_at >= ?').all(row.grants_seen_at, row.created_at)]
@@ -405,7 +430,7 @@ export class Accounts {
       // Progression derives from the freshly read users.xp through the shared
       // curve — no level arithmetic lives in this class.
       return { ...publicRow, mustChangePassword: Boolean(must_change_password),
-        progression: progressionForXp(xp), ...this.summary(db, user.id), admin: Boolean(row.admin), reward: reward || null, gifts, date: day(this.now()) };
+        progression: progressionForXp(xp), ...this.summary(db, user.id), admin: Boolean(row.admin), reward: reward || null, rewardsByMode, gifts, date: day(this.now()) };
     });
   }
   summary(db, userId) {
@@ -521,7 +546,9 @@ export class Accounts {
         if (previous.case_id !== caseId) fail('request_conflict', 409);
         return currentItemValue(JSON.parse(previous.item));
       }
-      if (revision !== catalog.revision) fail('catalog_changed', 409);
+      const quoted = priceCaseCatalog(catalog, marketIndexes(db, this.now()));
+      const expectedRevision = catalog.poolRevision ? quoted.revision : catalog.revision;
+      if (revision !== expectedRevision || quoted.cases.some((box, i) => box.cost !== catalog.cases[i].cost)) fail('catalog_changed', 409);
       const box = catalog.cases.find(box => box.id === caseId);
       if (!box) fail('invalid_case');
       if (!box.weights.some(Boolean)) fail('empty_catalog', 503);
@@ -540,7 +567,7 @@ export class Accounts {
     if (run.mode !== 'daily' || !run.complete || db.prepare('SELECT 1 FROM daily_case_rewards WHERE run_id = ?').get(run.id)) return;
     const score = run.answers.reduce((total, guess, index) => total + scoreGuess(guess, run.auctions[index].actualBid), 0);
     const tier = chooseCaseTier(dailyCaseWeights(score));
-    const prepared = prepareSealedCase(catalog, tier, { fallback: run.auctions, now: this.now() });
+    const prepared = prepareSealedCase(dailyRewardCatalog(catalog, run.auctions, this.now()), tier, { now: this.now() });
     db.prepare(`INSERT INTO daily_case_rewards (run_id, user_id, date, score, item)
       VALUES (?, ?, ?, ?, ?)`).run(run.id, user.id, run.date, score, JSON.stringify(prepared));
   }
@@ -597,6 +624,8 @@ export class Accounts {
       if (db.prepare('SELECT 1 FROM business_stock WHERE inventory_id = ? AND sold_at IS NULL').get(row.id)) fail('item_stocked', 409);
       const item = currentItemValue(JSON.parse(row.item));
       if (row.sold_at === null) {
+        const balance = db.prepare('SELECT tokens FROM users WHERE id = ?').get(user.id).tokens;
+        if (!Number.isSafeInteger(balance + item.sellValue)) fail('token_balance_limit', 409);
         db.prepare('UPDATE inventory SET sold_at = ? WHERE id = ?').run(this.now(), row.id);
         db.prepare('UPDATE users SET tokens = tokens + ? WHERE id = ?').run(item.sellValue, user.id);
       }
@@ -694,15 +723,24 @@ export class Accounts {
         run.answers.push(answer);
         run.complete = !run.correct || run.answers.length === run.auctions.length - 1;
       }
-      db.prepare('INSERT OR IGNORE INTO daily_rewards (user_id, date, run_id) VALUES (?, ?, ?)').run(user.id, run.date, run.id);
-      const reward = db.prepare('SELECT * FROM daily_rewards WHERE user_id = ? AND date = ?').get(user.id, run.date);
-      run.rewardEligible = reward.run_id === run.id;
+      db.prepare('INSERT OR IGNORE INTO daily_rewards (user_id, date, mode, run_id) VALUES (?, ?, ?, ?)')
+        .run(user.id, run.date, run.mode, run.id);
+      const reward = db.prepare('SELECT * FROM daily_rewards WHERE user_id = ? AND date = ? AND mode = ?')
+        .get(user.id, run.date, run.mode);
+      run.rewardEligible = run.mode === 'higher-lower' || reward.run_id === run.id;
       if (run.complete && run.rewardEligible) {
         const rates = rewardRates(run.rewards);
-        run.earned = run.mode === 'daily' ? rates.daily : run.streak >= rates.minimumStreak ?
-          Math.min(rates.higherLowerMax, run.streak * rates.higherLowerPerCorrect) : 0;
+        const score = run.mode === 'daily' ? run.answers.reduce((sum, guess, i) => sum + scoreGuess(guess, run.auctions[i].actualBid), 0) : 0;
+        const target = run.mode === 'daily' ? rates.daily + scoreReward(score, rates.dailyScoreBonus || 0)
+          : run.streak >= rates.minimumStreak ? Math.min(rates.higherLowerMax, run.streak * rates.higherLowerPerCorrect) : 0;
+        // Higher or Lower pays only the improvement over today's best reward.
+        // Failed attempts and repeats cannot mint currency or block the Daily.
+        run.earned = Math.max(0, target - reward.earned);
+        const balance = db.prepare('SELECT tokens FROM users WHERE id = ?').get(user.id).tokens;
+        if (!Number.isSafeInteger(balance + run.earned)) fail('token_balance_limit', 409);
         db.prepare('UPDATE users SET tokens = tokens + ? WHERE id = ?').run(run.earned, user.id);
-        db.prepare('UPDATE daily_rewards SET earned = ? WHERE user_id = ? AND date = ?').run(run.earned, user.id, run.date);
+        if (target > reward.earned) db.prepare('UPDATE daily_rewards SET earned = ?, run_id = ? WHERE user_id = ? AND date = ? AND mode = ?')
+          .run(target, run.id, user.id, run.date, run.mode);
       }
       if (run.complete && run.mode === 'daily') awardXp(db, user.id, 'daily', run.id, 150, this.now());
       this.grantDailyCase(db, user, run, catalog);

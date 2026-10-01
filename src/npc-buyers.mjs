@@ -1,3 +1,4 @@
+import { ECONOMY_BALANCE, resaleBidIncrement } from './economy-balance.mjs';
 import { createHash } from 'node:crypto';
 import { transaction, withDatabase } from './database.mjs';
 import { estimatedValueTokens, marketCategoryForItem, marketIndexes } from './market.mjs';
@@ -42,20 +43,20 @@ export function seedNpcBuyers(dataDir, { now = Date.now() } = {}) {
   }));
 }
 
-export function npcValuation(item, indexes, npc, auctionId, unit = deterministicUnit) {
+export function npcValuation(item, indexes, npc, auctionId, unit = deterministicUnit, quantity = 1) {
   const category = marketCategoryForItem(item), index = indexes[category] ?? 100;
   const preferred = npc.categories.includes(category);
   const variation = (unit(`${auctionId}:${npc.id}:value`) - .5) * .10;
-  const cap = npc.collector && preferred ? 1.25 : 1.15;
-  const multiplier = Math.max(.70, Math.min(cap, npc.willingness + (preferred ? .08 : -.12) + variation));
+  const cap = npc.collector && preferred ? ECONOMY_BALANCE.npcCollectorMaximum : ECONOMY_BALANCE.npcResaleMaximum;
+  const multiplier = Math.max(ECONOMY_BALANCE.npcResaleMinimum, Math.min(cap, npc.willingness * .78 + (preferred ? .06 : -.12) + (npc.collector && preferred ? .04 : 0) + variation));
   const personality = .62 + npc.aggressiveness * .58 + (npc.collector && preferred ? .12 : 0);
-  const probability = Math.max(.05, Math.min(.94, (preferred ? .58 : .18) * personality * (index / 100) ** 3));
-  return { maxBid: Math.max(1, Math.round(estimatedValueTokens(item, indexes) * multiplier)),
+  const probability = Math.max(.05, Math.min(.94, (preferred ? .48 : .12) * personality * (index / 100) ** 3));
+  return { maxBid: Math.max(1, Math.round(estimatedValueTokens(item, indexes) * quantity * multiplier)),
     interested: unit(`${auctionId}:${npc.id}:interest`) < probability, probability };
 }
 
 export function npcBidAmount(interest, npc, now, unit = deterministicUnit) {
-  const minimum = interest.current_bid === null ? interest.start_price : interest.current_bid + 1;
+  const minimum = interest.current_bid === null ? interest.start_price : interest.current_bid + resaleBidIncrement(interest.start_price);
   const headroom = interest.max_bid - minimum;
   if (headroom <= 0 || unit(`${interest.auction_id}:${npc.id}:${interest.current_bid}:cheap`) < npc.cheapness) return minimum;
   const pressure = .015 + npc.aggressiveness * .11 + (interest.ends_at - now <= 120_000 ? .05 : 0);
@@ -79,8 +80,9 @@ export function tickNpcBuyers(dataDir, { now = Date.now(), unit = deterministicU
       (auction_id, npc_id, max_bid, next_bid_at, created_at, active) VALUES (?, ?, ?, ?, ?, ?)`);
     for (const row of auctions) for (const npc of npcCohort(row.id)) {
       const item = JSON.parse(row.item);
-      const value = npcValuation({ ...item, price: item.price * Math.max(1, row.quantity) }, indexes, npc, row.id, unit);
-      insert.run(row.id, npc.id, value.maxBid, now + npc.delaySeconds * 1000, now, Number(value.interested));
+      const value = npcValuation(item, indexes, npc, row.id, unit, Math.max(1, row.quantity));
+      const bulkDiscount = Math.max(.75, 1 - Math.log2(Math.max(1, row.quantity)) * .04);
+      insert.run(row.id, npc.id, Math.max(1, Math.floor(value.maxBid * bulkDiscount)), now + npc.delaySeconds * 1000, now, Number(value.interested));
     }
     db.prepare(`UPDATE resale_npc_interest SET active = 0 WHERE active = 1 AND auction_id IN
       (SELECT id FROM resale_auctions WHERE status != 'active' OR ends_at <= ?)`).run(now);
@@ -101,7 +103,7 @@ export function tickNpcBuyers(dataDir, { now = Date.now(), unit = deterministicU
     if (touched.has(interest.auction_id)) continue;
     const npc = NPC_BUYERS.find(entry => entry.id === interest.npc_id);
     if (!npc) continue;
-    const minimum = interest.current_bid === null ? interest.start_price : interest.current_bid + 1;
+    const minimum = interest.current_bid === null ? interest.start_price : interest.current_bid + resaleBidIncrement(interest.start_price);
     const lastMinuteDelay = Math.round(10_000 + npc.patience * 20_000 + (1 - npc.aggressiveness) * 10_000);
     const delay = interest.ends_at - now <= 120_000 ? lastMinuteDelay : npc.delaySeconds * 1000;
     if (minimum > interest.max_bid) {
@@ -128,7 +130,7 @@ export function tickNpcBuyers(dataDir, { now = Date.now(), unit = deterministicU
 
 // Sealed palette boards are priced against the live market: the ceiling is
 // the market-adjusted expected bundle value times a persona multiplier. The
-// reserve freezes at 60% of expected value. NPC ceilings stay below expected
+// reserve freezes at 70% of expected value. NPC ceilings stay below expected
 // value as well, preserving meaningful player upside while still letting
 // interested buyers compete and hot markets lift bids above a frozen reserve.
 export function paletteBidCeiling(snapshot, indexes, npc, auctionId, unit = deterministicUnit) {
@@ -136,9 +138,9 @@ export function paletteBidCeiling(snapshot, indexes, npc, auctionId, unit = dete
   const expected = bundleReferencePricing(items, item => indexes[item.marketCategory] ?? 100, snapshot.rewardCount ?? 3);
   const preferred = (snapshot.allowedMarketCategories ?? []).some(category => npc.categories.includes(category));
   const variation = (unit(`${auctionId}:${npc.id}:palette-value`) - .5) * .06;
-  const multiplier = Math.max(.49, Math.min(.78, .52 + npc.willingness * .18
+  const multiplier = Math.max(ECONOMY_BALANCE.npcPaletteMinimum, Math.min(ECONOMY_BALANCE.npcPaletteMaximum, .60 + npc.willingness * .16
     + (preferred ? .05 : -.03) + variation));
-  return { maxBid: Math.max(1, Math.round((expected.et || 0) * multiplier)), preferred };
+  return { maxBid: Math.max(1, Math.floor((expected.et || 0) * multiplier)), preferred };
 }
 
 // One deterministic consideration per active lot per five-minute slot: most
@@ -168,10 +170,10 @@ export function tickPaletteBuyers(dataDir, { now = Date.now(), unit = determinis
     // The tiered minimum raise applies to NPCs exactly like to humans; the
     // domain would reject anything below it anyway (bid_too_low).
     const minimum = lot.current_bid === null ? lot.reserve : lot.current_bid + paletteBidIncrement(lot.reserve);
-    if (minimum >= maxBid) continue;
+    if (minimum > maxBid) continue;
     const headroom = maxBid - minimum;
     const pressure = .02 + npc.aggressiveness * .06;
-    const jump = 1 + Math.floor(unit(`${lot.id}:${npc.id}:${lot.current_bid}:palette-jump`)
+    const jump = headroom === 0 ? 0 : 1 + Math.floor(unit(`${lot.id}:${npc.id}:${lot.current_bid}:palette-jump`)
       * Math.min(headroom, Math.round(maxBid * pressure)));
     try {
       bidOnPaletteAuction(dataDir, npc, lot.id, Math.min(maxBid, minimum + jump), { now, npc: true });

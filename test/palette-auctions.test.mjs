@@ -55,7 +55,7 @@ const conservedTotal = dir => withDatabase(dir, db => ({
   users: db.prepare('SELECT COALESCE(SUM(tokens), 0) AS sum FROM users').get().sum,
   escrow: db.prepare('SELECT COALESCE(SUM(COALESCE(max_bid, current_bid)), 0) AS sum FROM primary_palette_auctions WHERE settled_at IS NULL').get().sum }));
 
-test('minimum raises tier with the reserve: J€ 5 under 100, capped at J€ 25', () => {
+test('minimum raises tier with the reserve and scale for high-value lots', () => {
   assert.equal(paletteBidIncrement(1), 5);
   assert.equal(paletteBidIncrement(99), 5);
   assert.equal(paletteBidIncrement(100), 10);
@@ -65,7 +65,7 @@ test('minimum raises tier with the reserve: J€ 5 under 100, capped at J€ 25'
   assert.equal(paletteBidIncrement(500), 20);
   assert.equal(paletteBidIncrement(999), 20);
   assert.equal(paletteBidIncrement(1000), 25);
-  assert.equal(paletteBidIncrement(1_000_000), 25);
+  assert.equal(paletteBidIncrement(1_000_000), 5000);
 });
 
 test('level thresholds follow 100·(level−1)² up to the cap', () => {

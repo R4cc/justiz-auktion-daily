@@ -28,7 +28,7 @@ export function supplyCaseAuctions(dataDir, { now = Date.now() } = {}) {
     const tier = chooseCaseTier([4500, 3000, 1600, 800, 100], max => Math.floor(unit(`case-tier:${bucket}`) * max));
     const prepared = prepareSealedCase(catalog, tier, { now });
     insertSealedCase(db, CASE_SUPPLIER_ID, prepared, now);
-    const reserve = Math.max(1, Math.round(prepared.item.price * .85));
+    const reserve = prepared.item.price;
     db.prepare(`INSERT INTO resale_auctions
       (id, seller_id, inventory_id, start_price, status, started_at, ends_at)
       VALUES (?, ?, ?, ?, 'active', ?, ?)`).run(id, CASE_SUPPLIER_ID, prepared.item.id, reserve, startsAt, endsAt);

@@ -58,7 +58,7 @@ test('stock batches use marketplace escrow, bid history, and inventory transfer'
     && auction.finalPrice === lot.item.price)));
   const wine = lots.find(lot => lot.item.title === 'Wachau Riesling 2022');
   assert.equal(wine.quantity, 24);
-  assert.equal(wine.startPrice, 432);
+  assert.equal(wine.startPrice, 490);
   assert.equal(wine.sellerUsername, 'Stock Supply');
   const suppliedUnits = lots.reduce((sum, lot) => sum + lot.quantity, 0);
   assert.equal(f.count('inventory'), suppliedUnits);
@@ -68,13 +68,13 @@ test('stock batches use marketplace escrow, bid history, and inventory transfer'
     return auctionStock.some(auction => auction.id === item.auctionId
       && auction.title === item.title && auction.finalPrice === item.price);
   }));
-  placeBid(f.dir, f.owner, wine.id, 432, { now: start + 1000 });
-  assert.equal(f.balance('owner'), 568);
-  placeBid(f.dir, f.rival, wine.id, 433, { now: start + 2000 });
+  placeBid(f.dir, f.owner, wine.id, 490, { now: start + 1000 });
+  assert.equal(f.balance('owner'), 510);
+  placeBid(f.dir, f.rival, wine.id, 495, { now: start + 2000 });
   assert.equal(f.balance('owner'), 1000);
-  placeBid(f.dir, f.owner, wine.id, 450, { now: start + 3000 });
-  assert.equal(f.balance('owner'), 550);
-  assert.throws(() => placeBid(f.dir, f.rival, wine.id, 434, { now: start + 4000 }), /bid_too_low/);
+  placeBid(f.dir, f.owner, wine.id, 510, { now: start + 3000 });
+  assert.equal(f.balance('owner'), 490);
+  assert.throws(() => placeBid(f.dir, f.rival, wine.id, 496, { now: start + 4000 }), /bid_too_low/);
   assert.equal(getResale(f.dir, wine.id, { now: start + 5000 }).bids.length, 3);
   assert.equal(listingsBidOnByUser(f.dir, f.owner.id, { now: start + 5000 })[0].leading, true);
   settleDueListings(f.dir, { now: start + 2 * hour });
@@ -170,7 +170,7 @@ test('existing stock bids migrate to marketplace without charging escrow twice',
   assert.equal(getResale(f.dir, id, { now: start + 2000 }).bids.length, 1);
   supplyStockAuctions(f.dir, { now: start + 3000 });
   assert.equal(getResale(f.dir, id, { now: start + 3000 }).bids.length, 1);
-  placeBid(f.dir, f.rival, id, 433, { now: start + 4000 });
+  placeBid(f.dir, f.rival, id, 437, { now: start + 4000 });
   assert.equal(f.balance('owner'), 1000);
   settleDueListings(f.dir, { now: start + 2 * hour });
   assert.equal(f.count('inventory', "user_id = 'rival'"), 24);
@@ -201,7 +201,7 @@ test('store stock is exclusive, category-checked, and earns once after offline t
   const purchase = buyBusiness(f.dir, f.owner, 'wine', 'popup', { now: boughtAt });
   const shop = purchase.shop;
   assert.equal(purchase.cost, 1000);
-  assert.equal(f.balance('owner'), 568);
+  assert.equal(f.balance('owner'), 510);
   assert.throws(() => buyBusiness(f.dir, f.owner, 'wine', 'tiny', { now: boughtAt }), /insufficient_tokens/);
   const ids = f.accounts.db(db => db.prepare("SELECT id FROM inventory WHERE user_id = 'owner' ORDER BY id LIMIT 4").all().map(row => row.id));
   assert.throws(() => stockBusiness(f.dir, f.rival, shop.id, ids, { now: boughtAt }), /business_not_found/);
@@ -217,26 +217,26 @@ test('store stock is exclusive, category-checked, and earns once after offline t
   assert.equal(after.stock.length, 0);
   assert.equal(after.sales, 4);
   assert.ok(after.visitors > 0);
-  assert.equal(after.revenue, 4 * 40);
-  assert.equal(f.balance('owner'), 568 + after.revenue);
+  assert.equal(after.revenue, 4 * 37);
+  assert.equal(f.balance('owner'), 510 + after.revenue);
   closeDataStore(f.dir);
   assert.equal(businessDashboard(f.dir, f.owner, { now: later }).shops[0].revenue, after.revenue);
-  assert.equal(f.balance('owner'), 568 + after.revenue);
+  assert.equal(f.balance('owner'), 510 + after.revenue);
   assert.equal(f.count('inventory', 'sold_at IS NOT NULL'), 4);
-  assert.equal(f.count('business_stock', 'sold_price = 40'), 4);
+  assert.equal(f.count('business_stock', 'sold_price = 37'), 4);
 });
 
 test('profit margin changes buying rate and shelf prices against the current category index, not visitors', async t => {
   const f = await fixture(t);
   const shop = buyBusiness(f.dir, f.rival, 'toys', 'popup', { now: start }).shop;
-  assert.equal(shop.profitMargin, 30);
-  assert.equal(businessSaleChance(.28, 30), .28);
+  assert.equal(shop.profitMargin, 20);
+  assert.equal(businessSaleChance(.28, 20), .28);
   assert.ok(businessSaleChance(.28, 0) > businessSaleChance(.28, 30));
   assert.ok(businessSaleChance(.28, 30) > businessSaleChance(.28, 60));
   assert.ok(businessSaleChance(.28, 60) > businessSaleChance(.28, 100));
   // Expected profit per visitor has a middle sweet spot instead of rewarding
   // either a free markup or the highest possible price.
-  assert.ok(60 * businessSaleChance(.28, 60) > 30 * businessSaleChance(.28, 30));
+  assert.ok(30 * businessSaleChance(.28, 30) > 60 * businessSaleChance(.28, 60));
   assert.ok(60 * businessSaleChance(.28, 60) > 100 * businessSaleChance(.28, 100));
   f.accounts.db(db => db.prepare('INSERT INTO inventory (id, user_id, item, created_at) VALUES (?, ?, ?, ?)')
     .run('priced-toy', 'rival', JSON.stringify({ title: 'Wooden puzzle set', price: 100,
@@ -245,7 +245,7 @@ test('profit margin changes buying rate and shelf prices against the current cat
   setMarketIndex(f.dir, 'collectibles', 150, { now: start });
   const baseline = businessDashboard(f.dir, f.rival, { now: start }).shops[0];
   assert.equal(baseline.stock[0].referencePrice, 150);
-  assert.equal(baseline.stock[0].askingPrice, 195);
+  assert.equal(baseline.stock[0].askingPrice, 180);
   const high = setBusinessMargin(f.dir, f.rival, shop.id, 60, { now: start });
   assert.equal(high.stock[0].referencePrice, 150);
   assert.equal(high.stock[0].askingPrice, 240);
@@ -294,7 +294,7 @@ test('profit margin changes sales without changing visitors, even when stock sel
   });
   stockBusiness(f.dir, f.rival, shop.id, Array.from({ length: 25 }, (_, n) => `traffic-toy-${n}`), { now: start });
   setBusinessMargin(f.dir, f.rival, shop.id, 0, { now: start });
-  const low = businessDashboard(f.dir, f.rival, { now: start + 24 * hour }).shops[0];
+  const low = businessDashboard(f.dir, f.rival, { now: start + 7 * 24 * hour }).shops[0];
   assert.equal(low.stock.length, 0);
   f.accounts.db(db => {
     db.prepare('UPDATE businesses SET visitors = 0, sales = 0, revenue = 0, last_tick_at = ?, profit_margin = 100 WHERE id = ?')
@@ -302,7 +302,7 @@ test('profit margin changes sales without changing visitors, even when stock sel
     db.prepare('UPDATE business_stock SET sold_at = NULL, sold_price = NULL WHERE business_id = ?').run(shop.id);
     db.prepare("UPDATE inventory SET sold_at = NULL WHERE user_id = 'rival' AND id LIKE 'traffic-toy-%'").run();
   });
-  const high = businessDashboard(f.dir, f.rival, { now: start + 24 * hour }).shops[0];
+  const high = businessDashboard(f.dir, f.rival, { now: start + 7 * 24 * hour }).shops[0];
   assert.equal(high.visitors, low.visitors);
   assert.ok(high.sales < low.sales);
 });
@@ -327,7 +327,7 @@ test('business dashboard reports sales and revenue for the current UTC day', asy
   });
   const yesterday = businessDashboard(f.dir, f.rival, { now: start + 11 * hour }).shops[0];
   assert.equal(yesterday.salesToday, 1);
-  assert.equal(yesterday.revenueToday, 130);
+  assert.equal(yesterday.revenueToday, 120);
   const today = businessDashboard(f.dir, f.rival, { now: start + 23 * hour }).shops[0];
   assert.equal(today.sales, 2);
   assert.equal(today.revenue, 320);
@@ -423,7 +423,7 @@ test('business HTTP routes require sessions and stock lots appear through market
     headers: { 'content-type': 'application/json', ...(csrf ? { 'x-requested-with': 'JUSTIZGUESSR' } : {}), cookie },
     body: JSON.stringify(payload) });
   const lots = await (await fetch(`${base}/api/resales`)).json();
-  assert.equal(lots.listings.length, 8);
+  assert.equal(lots.listings.filter(lot => lot.sellerId === 'npc-stock-supply').length, 8);
   assert.equal((await fetch(`${base}/api/wholesale`)).status, 404);
   assert.equal((await fetch(`${base}/api/account/businesses`)).status, 401);
   const login = await post('login', { username: 'admin', password });

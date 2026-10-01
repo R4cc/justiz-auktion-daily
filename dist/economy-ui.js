@@ -47,7 +47,7 @@ window.economyUi = (() => {
   };
   const countdown = end => `<time class="economy-countdown" data-economy-end="${end}" datetime="${new Date(end).toISOString()}" aria-live="off">${remaining(end)}</time>`;
   const bidMinimum = (lot, primary) => {
-    const increment = primary ? lot.bidIncrement ?? 1 : 1;
+    const increment = lot.bidIncrement ?? 1;
     return lot.currentBid === null ? primary ? lot.reserve : lot.startPrice
       : lot.leading && Number.isSafeInteger(lot.highestBid) ? lot.highestBid + increment : lot.currentBid + increment;
   };
@@ -163,7 +163,7 @@ window.economyUi = (() => {
     const image = primary ? null : lot.item.image;
     const participation = primary ? (data.mine || []).find(entry => entry.id === lot.id)
       : view === 'bid' ? lot : null;
-    // Palettes raise in value-tiered steps (lot.bidIncrement); resale keeps J€ 1.
+    // Both auction types expose their domain-owned minimum raise.
     const minimum = bidMinimum(participation ? { ...lot, ...participation } : lot, primary);
     const eligible = account && (account.progression?.level || 1) >= lot.requiredLevel
       && account.tokens + (participation?.leading ? participation.highestBid : 0) >= minimum;

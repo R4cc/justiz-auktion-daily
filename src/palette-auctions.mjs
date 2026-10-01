@@ -44,7 +44,7 @@ export const PALETTE_ACTIVE_TARGET = 10;
 export const PALETTE_ACTIVE_PER_EDITION = 2;
 // Minimum raise on a contested lot, tiered by the lot's frozen reserve (its
 // reference value) so nobody can spam +1 raises: palettes under J€ 100 move
-// in J€ 5 steps, the requirement grows with value and caps at J€ 25. Humans
+// in J€ 5 steps; large lots require at least 0.5% of their reserve. Humans
 // and NPC buyers bid under the same rule — it lives in the domain, not the
 // callers.
 export function paletteBidIncrement(reserve) {
@@ -52,7 +52,7 @@ export function paletteBidIncrement(reserve) {
   if (reserve < 250) return 10;
   if (reserve < 500) return 15;
   if (reserve < 1000) return 20;
-  return 25;
+  return Math.max(25, Math.ceil(reserve * .005 / 25) * 25);
 }
 const fail = (code, status) => { throw new AccountError(code, status); };
 

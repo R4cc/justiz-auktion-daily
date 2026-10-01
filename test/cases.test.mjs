@@ -7,6 +7,7 @@ import { CASE_RETURN_TARGET, DAILY_REWARD_FLOOR, caseCatalog, caseRewards, daily
   drawDailyCaseItem, loadCaseCatalog, drawItem, publicCaseCatalog, RARITIES, tokenValue } from '../src/cases.mjs';
 import { Accounts } from '../src/accounts.mjs';
 import { closeDataStore, upsertAuctions } from '../src/database.mjs';
+import { expectedItemValue } from '../src/economy-balance.mjs';
 import { CASE_TIERS, prepareSealedCase } from '../src/sealed-cases.mjs';
 
 const day = Date.parse('2026-09-12T12:00:00Z'), tomorrow = day + 86400000;
@@ -56,7 +57,7 @@ test('sale values follow auction euros and case prices preserve the target retur
         expected += pool.reduce((sum, item) => sum + item.sellValue, 0) / pool.length * box.weights[tier] / total;
       });
       assert.equal(box.weights[4] / total, .001);
-      assert.equal(box.cost, Math.max(1, Math.round(expected / CASE_RETURN_TARGET)));
+      assert.equal(box.cost, Math.max(1, Math.ceil(expected / CASE_RETURN_TARGET)));
     }
   }
   // Exercise actual draw boundaries rather than just inspecting configured weights.
@@ -78,21 +79,19 @@ test('sale values follow auction euros and case prices preserve the target retur
   }
 });
 
-test('daily game rewards have a J€200 floor and still scale with expensive cases', () => {
+test('game rewards have a fixed floor and bonus, independent of rotating case prices', () => {
   const catalog = caseCatalog(stock, day);
-  const cheapest = Math.min(...catalog.cases.filter(box => box.available).map(box => box.cost));
-  const daily = Math.max(DAILY_REWARD_FLOOR, cheapest);
   assert.deepEqual(caseRewards(catalog), {
-    daily, higherLowerPerCorrect: Math.max(1, Math.round(daily / 5)),
-    higherLowerMax: daily * 2, minimumStreak: 3
+    daily: DAILY_REWARD_FLOOR, dailyScoreBonus: 150,
+    higherLowerPerCorrect: 25, higherLowerMax: 250, minimumStreak: 3
   });
-  assert.ok(caseRewards(catalog).daily >= 200);
+  assert.deepEqual(caseRewards(caseCatalog(stock.map(item => ({ ...item, currentBid: item.currentBid * 1000 })), day)), caseRewards(catalog));
   assert.deepEqual(publicCaseCatalog(catalog).rewards, caseRewards(catalog));
 });
 
 test('Daily case rarity odds rise with score and a thin archive still yields one item', () => {
-  assert.deepEqual(dailyCaseWeights(0), [7000, 2400, 500, 95, 5]);
-  assert.deepEqual(dailyCaseWeights(5000), [700, 2400, 3900, 2400, 600]);
+  assert.deepEqual(dailyCaseWeights(0), [8000, 1800, 180, 19, 1]);
+  assert.deepEqual(dailyCaseWeights(5000), [4500, 3500, 1600, 380, 20]);
   assert.deepEqual(dailyCaseWeights(9999), dailyCaseWeights(5000));
   for (const score of [0, 1000, 2500, 4000, 5000]) {
     const weights = dailyCaseWeights(score);
@@ -111,7 +110,7 @@ test('Daily case rarity odds rise with score and a thin archive still yields one
     drawDailyCaseItem(full, deck, 5000, () => 0)));
 });
 
-test('physical case tiers draw across categories and price below every possible find', () => {
+test('physical case tiers draw across categories and price from expected contents', () => {
   const catalog = caseCatalog(stock, day);
   const mixed = catalog.cases.find(box => box.id === 'fundkiste');
   assert.ok(new Set(mixed.items.map(item => item.category)).size > 1);
@@ -121,8 +120,8 @@ test('physical case tiers draw across categories and price below every possible 
     const eligible = mixed.items.filter(item => tier.weights[RARITIES.findIndex(rarity => rarity.id === item.rarity)] > 0);
     assert.equal(prepared.item.kind, 'case');
     assert.equal(prepared.item.caseTier, tier.id);
-    assert.ok(prepared.item.price < Math.min(...eligible.map(item => item.price)));
-    assert.ok(prepared.reward.price > prepared.item.price);
+    assert.equal(prepared.item.price, Math.max(1, Math.round(expectedItemValue(mixed.items, tier.weights) * .8)));
+    assert.ok(eligible.some(item => item.price > prepared.item.price));
     assert.ok(!('reward' in prepared.item));
     prices.push(prepared.item.price);
   }

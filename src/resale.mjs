@@ -1,3 +1,4 @@
+import { resaleBidIncrement } from './economy-balance.mjs';
 import { randomUUID } from 'node:crypto';
 import { AccountError } from './errors.mjs';
 import { transaction, withDatabase } from './database.mjs';
@@ -160,7 +161,7 @@ function serializeListing(db, row, { bids = false, now = Date.now(), indexes = m
       ...(item.businessCategory ? { businessCategory: item.businessCategory } : {}) },
     estimatedValueTokens: estimatedValueTokens(item, indexes) * quantity,
     currentBidderId: row.current_bidder_id,
-    startPrice: row.start_price, currentBid: row.current_bid, bidCount,
+    startPrice: row.start_price, bidIncrement: resaleBidIncrement(row.start_price), currentBid: row.current_bid, bidCount,
     status: row.status, startedAt: row.started_at, endsAt: row.ends_at,
     winnerId: row.winner_id || null, closedAt: row.closed_at || null,
     settledAt: row.settled_at || null,
@@ -243,7 +244,7 @@ export function placeBid(dataDir, user, auctionId, amount, { now = Date.now() } 
     if (!bidder) fail('login_required', 401);
     if (bidder.npc && JSON.parse(listingInventory(db, row)[0].item).kind === 'case') fail('npc_case_bid_forbidden', 403);
     if (bidder.npc && row.current_bidder_id === user.id) fail('npc_self_outbid', 409);
-    const minimum = proxyMinimum(row.current_bid, row.max_bid, row.current_bidder_id, user.id, row.start_price, 1);
+    const minimum = proxyMinimum(row.current_bid, row.max_bid, row.current_bidder_id, user.id, row.start_price, resaleBidIncrement(row.start_price));
     if (amount < minimum) fail('bid_too_low', 409);
     // Persistent timing guard, inside the economic write lock. Replaying a
     // runtime tick (or running two processes) cannot cause a bidding burst.
@@ -252,7 +253,7 @@ export function placeBid(dataDir, user, auctionId, amount, { now = Date.now() } 
       fail('npc_bid_wait', 409);
     }
     const outcome = resolveProxyBid(row.current_bid, row.max_bid, row.current_bidder_id,
-      user.id, amount, row.start_price, 1);
+      user.id, amount, row.start_price, resaleBidIncrement(row.start_price));
     const oldMax = row.max_bid ?? row.current_bid;
     const raise = row.current_bidder_id === user.id;
     const takesLead = outcome.leaderId === user.id;

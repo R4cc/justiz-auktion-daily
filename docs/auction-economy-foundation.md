@@ -91,7 +91,7 @@ precedes runtime startup in `server.mjs`.
   The first trend tick also performs the one-time simulation activation.
 - Palette NPC buyers (under `FEATURE_RESALES`): every five minutes each active
   lot gets at most one deterministic consideration from a rotating cohort of
-  the twelve NPC buyers. Their ceiling is the market-adjusted expected bundle
+  four buyers selected from the 800-person roster. Their ceiling is the market-adjusted expected bundle
   value times a persona multiplier, so a hot market (index above 100) lets
   NPCs chase a lot past its frozen reserve and a cold market silences them.
   Bids use the identical escrow/refund accounting as human bids through a
@@ -195,8 +195,8 @@ human-registration username alphabet. Each account is seeded once with
 **J€ 1,000,000,000**, representing external consumer demand. Repeated seeds
 insert only missing identities and never refill balances or reset inventory.
 
-NPCs cannot log in, receive sessions, bid on primary palettes, or create resale
-listings. Session lookup independently excludes them. Friends, human leaderboards,
+NPCs cannot log in, receive sessions, or create player resale listings. Primary
+palette bids are permitted only through the trusted runtime path. Session lookup independently excludes them. Friends, human leaderboards,
 admin player-management lists and playerCount exclude them. Both global and
 individual admin J€ grants exclude them. Their names appear naturally in
 resale bid history, without AI badges. Won items stay in NPC inventory and leave
@@ -207,14 +207,15 @@ is selected from the full roster. Its interest decisions are persisted in one
 transaction, including inactive decisions. The existing
 `estimatedValueTokens(item, currentIndexes)` supplies value; preference,
 aggressiveness, collector status and a deterministic ±0.05 variation bound ordinary WTP to
-0.70–1.15 times that estimate. One collector can reach 1.25 for preferred items.
-Interest probability uses preference times `(index / 100)^3`, bounded 0.05–0.92.
+0.60–0.96 times that estimate. Preferred collectors can reach 1.05.
+Bulk quantities receive a discount down to 75% of their unit-total valuation.
+Interest probability uses preference times `(index / 100)^3`, bounded 0.05–0.94.
 Both interest probability and WTP therefore respond materially to market indexes.
 Once initialized, max_bid and interest remain frozen through market changes,
 page refreshes and restarts. New listings reflect newer market state.
 
 Scheduled buyers wait according to patience and aggressiveness, then either add
-the minimum J€ 1 increment according to cheapness or make a bounded jump
+the lot’s value-tiered increment according to cheapness or make a bounded jump
 toward WTP according to aggressiveness. They react when outbid below WTP and
 shorten their personality-based delay in the last two minutes. No NPC jumps
 straight to WTP. A database-backed guard inside `placeBid`
@@ -232,7 +233,7 @@ support remains 1 minute–30 days.
 
 Global market is computed from persisted news effects. Each signed effect
 contributes `delta * clamp(1 - elapsed / 72h, 0, 1)`. Index is
-`clamp(100 + sum(contributions), 70, 130)`. Absolute active contribution budget
+`clamp(trendBaseline + sum(contributions), 50, 150)`. Absolute active contribution budget
 is 30/category; opposing effects consume the same budget. Hourly history is
 reconstructed from effects, bounded to 30 days/720 boundaries. Legacy publication
 receipts remain inert and are never replayed as new effects.
@@ -339,3 +340,13 @@ usernames, password hashes, active session tokens, registration codes, bans,
 admin roles and friendships remain unchanged. News, market history, palette
 editions, case rotations and the source auction archive are also retained. Each
 completed reset writes a small audit row shown on the admin page.
+
+
+## Economy balance, October 2026
+
+Current targets, valuation rules, reward receipts and upgrade behavior are
+specified in [economy-balance.md](economy-balance.md). Its stress report and
+read-only audit script cover cold, neutral and hot markets, paid-case returns,
+three-draw palette outcomes, compound Daily case odds, NPC demand and business
+margin turnover. Auction schedules, supply limits, the XP curve and transaction
+boundaries remain as described above.

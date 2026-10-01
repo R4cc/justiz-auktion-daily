@@ -66,7 +66,7 @@ test('NPC case supply is occasional, mixed-category, transferable, and never att
   assert.equal(lot.item.kind, 'case');
   assert.equal(lot.item.marketCategory, null);
   assert.ok(!JSON.stringify(lot).includes('reward'));
-  assert.ok(lot.startPrice < lot.item.price);
+  assert.equal(lot.startPrice, lot.item.price);
   seedNpcBuyers(f.dir, { now: at });
   tickNpcBuyers(f.dir, { now: at + 60_000 });
   assert.equal(f.sql('SELECT COUNT(*) AS n FROM resale_npc_interest WHERE auction_id = ?', lot.id)[0].n, 0);
@@ -183,7 +183,7 @@ test('palette NPC ceilings preserve upside under the discounted reserve balance'
   const npc = { id: 'npc-balance', willingness: 1, categories: ['electronics'] };
   const { maxBid, preferred } = paletteBidCeiling(snapshot, { electronics: 100 }, npc, 'lot', () => .5);
   assert.equal(preferred, true);
-  assert.equal(maxBid, 49); // below J€65.70 expected value, but above the J€40 reserve
+  assert.equal(maxBid, 53); // below J€65.70 expected value, above the J€46 reserve
 });
 
 test('My bids discovers won and lost lots, settles due rewards once and keeps hidden data private', async t => {
@@ -228,7 +228,7 @@ test('Daily gives 150 XP on completion exactly once even when Higher-or-Lower to
   for (let i = 0; i < 4; i++) f.accounts.answer(user, daily.id, i, 100);
   assert.equal(xp(f), 0);
   const done = f.accounts.answer(user, daily.id, 4, 100);
-  assert.equal(done.earned, 0); assert.equal(xp(f), 150);
+  assert.equal(done.earned, 350); assert.equal(xp(f), 150);
   assert.equal(f.accounts.profile(user).progression.level, 2);
   closeDataStore(f.dir);
   f.accounts.answer(user, daily.id, 4, 100); f.accounts.startGame(user, 'daily', () => auctions);
@@ -337,7 +337,7 @@ test('market materially changes NPC interest and WTP with bounded deterministic 
   assert.deepEqual(high, npcValuation(item, { electronics: 130 }, npc, 'same'));
   for (const buyer of NPC_BUYERS) for (const unit of [() => 0, () => .999]) {
     const value = npcValuation(item, { electronics: 100 }, buyer, 'a', unit);
-    assert.ok(value.maxBid >= 700 && value.maxBid <= 1250);
+    assert.ok(value.maxBid >= 600 && value.maxBid <= 1050);
   }
 });
 

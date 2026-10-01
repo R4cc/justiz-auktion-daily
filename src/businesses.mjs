@@ -1,7 +1,8 @@
+import { ECONOMY_BALANCE } from './economy-balance.mjs';
 import { createHash, randomUUID } from 'node:crypto';
 import { withDatabase, transaction } from './database.mjs';
 import { AccountError } from './errors.mjs';
-import { marketCategoryForItem, marketIndexAt, marketIndexes } from './market.mjs';
+import { marketCategoryForItem, marketIndexAt, marketIndexes, estimatedValueTokens } from './market.mjs';
 import { ensureResaleSchema, inventoryIsLocked } from './resale.mjs';
 import { sealedPaletteInventoryIds } from './palette-auctions.mjs';
 import { ensureNotificationSchema } from './notifications.mjs';
@@ -12,7 +13,7 @@ const HOUR = 3_600_000;
 const WHOLESALE_PERIOD = 2 * HOUR;
 const WHOLESALE_SLOT = 15 * 60_000;
 const STOCK_SELLER_ID = 'npc-stock-supply';
-export const DEFAULT_PROFIT_MARGIN = 30;
+export const DEFAULT_PROFIT_MARGIN = ECONOMY_BALANCE.businessDefaultMargin;
 export const MAX_PROFIT_MARGIN = 100;
 const fail = (code, status = 400) => { throw new AccountError(code, status); };
 const hashNumber = value => parseInt(createHash('sha256').update(value).digest('hex').slice(0, 8), 16) / 0x100000000;
@@ -61,7 +62,7 @@ export function ensureBusinessSchema(db) {
     size TEXT NOT NULL, bought_at INTEGER NOT NULL, last_tick_at INTEGER NOT NULL,
     visitors INTEGER NOT NULL DEFAULT 0, sales INTEGER NOT NULL DEFAULT 0,
     revenue INTEGER NOT NULL DEFAULT 0,
-    profit_margin INTEGER NOT NULL DEFAULT 30 CHECK(profit_margin BETWEEN 0 AND 100),
+    profit_margin INTEGER NOT NULL DEFAULT 20 CHECK(profit_margin BETWEEN 0 AND 100),
     traffic_popularity REAL NOT NULL DEFAULT 0 CHECK(traffic_popularity BETWEEN 0 AND 1.5)
   ) STRICT;
   CREATE INDEX IF NOT EXISTS businesses_user ON businesses(user_id);
@@ -115,14 +116,19 @@ function stockType(item) {
 }
 
 export function businessSaleChance(baseConversion, profitMargin) {
-  // Preserve the old buying rate at 30%. Discounting improves turnover, while
+  // Discounting improves turnover; the default margin is 20%, while
   // very high margins still sell occasionally. Visitors are calculated apart.
-  return Math.max(.01, Math.min(.85, baseConversion * Math.exp(-1.6 * (profitMargin - DEFAULT_PROFIT_MARGIN) / 100)));
+  return Math.max(0, Math.min(.85, baseConversion * Math.exp(-ECONOMY_BALANCE.businessMarginElasticity * (profitMargin - DEFAULT_PROFIT_MARGIN) / 100)));
+}
+
+export function businessItemSaleChance(type, profitMargin, referenceValue) {
+  const affordability = Math.min(1, Math.sqrt(type.typicalValue / Math.max(1, referenceValue)));
+  return businessSaleChance(type.conversion, profitMargin) * affordability;
 }
 
 function referencePrice(db, item, type, at) {
   const category = marketCategoryForItem(item) || marketCategory(type);
-  return Math.max(1, Math.round(item.price * marketIndexAt(db, category, at) / 100));
+  return estimatedValueTokens({ ...item, marketCategory: category }, { [category]: marketIndexAt(db, category, at) });
 }
 
 function shelfPrice(db, item, type, profitMargin, at) {
@@ -165,8 +171,12 @@ function advanceShop(db, row, now) {
     const count = Math.floor(base) + (hashNumber(`${row.id}:${hour}:visitors`) < base % 1 ? 1 : 0);
     visitors += count;
     for (let n = 0; n < count && stock.length; n++) {
-      if (hashNumber(`${row.id}:${hour}:${n}:buy`) >= businessSaleChance(shopType(row.type).conversion, row.profit_margin)) continue;
       const index = Math.floor(hashNumber(`${row.id}:${hour}:${n}:item`) * stock.length);
+      const type = shopType(row.type), candidate = stock[index];
+      // Expensive goods need suitable customers. A million-token collectible
+      // cannot move at the same rate as a normal shop's everyday stock.
+      const chance = businessItemSaleChance(type, row.profit_margin, referencePrice(db, candidate.item, row.type, hour));
+      if (hashNumber(`${row.id}:${hour}:${n}:buy`) >= chance) continue;
       const [sold] = stock.splice(index, 1);
       const salePrice = shelfPrice(db, sold.item, row.type, row.profit_margin, hour);
       db.prepare('UPDATE business_stock SET sold_at = ?, sold_price = ? WHERE inventory_id = ? AND sold_at IS NULL')
@@ -197,7 +207,9 @@ function publicShop(db, row, now = Date.now()) {
   return { id: row.id, type: row.type, size: row.size, boughtAt: row.bought_at,
     visitors: row.visitors, sales: row.sales, salesToday: today.sales,
     revenue: row.revenue, revenueToday: today.revenue, profitMargin: row.profit_margin,
-    buyChancePercent: Math.round(businessSaleChance(shopType(row.type).conversion, row.profit_margin) * 1000) / 10,
+    buyChancePercent: Math.round((stock.length ? stock.reduce((sum, entry) => sum
+      + businessItemSaleChance(shopType(row.type), row.profit_margin, entry.referencePrice), 0) / stock.length
+      : businessSaleChance(shopType(row.type).conversion, row.profit_margin)) * 1000) / 10,
     ...shopMetrics(db, row, stock, now), popularity: row.traffic_popularity, stock };
 }
 
@@ -224,8 +236,8 @@ export function buyBusiness(dataDir, user, typeId, sizeId, { now = Date.now() } 
     ensureBusinessSchema(db); activeUser(db, user);
     if (!db.prepare('UPDATE users SET tokens = tokens - ? WHERE id = ? AND tokens >= ?').run(cost, user.id, cost).changes) fail('insufficient_tokens', 409);
     const id = randomUUID();
-    db.prepare('INSERT INTO businesses (id, user_id, type, size, bought_at, last_tick_at) VALUES (?, ?, ?, ?, ?, ?)')
-      .run(id, user.id, type.id, size.id, now, Math.floor(now / HOUR) * HOUR);
+    db.prepare('INSERT INTO businesses (id, user_id, type, size, bought_at, last_tick_at, profit_margin) VALUES (?, ?, ?, ?, ?, ?, ?)')
+      .run(id, user.id, type.id, size.id, now, Math.floor(now / HOUR) * HOUR, DEFAULT_PROFIT_MARGIN);
     return { shop: publicShop(db, db.prepare('SELECT * FROM businesses WHERE id = ?').get(id), now), cost };
   }));
 }
@@ -325,7 +337,7 @@ function archivedStock(db) {
 
 export function supplyStockAuctions(dataDir, { now = Date.now() } = {}) {
   return withDatabase(dataDir, db => transaction(db, () => {
-    ensureBusinessSchema(db); ensureResaleSchema(db, now); ensureNotificationSchema(db);
+    ensureBusinessSchema(db); ensureResaleSchema(db, now); ensureNotificationSchema(db); marketIndexes(db, now);
     db.prepare(`UPDATE account_notifications SET href =
       CASE WHEN source_key LIKE 'wholesale:won:%' THEN '/inventory' ELSE '/marketplace?view=bids' END
       WHERE href = '/businesses' AND source_key LIKE 'wholesale:%'`).run();
@@ -399,7 +411,7 @@ export function supplyStockAuctions(dataDir, { now = Date.now() } = {}) {
         const candidates = sources[type];
         if (!candidates.length) continue;
         const stock = candidates[((cycle + Math.floor(slot / 4)) % candidates.length + candidates.length) % candidates.length];
-        const reserve = Math.max(1, Math.round(stock.price * stock.quantity * .75));
+        const reserve = Math.max(1, Math.round(referencePrice(db, { price: stock.price, marketCategory: stock.marketCategory }, stock.type, now) * stock.quantity * ECONOMY_BALANCE.wholesaleReserveRate));
         if (createStockListing(db, { id, stock, startsAt, endsAt, reserve })) supplied++;
       }
     }
