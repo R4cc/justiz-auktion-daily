@@ -168,7 +168,7 @@ export class Accounts {
       // Resale listings reference inventory rows; creating the tables here keeps
       // the sell/list locking consistent for every database this class opens.
       ensureResaleSchema(db, this.now());
-      ensureBusinessSchema(db);
+      ensureBusinessSchema(db, { now: this.now() });
       ensureNotificationSchema(db);
     });
   }
@@ -342,7 +342,7 @@ export class Accounts {
       // registration codes, passwords, bans and account_sessions are untouched.
       for (const table of ['resale_npc_interest', 'resale_bids', 'resale_auctions',
         'store_events', 'store_event_checks', 'store_heists', 'store_reviews', 'store_visits', 'store_reactions', 'store_receipts',
-        'business_sales', 'business_stock', 'businesses', 'wholesale_bids', 'wholesale_auctions',
+        'business_sales', 'business_stock', 'businesses', 'town_plots', 'wholesale_bids', 'wholesale_auctions',
         'primary_palette_bids', 'primary_palette_rewards', 'primary_palette_auctions',
         'daily_rewards', 'daily_case_rewards', 'xp_events', 'case_openings', 'case_purchases', 'sealed_cases', 'inventory', 'account_games',
         'user_token_grants', 'token_grants', 'account_notifications']) {

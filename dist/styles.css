@@ -1600,3 +1600,55 @@ body { padding-left: var(--sidebar-width); }
 @media (prefers-reduced-motion:reduce) { .business-shop { transition: none; } }
 
 .business-editor-dialog .account-error:empty { display: none; }
+
+/* Vienna-inspired town board */
+.town-heading { display:flex;justify-content:space-between;align-items:center;gap:1rem;margin-bottom:1.5rem; }
+.town-heading .eyebrow { color:var(--red);font-size:.65rem;letter-spacing:.13em; }
+.town-heading h1 { font-size:clamp(2rem,4vw,3.3rem);letter-spacing:-.06em;line-height:1.1;margin:.5rem 0; }
+.town-heading p:not(.eyebrow) { color:var(--muted);font-size:.85rem;line-height:1.6; }
+.town-heading a { flex:none;font-size:.75rem; }
+.town-district-tabs { display:flex;flex-wrap:wrap;gap:.4rem;margin-bottom:1.3rem; }
+.town-district-tabs button { min-height:44px;padding:.65rem .8rem;border:1px solid var(--line);border-radius:6px;background:#fffdf7;font-size:.7rem; }
+.town-district-tabs button[aria-pressed="true"] { color:#fffdf7;background:var(--ink);border-color:var(--ink); }
+.town-layout { display:grid;grid-template-columns:minmax(0,1fr) 280px;gap:1.2rem;align-items:start; }
+.town-map-shell { min-width:0;overflow:hidden;border:1px solid var(--line);border-radius:14px;background:#fffdf7; }
+.town-map-legend { display:flex;flex-wrap:wrap;gap:.9rem;padding:1rem;font-size:.65rem;border-bottom:1px solid var(--line); }
+.town-map-legend span { display:flex;align-items:center;gap:.4rem; }
+.town-map-legend i { display:block;width:10px;height:10px;border:1px dashed var(--ink);border-radius:3px; }
+.town-map-legend .is-occupied { background:var(--ink);border:0; }.town-map-legend .is-own { background:#dbe99b;border:1px solid var(--ink); }
+.town-map-scroll { overflow-x:auto;overscroll-behavior-x:contain; }
+.town-canvas { position:relative;min-width:720px;aspect-ratio:860/730; }
+.town-map-art { display:block;width:100%;height:100%; }
+.town-pin { position:absolute;transform:translate(-50%,-50%);width:46px;height:48px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1px;border-radius:6px;text-decoration:none;box-shadow:0 3px 0 #183e3620;line-height:1;background:#fffdf7;transition:box-shadow .15s; }
+.town-pin b { font-size:1.05rem; }.town-pin small { font:9px 'DM Mono',monospace; }
+.town-pin.is-free { border:1px dashed #516e5c;color:var(--ink); }.town-pin.is-selected { outline:3px solid #ce461f;outline-offset:3px; }
+.town-pin.is-occupied { border:1px solid var(--ink);background:var(--ink);color:#fffdf7; }.town-pin.is-own { background:#dbe99b;color:var(--ink); }
+.town-pin.is-unavailable { border:1px solid #888;background:#ccc;color:#666; }.town-pin.is-muted { opacity:.5; }
+.town-pin:hover { box-shadow:0 4px 0 #183e3645; }.town-pin:focus-visible { outline:3px solid var(--red);outline-offset:3px; }
+.town-map-hint { font-size:.65rem;line-height:1.6;color:var(--muted);margin:0;padding:1rem;border-top:1px solid var(--line); }
+.town-plot-panel { min-width:0;border:1px solid var(--line);border-radius:12px;padding:1.2rem;background:#fffdf7;overflow-wrap:anywhere; }
+.town-plot-panel .eyebrow { color:var(--red);font-size:.65rem; }.town-plot-panel h2 { font-size:1.35rem;line-height:1.25;letter-spacing:-.04em;margin:.6rem 0; }
+.town-size-badge { display:inline-block;font-size:.65rem;background:#edf0df;border-radius:4px;padding:.4rem .5rem; }
+.town-district-story { color:var(--muted);font-size:.73rem;line-height:1.65; }
+.town-plot-facts { display:grid;gap:.65rem;margin:1.1rem 0;padding:1rem 0;border-top:1px solid var(--line);border-bottom:1px solid var(--line); }
+.town-plot-facts div { display:flex;justify-content:space-between;gap:1rem; }.town-plot-facts dt { font-size:.7rem;color:var(--muted); }.town-plot-facts dd { margin:0;font-size:.7rem;font-weight:700;text-align:right; }
+.town-purchase fieldset { min-width:0;border:0;padding:0;margin:0; }.town-purchase legend { font-size:.75rem;font-weight:700;margin-bottom:.7rem; }
+.town-type-grid { display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:.5rem; }
+.town-type-choice { position:relative;display:grid;gap:.4rem;justify-items:start;align-content:start;padding:.7rem;border:1px solid var(--line);border-radius:6px;cursor:pointer;font-size:.63rem;min-height:72px; }
+.town-type-choice input { position:absolute;width:1px;height:1px;opacity:0; }.town-type-choice>span { font:700 1rem 'DM Mono',monospace; }
+.town-type-choice.is-selected { background:#e8eddc;border-color:var(--ink); }.town-type-choice:focus-within { outline:2px solid var(--ink);outline-offset:2px; }
+.town-buy-summary { display:flex;flex-wrap:wrap;justify-content:space-between;gap:.4rem;align-items:center;margin:1rem 0; }.town-buy-summary span { color:var(--muted);font-size:.7rem; }.town-buy-summary strong { font:500 1.15rem 'DM Mono',monospace; }
+.town-purchase .business-edit-button { width:100%;text-decoration:none; }.town-purchase .account-error { font-size:.7rem;line-height:1.6; }.town-purchase .account-error:empty { display:none; }
+.town-fixed-note { display:block;font-size:.65rem;color:var(--muted);line-height:1.65;margin-top:1rem; }
+.town-business-list { margin:2rem 0; }.town-business-list h2 { font-size:1.2rem;letter-spacing:-.03em; }.town-business-list>div { display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,300px),1fr));gap:.8rem; }
+.town-store-link { display:flex;align-items:center;gap:.8rem;padding:1rem;background:#fffdf7;border:1px solid var(--line);border-radius:8px;color:var(--ink);text-decoration:none;min-width:0; }
+.town-store-link>div { min-width:0;flex:1; }.town-store-link strong { display:block;font-size:.8rem;overflow-wrap:anywhere; }.town-store-link small { display:block;font-size:.6rem;color:var(--muted);line-height:1.6;margin-top:.3rem;overflow-wrap:anywhere; }
+.town-store-symbol { display:grid;place-items:center;flex:none;width:36px;height:36px;background:#e8eddc;border-radius:6px;font:700 .85rem 'DM Mono',monospace; }.town-store-link:hover { border-color:var(--ink); }
+.town-district-guide { background:#f0eddf;border:1px solid var(--line);border-radius:10px;padding:1rem; }.town-district-guide summary { cursor:pointer;font-size:.8rem;font-weight:700;min-height:28px; }.town-district-guide>div { display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,220px),1fr));gap:1rem;margin-top:1rem; }
+.town-district-guide article { min-width:0; }.town-district-guide h3 { font-size:.85rem; }.town-district-guide p { font-size:.72rem;line-height:1.6;color:var(--muted); }.town-district-guide small { font-size:.65rem; }
+.town-game-note { color:var(--muted);font-size:.65rem;line-height:1.6;margin:1rem 0; }
+@media(max-width:1300px) { .town-layout { grid-template-columns:minmax(0,1fr); }.town-plot-panel { max-width:none; } }
+@media(max-width:650px) { .town-heading { align-items:start;flex-direction:column; }.town-district-tabs button { flex:1 0 auto; }.town-map-legend { gap:.6rem; }.town-plot-panel { padding:1rem; } }
+@media(prefers-reduced-motion:reduce) { .town-pin { transition:none; } }
+
+.business-card-address { font-size:.6rem;line-height:1.6;color:var(--muted);margin:0 0 .6rem;overflow-wrap:anywhere;text-underline-offset:3px; }

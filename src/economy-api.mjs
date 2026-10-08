@@ -1,3 +1,4 @@
+import { townMap } from './town-map.mjs';
 import { featureFlags } from './features.mjs';
 import { marketHistory, marketState } from './market.mjs';
 import { loadPaletteCatalog } from './palette-definitions.mjs';
@@ -33,6 +34,9 @@ export function createEconomyApi({ dataDir, json, flags = featureFlags(), accoun
       if (url.pathname === '/api/features') {
         json(response, 200, { features: Object.fromEntries(Object.keys(featureFlags({})).map(key => [key, Boolean(flags[key])])) });
         return true;
+      }
+      if (flags.businesses && url.pathname === '/api/town') {
+        json(response,200,townMap(dataDir,sessionUser(request))); return true;
       }
       if (flags.businesses && (url.pathname === '/api/stores' || url.pathname.startsWith('/api/stores/'))) {
         const session = sessionUser(request), viewer = session?.mustChangePassword ? null : session;

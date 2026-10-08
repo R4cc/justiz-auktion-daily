@@ -424,7 +424,7 @@ test('shop categories and capacities reject unsuitable or excess stock atomicall
   assert.throws(() => unstockBusiness(f.dir, f.owner, toy.id, 'toy-1', { now: start }), /business_not_found/);
   const carPurchase = buyBusiness(f.dir, f.rival, 'cars', 'popup', { now: start });
   const car = carPurchase.shop;
-  assert.equal(carPurchase.cost, 2500);
+  assert.equal(carPurchase.cost, Math.round(2500 * car.location.priceMultiplier));
   assert.equal(car.capacity, 1);
   assert.throws(() => stockBusiness(f.dir, f.rival, car.id, ['car-0', 'car-1'], { now: start }), /business_full/);
   stockBusiness(f.dir, f.rival, car.id, ['car-0'], { now: start });

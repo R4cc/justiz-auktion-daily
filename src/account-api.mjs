@@ -179,7 +179,7 @@ export async function createAccountApi({ dataDir, dailyPayload, json, env = proc
         // handling all live in the domain function.
         result = { auction: bidOnPaletteAuction(dataDir, user, payload.id, payload.amount), user: accounts.profile(user) };
       }
-      else if (flags.businesses && route === 'businesses/buy') result = { ...buyBusiness(dataDir, user, payload.type, payload.size), user: accounts.profile(user) };
+      else if (flags.businesses && route === 'businesses/buy') result = { ...buyBusiness(dataDir, user, payload.type, payload.size, { plotId: payload.plotId ?? null }), user: accounts.profile(user) };
       else if (flags.businesses && route === 'businesses/stock') result = { shop: stockBusiness(dataDir, user, payload.shopId, payload.inventoryIds), user: accounts.profile(user) };
       else if (flags.businesses && route === 'businesses/margin') result = { shop: setBusinessMargin(dataDir, user, payload.shopId, payload.profitMargin), user: accounts.profile(user) };
       else if (flags.businesses && route === 'businesses/unstock') result = { shop: unstockBusiness(dataDir, user, payload.shopId, payload.inventoryId), user: accounts.profile(user) };

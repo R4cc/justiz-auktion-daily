@@ -20,7 +20,7 @@ caseReveal.addEventListener('close', () => {
 });
 let accountSelectedCase = 'fundkiste', accountInventoryPage = 0, accountFilter = 'all';
 let currentAccountPage = null, accountVisit = 0, pageLoaded = false;
-const accountPaths = ['/auctions', '/marketplace', '/market', '/businesses', '/stores', '/shop', '/inventory', '/profile', '/login', '/register', '/admin', '/leaderboard'];
+const accountPaths = ['/auctions', '/marketplace', '/market', '/businesses', '/stores', '/town', '/shop', '/inventory', '/profile', '/login', '/register', '/admin', '/leaderboard'];
 const accountPage = document.querySelector('#account-page');
 const accountContent = document.querySelector('#account-content');
 const notificationButton = document.querySelector('#notification-button');
@@ -55,6 +55,12 @@ function accountError(code) {
     heist_not_ready: t('Watch the whole sequence before making your move.', 'Sieh dir die ganze Folge an, bevor du loslegst.'),
     heist_not_found: t('This attempt is no longer available.', 'Dieser Versuch ist nicht mehr verfügbar.'),
     guard_permanent: t('Your goose guard is already hired permanently.', 'Deine Wachgans ist schon dauerhaft eingestellt.'),
+    invalid_plot: t('Choose a valid plot on the town map.', 'Wähle ein gültiges Grundstück auf dem Stadtplan.'),
+    plot_not_found: t('This plot does not exist.', 'Dieses Grundstück gibt es nicht.'),
+    plot_occupied: t('Someone just took this plot. Choose another location.', 'Jemand hat dieses Grundstück gerade gekauft. Wähle einen anderen Standort.'),
+    plot_size_mismatch: t('Store size is fixed by the plot.', 'Die Ladengröße wird vom Grundstück festgelegt.'),
+    no_available_plot: t('No free plot of this size remains. Check the town map.', 'Kein freies Grundstück dieser Größe mehr verfügbar. Sieh auf dem Stadtplan nach.'),
+    town_migration_capacity: t('There are more existing stores than town plots. An administrator needs to resolve the map capacity.', 'Es gibt mehr bestehende Läden als Grundstücke. Ein Administrator muss die Stadtkapazität klären.'),
     store_limit_reached: t('You can own at most 3 stores.', 'Du kannst höchstens 3 Läden besitzen.'),
     invalid_store_events: t('Could not dismiss store events. Try again.', 'Ladenereignisse konnten nicht geschlossen werden. Versuche es erneut.'),
     business_not_found: t('This store is no longer available.', 'Dieser Laden ist nicht mehr verfügbar.'),
@@ -124,7 +130,7 @@ function markSidebarEntrySeen(link) {
   updateNavigation();
 }
 function updateNavigation() {
-  const labels = { '/': 'Daily', '/shop': t('Case Store', 'Kisten-Shop'), '/auctions': t('Palette Auctions', 'Paletten-Auktionen'), '/marketplace': t('Marketplace', 'Marktplatz'), '/market': t('Stock Market', 'Aktienmarkt'), '/businesses': t('Businesses', 'Geschaefte'), '/stores': t('Visit stores', 'Läden besuchen'), '/inventory': t('Inventory', 'Inventar'), '/leaderboard': t('Leaderboard', 'Rangliste'), '/profile': t('Profile', 'Profil'), '/admin': 'Admin' };
+  const labels = { '/': 'Daily', '/shop': t('Case Store', 'Kisten-Shop'), '/auctions': t('Palette Auctions', 'Paletten-Auktionen'), '/marketplace': t('Marketplace', 'Marktplatz'), '/market': t('Stock Market', 'Aktienmarkt'), '/businesses': t('Businesses', 'Geschaefte'), '/stores': t('Visit stores', 'Läden besuchen'), '/town': t('Town map', 'Stadtplan'), '/inventory': t('Inventory', 'Inventar'), '/leaderboard': t('Leaderboard', 'Rangliste'), '/profile': t('Profile', 'Profil'), '/admin': 'Admin' };
   for (const link of document.querySelectorAll('.site-nav a')) {
     if (link.id !== 'header-auth') {
       link.textContent = labels[link.getAttribute('href')];
@@ -247,6 +253,7 @@ function showGamePage() {
   window.economyUi?.stop();
   window.businessUi?.stop();
   window.storeUi?.stop();
+  window.townUi?.stop();
   currentAccountPage = null; accountVisit++; pageLoaded = false;
   accountPage.hidden = true; document.querySelector('#app').hidden = false;
   if (location.pathname !== '/') history.pushState({}, '', '/');
@@ -260,6 +267,7 @@ async function navigateAccountPage(path, push = true) {
   window.economyUi?.stop();
   window.businessUi?.stop();
   window.storeUi?.stop();
+  window.townUi?.stop();
   if (!accountPaths.includes(path)) { renderStart(); return; }
   if (push && location.pathname + location.search !== destination.pathname + destination.search) history.pushState({}, '', destination.pathname + destination.search);
   const visit = ++accountVisit;
@@ -289,6 +297,7 @@ async function navigateAccountPage(path, push = true) {
       await window.businessUi.load(visit);
       if (visit !== accountVisit) return;
     }
+    if (path === '/town') { await window.townUi.load(visit); if (visit !== accountVisit) return; }
     if (path === '/stores') { await window.storeUi.load(visit); if (visit !== accountVisit) return; }
     if (path === '/shop') {
       const store = await accountApi('case-store'); if (visit !== accountVisit) return; accountStore = store;
@@ -342,6 +351,7 @@ function renderAccountPage() {
   if (account?.mustChangePassword) { renderPasswordChange(); return; }
   if (window.economyUi?.isRoute(currentAccountPage)) window.economyUi.render();
   else if (currentAccountPage === '/businesses') window.businessUi.render();
+  else if (currentAccountPage === '/town') window.townUi.render();
   else if (currentAccountPage === '/stores') window.storeUi.render();
   else if (currentAccountPage === '/shop') renderShop();
   else if (currentAccountPage === '/inventory') renderInventory();

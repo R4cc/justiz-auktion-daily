@@ -1,3 +1,4 @@
+import { ensureTownSchema, availableTownPlot, plotLocation } from './town-plots.mjs';
 import { ECONOMY_BALANCE } from './economy-balance.mjs';
 import { createHash, randomUUID } from 'node:crypto';
 import { withDatabase, transaction } from './database.mjs';
@@ -57,7 +58,7 @@ const shopCapacity = (type, size) => type === 'cars' ? size.carCapacity : size.c
 const lotId = (bucket, stockId) => `${bucket}:${stockId}`;
 const marketCategory = type => type === 'cars' ? 'vehicles' : type === 'toys' ? 'collectibles' : type;
 
-export function ensureBusinessSchema(db) {
+export function ensureBusinessSchema(db, { now = Date.now() } = {}) {
   const migrateSales = !db.prepare("SELECT 1 FROM sqlite_schema WHERE type = 'table' AND name = 'business_sales'").get();
   db.exec(`CREATE TABLE IF NOT EXISTS businesses (
     id TEXT PRIMARY KEY, user_id TEXT NOT NULL REFERENCES users(id), type TEXT NOT NULL,
@@ -112,6 +113,7 @@ export function ensureBusinessSchema(db) {
       db.prepare('UPDATE businesses SET traffic_popularity = ? WHERE id = ?').run(popularity, row.id);
     }
   }
+  ensureTownSchema(db, { now });
 }
 
 function activeUser(db, user) {
@@ -183,9 +185,11 @@ export function advanceShop(db, row, now) {
   let stock = shopStock(db, row.id, row.type, row.profit_margin, now);
   let visitors = 0, sales = 0, revenue = 0;
   const until = Math.floor(now / HOUR) * HOUR;
+  const plotTraffic = plotLocation(db, row.plot_id)?.trafficMultiplier ?? 1;
   for (let hour = row.last_tick_at + HOUR; hour <= until; hour += HOUR) {
     if (!stock.length && !row.traffic_popularity) break;
-    const base = shopSize(row.size).visitorsPerHour * row.traffic_popularity;
+    const traffic = hour >= row.plot_since ? plotTraffic : 1;
+    const base = shopSize(row.size).visitorsPerHour * row.traffic_popularity * traffic;
     const count = Math.floor(base) + (hashNumber(`${row.id}:${hour}:visitors`) < base % 1 ? 1 : 0);
     visitors += count;
     for (let n = 0; n < count && stock.length; n++) {
@@ -225,7 +229,7 @@ function publicShop(db, row, now = Date.now()) {
     FROM business_sales WHERE business_id = ? AND sold_at >= ? AND sold_at < ?`)
     .get(row.id, dayStart, dayStart + 24 * HOUR);
   return { id: row.id, type: row.type, size: row.size, boughtAt: row.bought_at,
-    name: row.store_name, motto: row.store_motto, gooseGuard: Boolean(row.goose_guard),
+    location: plotLocation(db, row.plot_id), name: row.store_name, motto: row.store_motto, gooseGuard: Boolean(row.goose_guard),
     visitors: row.visitors, sales: row.sales, salesToday: today.sales,
     revenue: row.revenue, revenueToday: today.revenue, profitMargin: row.profit_margin,
     buyChancePercent: Math.round((stock.length ? stock.reduce((sum, entry) => sum
@@ -237,7 +241,7 @@ function publicShop(db, row, now = Date.now()) {
 export function businessDashboard(dataDir, user, { now = Date.now() } = {}) {
   tickBusinesses(dataDir, { now });
   return withDatabase(dataDir, db => transaction(db, () => {
-    ensureBusinessSchema(db); activeUser(db, user); advanceShops(db, now, user.id);
+    ensureBusinessSchema(db, { now }); activeUser(db, user); advanceShops(db, now, user.id);
     const sealed = sealedPaletteInventoryIds(db);
     return { types: SHOP_TYPES, sizes: SHOP_SIZES, maxStores: MAX_STORES_PER_USER,
       shops: db.prepare('SELECT * FROM businesses WHERE user_id = ? ORDER BY bought_at, id').all(user.id).map(row => publicShop(db, row, now)),
@@ -249,17 +253,18 @@ export function businessDashboard(dataDir, user, { now = Date.now() } = {}) {
   }));
 }
 
-export function buyBusiness(dataDir, user, typeId, sizeId, { now = Date.now() } = {}) {
-  const type = shopType(typeId), size = shopSize(sizeId);
-  if (!type || !size) fail('invalid_business');
-  const cost = Math.round(size.cost * type.costFactor);
+export function buyBusiness(dataDir, user, typeId, sizeId, { now = Date.now(), plotId = null } = {}) {
+  const type = shopType(typeId);
+  if (!type || (sizeId != null && !shopSize(sizeId)) || (plotId === null && !shopSize(sizeId))) fail('invalid_business');
   return withDatabase(dataDir, db => transaction(db, () => {
-    ensureBusinessSchema(db); activeUser(db, user);
+    ensureBusinessSchema(db, { now }); activeUser(db, user);
     if (db.prepare('SELECT COUNT(*) AS n FROM businesses WHERE user_id = ?').get(user.id).n >= MAX_STORES_PER_USER) fail('store_limit_reached', 409);
+    const plot = availableTownPlot(db, sizeId, plotId), size = shopSize(plot.size);
+    const cost = Math.round(size.cost * type.costFactor * plotLocation(db, plot.id).priceMultiplier);
     if (!db.prepare('UPDATE users SET tokens = tokens - ? WHERE id = ? AND tokens >= ?').run(cost, user.id, cost).changes) fail('insufficient_tokens', 409);
     const id = randomUUID();
-    db.prepare('INSERT INTO businesses (id, user_id, type, size, bought_at, last_tick_at, profit_margin) VALUES (?, ?, ?, ?, ?, ?, ?)')
-      .run(id, user.id, type.id, size.id, now, Math.floor(now / HOUR) * HOUR, DEFAULT_PROFIT_MARGIN);
+    db.prepare('INSERT INTO businesses (id, user_id, type, size, bought_at, last_tick_at, profit_margin, plot_id, plot_since) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)')
+      .run(id, user.id, type.id, size.id, now, Math.floor(now / HOUR) * HOUR, DEFAULT_PROFIT_MARGIN, plot.id, now);
     return { shop: publicShop(db, db.prepare('SELECT * FROM businesses WHERE id = ?').get(id), now), cost };
   }));
 }
@@ -267,7 +272,7 @@ export function buyBusiness(dataDir, user, typeId, sizeId, { now = Date.now() } 
 export function setBusinessMargin(dataDir, user, shopId, profitMargin, { now = Date.now() } = {}) {
   if (!Number.isSafeInteger(profitMargin) || profitMargin < 0 || profitMargin > MAX_PROFIT_MARGIN) fail('invalid_profit_margin');
   return withDatabase(dataDir, db => transaction(db, () => {
-    ensureBusinessSchema(db); activeUser(db, user);
+    ensureBusinessSchema(db, { now }); activeUser(db, user);
     const shop = db.prepare('SELECT * FROM businesses WHERE id = ? AND user_id = ?').get(shopId, user.id);
     if (!shop) fail('business_not_found', 404);
     // Settle elapsed hours with the old margin before changing future sales.
@@ -280,7 +285,7 @@ export function setBusinessMargin(dataDir, user, shopId, profitMargin, { now = D
 export function stockBusiness(dataDir, user, shopId, inventoryIds, { now = Date.now() } = {}) {
   if (!Array.isArray(inventoryIds) || !inventoryIds.length || inventoryIds.length > 150 || new Set(inventoryIds).size !== inventoryIds.length) fail('invalid_stock');
   return withDatabase(dataDir, db => transaction(db, () => {
-    ensureBusinessSchema(db); activeUser(db, user); advanceShops(db, now, user.id);
+    ensureBusinessSchema(db, { now }); activeUser(db, user); advanceShops(db, now, user.id);
     const shop = db.prepare('SELECT * FROM businesses WHERE id = ? AND user_id = ?').get(shopId, user.id);
     if (!shop) fail('business_not_found', 404);
     if (shopStock(db, shop.id, shop.type, shop.profit_margin, now).length + inventoryIds.length > shopCapacity(shop.type, shopSize(shop.size))) fail('business_full', 409);
@@ -306,7 +311,7 @@ export function stockBusiness(dataDir, user, shopId, inventoryIds, { now = Date.
 
 export function unstockBusiness(dataDir, user, shopId, inventoryId, { now = Date.now() } = {}) {
   return withDatabase(dataDir, db => transaction(db, () => {
-    ensureBusinessSchema(db); activeUser(db, user); advanceShops(db, now, user.id);
+    ensureBusinessSchema(db, { now }); activeUser(db, user); advanceShops(db, now, user.id);
     const shop = db.prepare('SELECT * FROM businesses WHERE id = ? AND user_id = ?').get(shopId, user.id);
     if (!shop) fail('business_not_found', 404);
     if (!db.prepare('DELETE FROM business_stock WHERE business_id = ? AND inventory_id = ? AND sold_at IS NULL')
@@ -359,7 +364,7 @@ function archivedStock(db) {
 
 export function supplyStockAuctions(dataDir, { now = Date.now() } = {}) {
   return withDatabase(dataDir, db => transaction(db, () => {
-    ensureBusinessSchema(db); ensureResaleSchema(db, now); ensureNotificationSchema(db); marketIndexes(db, now);
+    ensureBusinessSchema(db, { now }); ensureResaleSchema(db, now); ensureNotificationSchema(db); marketIndexes(db, now);
     db.prepare(`UPDATE account_notifications SET href =
       CASE WHEN source_key LIKE 'wholesale:won:%' THEN '/inventory' ELSE '/marketplace?view=bids' END
       WHERE href = '/businesses' AND source_key LIKE 'wholesale:%'`).run();
@@ -444,7 +449,7 @@ export function supplyStockAuctions(dataDir, { now = Date.now() } = {}) {
 export function tickBusinesses(dataDir, { now = Date.now() } = {}) {
   const supply = supplyStockAuctions(dataDir, { now });
   withDatabase(dataDir, db => transaction(db, () => {
-    ensureBusinessSchema(db);
+    ensureBusinessSchema(db, { now });
     advanceShops(db, now);
   }));
   return supply;

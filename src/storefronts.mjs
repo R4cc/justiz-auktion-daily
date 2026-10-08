@@ -1,3 +1,4 @@
+import { plotLocation } from './town-plots.mjs';
 import { randomInt, randomUUID } from 'node:crypto';
 import { withDatabase, transaction } from './database.mjs';
 import { AccountError } from './errors.mjs';
@@ -103,15 +104,15 @@ function moveItem(db, shop, player, inventoryId) {
   if (!db.prepare('DELETE FROM business_stock WHERE business_id = ? AND inventory_id = ? AND sold_at IS NULL').run(shop.id, inventoryId).changes) fail('stock_not_found', 409);
   if (!db.prepare('UPDATE inventory SET user_id = ? WHERE id = ? AND user_id = ? AND sold_at IS NULL').run(player.id, inventoryId, shop.user_id).changes) fail('stock_conflict', 409);
 }
-export function theftQuote(referencePrice, gooseGuard) {
+export function theftQuote(referencePrice, gooseGuard, locationMultiplier = 1) {
   return { fee: Math.max(5, Math.ceil(referencePrice * .1)),
-    chancePercent: Math.max(gooseGuard ? 2 : 5, Math.floor(35 / (1 + referencePrice / 500) * (gooseGuard ? .5 : 1))) };
+    chancePercent: Math.min(75, Math.max(gooseGuard ? 2 : 5, Math.floor(35 / (1 + referencePrice / 500) * locationMultiplier * (gooseGuard ? .5 : 1)))) };
 }
 function publicCard(db, shop, viewer) {
   const rating = db.prepare(`SELECT COUNT(*) AS count, AVG(r.stars) AS average FROM store_reviews r
     JOIN users u ON u.id = r.user_id WHERE r.business_id = ? AND u.banned = 0`).get(shop.id);
   return { id: shop.id, ownerId: shop.user_id, owner: viewer ? shop.username : maskUsername(shop.username),
-    name: shop.store_name, motto: shop.store_motto, type: shop.type, size: shop.size, gooseGuard: Boolean(shop.goose_guard),
+    location: plotLocation(db, shop.plot_id), name: shop.store_name, motto: shop.store_motto, type: shop.type, size: shop.size, gooseGuard: Boolean(shop.goose_guard),
     stockCount: db.prepare('SELECT COUNT(*) AS n FROM business_stock WHERE business_id = ? AND sold_at IS NULL').get(shop.id).n,
     playerVisits: db.prepare('SELECT COUNT(*) AS n FROM store_visits WHERE business_id = ?').get(shop.id).n,
     rating: rating.average === null ? null : Math.round(rating.average * 10) / 10, reviewCount: rating.count };
@@ -156,7 +157,7 @@ export function visitStore(dataDir, viewer, shopId, { now = Date.now() } = {}) {
     return { store: { ...publicCard(db, shop, player), own,
       stock: shopStock(db, shop.id, shop.type, shop.profit_margin, now).map(entry => ({ id: entry.id, price: entry.askingPrice,
         item: { title: entry.item.title, image: entry.item.image || null, rarity: entry.item.rarity || 'common' },
-        theft: theftQuote(entry.referencePrice, shop.goose_guard) })),
+        theft: theftQuote(entry.referencePrice, shop.goose_guard, plotLocation(db, shop.plot_id)?.theftMultiplier ?? 1) })),
       reviews: rows.map(row => ({ ...row, username: player ? row.username : maskUsername(row.username) })), reactions,
       canReview: Boolean(player && !own && db.prepare("SELECT 1 FROM store_receipts WHERE business_id = ? AND user_id = ? AND action = 'buy'").get(shop.id, player.id)),
       myReview: player ? db.prepare('SELECT stars, comment FROM store_reviews WHERE business_id = ? AND user_id = ?').get(shop.id, player.id) || null : null,
@@ -231,7 +232,7 @@ export function startStoreHeist(dataDir, user, payload, { now = Date.now(), draw
     if ((last && now < last.created_at + HEIST_COOLDOWN) || (target !== null && now < target + STORE_HEIST_COOLDOWN)) fail('heist_cooldown', 409);
     const entry = shelf(db, shop, payload.inventoryId, now);
     if (payload.expectedPrice !== entry.askingPrice) fail('store_price_changed', 409);
-    const quote = theftQuote(entry.referencePrice, shop.goose_guard);
+    const quote = theftQuote(entry.referencePrice, shop.goose_guard, plotLocation(db, shop.plot_id)?.theftMultiplier ?? 1);
     if (payload.expectedFee !== quote.fee || payload.expectedChance !== quote.chancePercent) fail('store_risk_changed', 409);
     transferMoney(db, player.id, shop.user_id, quote.fee);
     // Charge a disclosed attempt fee once. The owner keeps it even if the

@@ -261,7 +261,7 @@ count once per player/store/UTC day. Reactions are cosmetic. Tips transfer J€.
 
 The six-arrow memory game starts with a disclosed fee paid to the owner, including
 on failure/abandonment. Fee = `max(5, ceil(referenceValue * 0.1))`. Chance is
-`max(5, floor(35 / (1 + referenceValue / 500)))%`; a goose guard applies a 0.5
+`min(75, max(5, floor(35 / (1 + referenceValue / 500) * districtTheftMultiplier)))%`; a goose guard applies a 0.5
 factor before flooring, with a 2% minimum, and costs J€250 once. The server stores
 the sequence and random roll at start, enforces a five-second observation window,
 a 65-second expiry, a 30-minute actor cooldown and a 5-minute store cooldown.
@@ -451,3 +451,46 @@ result afterward. Economy reset deletes event results and check timestamps.
 in the same write transaction. The dashboard exposes `maxStores: 3` and disables
 buying at the cap. Existing larger portfolios retain all stores and stock, but
 cannot purchase another location.
+
+## Vienna town map
+
+`GET /api/town` is public when businesses are enabled. It returns six district
+definitions, three street types, the 25 persistent plots and availability, fixed
+sizes, category prices and occupied storefront summaries. Guest owner names are
+masked; banned/NPC businesses reserve their plots without exposing a storefront.
+The calling player gets `myStoreCount` and ownership flags. Map stores link to
+the existing `/stores?shop=ID` routes. `/town?plot=ID` locates a particular store.
+
+`POST /api/account/businesses/buy` accepts `{type,plotId}`. Size, capacity and
+price come from the plot on the server. A supplied incompatible legacy `size`
+is rejected. Legacy `{type,size}` clients receive a vacant matching plot. Plot
+allocation and payment share a transaction and a unique business-plot index,
+so competing claims never charge the losing request. The three-store cap applies.
+
+| District | Purchase price | Player theft odds |
+| --- | --- | --- |
+| Innere Stadt | 2× | 0.8× |
+| Leopoldstadt | 1× | 1× |
+| Neubau | 1.3× | 1× |
+| Favoriten | 0.85× | 1.8× |
+| Hietzing | 1.7× | 0.65× |
+| Döbling | 1.5× | 0.75× |
+
+Shopping streets draw 1.5× normal visitors, side streets 1× and residential lanes
+0.65×. These factors apply to the shared hourly simulation; paid theft attempts
+freeze the district-adjusted chance. District names and approximate placement
+follow [Vienna's official district overview](https://www.wien.gv.at/politik/bezirke);
+the map, addresses and economic/crime traits are fictional and schematic.
+
+Schema migration assigns existing businesses in purchase-time/id order, preferring
+matching-size vacant plots. If necessary, an unused plot receives the existing
+shop's size once, preserving stock and capacity. Assignments and their activation
+times survive restarts; traffic before activation retains its original rate.
+On first activation, a legacy save already above 25 stores receives exactly
+enough extra plots to preserve every business. Additional positions use a simple
+grid inside the same six districts; the map expands its scrollable canvas as
+needed to keep pins tappable. Future purchases never add plots. The economy
+reset removes assignments/catalog alongside businesses and recreates the
+default 25-plot world. Inconsistent saves with more unassigned stores than an
+already-initialized catalog can accommodate fail before assigning anything,
+without deleting businesses or items.
