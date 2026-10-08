@@ -1,4 +1,5 @@
 import { Accounts, AccountError } from './accounts.mjs';
+import { adminMarketDashboard, adjustAdminMarket } from './admin-economy.mjs';
 import { clientIp } from './client-ip.mjs';
 import { caseRewards, loadCaseCatalog, publicCaseCatalog, quoteCaseCatalog, rotationDate } from './cases.mjs';
 import { loadCaseStoreCatalog, quoteCaseStore } from './case-store.mjs';
@@ -95,6 +96,7 @@ export async function createAccountApi({ dataDir, dailyPayload, json, env = proc
           else if (route === 'businesses' && flags.businesses) json(response, 200, businessDashboard(dataDir, user));
           else if (route === 'friends') json(response, 200, accounts.friends(user));
           else if (route === 'codes') json(response, 200, { codes: accounts.listCodes(user) });
+          else if (route === 'admin/market') json(response, 200, adminMarketDashboard(dataDir, user));
           else if (route === 'admin') json(response, 200, accounts.adminOverview(user));
           else if (route === 'admin/auctions') {
             if (!user.admin) throw new AccountError('forbidden', 403);
@@ -155,6 +157,7 @@ export async function createAccountApi({ dataDir, dailyPayload, json, env = proc
         result = { user: accounts.profile(user) };
       }
       else if (route === 'notifications/read') result = markNotificationsRead(dataDir, user.id, payload.ids);
+      else if (route === 'admin/market/adjust') result = { adjustment: adjustAdminMarket(dataDir, user, payload), market: adminMarketDashboard(dataDir, user), user: accounts.profile(user) };
       else if (route === 'admin/grant-tokens') result = { grant: accounts.grantTokens(user, payload.amount, payload.requestId), user: accounts.profile(user) };
       else if (route === 'admin/grant-user-tokens') result = { grant: accounts.grantUserTokens(user, payload.userId, payload.amount, payload.requestId), user: accounts.profile(user) };
       else if (route === 'admin/password-reset') result = { reset: await accounts.resetPassword(user, payload.userId), user: accounts.profile(user) };

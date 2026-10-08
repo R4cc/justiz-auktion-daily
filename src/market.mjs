@@ -104,7 +104,7 @@ export function computeCategoryIndex(db, category, at) {
   const effects = db.prepare(`SELECT source_id, delta, starts_at FROM market_effects
     WHERE category = ? AND starts_at <= ? AND ends_at > ?`).all(category, at, at)
     .filter(effect => !trend || !effect.source_id.startsWith('drift:'));
-  return indexFromEffects(effects, at, trend?.index_value ?? DEFAULT_MARKET_INDEX);
+  return indexFromEffects(effects, at, trend?.index_value ?? DEFAULT_MARKET_INDEX) * marketMultiplierAt(db, category, at);
 }
 
 // Unrounded, activation-aware index read for domain valuation (e.g. palette
@@ -115,7 +115,7 @@ export function marketIndexAt(db, category, at) {
   if (!isMarketCategory(category)) return DEFAULT_MARKET_INDEX;
   if (simulationActivation(db) === null) {
     const row = db.prepare('SELECT current_index FROM market_categories WHERE category = ?').get(category);
-    return row ? row.current_index : DEFAULT_MARKET_INDEX;
+    return (row ? row.current_index : DEFAULT_MARKET_INDEX) * marketMultiplierAt(db, category, at);
   }
   return computeCategoryIndex(db, category, at);
 }
@@ -136,11 +136,30 @@ export function ensureMarketSchema(db, now) {
     captured_at TEXT NOT NULL,
     PRIMARY KEY(category, captured_at)
   ) STRICT`);
+  db.exec(`CREATE TABLE IF NOT EXISTS admin_market_adjustments (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    admin_id TEXT NOT NULL, request_id TEXT NOT NULL,
+    category TEXT NOT NULL REFERENCES market_categories(category),
+    action TEXT NOT NULL CHECK(action IN ('adjust', 'reset')), percent INTEGER,
+    multiplier REAL NOT NULL CHECK(multiplier >= 0.001 AND multiplier <= 100),
+    before_index REAL NOT NULL, after_index REAL NOT NULL, created_at INTEGER NOT NULL,
+    UNIQUE(admin_id, request_id)
+  ) STRICT`);
+  db.exec(`CREATE INDEX IF NOT EXISTS admin_market_adjustments_category_time
+    ON admin_market_adjustments(category, created_at DESC, id DESC)`);
   // Registry additions are seeded on first touch; existing rows are never touched.
   const seed = db.prepare(`INSERT OR IGNORE INTO market_categories
     (category, base_index, current_index, updated_at) VALUES (?, ?, ?, ?)`);
   const updatedAt = new Date(now).toISOString();
   for (const { id } of MARKET_CATEGORIES) seed.run(id, DEFAULT_MARKET_INDEX, DEFAULT_MARKET_INDEX, updatedAt);
+}
+
+// Admin controls multiply the simulated index after its normal price band.
+// The timestamped journal preserves earlier valuations and survives drift ticks.
+export function marketMultiplierAt(db, category, at) {
+  return db.prepare(`SELECT multiplier FROM admin_market_adjustments
+    WHERE category = ? AND created_at <= ? ORDER BY created_at DESC, id DESC LIMIT 1`)
+    .get(category, at)?.multiplier ?? 1;
 }
 
 // Persisted simulation effects. News publications own 'news:<eventId>:<category>'
@@ -322,6 +341,15 @@ function refreshMarketHistory(db, now, activationMs) {
         WHERE category = ? AND bucket < ? ORDER BY bucket DESC LIMIT 1`).get(id, firstBucket);
       if (prior) trends.get(id).unshift(prior);
     }
+    const modifiers = new Map(MARKET_CATEGORIES.map(({ id }) => [id, []]));
+    for (const row of db.prepare(`SELECT category, multiplier, created_at FROM admin_market_adjustments
+      WHERE created_at >= ? AND created_at <= ? ORDER BY created_at, id`).all(start, last)) modifiers.get(row.category)?.push(row);
+    for (const { id } of MARKET_CATEGORIES) {
+      const prior = db.prepare(`SELECT multiplier, created_at FROM admin_market_adjustments
+        WHERE category = ? AND created_at < ? ORDER BY created_at DESC, id DESC LIMIT 1`).get(id, start);
+      if (prior) modifiers.get(id).unshift(prior);
+    }
+    const modifierPositions = new Map(MARKET_CATEGORIES.map(({ id }) => [id, -1]));
     const positions = new Map(MARKET_CATEGORIES.map(({ id }) => [id, 0]));
     const insert = db.prepare('INSERT OR IGNORE INTO market_snapshots (category, index_value, captured_at) VALUES (?, ?, ?)');
     for (let boundary = start; boundary <= last; boundary += SNAPSHOT_INTERVAL_MS) {
@@ -339,15 +367,26 @@ function refreshMarketHistory(db, now, activationMs) {
         const baseline = trend?.index_value ?? DEFAULT_MARKET_INDEX;
         const active = byCategory.get(id).filter(effect => effect.starts_at <= boundary
           && (!trend || !effect.source_id.startsWith('drift:')));
-        insert.run(id, indexFromEffects(active, boundary, baseline), capturedAt);
+        const changes = modifiers.get(id);
+        let modifierPosition = modifierPositions.get(id);
+        while (modifierPosition + 1 < changes.length && changes[modifierPosition + 1].created_at <= boundary) modifierPosition++;
+        modifierPositions.set(id, modifierPosition);
+        insert.run(id, indexFromEffects(active, boundary, baseline) * (changes[modifierPosition]?.multiplier ?? 1), capturedAt);
       }
     }
+  }
+  // Drift backfills can rebuild snapshots. Restore each actual admin change
+  // from its receipt, including changes between hourly boundaries.
+  const receiptSnapshot = db.prepare('INSERT OR REPLACE INTO market_snapshots (category, index_value, captured_at) VALUES (?, ?, ?)');
+  for (const row of db.prepare(`SELECT category, after_index, created_at FROM admin_market_adjustments
+    WHERE created_at >= ? AND created_at <= ? ORDER BY created_at, id`).all(now - SNAPSHOT_RETENTION_MS, now)) {
+    receiptSnapshot.run(row.category, row.after_index, new Date(row.created_at).toISOString());
   }
   db.prepare('DELETE FROM market_snapshots WHERE captured_at < ?').run(new Date(now - SNAPSHOT_RETENTION_MS).toISOString());
 }
 
 // market_categories.current_index is a cache refreshed on reads; the source of
-// truth is always the effects table.
+// truth is the persisted trends, effects and admin adjustment journal.
 function materializeMarketIndexes(db, now) {
   const updatedAt = new Date(now).toISOString();
   const update = db.prepare('UPDATE market_categories SET current_index = ?, updated_at = ? WHERE category = ?');
@@ -368,7 +407,7 @@ export function marketState(dataDir, { now = Date.now() } = {}) {
       const rows = new Map(db.prepare('SELECT * FROM market_categories').all().map(row => [row.category, row]));
       const categories = MARKET_CATEGORIES.filter(({ id }) => rows.has(id)).map(({ id, name, nameDe }) => {
         const row = rows.get(id);
-        return { category: id, name, nameDe, baseIndex: row.base_index, currentIndex: row.current_index, updatedAt: row.updated_at };
+        return { category: id, name, nameDe, baseIndex: row.base_index, currentIndex: roundIndex(row.current_index * marketMultiplierAt(db, id, now)), updatedAt: row.updated_at };
       });
       return { updatedAt: categories.reduce((latest, c) => c.updatedAt > latest ? c.updatedAt : latest, '') || null, categories };
     }
@@ -417,7 +456,7 @@ export function snapshotMarketState(dataDir, { now = Date.now() } = {}) {
     const insert = db.prepare('INSERT OR REPLACE INTO market_snapshots (category, index_value, captured_at) VALUES (?, ?, ?)');
     for (const { id } of MARKET_CATEGORIES) {
       insert.run(id, activation !== null ? computeCategoryIndex(db, id, now)
-        : db.prepare('SELECT current_index FROM market_categories WHERE category = ?').get(id).current_index, capturedAt);
+        : marketIndexAt(db, id, now), capturedAt);
     }
     return { capturedAt };
   }));

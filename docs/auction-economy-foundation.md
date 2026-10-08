@@ -87,7 +87,8 @@ precedes runtime startup in `server.mjs`.
   losses; small noise varies the path, and rare shocks produce jumps or crashes.
   Deterministic category/window draws let a restarted runtime reconstruct
   missed points. The combined index, including short-lived news effects, stays
-  between 50 and 150 (±50% of neutral 100). The market chart retains 30 days.
+  between 50 and 150 (±50% of neutral 100) before any persistent admin multiplier.
+  Admin adjustments can move the final index beyond this band. The market chart retains 30 days.
   The first trend tick also performs the one-time simulation activation.
 - Palette NPC buyers (under `FEATURE_RESALES`): every five minutes each active
   lot gets at most one deterministic consideration from a rotating cohort of
@@ -233,10 +234,19 @@ support remains 1 minute–30 days.
 
 Global market is computed from persisted news effects. Each signed effect
 contributes `delta * clamp(1 - elapsed / 72h, 0, 1)`. Index is
-`clamp(trendBaseline + sum(contributions), 50, 150)`. Absolute active contribution budget
+`clamp(trendBaseline + sum(contributions), 50, 150) * adminMultiplier`. Absolute active contribution budget
 is 30/category; opposing effects consume the same budget. Hourly history is
 reconstructed from effects, bounded to 30 days/720 boundaries. Legacy publication
 receipts remain inert and are never replayed as new effects.
+
+The admin multiplier defaults to 1. Percentage controls compound it by
+`1 + percent / 100`; Reset sets it to 1. The multiplier persists until reset
+and is timestamped in an immutable receipt with actor, before/after indexes
+and a unique request ID per admin. Historical reconstruction uses the multiplier
+in effect at each boundary and preserves exact adjustment snapshots. Percentage
+changes must be nonzero integers from −99 to +100; the resulting multiplier
+must stay within 0.001–100. The Admin UI supplies presets including +5%, +10%
+and −80%, and shows the latest 20 receipts. Public charts scale to the final index.
 
 `marketIndexes(db, now)` is a transaction-safe read helper; inventory/resale/NPC
 serialization uses `estimatedValueTokens`. Inventory includes the estimate when
@@ -281,6 +291,10 @@ Existing routes reused:
 - `/api/resales[/:id]`, account `/resale/listings`, `/resale/bid`, `/resale/bids`,
   `/resale/bids/archived`, `/resale/cancel`.
 - `/api/market`, `/api/market/:category/history`, `/api/palettes`.
+- Admin `GET /api/account/admin/market` → `{presets, categories, history}`;
+  `POST /api/account/admin/market/adjust` accepts `{category, percent, requestId}`
+  or `{category, action: 'reset', requestId}` and returns `{adjustment, market, user}`.
+  Both require a current admin session, even when the public market flag is off.
 - Account `/me`, `/inventory`, Daily start/answer, legacy cases/sells.
 
 Authenticated mutations retain the existing CSRF header/session handling.

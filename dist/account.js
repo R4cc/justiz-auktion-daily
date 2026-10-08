@@ -1,3 +1,4 @@
+let accountAdminMarket = { categories: [], presets: [], history: [] };
 let accountStore = null;
 let account = null, accountCatalog = null, accountItems = [], accountCodes = [], freshCodes = [], freshPasswordReset = null;
 let accountFriends = { friends: [], date: '' }, accountAdmin = { playerCount: 0, users: [], grants: [], lastReset: null };
@@ -41,6 +42,8 @@ function accountError(code) {
     invalid_code: t('This code is invalid or already used.', 'Dieser Code ist ungültig oder bereits verwendet.'),
     username_taken: t('That username is already taken.', 'Dieser Benutzername ist bereits vergeben.'),
     login_required: t('Please sign in again.', 'Bitte melde dich erneut an.'),
+    market_adjustment_limit: t('This would exceed the manual adjustment range. Reset this category first.', 'Damit wird der Bereich für manuelle Änderungen überschritten. Setze diese Kategorie zuerst zurück.'),
+    invalid_market_adjustment: t('Choose a valid percentage change.', 'Wähle eine gültige prozentuale Änderung.'),
     insufficient_tokens: t('You do not have enough J€.', 'Du hast nicht genug J€.'),
     try_later: t('Too many attempts. Try again later.', 'Zu viele Versuche. Versuche es später erneut.'),
     forbidden: t('This action is not allowed.', 'Diese Aktion ist nicht erlaubt.'),
@@ -286,9 +289,9 @@ async function navigateAccountPage(path, push = true) {
     }
     if (path === '/admin' && account?.admin) {
       const auctionQuery = `admin/auctions?query=${encodeURIComponent(accountAuctions.query || '')}&page=${accountAuctions.page}`;
-      const [codes, admin, auctionPage] = await Promise.all([accountApi('codes'), accountApi('admin'), accountApi(auctionQuery)]);
+      const [codes, admin, auctionPage, market] = await Promise.all([accountApi('codes'), accountApi('admin'), accountApi(auctionQuery), accountApi('admin/market')]);
       if (visit !== accountVisit || account?.id !== owner) return;
-      accountCodes = codes.codes; accountAdmin = admin; accountAuctions = { query: accountAuctions.query || '', ...auctionPage };
+      accountCodes = codes.codes; accountAdmin = admin; accountAdminMarket = market; accountAuctions = { query: accountAuctions.query || '', ...auctionPage };
     }
     if (visit !== accountVisit) return;
     pageLoaded = true; renderAccountPage(); accountContent.querySelector('h1')?.focus({ preventScroll: true });
@@ -486,10 +489,44 @@ function renderAuctionDetail(auction) {
     <div class="auction-reveal-actions">${auction.url ? `<a class="secondary-button" href="${accountEscape(auction.url)}" target="_blank" rel="noopener">${t('Open listing', 'Angebot öffnen')}</a>` : ''}<button class="text-button" data-account="close-auction" autofocus>${t('Close', 'Schließen')}</button></div></div>`;
   auctionReveal.querySelector('[data-account="close-auction"]').focus({ preventScroll: true });
 }
+function adminMarketMarkup() {
+  return `<section class="admin-section admin-market" id="admin-market-section"><h2>${t('Market controls', 'Marktsteuerung')}</h2>
+    <p>${t('Change current category prices by the selected percentage. Changes compound and persist while the market keeps moving. Reset removes the manual adjustment for that category.', 'Ändere aktuelle Kategoriepreise um den gewählten Prozentsatz. Änderungen wirken nacheinander und bleiben bestehen, während sich der Markt weiterbewegt. Zurücksetzen entfernt die manuelle Änderung für diese Kategorie.')}</p>
+    <div class="admin-market-categories">${accountAdminMarket.categories.map(category => {
+      const change = (category.multiplier - 1) * 100;
+      return `<article class="admin-market-category" data-market-category="${accountEscape(category.id)}"><div><h3 tabindex="-1">${accountEscape(t(category.name, category.nameDe))}</h3>
+      <p>${t('Current index', 'Aktueller Index')}: <strong>${number(category.currentIndex, 2)}</strong> · ${t('Manual adjustment', 'Manuelle Änderung')}: <strong>${change > 0 ? '+' : ''}${number(change, 2)}%</strong></p></div>
+      <div class="admin-market-controls" role="group" aria-label="${accountEscape(t(category.name, category.nameDe))}">${accountAdminMarket.presets.map(percent => {
+        const next = category.multiplier * (1 + percent / 100);
+        return `<button type="button" class="${percent < 0 ? 'market-decrease' : 'market-increase'}" data-account="market-adjust" data-category="${accountEscape(category.id)}" data-percent="${percent}" ${accountBusy || next < .001 || next > 100 ? 'disabled' : ''} aria-label="${accountEscape(t(category.name, category.nameDe))} ${percent > 0 ? '+' : ''}${percent}%">${percent > 0 ? '+' : ''}${percent}%</button>`;
+      }).join('')}<button type="button" data-account="market-reset" data-category="${accountEscape(category.id)}" ${accountBusy || category.multiplier === 1 ? 'disabled' : ''}>${t('Reset', 'Zurücksetzen')}</button></div></article>`;
+    }).join('')}</div>
+    <details class="admin-market-history"><summary>${t('Recent adjustments', 'Letzte Änderungen')}</summary>${accountAdminMarket.history.length ? accountAdminMarket.history.map(entry => {
+      const category = accountAdminMarket.categories.find(category => category.id === entry.category);
+      return `<p>${new Date(entry.createdAt).toLocaleString(uiLocale())} · ${accountEscape(entry.username || '')} · ${accountEscape(category ? t(category.name, category.nameDe) : entry.category)} · ${entry.action === 'reset' ? t('Reset', 'Zurücksetzen') : `${entry.percent > 0 ? '+' : ''}${number(entry.percent)}%`} · ${number(entry.beforeIndex, 2)} → ${number(entry.afterIndex, 2)}</p>`;
+    }).join('') : `<p>${t('No manual adjustments yet.', 'Noch keine manuellen Änderungen.')}</p>`}</details></section>`;
+}
+async function applyAdminMarketChange(button, visit) {
+  if (!account?.admin) return;
+  const owner = account.id, category = button.dataset.category;
+  const action = button.dataset.account === 'market-reset' ? 'reset' : 'adjust';
+  const percent = action === 'adjust' ? Number(button.dataset.percent) : null;
+  const key = `justizguessr:pending-market-adjustment:${owner}:${category}:${action}:${percent}`;
+  let requestId; try { requestId = localStorage.getItem(key); } catch {}
+  requestId ||= crypto.randomUUID(); try { localStorage.setItem(key, requestId); } catch {}
+  for (const control of accountContent.querySelectorAll('.admin-market-controls button')) control.disabled = true;
+  const result = await accountApi('admin/market/adjust', { category, action, percent, requestId });
+  try { localStorage.removeItem(key); } catch {}
+  if (account?.id !== owner) return;
+  updateAccount(result.user);
+  if (visit !== accountVisit) return;
+  accountAdminMarket = result.market;
+  showToast(t('Market adjustment applied.', 'Marktänderung angewendet.'));
+}
 function renderAdmin() {
   accountContent.innerHTML = pageHeading(t('Admin', 'Adminbereich'));
   if (!account?.admin) { accountContent.innerHTML += `<p class="collection-empty">${t('Log in with an admin account to access this page.', 'Melde dich mit einem Adminkonto an, um diese Seite zu nutzen.')}</p>`; return; }
-  accountContent.innerHTML += `<section class="admin-section"><div class="section-title-row"><h2>${t('Players', 'Spieler')}</h2>${infoTip(t(`Search all ${accountAdmin.playerCount} players to grant J€ or change access. Banned players are signed out immediately.`, `Durchsuche alle ${accountAdmin.playerCount} Spieler, um J€ zu vergeben oder den Zugang zu ändern. Gesperrte Spieler werden sofort abgemeldet.`))}</div>
+  accountContent.innerHTML += adminMarketMarkup() + `<section class="admin-section"><div class="section-title-row"><h2>${t('Players', 'Spieler')}</h2>${infoTip(t(`Search all ${accountAdmin.playerCount} players to grant J€ or change access. Banned players are signed out immediately.`, `Durchsuche alle ${accountAdmin.playerCount} Spieler, um J€ zu vergeben oder den Zugang zu ändern. Gesperrte Spieler werden sofort abgemeldet.`))}</div>
     <div class="admin-toolbar"><label>${t('Search', 'Suche')}<input id="user-search" type="search" autocomplete="off" placeholder="${t('Username', 'Benutzername')}" value="${accountEscape(adminUserFilter)}"></label><label>${t('J€ per grant', 'J€ pro Gutschrift')}<input id="grant-amount" type="number" min="1" max="1000000" step="1" value="100"></label></div>
     <div id="user-list" class="user-list">${adminUserListMarkup()}</div>
     ${freshPasswordReset ? `<label class="fresh-codes">${t(`Temporary password for ${freshPasswordReset.username} — copy it now, it is shown only once and works for exactly one login`, `Temporäres Passwort für ${freshPasswordReset.username} — jetzt kopieren, es wird nur einmal angezeigt und gilt für genau eine Anmeldung`)}<textarea readonly rows="2">${freshPasswordReset.temporaryPassword}</textarea></label>` : ''}
@@ -690,6 +727,7 @@ document.addEventListener('click', async event => {
     }
     if (action === 'select-case') { accountSelectedCase = button.dataset.id; accountResult = null; renderAccountPage(); }
     if (action === 'close-reveal') caseReveal.close();
+    if (action === 'market-adjust' || action === 'market-reset') await applyAdminMarketChange(button, visit);
     if (action === 'buy-case') await buyStoreCase(button.dataset.id, visit);
     if (action === 'pull') { caseReveal.close(); await pullCase(visit); }
     if (action === 'open-inventory-case') {
@@ -760,6 +798,15 @@ document.addEventListener('click', async event => {
     if (visit === accountVisit) { if (error.code === 'catalog_changed') await navigateAccountPage('/shop', false); showToast(error.message); }
   } finally {
     accountBusy = false; if (button.isConnected) button.disabled = false;
+    if ((action === 'market-adjust' || action === 'market-reset') && visit === accountVisit) {
+      const section = accountContent.querySelector('#admin-market-section');
+      if (section) {
+        section.outerHTML = adminMarketMarkup();
+        const row = accountContent.querySelector(`[data-market-category="${button.dataset.category}"]`);
+        const replacement = row?.querySelector(`[data-account="${action}"]${action === 'market-adjust' ? `[data-percent="${button.dataset.percent}"]` : ''}`);
+        (replacement && !replacement.disabled ? replacement : row?.querySelector('h3'))?.focus({ preventScroll: true });
+      }
+    }
     for (const buy of accountContent.querySelectorAll('[data-account="buy-case"]')) {
       const offer = accountStore?.cases.find(box => box.id === buy.dataset.id);
       buy.disabled = !account || !offer || account.tokens < offer.cost;

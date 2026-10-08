@@ -47,6 +47,49 @@ async function fixture(t, flags = env) {
 const post = (base, route, value, cookie = '') => fetch(`${base}/api/account/${route}`, { method: 'POST',
   headers: { 'content-type': 'application/json', 'x-requested-with': 'JUSTIZGUESSR', cookie }, body: JSON.stringify(value) });
 
+test('admin market controls enforce sessions, authority and CSRF and safely replay concurrent adjustments', async t => {
+  const { base } = await fixture(t);
+  const read = cookie => fetch(`${base}/api/account/admin/market`, { headers: { cookie } });
+  assert.equal((await read('')).status, 401);
+  const cookie = (await post(base, 'login', { username: 'admin', password })).headers.get('set-cookie');
+  const code = (await (await post(base, 'codes', { count: 1 }, cookie)).json()).codes[0];
+  const player = (await post(base, 'register', { username: 'MarketPlayer', password, code })).headers.get('set-cookie');
+  const change = { category: 'wine', percent: -80, requestId: 'market-http-change-0001' };
+  assert.equal((await read(player)).status, 403);
+  assert.equal((await post(base, 'admin/market/adjust', change, player)).status, 403);
+  assert.equal((await post(base, 'admin/market/adjust', change)).status, 401);
+  assert.equal((await fetch(`${base}/api/account/admin/market/adjust`, { method: 'POST',
+    headers: { cookie, 'content-type': 'application/json' }, body: JSON.stringify(change) })).status, 403);
+  const before = await (await read(cookie)).json();
+  assert.equal(before.categories.length, 14);
+  assert.ok(before.presets.includes(-80) && before.presets.includes(5) && before.presets.includes(10));
+  const responses = await Promise.all([post(base, 'admin/market/adjust', change, cookie), post(base, 'admin/market/adjust', change, cookie)]);
+  for (const response of responses) assert.equal(response.status, 200);
+  const [first, replay] = await Promise.all(responses.map(response => response.json()));
+  assert.deepEqual(first.adjustment, replay.adjustment);
+  const after = await (await read(cookie)).json();
+  assert.equal(after.history.length, 1);
+  assert.ok(Math.abs(after.categories.find(c => c.id === 'wine').currentIndex - 20) < .01);
+  assert.deepEqual(after.categories.filter(c => c.id !== 'wine'), before.categories.filter(c => c.id !== 'wine'));
+  const publicMarket = await (await fetch(`${base}/api/market`)).json();
+  assert.ok(Math.abs(publicMarket.categories.find(c => c.category === 'wine').currentIndex - 20) < .01);
+  assert.equal((await post(base, 'admin/market/adjust', { ...change, percent: 5 }, cookie)).status, 409);
+  assert.equal((await post(base, 'admin/market/adjust', { ...change, percent: '-80' }, cookie)).status, 400);
+  const reset = await post(base, 'admin/market/adjust', { category: 'wine', action: 'reset', requestId: 'market-http-reset-00001' }, cookie);
+  assert.equal(reset.status, 200);
+  assert.equal((await reset.json()).market.categories.find(c => c.id === 'wine').currentIndex, 100);
+});
+
+test('admin market controls remain available when the public market flag is disabled', async t => {
+  const { base } = await fixture(t, { ...env, FEATURE_MARKET: 'false' });
+  const cookie = (await post(base, 'login', { username: 'admin', password })).headers.get('set-cookie');
+  assert.equal((await fetch(`${base}/api/market`)).status, 404);
+  assert.equal((await fetch(`${base}/api/account/admin/market`, { headers: { cookie } })).status, 200);
+  const response = await post(base, 'admin/market/adjust', { category: 'wine', percent: 10, requestId: 'market-disabled-000001' }, cookie);
+  assert.equal(response.status, 200);
+  assert.equal((await response.json()).market.categories.find(c => c.id === 'wine').currentIndex, 110);
+});
+
 test('disabled feature flags fall through so unfinished systems stay invisible', () => {
   const handler = createEconomyApi({ dataDir: 'unused', json: () => {}, flags: featureFlags({ FEATURE_NEWS: 'false', FEATURE_MARKET: 'false', FEATURE_RESALES: 'false', FEATURE_PALETTES: 'false', FEATURE_PALETTE_AUCTIONS: 'false' }) });
   for (const path of ['/api/news', '/api/market', '/api/palettes', '/api/resales', '/api/resales/abc']) {

@@ -477,7 +477,9 @@ test('business HTTP routes require sessions and stock lots appear through market
   const margin = await (await post('businesses/margin', { shopId: shops.shops[0].id, profitMargin: 50 }, cookie)).json();
   assert.equal(margin.shop.profitMargin, 50);
   assert.ok(margin.shop.buyChancePercent < shops.shops[0].buyChancePercent);
-  const wine = lots.listings.find(lot => lot.item.title === 'Wachau Riesling 2022');
+  // HTTP supply uses the live clock, so either archived wine can be in rotation.
+  const wine = lots.listings.find(lot => lot.item.businessCategory === 'wine');
+  assert.ok(wine && auctionStock.some(auction => auction.id === wine.item.auctionId));
   const bid = await post('resale/bid', { id: wine.id, amount: wine.startPrice }, cookie);
   assert.equal(bid.status, 200);
   const bidResult = await bid.json();

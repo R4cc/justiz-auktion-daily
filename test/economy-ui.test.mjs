@@ -522,6 +522,14 @@ test('market chart labels both axes, adapts short time ranges, and keeps readabl
     {capturedAt:'2026-09-19T12:00:00Z',indexValue:101}])`, context);
   assert.equal((intraday.match(/y="251"/g) || []).length, 4);
   assert.match(intraday, /12:00/); assert.match(intraday, /15:00/);
+  const adjusted = vm.runInContext(`chart([
+    {capturedAt:'2026-09-19T15:00:00Z',indexValue:250},
+    {capturedAt:'2026-09-19T13:00:00Z',indexValue:20},
+    {capturedAt:'2026-09-19T12:00:00Z',indexValue:100}])`, context);
+  const coordinates = adjusted.match(/<polyline points="([^"]+)"/)[1].split(' ').map(point => point.split(',').map(Number));
+  assert.ok(coordinates.every(([x, y]) => x >= 58 && x <= 730 && y >= 20 && y <= 226));
+  assert.match(adjusted, />250<\/text>/);
+  assert.match(adjusted, /market-chart-grid is-neutral/);
 });
 
 test('named mystery cases keep their identity in inventory and marketplace artwork without a guaranteed tier label', () => {

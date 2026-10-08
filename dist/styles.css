@@ -1397,3 +1397,16 @@ body { padding-left: var(--sidebar-width); }
 .case-store-chances div { display: flex; justify-content: space-between; gap: 1rem; padding: .3rem 0; }
 .case-store-chances dt { padding-left: .5rem; border-left: 3px solid var(--rarity); }
 .case-store-chances dd { margin: 0; font-variant-numeric: tabular-nums; color: var(--ink); }
+
+.admin-market-categories { display: grid; gap: .75rem; margin-top: 1.5rem; }
+.admin-market-category { display: flex; align-items: center; justify-content: space-between; gap: 1rem; padding: 1rem; border: 1px solid var(--line); border-radius: 10px; background: #fffcf4; }
+.admin-market-category h3 { margin: 0 0 .4rem; font-size: 1rem; }
+.admin-market-category p { margin: 0; font-size: .8rem; color: var(--muted); }
+.admin-market-controls { display: flex; flex-wrap: wrap; gap: .4rem; max-width: 34rem; }
+.admin-market-controls button { min-height: 40px; padding: .55rem .65rem; font: 700 .8rem 'DM Mono', monospace; }
+.admin-market-controls .market-increase { color: #1c7a4c; border-color: #90baa1; }
+.admin-market-controls .market-decrease { color: #a03317; border-color: #d6a899; }
+.admin-market-history { margin-top: 1.5rem; font-size: .85rem; }
+.admin-market-history summary { cursor: pointer; }
+.admin-market-history p { overflow-wrap: anywhere; }
+@media (max-width: 1000px) { .admin-market-category { flex-direction: column; align-items: stretch; } .admin-market-controls { max-width: none; } }
