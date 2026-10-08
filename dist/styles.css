@@ -1435,8 +1435,8 @@ body { padding-left: var(--sidebar-width); }
 .store-front .page-heading { margin-bottom: 0; }
 .store-front h1 { overflow-wrap: anywhere; }
 .store-goose { color: #795018; font-weight: 700; font-size: .8rem; }
-.store-social, .store-reviews { background: #fffcf4; border: 1px solid var(--line); border-radius: 10px; padding: 1.2rem; margin: 1.5rem 0; }
-.store-social h2, .store-shelves h2, .store-reviews h2 { font-size: 1.1rem; }
+.store-reviews { background: #fffcf4; border: 1px solid var(--line); border-radius: 10px; padding: 1.2rem; margin: 1.5rem 0; }
+.store-shelves h2, .store-reviews h2 { font-size: 1.1rem; }
 .store-shelf-card { display: flex; flex-direction: column; border: 1px solid var(--line); background: white; border-radius: 10px; overflow: hidden; }
 .store-shelf-card > img { width: 100%; height: 180px; object-fit: contain; padding: .8rem; background: #f0ede4; }
 .store-item-placeholder { min-height: 140px; display: grid; place-items: center; background: #f0ede4; color: var(--muted); font: 700 2rem 'DM Mono', monospace; }
@@ -1481,7 +1481,7 @@ body { padding-left: var(--sidebar-width); }
 .store-direction-pad { display: grid; grid-template-columns: repeat(4,minmax(0,1fr)); gap: .5rem; }
 .store-direction-pad button { min-height: 70px; font-size: 1.7rem; padding: .5rem; }
 .store-direction-pad small { display: block; font-size: .7rem; }
-@media (max-width: 650px) { .store-search { grid-template-columns: minmax(0,1fr); } .store-front > div:last-child, .store-social, .store-reviews { padding: 1rem; } .store-heist-content { padding: 1.2rem; } .store-action-row button, .store-action-row a { min-height: 44px; } }
+@media (max-width: 650px) { .store-search { grid-template-columns: minmax(0,1fr); } .store-front > div:last-child, .store-reviews { padding: 1rem; } .store-heist-content { padding: 1.2rem; } .store-action-row button, .store-action-row a { min-height: 44px; } }
 
 .store-event-dialog { width: min(640px, calc(100% - 2rem)); max-height: 90dvh; overflow: auto; padding: 0; border: 1px solid var(--ink); border-radius: 14px; background: var(--paper); color: var(--ink); }
 .store-event-dialog::backdrop { background: #0c211dbb; }
