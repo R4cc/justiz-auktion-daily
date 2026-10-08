@@ -210,7 +210,7 @@ window.economyUi = (() => {
   function render() {
     const path = currentAccountPage;
     if (!economyFlags[routes[path]]) {
-      accountContent.innerHTML = pageHeading(t('Unavailable', 'Nicht verfügbar')) + `<a href="/shop" data-page>${t('Visit the shop', 'Zum Shop')}</a>`;
+      accountContent.innerHTML = pageHeading(t('Unavailable', 'Nicht verfügbar')) + `<a href="/shop" data-page>${t('Visit the case store', 'Zum Kisten-Shop')}</a>`;
       return;
     }
     if (path === '/market') { renderMarket(); return; }

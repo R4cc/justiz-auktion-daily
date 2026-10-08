@@ -674,7 +674,7 @@ function renderResults() {
       </div>
       <div class="results-actions">
         ${account && gameMode === 'daily' && accountDailyRun?.dailyCase?.status === 'ready' ? `<button class="primary-button" type="button" data-action="daily-case-prompt">${t('Claim Daily Case', 'Daily-Kiste abholen')} ◇</button>` : ''}
-        ${account && gameMode === 'daily' ? `<a class="secondary-button" href="/shop" data-page>${economyFlags.paletteAuctions ? t('Auctions', 'Auktionen') : 'Shop'} ◈</a>` : ''}
+        ${account && gameMode === 'daily' ? `<a class="secondary-button" href="/shop" data-page>${t('Case Store', 'Kisten-Shop')} ◈</a>` : ''}
         ${gameMode === 'random' ? `<button class="primary-button" type="button" data-action="random">${t('New random round', 'Neue Zufallsrunde')} <span class="button-arrow">↻</span></button>` : ''}
         <button class="${gameMode === 'random' ? 'secondary' : 'primary'}-button" type="button" data-action="share">${t("Share result", "Ergebnis teilen")} <span class="button-arrow">↗</span></button>
         <button class="secondary-button" type="button" data-action="copy">${t("Copy text", "Text kopieren")}</button>

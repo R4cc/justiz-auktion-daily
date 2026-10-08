@@ -1,3 +1,4 @@
+let accountStore = null;
 let account = null, accountCatalog = null, accountItems = [], accountCodes = [], freshCodes = [], freshPasswordReset = null;
 let accountFriends = { friends: [], date: '' }, accountAdmin = { playerCount: 0, users: [], grants: [], lastReset: null };
 let accountLeaderboard = { date: '', leaders: [] }, adminUserFilter = '';
@@ -105,7 +106,7 @@ function markSidebarEntrySeen(link) {
   updateNavigation();
 }
 function updateNavigation() {
-  const labels = { '/': 'Daily', '/shop': 'Shop', '/auctions': t('Palette Auctions', 'Paletten-Auktionen'), '/marketplace': t('Marketplace', 'Marktplatz'), '/market': t('Stock Market', 'Aktienmarkt'), '/businesses': t('Businesses', 'Geschaefte'), '/inventory': t('Inventory', 'Inventar'), '/leaderboard': t('Leaderboard', 'Rangliste'), '/profile': t('Profile', 'Profil'), '/admin': 'Admin' };
+  const labels = { '/': 'Daily', '/shop': t('Case Store', 'Kisten-Shop'), '/auctions': t('Palette Auctions', 'Paletten-Auktionen'), '/marketplace': t('Marketplace', 'Marktplatz'), '/market': t('Stock Market', 'Aktienmarkt'), '/businesses': t('Businesses', 'Geschaefte'), '/inventory': t('Inventory', 'Inventar'), '/leaderboard': t('Leaderboard', 'Rangliste'), '/profile': t('Profile', 'Profil'), '/admin': 'Admin' };
   for (const link of document.querySelectorAll('.site-nav a')) {
     if (link.id !== 'header-auth') {
       link.textContent = labels[link.getAttribute('href')];
@@ -119,7 +120,6 @@ function updateNavigation() {
     }
     if (link.pathname === location.pathname) link.setAttribute('aria-current', 'page'); else link.removeAttribute('aria-current');
     if (link.dataset.feature) link.hidden = !economyFlags[link.dataset.feature];
-    if (link.pathname === '/shop') link.hidden = Boolean(economyFlags.paletteAuctions);
     if (link.pathname === '/admin') link.hidden = !account?.admin;
   }
   const auth = document.querySelector('#header-auth');
@@ -251,11 +251,6 @@ async function navigateAccountPage(path, push = true) {
   try {
     await accountReady;
     if (visit !== accountVisit) return;
-    if (path === '/shop' && economyFlags.paletteAuctions) {
-      history.replaceState({}, '', '/auctions');
-      await navigateAccountPage('/auctions', false);
-      return;
-    }
     const session = await accountApi('me');
     if (visit !== accountVisit) return;
     updateAccount(session.user);
@@ -273,6 +268,9 @@ async function navigateAccountPage(path, push = true) {
     if (path === '/businesses') {
       await window.businessUi.load(visit);
       if (visit !== accountVisit) return;
+    }
+    if (path === '/shop') {
+      const store = await accountApi('case-store'); if (visit !== accountVisit) return; accountStore = store;
     }
     if (path === '/shop' || (path === '/inventory' && account)) {
       const catalog = await accountApi('cases'); if (visit !== accountVisit) return; updateAccountCatalog(catalog);
@@ -397,7 +395,7 @@ function renderInventory() {
   const filtered = groupedInventory(accountItems.filter(item => accountFilter === 'all' || item.rarity === accountFilter));
   accountInventoryPage = Math.min(accountInventoryPage, Math.max(0, Math.ceil(filtered.length / 24) - 1));
   accountContent.innerHTML += accountValueMarkup() + `<div class="inventory-heading"><div class="section-title-row"><h2>${t('Collection', 'Sammlung')} <small>${accountItems.length} ${accountItems.length === 1 ? t('item', 'Los') : t('items', 'Lose')}</small></h2></div><label>${t('Rarity', 'Seltenheit')} <select id="rarity-filter"><option value="all">${t('All', 'Alle')}</option>${accountCatalog.rarities.map(rarity => `<option value="${rarity.id}" ${accountFilter === rarity.id ? 'selected' : ''}>${rarityLabel(rarity.id)}</option>`).join('')}</select></label></div>
-    ${filtered.length ? `<div class="inventory-grid">${filtered.slice(accountInventoryPage * 24, (accountInventoryPage + 1) * 24).map(item => itemCard(item)).join('')}</div><div class="inventory-pages"><button data-account="page" data-step="-1" ${accountInventoryPage ? '' : 'disabled'}>← ${t('Previous', 'Zurück')}</button><span>${accountInventoryPage + 1} / ${Math.ceil(filtered.length / 24)}</span><button data-account="page" data-step="1" ${(accountInventoryPage + 1) * 24 >= filtered.length ? 'disabled' : ''}>${t('Next', 'Weiter')} →</button></div>` : `<div class="collection-empty"><h2>${t('Your next find belongs here.', 'Hier wartet dein nächster Fund.')}</h2><p>${economyFlags.paletteAuctions ? t('Win a Mystery Palette to start your collection, or try another rarity filter.', 'Gewinne eine Mystery-Palette oder wähle einen anderen Seltenheitsfilter.') : t('Open a case to start your collection, or try another rarity filter.', 'Öffne eine Kiste für deine Sammlung oder wähle einen anderen Seltenheitsfilter.')}</p><a class="primary-button" href="/shop" data-page>${economyFlags.paletteAuctions ? t('Browse auctions', 'Auktionen ansehen') : t('Visit the shop', 'Zum Shop')} →</a></div>`}`;
+    ${filtered.length ? `<div class="inventory-grid">${filtered.slice(accountInventoryPage * 24, (accountInventoryPage + 1) * 24).map(item => itemCard(item)).join('')}</div><div class="inventory-pages"><button data-account="page" data-step="-1" ${accountInventoryPage ? '' : 'disabled'}>← ${t('Previous', 'Zurück')}</button><span>${accountInventoryPage + 1} / ${Math.ceil(filtered.length / 24)}</span><button data-account="page" data-step="1" ${(accountInventoryPage + 1) * 24 >= filtered.length ? 'disabled' : ''}>${t('Next', 'Weiter')} →</button></div>` : `<div class="collection-empty"><h2>${t('Your next find belongs here.', 'Hier wartet dein nächster Fund.')}</h2><p>${economyFlags.paletteAuctions ? t('Buy a case or win a Mystery Palette to start your collection, or try another rarity filter.', 'Kaufe eine Kiste, gewinne eine Mystery-Palette oder wähle einen anderen Seltenheitsfilter.') : t('Open a case to start your collection, or try another rarity filter.', 'Öffne eine Kiste für deine Sammlung oder wähle einen anderen Seltenheitsfilter.')}</p><a class="primary-button" href="/shop" data-page>${t('Visit the case store', 'Zum Kisten-Shop')} →</a></div>`}`;
 }
 function dailyFriendLabel(daily) {
   if (daily.status === 'completed') return `${number(daily.score)} / ${number(5000)} ${t('pts', 'Pkt')}`;
@@ -509,11 +507,44 @@ function renderAdmin() {
     <form id="reset-economy-form" class="reset-economy-form"><label>${t('Type RESET ECONOMY to confirm', 'Zur Bestätigung RESET ECONOMY eingeben')}<input name="confirmation" required autocomplete="off" spellcheck="false" pattern="RESET ECONOMY"></label><button class="danger-button" type="submit">${t('Reset economy for every player', 'Wirtschaft für alle Spieler zurücksetzen')}</button><p class="account-error" role="alert"></p></form></section>`;
 }
 function renderShop() {
+  if (!accountStore) return;
+  accountContent.innerHTML = pageHeading(t('Case Store', 'Kisten-Shop')) +
+    `<div class="case-store-intro"><p>${t('All five tiers, always in stock. Buy a sealed case with J€ and open it from your inventory whenever you like.', 'Alle fünf Stufen, immer auf Lager. Kaufe eine versiegelte Kiste mit J€ und öffne sie jederzeit aus deinem Inventar.')}</p><a class="secondary-button" href="/inventory" data-page>${t('Go to inventory', 'Zum Inventar')} →</a></div>
+    <div class="shop-balance">${account ? `${justizEuro(account.tokens)} ${t('available', 'verfügbar')}` : `<a href="/login" data-page>${t('Log in to buy cases', 'Zum Kistenkauf anmelden')} →</a>`}</div>
+    <p class="shop-edition"><span>${t('DAILY CONTENTS', 'TAGESINHALTE')} · ${accountStore.rotationDate}</span>${infoTip(t('Contents refresh at 00:00 UTC. Prices follow the market. Purchased cases keep their sealed contents.', 'Inhalte wechseln um 00:00 UTC. Preise folgen dem Markt. Gekaufte Kisten behalten ihre versiegelten Inhalte.'))}</p>
+    <div class="case-store-grid">${accountStore.cases.map(box => `<article class="case-store-card rarity-${accountEscape(box.id)}">
+      <span class="case-store-art" aria-hidden="true">◇</span><span class="case-store-stock">${t('Always in stock', 'Immer auf Lager')}</span>
+      <h2>${accountEscape(t(box.name, box.nameDe))}</h2><p>${box.id === 'legendary' ? t('One legendary item', 'Ein legendärer Gegenstand') : t(`One ${rarityLabel(box.id).toLowerCase()} item or better`, `Ein Gegenstand der Stufe ${rarityLabel(box.id)} oder höher`)}</p>
+      <strong class="case-store-price">${justizEuro(box.cost)}</strong>
+      ${account ? `<button class="primary-button" data-account="buy-case" data-id="${accountEscape(box.id)}" ${accountBusy || account.tokens < box.cost ? 'disabled' : ''}>${t('Buy case', 'Kiste kaufen')}</button>${account.tokens < box.cost ? `<small class="case-store-shortfall">${t(`You need ${justizEuro(box.cost - account.tokens)} more`, `Dir fehlen ${justizEuro(box.cost - account.tokens)}`)}</small>` : ''}` : `<a class="primary-button" href="/login" data-page>${t('Log in to buy', 'Zum Kaufen anmelden')}</a>`}
+      <details class="case-store-contents"><summary>${t('Possible contents', 'Mögliche Inhalte')} · ${number(box.items.length)}</summary><ul>${box.items.map(item => `<li><span>${accountEscape(item.title)}</span><small class="rarity-${accountEscape(item.rarity)}">${rarityLabel(item.rarity)}</small></li>`).join('')}</ul></details>
+    </article>`).join('')}</div>
+    <p class="data-note">${t('Digital collectibles. J€ has no cash value. Each case contains one item; its value can be lower than the purchase price.', 'Digitale Sammelobjekte. J€ hat keinen Geldwert. Jede Kiste enthält einen Gegenstand; sein Wert kann unter dem Kaufpreis liegen.')}</p>`;
+  if (!economyFlags.paletteAuctions) {
+    const storeMarkup = accountContent.innerHTML;
+    renderLegacyShop();
+    accountContent.innerHTML = storeMarkup + `<section class="case-store-legacy">${accountContent.innerHTML}</section>`;
+  }
+}
+async function buyStoreCase(tier, visit) {
+  if (!account) return;
+  const owner = account.id, key = `justizguessr:pending-case-purchase:${owner}:${tier}`;
+  let requestId; try { requestId = localStorage.getItem(key); } catch {}
+  requestId ||= crypto.randomUUID(); try { localStorage.setItem(key, requestId); } catch {}
+  const result = await accountApi('cases/buy', { tier, requestId, revision: accountStore.revision });
+  try { localStorage.removeItem(key); } catch {}
+  if (account?.id !== owner) return;
+  updateAccount(result.user);
+  if (visit !== accountVisit) return;
+  renderAccountPage();
+  showToast(t(`${t(result.item.title, result.item.titleDe)} added to inventory.`, `${t(result.item.title, result.item.titleDe)} zum Inventar hinzugefügt.`));
+}
+function renderLegacyShop() {
   const box = accountCatalog.cases.find(box => box.id === accountSelectedCase) || accountCatalog.cases[0];
   accountSelectedCase = box.id;
   const caseName = box => t(box.name, box.nameDe || box.name);
   const result = accountResult?.caseId === box.id ? accountResult : null;
-  accountContent.innerHTML = pageHeading('Shop') +
+  accountContent.innerHTML = pageHeading(t('Themed cases', 'Themen-Kisten')) +
     `<div class="shop-balance">${account ? `${justizEuro(account.tokens)} ${t('available', 'verfügbar')}` : `${t('Browse the cases. Log in to earn J€ and open one.', 'Entdecke die Kisten. Melde dich an, um J€ zu verdienen und eine zu öffnen.')} <a href="/login" data-page>${t('Log in', 'Anmelden')} →</a>`}</div>
     <p class="shop-edition"><span>${t('DAILY EDITION', 'TAGESAUSGABE')} · ${accountCatalog.rotationDate}</span>${infoTip(t('New finds at 00:00 UTC. Contents stay fixed; prices follow the market.', 'Neue Fundstücke um 00:00 UTC. Die Inhalte bleiben gleich; Preise folgen dem Markt.'), t('Edition timing', 'Ausgabenwechsel'))}</p>
     <div class="case-options">${accountCatalog.cases.map(option => `<button class="case-option case-theme-${option.category} ${box.id === option.id ? 'is-selected' : ''} ${option.available ? '' : 'is-restocking'}" data-account="select-case" data-id="${option.id}" aria-pressed="${box.id === option.id}"><span class="case-art" aria-hidden="true"><b>${option.badge}</b></span><span><strong>${caseName(option)}</strong><small>${option.available ? justizEuro(option.cost) : t('Restocking', 'Wird aufgefüllt')}</small></span></button>`).join('')}</div>
@@ -656,6 +687,7 @@ document.addEventListener('click', async event => {
     }
     if (action === 'select-case') { accountSelectedCase = button.dataset.id; accountResult = null; renderAccountPage(); }
     if (action === 'close-reveal') caseReveal.close();
+    if (action === 'buy-case') await buyStoreCase(button.dataset.id, visit);
     if (action === 'pull') { caseReveal.close(); await pullCase(visit); }
     if (action === 'open-inventory-case') {
       const owner = account.id;
@@ -725,6 +757,10 @@ document.addEventListener('click', async event => {
     if (visit === accountVisit) { if (error.code === 'catalog_changed') await navigateAccountPage('/shop', false); showToast(error.message); }
   } finally {
     accountBusy = false; if (button.isConnected) button.disabled = false;
+    for (const buy of accountContent.querySelectorAll('[data-account="buy-case"]')) {
+      const offer = accountStore?.cases.find(box => box.id === buy.dataset.id);
+      buy.disabled = !account || !offer || account.tokens < offer.cost;
+    }
     const pull = accountContent.querySelector('[data-account="pull"]');
     if (pull) { const box = accountCatalog.cases.find(box => box.id === accountSelectedCase); pull.disabled = !account || account.tokens < box.cost || !box.available; }
   }

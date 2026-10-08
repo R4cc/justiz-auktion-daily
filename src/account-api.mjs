@@ -1,6 +1,8 @@
 import { Accounts, AccountError } from './accounts.mjs';
 import { clientIp } from './client-ip.mjs';
 import { caseRewards, loadCaseCatalog, publicCaseCatalog, quoteCaseCatalog, rotationDate } from './cases.mjs';
+import { loadCaseStoreCatalog, quoteCaseStore } from './case-store.mjs';
+import { marketIndexes } from './market.mjs';
 import { readArchive } from './database.mjs';
 import { higherLowerDeck } from './higher-lower.mjs';
 import { auctionGallery } from './auction-images.mjs';
@@ -72,6 +74,7 @@ export async function createAccountApi({ dataDir, dailyPayload, json, env = proc
       const route = url.pathname.slice('/api/account/'.length);
       if (request.method === 'GET') {
         if (route === 'me') json(response, 200, { user: user ? accounts.profile(user) : null });
+        else if (route === 'case-store') json(response, 200, accounts.db(db => quoteCaseStore(loadCaseStoreCatalog(dataDir), marketIndexes(db))));
         else if (route === 'cases') json(response, 200, publicCaseCatalog(getCatalog()));
         else if (route === 'leaderboard') {
           // Public page: only signed-in viewers get uncensored names.
@@ -188,6 +191,9 @@ export async function createAccountApi({ dataDir, dailyPayload, json, env = proc
       } else if (route === 'friends/accept') { accounts.acceptFriend(user, payload.id); result = accounts.friends(user); }
       else if (route === 'friends/remove') { accounts.removeFriend(user, payload.id); result = accounts.friends(user); }
       else if (route === 'codes/revoke') { accounts.revokeCode(user, payload.id); result = { ok: true }; }
+      else if (route === 'cases/buy') {
+        result = { item: accounts.buyCase(user, loadCaseStoreCatalog(dataDir), payload.tier, payload.requestId, payload.revision), user: accounts.profile(user) };
+      }
       else if (route === 'cases/open') {
         if (typeof payload.revision !== 'string') throw new AccountError('catalog_changed', 409);
         result = { item: accounts.openCase(user, getCatalog(), payload.caseId, payload.requestId, payload.revision), user: accounts.profile(user) };

@@ -1363,3 +1363,25 @@ body { padding-left: var(--sidebar-width); }
   .notification-toasts { top: 70px; right: 12px; width: min(370px, calc(100vw - 24px)); }
 }
 @media (prefers-reduced-motion: reduce) { .notification-toast, .notification-toast.is-leaving { animation: none; } }
+
+/* Permanent tiered case store. */
+.case-store-intro { display: flex; align-items: center; justify-content: space-between; gap: 1.25rem; margin-bottom: 1.5rem; }
+.case-store-intro p { max-width: 42rem; margin: 0; }
+.case-store-intro a { flex-shrink: 0; }
+.case-store-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 260px), 1fr)); gap: 1rem; }
+.case-store-card { display: flex; flex-direction: column; align-items: stretch; min-width: 0; padding: 1.5rem; border: 1px solid var(--line); border-bottom: 4px solid var(--rarity); border-radius: 12px; background: #fffcf4; }
+.case-store-art { display: grid; place-items: center; height: 5rem; font-size: 4rem; color: var(--rarity); }
+.case-store-stock { font-size: .75rem; text-transform: uppercase; letter-spacing: .06em; text-align: center; margin: .75rem 0; }
+.case-store-card h2 { font-size: 1.2rem; margin: .5rem 0; color: var(--ink); }
+.case-store-card p { color: var(--muted); margin: 0 0 1rem; }
+.case-store-price { font-size: 1.5rem; margin: auto 0 1rem; }
+.case-store-card .primary-button { text-align: center; }
+.case-store-shortfall { margin-top: .75rem; color: var(--muted); }
+.case-store-contents { margin-top: 1rem; color: var(--ink); }
+.case-store-contents summary { cursor: pointer; font-size: .85rem; }
+.case-store-contents ul { padding: 0; list-style: none; max-height: 18rem; overflow-y: auto; }
+.case-store-contents li { display: flex; flex-direction: column; gap: .25rem; margin: .75rem 0; overflow-wrap: anywhere; }
+.case-store-legacy { margin-top: 3rem; }
+@media (max-width: 600px) { .case-store-intro { align-items: stretch; flex-direction: column; } }
+.shop-edition .info-tip [role="tooltip"] { left: auto; right: 0; transform: translateY(-4px); }
+.shop-edition .info-tip:hover [role="tooltip"], .shop-edition .info-tip:focus-within [role="tooltip"] { transform: translateY(0); }

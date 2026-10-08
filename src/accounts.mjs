@@ -3,6 +3,7 @@ import { promisify } from 'node:util';
 import { withDatabase, transaction } from './database.mjs';
 import { dailyCaseWeights, drawItem, tokenValue, priceCaseCatalog, dailyRewardCatalog } from './cases.mjs';
 import { chooseCaseTier, ensureSealedCaseSchema, insertSealedCase, prepareSealedCase } from './sealed-cases.mjs';
+import { ensureCaseStoreSchema, quoteCaseStore } from './case-store.mjs';
 import { ECONOMY_BALANCE, GAME_REWARDS, scoreReward } from './economy-balance.mjs';
 import { scoreGuess } from './core.mjs';
 import { AccountError } from './errors.mjs';
@@ -143,6 +144,7 @@ export class Accounts {
       if (!dailyCaseColumns.includes('case_inventory_id'))
         db.exec('ALTER TABLE daily_case_rewards ADD COLUMN case_inventory_id TEXT');
       ensureSealedCaseSchema(db);
+      ensureCaseStoreSchema(db);
       const columns = db.prepare('PRAGMA table_info(users)').all().map(column => column.name);
       if (!columns.includes('npc')) db.exec('ALTER TABLE users ADD COLUMN npc INTEGER NOT NULL DEFAULT 0');
       ensureXpSchema(db);
@@ -341,7 +343,7 @@ export class Accounts {
       for (const table of ['resale_npc_interest', 'resale_bids', 'resale_auctions',
         'business_stock', 'businesses', 'wholesale_bids', 'wholesale_auctions',
         'primary_palette_bids', 'primary_palette_rewards', 'primary_palette_auctions',
-        'daily_rewards', 'daily_case_rewards', 'xp_events', 'case_openings', 'sealed_cases', 'inventory', 'account_games',
+        'daily_rewards', 'daily_case_rewards', 'xp_events', 'case_openings', 'case_purchases', 'sealed_cases', 'inventory', 'account_games',
         'user_token_grants', 'token_grants', 'account_notifications']) {
         if (hasTable(table)) db.prepare(`DELETE FROM ${table}`).run();
       }
@@ -561,6 +563,29 @@ export class Accounts {
       db.prepare('INSERT INTO inventory (id, user_id, item, created_at) VALUES (?, ?, ?, ?)').run(item.id, user.id, JSON.stringify(item), this.now());
       db.prepare('INSERT INTO case_openings VALUES (?, ?, ?, ?)').run(user.id, requestId, caseId, JSON.stringify(item));
       return item;
+    });
+  }
+  buyCase(user, catalog, tierId, requestId, revision) {
+    if (typeof requestId !== 'string' || !/^[a-zA-Z0-9-]{16,80}$/.test(requestId)) fail('invalid_request');
+    return this.atomic(db => {
+      const previous = db.prepare('SELECT tier, item FROM case_purchases WHERE user_id = ? AND request_id = ?').get(user.id, requestId);
+      if (previous) {
+        if (previous.tier !== tierId) fail('request_conflict', 409);
+        return currentItemValue(JSON.parse(previous.item));
+      }
+      const quote = quoteCaseStore(catalog, marketIndexes(db, this.now()));
+      const offer = quote.cases.find(box => box.id === tierId);
+      if (!offer) fail('invalid_case_tier');
+      if (revision !== quote.revision) fail('catalog_changed', 409);
+      const prepared = prepareSealedCase(catalog, tierId, { now: this.now() });
+      prepared.item.caseCost = offer.cost;
+      prepared.item.edition = catalog.rotationDate;
+      prepared.reward.caseCost = offer.cost;
+      if (!db.prepare('UPDATE users SET tokens = tokens - ? WHERE id = ? AND tokens >= ?')
+        .run(offer.cost, user.id, offer.cost).changes) fail('insufficient_tokens', 409);
+      const item = insertSealedCase(db, user.id, prepared, this.now());
+      db.prepare('INSERT INTO case_purchases VALUES (?, ?, ?, ?)').run(user.id, requestId, tierId, JSON.stringify(item));
+      return currentItemValue(item);
     });
   }
   grantDailyCase(db, user, run, catalog) {
