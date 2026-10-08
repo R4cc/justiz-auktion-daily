@@ -486,7 +486,7 @@ test('progression terminal state and active economy routes remain in syntax veri
   const index = await readFile(new URL('../dist/index.html', import.meta.url), 'utf8');
   for (const route of ['/auctions', '/marketplace', '/market']) assert.ok(index.includes(`href="${route}"`));
   assert.ok(!index.includes('href="/news"'));
-  assert.match(index, /class="nav-group"[\s\S]*href="\/"[\s\S]*href="\/inventory"[\s\S]*class="nav-group nav-group-account"[\s\S]*href="\/leaderboard"[\s\S]*id="header-auth"[\s\S]*href="\/admin"/);
+  assert.match(index, /id="nav-play-title"[\s\S]*href="\/"[\s\S]*href="\/leaderboard"[\s\S]*id="nav-trading-title"[\s\S]*href="\/marketplace"[\s\S]*href="\/inventory"[\s\S]*id="nav-town-title"[\s\S]*href="\/town"[\s\S]*href="\/businesses"[\s\S]*href="\/stores"[\s\S]*id="nav-account-title"[\s\S]*id="header-auth"[\s\S]*href="\/admin"/);
   assert.match(index, /class="sidebar-toggle"[\s\S]*aria-controls="site-menu"[\s\S]*aria-expanded="false"/);
   assert.match(index, /id="notification-button"[\s\S]*class="notification-badge"[\s\S]*id="notification-panel"[\s\S]*id="notification-toasts"/);
   assert.match(index, /JUSTIZGUESSR is a fictional game/);

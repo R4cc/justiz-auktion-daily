@@ -132,7 +132,7 @@ function markSidebarEntrySeen(link) {
   updateNavigation();
 }
 function updateNavigation() {
-  const labels = { '/': 'Daily', '/shop': t('Case Store', 'Kisten-Shop'), '/auctions': t('Palette Auctions', 'Paletten-Auktionen'), '/marketplace': t('Marketplace', 'Marktplatz'), '/market': t('Stock Market', 'Aktienmarkt'), '/businesses': t('Businesses', 'Geschaefte'), '/stores': t('Visit stores', 'Läden besuchen'), '/town': t('Town map', 'Stadtplan'), '/inventory': t('Inventory', 'Inventar'), '/leaderboard': t('Leaderboard', 'Rangliste'), '/profile': t('Profile', 'Profil'), '/admin': 'Admin' };
+  const labels = { '/': 'Daily', '/shop': t('Case Store', 'Kisten-Shop'), '/auctions': t('Palette Auctions', 'Paletten-Auktionen'), '/marketplace': t('Marketplace', 'Marktplatz'), '/market': t('Stock Market', 'Aktienmarkt'), '/businesses': t('Your stores', 'Deine Läden'), '/stores': t('Visit stores', 'Läden besuchen'), '/town': t('Town map', 'Stadtplan'), '/inventory': t('Inventory', 'Inventar'), '/leaderboard': t('Leaderboard', 'Rangliste'), '/profile': t('Profile', 'Profil'), '/admin': 'Admin' };
   for (const link of document.querySelectorAll('.site-nav a')) {
     if (link.id !== 'header-auth') {
       link.textContent = labels[link.getAttribute('href')];
@@ -153,7 +153,10 @@ function updateNavigation() {
   auth.textContent = account ? account.username : t('Log in / Register', 'Anmelden / Registrieren');
   if (auth.pathname === location.pathname) auth.setAttribute('aria-current', 'page'); else auth.removeAttribute('aria-current');
   document.querySelector('[data-nav-label="play"]').textContent = t('Play', 'Spielen');
+  document.querySelector('[data-nav-label="trading"]').textContent = t('Trading', 'Handel');
+  document.querySelector('[data-nav-label="town"]').textContent = t('Town & stores', 'Stadt & Läden');
   document.querySelector('[data-nav-label="account"]').textContent = t('Account', 'Konto');
+  for (const group of document.querySelectorAll('.nav-group')) group.hidden = ![...group.querySelectorAll('a')].some(link => !link.hidden);
   document.querySelector('.site-nav').setAttribute('aria-label', t('Main navigation', 'Hauptnavigation'));
   notificationButton.hidden = !account;
 }
