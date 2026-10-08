@@ -126,7 +126,7 @@ export function lockedInventoryIds(db) {
 }
 
 const resaleIdentity = item => JSON.stringify([
-  item.kind || null, item.caseTier || null, item.auctionId, item.title, item.image || null, item.price, item.rarity, item.sellValue
+  item.kind || null, item.caseType || null, item.caseTier || null, item.auctionId, item.title, item.image || null, item.price, item.rarity, item.sellValue
 ]);
 
 function listingInventory(db, row) {
@@ -156,7 +156,9 @@ function serializeListing(db, row, { bids = false, now = Date.now(), indexes = m
     inventoryId: row.inventory_id, quantity,
     item: { title: item.title, ...(item.auctionId != null ? { auctionId: item.auctionId } : {}),
       ...(item.titleDe ? { titleDe: item.titleDe } : {}), image: item.image || null, price: item.price,
-      ...(item.kind ? { kind: item.kind, caseTier: item.caseTier } : {}),
+      ...(item.kind ? { kind: item.kind } : {}),
+      ...(item.caseTier ? { caseTier: item.caseTier } : {}),
+      ...(item.caseType ? { caseType: item.caseType, caseBadge: item.caseBadge } : {}),
       rarity: item.rarity, marketCategory: marketCategoryForItem(item),
       ...(item.businessCategory ? { businessCategory: item.businessCategory } : {}) },
     estimatedValueTokens: estimatedValueTokens(item, indexes) * quantity,

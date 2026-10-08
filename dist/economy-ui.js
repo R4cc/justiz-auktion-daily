@@ -34,7 +34,11 @@ window.economyUi = (() => {
     cars: '<path d="m14 53 8-23a8 8 0 0 1 7-5h39a8 8 0 0 1 7 5l8 23M13 53h70a6 6 0 0 1 6 6v15H7V59a6 6 0 0 1 6-6Zm8 21v7h12v-7m30 0v7h12v-7M21 61h13m28 0h13M26 36h44"/>'
   };
   function stockLotArtwork(lot) {
-    if (lot.item?.kind === 'case') return `<div class="sealed-case-art rarity-${esc(lot.item.caseTier)}" aria-hidden="true"><span>◇</span><b>${rarityLabel(lot.item.caseTier)}</b></div>`;
+    if (lot.item?.kind === 'case') {
+      const style = lot.item.caseType ? `case-design-${esc(lot.item.caseType)}` : `rarity-${esc(lot.item.caseTier)}`;
+      const badge = lot.item.caseType ? esc(lot.item.caseBadge || 'JG') : rarityLabel(lot.item.caseTier);
+      return `<div class="sealed-case-art ${style}" aria-hidden="true"><span>◇</span><b>${badge}</b></div>`;
+    }
     const type = lot.item?.businessCategory, symbol = stockSymbols[type];
     return symbol ? `<div class="stock-lot-art stock-lot-art-${type}" aria-hidden="true"><svg viewBox="0 0 96 96" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">${symbol}</svg></div>` : null;
   }

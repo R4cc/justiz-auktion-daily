@@ -523,3 +523,20 @@ test('market chart labels both axes, adapts short time ranges, and keeps readabl
   assert.equal((intraday.match(/y="251"/g) || []).length, 4);
   assert.match(intraday, /12:00/); assert.match(intraday, /15:00/);
 });
+
+test('named mystery cases keep their identity in inventory and marketplace artwork without a guaranteed tier label', () => {
+  const item = { id: 'named-case', kind: 'case', caseType: 'vault', caseBadge: 'VT',
+    title: 'Vault Case', titleDe: 'Tresor-Kiste', price: 150, listed: false };
+  const context = vm.createContext({ economyFlags: { resales: true }, t: en => en,
+    number: String, justizEuro: value => `J€ ${value}`, euro: String, accountEscape: String, esc: String,
+    rarityLabel: String });
+  vm.runInContext(extract(accountSource, 'function itemCard(', 'function groupedInventory(')
+    + extract(uiSource, '  const stockSymbols =', '  const remaining ='), context);
+  const markup = vm.runInContext(`itemCard(${JSON.stringify(item)})`, context);
+  assert.match(markup, /case-design-vault/); assert.match(markup, /Sealed case/);
+  assert.match(markup, /Vault Case/); assert.match(markup, /<b>VT<\/b>/);
+  assert.doesNotMatch(markup, /undefined|legendary case|rare case/i);
+  const artwork = vm.runInContext(`stockLotArtwork({ item: ${JSON.stringify(item)} })`, context);
+  assert.match(artwork, /case-design-vault/); assert.match(artwork, /<b>VT<\/b>/);
+  assert.doesNotMatch(artwork, /undefined|legendary|rare/);
+});

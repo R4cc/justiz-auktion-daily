@@ -212,9 +212,9 @@ test('case store stays public with auction features on or off and purchases seal
   for (const enabled of ['true', 'false']) {
     const { base } = await fixture(t, { ...env, FEATURE_PALETTE_AUCTIONS: enabled, FEATURE_RESALES: enabled });
     const quote = await (await fetch(`${base}/api/account/case-store`)).json();
-    assert.deepEqual(quote.cases.map(box => box.id), ['common', 'uncommon', 'rare', 'epic', 'legendary']);
+    assert.deepEqual(quote.cases.map(box => box.id), ['lost-property', 'evidence-locker', 'seizure', 'vault', 'collectors-cache']);
     assert.doesNotMatch(JSON.stringify(quote), /"(?:reward|weights|odds|chance)":/);
-    const payload = { tier: 'common', requestId: 'http-case-purchase-0001', revision: quote.revision };
+    const payload = { caseId: 'lost-property', requestId: 'http-case-purchase-0001', revision: quote.revision };
     assert.equal((await post(base, 'cases/buy', payload)).status, 401);
     const login = await post(base, 'login', { username: 'admin', password });
     const cookie = login.headers.get('set-cookie');
@@ -225,13 +225,13 @@ test('case store stays public with auction features on or off and purchases seal
     const [first, retry] = await Promise.all(results.map(response => response.json()));
     assert.deepEqual(retry.item, first.item);
     assert.equal(first.user.tokens, before - quote.cases[0].cost);
-    assert.equal(first.item.kind, 'case'); assert.equal(first.item.caseTier, 'common');
+    assert.equal(first.item.kind, 'case'); assert.equal(first.item.caseType, 'lost-property');
     assert.ok(!('reward' in first.item) && !('auctionId' in first.item));
     const inventory = await (await fetch(`${base}/api/account/inventory`, { headers: { cookie } })).json();
     assert.equal(inventory.items.length, 1); assert.equal(inventory.items[0].id, first.item.id);
     const opened = await post(base, 'inventory/case/open', { id: first.item.id }, cookie);
     assert.equal(opened.status, 200);
     assert.ok((await opened.json()).item.auctionId);
-    assert.equal((await post(base, 'cases/buy', { ...payload, tier: 'rare' }, cookie)).status, 409);
+    assert.equal((await post(base, 'cases/buy', { ...payload, caseId: 'seizure' }, cookie)).status, 409);
   }
 });

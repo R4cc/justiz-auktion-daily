@@ -357,11 +357,13 @@ function itemCard(item, controls = true) {
   const available = copies.find(copy => !copy.listed);
   const availableCount = copies.filter(copy => !copy.listed).length;
   if (item.kind === 'case') {
+    const caseStyle = item.caseType ? `case-design-${accountEscape(item.caseType)}` : `rarity-${accountEscape(item.caseTier)}`;
+    const caseLabel = item.caseType ? t('Sealed case', 'Versiegelte Kiste') : `${rarityLabel(item.caseTier)} ${t('case', 'Kiste')}`;
     const chosen = available || item;
     const listId = accountEscape(chosen.id);
     const price = Math.max(1, Math.round((chosen.estimatedValueTokens || item.price) * .7));
-    return `<article class="collection-item sealed-case-item rarity-${accountEscape(item.caseTier)}"><span class="rarity-label">${rarityLabel(item.caseTier)} ${t('case', 'Kiste')}</span>${copies.length > 1 ? `<span class="item-count" aria-label="${availableCount} ${t('available copies', 'verfügbare Exemplare')}">×${availableCount}</span>` : ''}
-      <div class="sealed-case-art" aria-hidden="true"><span>◇</span><b>${rarityLabel(item.caseTier)}</b></div><h3>${accountEscape(t(item.title, item.titleDe || item.title))}</h3><p>${t('One mystery item · any category', 'Ein geheimer Gegenstand · jede Kategorie')}</p><p>${t('Case value', 'Kistenwert')} · ${justizEuro(item.estimatedValueTokens || item.price)}</p>
+    return `<article class="collection-item sealed-case-item ${caseStyle}"><span class="rarity-label">${caseLabel}</span>${copies.length > 1 ? `<span class="item-count" aria-label="${availableCount} ${t('available copies', 'verfügbare Exemplare')}">×${availableCount}</span>` : ''}
+      <div class="sealed-case-art" aria-hidden="true"><span>◇</span><b>${item.caseType ? accountEscape(item.caseBadge || 'JG') : rarityLabel(item.caseTier)}</b></div><h3>${accountEscape(t(item.title, item.titleDe || item.title))}</h3><p>${t('One mystery item · any category', 'Ein geheimer Gegenstand · jede Kategorie')}</p><p>${t('Case value', 'Kistenwert')} · ${justizEuro(item.estimatedValueTokens || item.price)}</p>
       ${controls ? `<div class="item-actions"><button class="primary-button" data-account="open-inventory-case" data-id="${listId}" ${available ? '' : 'disabled'}>${t('Open case', 'Kiste öffnen')}</button>${economyFlags.resales ? `<button class="secondary-button" data-economy="list" data-id="${listId}" ${available ? '' : 'disabled'}>${t('List for auction', 'Zur Auktion anbieten')}</button><button class="secondary-button" data-economy="quick-list" data-id="${listId}" data-price="${price}" ${available ? '' : 'disabled'}>${t('Quick list', 'Schnell anbieten')}<small>@ ${justizEuro(price)}</small></button>` : ''}</div>` : ''}</article>`;
   }
   // Market-adjusted display value, capped at two decimals so a scaled index
@@ -383,7 +385,7 @@ function itemCard(item, controls = true) {
 function groupedInventory(items) {
   const groups = new Map();
   for (const item of items) {
-    const key = JSON.stringify([item.kind, item.caseTier, item.auctionId, item.title, item.image, item.price, item.rarity, item.sellValue]);
+    const key = JSON.stringify([item.kind, item.caseType, item.caseTier, item.auctionId, item.title, item.image, item.price, item.rarity, item.sellValue]);
     if (!groups.has(key)) groups.set(key, { ...item, copies: [] });
     groups.get(key).copies.push(item);
   }
@@ -509,14 +511,15 @@ function renderAdmin() {
 function renderShop() {
   if (!accountStore) return;
   accountContent.innerHTML = pageHeading(t('Case Store', 'Kisten-Shop')) +
-    `<div class="case-store-intro"><p>${t('All five tiers, always in stock. Buy a sealed case with J€ and open it from your inventory whenever you like.', 'Alle fünf Stufen, immer auf Lager. Kaufe eine versiegelte Kiste mit J€ und öffne sie jederzeit aus deinem Inventar.')}</p><a class="secondary-button" href="/inventory" data-page>${t('Go to inventory', 'Zum Inventar')} →</a></div>
+    `<div class="case-store-intro"><p>${t('Five mystery cases, always in stock. More expensive cases improve your chances of rarer finds. Buy with J€ and open from your inventory.', 'Fünf Überraschungskisten, immer auf Lager. Teurere Kisten erhöhen deine Chancen auf seltenere Funde. Kaufe mit J€ und öffne sie aus deinem Inventar.')}</p><a class="secondary-button" href="/inventory" data-page>${t('Go to inventory', 'Zum Inventar')} →</a></div>
     <div class="shop-balance">${account ? `${justizEuro(account.tokens)} ${t('available', 'verfügbar')}` : `<a href="/login" data-page>${t('Log in to buy cases', 'Zum Kistenkauf anmelden')} →</a>`}</div>
     <p class="shop-edition"><span>${t('DAILY CONTENTS', 'TAGESINHALTE')} · ${accountStore.rotationDate}</span>${infoTip(t('Contents refresh at 00:00 UTC. Prices follow the market. Purchased cases keep their sealed contents.', 'Inhalte wechseln um 00:00 UTC. Preise folgen dem Markt. Gekaufte Kisten behalten ihre versiegelten Inhalte.'))}</p>
-    <div class="case-store-grid">${accountStore.cases.map(box => `<article class="case-store-card rarity-${accountEscape(box.id)}">
-      <span class="case-store-art" aria-hidden="true">◇</span><span class="case-store-stock">${t('Always in stock', 'Immer auf Lager')}</span>
-      <h2>${accountEscape(t(box.name, box.nameDe))}</h2><p>${box.id === 'legendary' ? t('One legendary item', 'Ein legendärer Gegenstand') : t(`One ${rarityLabel(box.id).toLowerCase()} item or better`, `Ein Gegenstand der Stufe ${rarityLabel(box.id)} oder höher`)}</p>
+    <div class="case-store-grid">${accountStore.cases.map(box => `<article class="case-store-card case-design-${accountEscape(box.id)}">
+      <span class="case-store-art" aria-hidden="true">◇<b>${accountEscape(box.badge)}</b></span><span class="case-store-stock">${t('Always in stock', 'Immer auf Lager')}</span>
+      <h2>${accountEscape(t(box.name, box.nameDe))}</h2><p>${t('One mystery item · every rarity possible', 'Ein geheimer Gegenstand · jede Seltenheit möglich')}</p>
       <strong class="case-store-price">${justizEuro(box.cost)}</strong>
       ${account ? `<button class="primary-button" data-account="buy-case" data-id="${accountEscape(box.id)}" ${accountBusy || account.tokens < box.cost ? 'disabled' : ''}>${t('Buy case', 'Kiste kaufen')}</button>${account.tokens < box.cost ? `<small class="case-store-shortfall">${t(`You need ${justizEuro(box.cost - account.tokens)} more`, `Dir fehlen ${justizEuro(box.cost - account.tokens)}`)}</small>` : ''}` : `<a class="primary-button" href="/login" data-page>${t('Log in to buy', 'Zum Kaufen anmelden')}</a>`}
+      <dl class="case-store-chances" aria-label="${t('Drop chances', 'Fundchancen')}">${box.dropChances.map(chance => `<div><dt class="rarity-${accountEscape(chance.rarity)}">${rarityLabel(chance.rarity)}</dt><dd>${number(chance.percent, 2)}%</dd></div>`).join('')}</dl>
       <details class="case-store-contents"><summary>${t('Possible contents', 'Mögliche Inhalte')} · ${number(box.items.length)}</summary><ul>${box.items.map(item => `<li><span>${accountEscape(item.title)}</span><small class="rarity-${accountEscape(item.rarity)}">${rarityLabel(item.rarity)}</small></li>`).join('')}</ul></details>
     </article>`).join('')}</div>
     <p class="data-note">${t('Digital collectibles. J€ has no cash value. Each case contains one item; its value can be lower than the purchase price.', 'Digitale Sammelobjekte. J€ hat keinen Geldwert. Jede Kiste enthält einen Gegenstand; sein Wert kann unter dem Kaufpreis liegen.')}</p>`;
@@ -526,12 +529,12 @@ function renderShop() {
     accountContent.innerHTML = storeMarkup + `<section class="case-store-legacy">${accountContent.innerHTML}</section>`;
   }
 }
-async function buyStoreCase(tier, visit) {
+async function buyStoreCase(caseId, visit) {
   if (!account) return;
-  const owner = account.id, key = `justizguessr:pending-case-purchase:${owner}:${tier}`;
+  const owner = account.id, key = `justizguessr:pending-case-purchase:${owner}:${caseId}`;
   let requestId; try { requestId = localStorage.getItem(key); } catch {}
   requestId ||= crypto.randomUUID(); try { localStorage.setItem(key, requestId); } catch {}
-  const result = await accountApi('cases/buy', { tier, requestId, revision: accountStore.revision });
+  const result = await accountApi('cases/buy', { caseId, requestId, revision: accountStore.revision });
   try { localStorage.removeItem(key); } catch {}
   if (account?.id !== owner) return;
   updateAccount(result.user);

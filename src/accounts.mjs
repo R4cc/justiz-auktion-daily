@@ -2,8 +2,8 @@ import { randomBytes, randomInt, randomUUID, createHash, scrypt, timingSafeEqual
 import { promisify } from 'node:util';
 import { withDatabase, transaction } from './database.mjs';
 import { dailyCaseWeights, drawItem, tokenValue, priceCaseCatalog, dailyRewardCatalog } from './cases.mjs';
-import { chooseCaseTier, ensureSealedCaseSchema, insertSealedCase, prepareSealedCase } from './sealed-cases.mjs';
-import { ensureCaseStoreSchema, quoteCaseStore } from './case-store.mjs';
+import { chooseCaseTier, ensureSealedCaseSchema, insertSealedCase, prepareMysteryCase, prepareSealedCase } from './sealed-cases.mjs';
+import { ensureCaseStoreSchema, quoteCaseStore, STORE_CASES } from './case-store.mjs';
 import { ECONOMY_BALANCE, GAME_REWARDS, scoreReward } from './economy-balance.mjs';
 import { scoreGuess } from './core.mjs';
 import { AccountError } from './errors.mjs';
@@ -565,26 +565,29 @@ export class Accounts {
       return item;
     });
   }
-  buyCase(user, catalog, tierId, requestId, revision) {
+  buyCase(user, catalog, caseId, requestId, revision) {
     if (typeof requestId !== 'string' || !/^[a-zA-Z0-9-]{16,80}$/.test(requestId)) fail('invalid_request');
     return this.atomic(db => {
       const previous = db.prepare('SELECT tier, item FROM case_purchases WHERE user_id = ? AND request_id = ?').get(user.id, requestId);
       if (previous) {
-        if (previous.tier !== tierId) fail('request_conflict', 409);
+        if (previous.tier !== caseId) fail('request_conflict', 409);
         return currentItemValue(JSON.parse(previous.item));
       }
       const quote = quoteCaseStore(catalog, marketIndexes(db, this.now()));
-      const offer = quote.cases.find(box => box.id === tierId);
-      if (!offer) fail('invalid_case_tier');
+      const offer = quote.cases.find(box => box.id === caseId);
+      if (!offer) {
+        if (['common', 'uncommon', 'rare', 'epic', 'legendary'].includes(caseId)) fail('catalog_changed', 409);
+        fail('invalid_case');
+      }
       if (revision !== quote.revision) fail('catalog_changed', 409);
-      const prepared = prepareSealedCase(catalog, tierId, { now: this.now() });
+      const prepared = prepareMysteryCase(catalog, STORE_CASES.find(box => box.id === caseId), { now: this.now() });
       prepared.item.caseCost = offer.cost;
       prepared.item.edition = catalog.rotationDate;
       prepared.reward.caseCost = offer.cost;
       if (!db.prepare('UPDATE users SET tokens = tokens - ? WHERE id = ? AND tokens >= ?')
         .run(offer.cost, user.id, offer.cost).changes) fail('insufficient_tokens', 409);
       const item = insertSealedCase(db, user.id, prepared, this.now());
-      db.prepare('INSERT INTO case_purchases VALUES (?, ?, ?, ?)').run(user.id, requestId, tierId, JSON.stringify(item));
+      db.prepare('INSERT INTO case_purchases VALUES (?, ?, ?, ?)').run(user.id, requestId, caseId, JSON.stringify(item));
       return currentItemValue(item);
     });
   }

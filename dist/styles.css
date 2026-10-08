@@ -1385,3 +1385,15 @@ body { padding-left: var(--sidebar-width); }
 @media (max-width: 600px) { .case-store-intro { align-items: stretch; flex-direction: column; } }
 .shop-edition .info-tip [role="tooltip"] { left: auto; right: 0; transform: translateY(-4px); }
 .shop-edition .info-tip:hover [role="tooltip"], .shop-edition .info-tip:focus-within [role="tooltip"] { transform: translateY(0); }
+
+.case-design-lost-property { --rarity: #5d8376; }
+.case-design-evidence-locker { --rarity: #517e9f; }
+.case-design-seizure { --rarity: #99734b; }
+.case-design-vault { --rarity: #776699; }
+.case-design-collectors-cache { --rarity: #b98126; }
+.case-store-art { position: relative; height: 6rem; }
+.case-store-art b { position: absolute; bottom: 0; font: 700 12px 'DM Mono', monospace; letter-spacing: .15em; }
+.case-store-chances { margin: 1rem 0 0; font-size: .8rem; color: var(--muted); }
+.case-store-chances div { display: flex; justify-content: space-between; gap: 1rem; padding: .3rem 0; }
+.case-store-chances dt { padding-left: .5rem; border-left: 3px solid var(--rarity); }
+.case-store-chances dd { margin: 0; font-variant-numeric: tabular-nums; color: var(--ink); }

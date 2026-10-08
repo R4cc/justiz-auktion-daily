@@ -42,26 +42,31 @@ function mixedPool(catalog, fallback) {
   });
 }
 
-// All tiers draw from the mixed archive pool, across every market category.
-// Each tier has a minimum rarity. Face value is 80% of the probability-weighted
-// contents, independent of the sealed winner; opening carries loss and upside.
-export function prepareSealedCase(catalog, tierId, { fallback = [], now = Date.now(), random = randomInt } = {}) {
-  const tier = CASE_TIERS.find(entry => entry.id === tierId);
-  if (!tier) throw new Error('invalid_case_tier');
+// Store cases and tiered rewards share the same sealed draw and valuation.
+// The winner is private and frozen when the case is created.
+export function prepareMysteryCase(catalog, definition, { fallback = [], now = Date.now(), random = randomInt } = {}) {
   const items = mixedPool(catalog, fallback);
   if (!items.length) throw new Error('empty_catalog');
-  const available = items.filter(item => tier.weights[RARITIES.findIndex(rarity => rarity.id === item.rarity)] > 0);
-  if (!available.length) throw new Error('empty_catalog');
-  const winner = drawItem(catalog, { items, weights: tier.weights }, random);
-  const price = Math.max(1, Math.round(expectedItemValue(items, tier.weights) * ECONOMY_BALANCE.sealedCaseValueRate));
-  const id = randomUUID();
+  const winner = drawItem(catalog, { items, weights: definition.weights }, random);
+  const price = Math.max(1, Math.round(expectedItemValue(items, definition.weights) * ECONOMY_BALANCE.sealedCaseValueRate));
   return {
-    item: { id, kind: 'case', caseTier: tier.id, title: tier.name, titleDe: tier.nameDe,
-      rarity: tier.id, price, sellValue: price, image: null, createdAt: now },
+    item: { id: randomUUID(), kind: 'case', caseType: definition.id, caseBadge: definition.badge,
+      title: definition.name, titleDe: definition.nameDe,
+      price, sellValue: price, image: null, createdAt: now },
     reward: { ...winner, id: randomUUID(), caseId: 'sealed', caseCost: 0,
       marketCategory: marketCategoryForItem(winner), edition: catalog?.rotationDate || new Date(now).toISOString().slice(0, 10),
       createdAt: now }
   };
+}
+
+// Daily rewards and occasional auction supply retain their existing tiers.
+export function prepareSealedCase(catalog, tierId, options = {}) {
+  const tier = CASE_TIERS.find(entry => entry.id === tierId);
+  if (!tier) throw new Error('invalid_case_tier');
+  const prepared = prepareMysteryCase(catalog, tier, options);
+  delete prepared.item.caseType;
+  delete prepared.item.caseBadge;
+  return { ...prepared, item: { ...prepared.item, caseTier: tier.id, rarity: tier.id } };
 }
 
 export function insertSealedCase(db, ownerId, prepared, now = Date.now()) {

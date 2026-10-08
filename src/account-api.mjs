@@ -192,7 +192,7 @@ export async function createAccountApi({ dataDir, dailyPayload, json, env = proc
       else if (route === 'friends/remove') { accounts.removeFriend(user, payload.id); result = accounts.friends(user); }
       else if (route === 'codes/revoke') { accounts.revokeCode(user, payload.id); result = { ok: true }; }
       else if (route === 'cases/buy') {
-        result = { item: accounts.buyCase(user, loadCaseStoreCatalog(dataDir), payload.tier, payload.requestId, payload.revision), user: accounts.profile(user) };
+        result = { item: accounts.buyCase(user, loadCaseStoreCatalog(dataDir), payload.caseId ?? payload.tier, payload.requestId, payload.revision), user: accounts.profile(user) };
       }
       else if (route === 'cases/open') {
         if (typeof payload.revision !== 'string') throw new AccountError('catalog_changed', 409);
