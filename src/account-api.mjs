@@ -4,6 +4,7 @@ import { adminMarketDashboard, adjustAdminMarket } from './admin-economy.mjs';
 import { clientIp } from './client-ip.mjs';
 import { caseRewards, loadCaseCatalog, publicCaseCatalog, quoteCaseCatalog, rotationDate } from './cases.mjs';
 import { loadCaseStoreCatalog, quoteCaseStore } from './case-store.mjs';
+import { withCaseStock } from './case-stock.mjs';
 import { marketIndexes } from './market.mjs';
 import { readArchive } from './database.mjs';
 import { higherLowerDeck } from './higher-lower.mjs';
@@ -69,6 +70,10 @@ export async function createAccountApi({ dataDir, dailyPayload, json, env = proc
     if (!catalog || catalog.rotationDate !== rotationDate()) catalog = loadCaseCatalog(dataDir);
     return quoteCaseCatalog(dataDir, catalog);
   }
+  function getStore() {
+    const now = Date.now();
+    return accounts.db(db => withCaseStock(db, quoteCaseStore(loadCaseStoreCatalog(dataDir, now), marketIndexes(db, now)), now));
+  }
   return async (request, response, url) => {
     if (!url.pathname.startsWith('/api/account/')) return false;
     try {
@@ -77,8 +82,8 @@ export async function createAccountApi({ dataDir, dailyPayload, json, env = proc
       const route = url.pathname.slice('/api/account/'.length);
       if (request.method === 'GET') {
         if (route === 'me') json(response, 200, { user: user ? accounts.profile(user) : null });
-        else if (route === 'case-store') json(response, 200, accounts.db(db => quoteCaseStore(loadCaseStoreCatalog(dataDir), marketIndexes(db))));
-        else if (route === 'cases') json(response, 200, publicCaseCatalog(getCatalog()));
+        else if (route === 'case-store') json(response, 200, getStore());
+        else if (route === 'cases') json(response, 200, accounts.db(db => withCaseStock(db, publicCaseCatalog(getCatalog()))));
         else if (route === 'leaderboard') {
           // Public page: only signed-in viewers get uncensored names.
           const board = accounts.leaderboard();
@@ -210,11 +215,12 @@ export async function createAccountApi({ dataDir, dailyPayload, json, env = proc
       else if (route === 'friends/remove') { accounts.removeFriend(user, payload.id); result = accounts.friends(user); }
       else if (route === 'codes/revoke') { accounts.revokeCode(user, payload.id); result = { ok: true }; }
       else if (route === 'cases/buy') {
-        result = { item: accounts.buyCase(user, loadCaseStoreCatalog(dataDir), payload.caseId ?? payload.tier, payload.requestId, payload.revision), user: accounts.profile(user) };
+        result = { item: accounts.buyCase(user, loadCaseStoreCatalog(dataDir), payload.caseId ?? payload.tier, payload.requestId, payload.revision), user: accounts.profile(user), store: getStore() };
       }
       else if (route === 'cases/open') {
         if (typeof payload.revision !== 'string') throw new AccountError('catalog_changed', 409);
-        result = { item: accounts.openCase(user, getCatalog(), payload.caseId, payload.requestId, payload.revision), user: accounts.profile(user) };
+        result = { item: accounts.openCase(user, getCatalog(), payload.caseId, payload.requestId, payload.revision), user: accounts.profile(user),
+          stock: accounts.db(db => withCaseStock(db, { cases: [{ id: payload.caseId }] }).cases[0].stock) };
       }
       else if (route === 'inventory/sell') result = { ...accounts.sell(user, payload.id), user: accounts.profile(user) };
       else if (route === 'inventory/sell-all') result = { ...accounts.sellAll(user, payload.id), user: accounts.profile(user) };

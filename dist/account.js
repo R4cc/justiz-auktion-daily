@@ -1,5 +1,6 @@
 let accountAdminMarket = { categories: [], presets: [], history: [] };
 let accountStore = null;
+let caseStockRequest = 0;
 let account = null, accountCatalog = null, accountItems = [], accountCodes = [], freshCodes = [], freshPasswordReset = null;
 let accountFriends = { friends: [], date: '' }, accountAdmin = { playerCount: 0, users: [], grants: [], lastReset: null };
 let accountLeaderboard = { date: '', leaders: [] }, adminUserFilter = '';
@@ -66,6 +67,7 @@ function accountError(code) {
     business_not_found: t('This store is no longer available.', 'Dieser Laden ist nicht mehr verfügbar.'),
     invalid_heist_moves: t('Repeat all six arrows before finishing.', 'Wiederhole alle sechs Pfeile, bevor du abschließt.'),
     insufficient_tokens: t('You do not have enough J€.', 'Du hast nicht genug J€.'),
+    case_out_of_stock: t('This case is sold out globally. Check the next refill time.', 'Diese Kiste ist weltweit ausverkauft. Prüfe den nächsten Auffülltermin.'),
     try_later: t('Too many attempts. Try again later.', 'Zu viele Versuche. Versuche es später erneut.'),
     forbidden: t('This action is not allowed.', 'Diese Aktion ist nicht erlaubt.'),
     daily_reset: t('A new Daily is here. Please reload.', 'Ein neues Daily ist da. Bitte lade neu.'),
@@ -574,17 +576,55 @@ function renderAdmin() {
     ${accountAdmin.lastReset ? `<p class="reset-history">${t('Last reset', 'Letzter Reset')}: ${new Date(accountAdmin.lastReset.createdAt).toLocaleString(uiLocale())} · ${number(accountAdmin.lastReset.playerCount)} ${t('accounts', 'Konten')} · ${number(accountAdmin.lastReset.inventoryCount)} ${t('items removed', 'Gegenstände entfernt')}</p>` : ''}
     <form id="reset-economy-form" class="reset-economy-form"><label>${t('Type RESET ECONOMY to confirm', 'Zur Bestätigung RESET ECONOMY eingeben')}<input name="confirmation" required autocomplete="off" spellcheck="false" pattern="RESET ECONOMY"></label><button class="danger-button" type="submit">${t('Reset economy for every player', 'Wirtschaft für alle Spieler zurücksetzen')}</button><p class="account-error" role="alert"></p></form></section>`;
 }
+function caseStockLabel(box) {
+  const stock = box.stock;
+  if (!stock) return '';
+  const refill = new Date(stock.restocksAt).toLocaleTimeString(uiLocale(), { hour: '2-digit', minute: '2-digit', timeZoneName: 'short' });
+  return t(`${stock.remaining} / ${stock.limit} left globally · Refills at ${refill}`, `${stock.remaining} / ${stock.limit} weltweit übrig · Auffüllung um ${refill}`);
+}
+async function refreshCaseStock(visit) {
+  const request = ++caseStockRequest;
+  const quotes = await Promise.all([accountApi('case-store'), ...(!economyFlags.paletteAuctions ? [accountApi('cases')] : [])]);
+  if (request !== caseStockRequest || accountBusy || visit !== accountVisit || currentAccountPage !== '/shop') return;
+  for (const [index, quote] of quotes.entries()) {
+    const catalog = index ? accountCatalog : accountStore;
+    for (const box of catalog?.cases || []) box.stock = quote.cases.find(offer => offer.id === box.id)?.stock;
+  }
+  for (const element of accountContent.querySelectorAll('[data-case-stock]')) {
+    const box = [...(accountStore?.cases || []), ...(accountCatalog?.cases || [])].find(box => box.id === element.dataset.caseStock);
+    if (box) element.textContent = caseStockLabel(box);
+  }
+  updateCasePurchaseButtons();
+}
+function updateCasePurchaseButtons() {
+  for (const buy of accountContent.querySelectorAll('[data-account="buy-case"]')) {
+    const offer = accountStore?.cases.find(box => box.id === buy.dataset.id);
+    buy.disabled = accountBusy || !account || !offer || account.tokens < offer.cost || offer.stock?.remaining === 0;
+    buy.textContent = offer?.stock?.remaining === 0 ? t('Sold out', 'Ausverkauft') : t('Buy case', 'Kiste kaufen');
+  }
+  const pull = accountContent.querySelector('[data-account="pull"]');
+  if (pull) {
+    const box = accountCatalog.cases.find(box => box.id === accountSelectedCase);
+    pull.disabled = accountBusy || !account || account.tokens < box.cost || !box.available || box.stock?.remaining === 0;
+    pull.textContent = box.stock?.remaining === 0 ? t('Sold out', 'Ausverkauft') : !box.available ? t('Currently unavailable', 'Derzeit nicht verfügbar') : account
+      ? `${accountResult?.caseId === box.id ? t('Open another case', 'Weitere Kiste öffnen') : t('Open case', 'Kiste öffnen')} · ${justizEuro(box.cost)}`
+      : t('Log in to open cases', 'Zum Öffnen anmelden');
+  }
+}
+setInterval(() => {
+  if (currentAccountPage === '/shop' && pageLoaded && !accountBusy) refreshCaseStock(accountVisit).catch(() => {});
+}, 30_000);
 function renderShop() {
   if (!accountStore) return;
   accountContent.innerHTML = pageHeading(t('Case Store', 'Kisten-Shop')) +
-    `<div class="case-store-intro"><p>${t('Five mystery cases, always in stock. More expensive cases improve your chances of rarer finds. Buy with J€ and open from your inventory.', 'Fünf Überraschungskisten, immer auf Lager. Teurere Kisten erhöhen deine Chancen auf seltenere Funde. Kaufe mit J€ und öffne sie aus deinem Inventar.')}</p><a class="secondary-button" href="/inventory" data-page>${t('Go to inventory', 'Zum Inventar')} →</a></div>
+    `<div class="case-store-intro"><p>${t('Five mystery cases. Each type has 10 cases shared by all players, refilled every 4 hours. More expensive cases improve your chances of rarer finds. Buy with J€ and open from your inventory.', 'Fünf Überraschungskisten. Jeder Typ hat 10 Kisten für alle Spieler zusammen, alle 4 Stunden aufgefüllt. Teurere Kisten erhöhen deine Chancen auf seltenere Funde. Kaufe mit J€ und öffne sie aus deinem Inventar.')}</p><a class="secondary-button" href="/inventory" data-page>${t('Go to inventory', 'Zum Inventar')} →</a></div>
     <div class="shop-balance">${account ? `${justizEuro(account.tokens)} ${t('available', 'verfügbar')}` : `<a href="/login" data-page>${t('Log in to buy cases', 'Zum Kistenkauf anmelden')} →</a>`}</div>
     <p class="shop-edition"><span>${t('DAILY CONTENTS', 'TAGESINHALTE')} · ${accountStore.rotationDate}</span>${infoTip(t('Contents refresh at 00:00 UTC. Prices follow the market. Purchased cases keep their sealed contents.', 'Inhalte wechseln um 00:00 UTC. Preise folgen dem Markt. Gekaufte Kisten behalten ihre versiegelten Inhalte.'))}</p>
     <div class="case-store-grid">${accountStore.cases.map(box => `<article class="case-store-card case-design-${accountEscape(box.id)}">
-      <span class="case-store-art" aria-hidden="true">◇<b>${accountEscape(box.badge)}</b></span><span class="case-store-stock">${t('Always in stock', 'Immer auf Lager')}</span>
+      <span class="case-store-art" aria-hidden="true">◇<b>${accountEscape(box.badge)}</b></span><span class="case-store-stock" data-case-stock="${accountEscape(box.id)}">${accountEscape(caseStockLabel(box))}</span>
       <h2>${accountEscape(t(box.name, box.nameDe))}</h2><p>${t('One mystery item · every rarity possible', 'Ein geheimer Gegenstand · jede Seltenheit möglich')}</p>
       <strong class="case-store-price">${justizEuro(box.cost)}</strong>
-      ${account ? `<button class="primary-button" data-account="buy-case" data-id="${accountEscape(box.id)}" ${accountBusy || account.tokens < box.cost ? 'disabled' : ''}>${t('Buy case', 'Kiste kaufen')}</button>${account.tokens < box.cost ? `<small class="case-store-shortfall">${t(`You need ${justizEuro(box.cost - account.tokens)} more`, `Dir fehlen ${justizEuro(box.cost - account.tokens)}`)}</small>` : ''}` : `<a class="primary-button" href="/login" data-page>${t('Log in to buy', 'Zum Kaufen anmelden')}</a>`}
+      ${account ? `<button class="primary-button" data-account="buy-case" data-id="${accountEscape(box.id)}" ${accountBusy || account.tokens < box.cost || box.stock?.remaining === 0 ? 'disabled' : ''}>${box.stock?.remaining === 0 ? t('Sold out', 'Ausverkauft') : t('Buy case', 'Kiste kaufen')}</button>${account.tokens < box.cost ? `<small class="case-store-shortfall">${t(`You need ${justizEuro(box.cost - account.tokens)} more`, `Dir fehlen ${justizEuro(box.cost - account.tokens)}`)}</small>` : ''}` : `<a class="primary-button" href="/login" data-page>${t('Log in to buy', 'Zum Kaufen anmelden')}</a>`}
       <dl class="case-store-chances" aria-label="${t('Drop chances', 'Fundchancen')}">${box.dropChances.map(chance => `<div><dt class="rarity-${accountEscape(chance.rarity)}">${rarityLabel(chance.rarity)}</dt><dd>${number(chance.percent, 2)}%</dd></div>`).join('')}</dl>
       <details class="case-store-contents"><summary>${t('Possible contents', 'Mögliche Inhalte')} · ${number(box.items.length)}</summary><ul>${box.items.map(item => `<li><span>${accountEscape(item.title)}</span><small class="rarity-${accountEscape(item.rarity)}">${rarityLabel(item.rarity)}</small></li>`).join('')}</ul></details>
     </article>`).join('')}</div>
@@ -597,6 +637,7 @@ function renderShop() {
 }
 async function buyStoreCase(caseId, visit) {
   if (!account) return;
+  caseStockRequest++;
   const owner = account.id, key = `justizguessr:pending-case-purchase:${owner}:${caseId}`;
   let requestId; try { requestId = localStorage.getItem(key); } catch {}
   requestId ||= crypto.randomUUID(); try { localStorage.setItem(key, requestId); } catch {}
@@ -605,6 +646,7 @@ async function buyStoreCase(caseId, visit) {
   if (account?.id !== owner) return;
   updateAccount(result.user);
   if (visit !== accountVisit) return;
+  accountStore = result.store;
   renderAccountPage();
   showToast(t(`${t(result.item.title, result.item.titleDe)} added to inventory.`, `${t(result.item.title, result.item.titleDe)} zum Inventar hinzugefügt.`));
 }
@@ -616,11 +658,12 @@ function renderLegacyShop() {
   accountContent.innerHTML = pageHeading(t('Themed cases', 'Themen-Kisten')) +
     `<div class="shop-balance">${account ? `${justizEuro(account.tokens)} ${t('available', 'verfügbar')}` : `${t('Browse the cases. Log in to earn J€ and open one.', 'Entdecke die Kisten. Melde dich an, um J€ zu verdienen und eine zu öffnen.')} <a href="/login" data-page>${t('Log in', 'Anmelden')} →</a>`}</div>
     <p class="shop-edition"><span>${t('DAILY EDITION', 'TAGESAUSGABE')} · ${accountCatalog.rotationDate}</span>${infoTip(t('New finds at 00:00 UTC. Contents stay fixed; prices follow the market.', 'Neue Fundstücke um 00:00 UTC. Die Inhalte bleiben gleich; Preise folgen dem Markt.'), t('Edition timing', 'Ausgabenwechsel'))}</p>
+    <p class="case-store-stock" data-case-stock="${accountEscape(box.id)}">${accountEscape(caseStockLabel(box))}</p>
     <div class="case-options">${accountCatalog.cases.map(option => `<button class="case-option case-theme-${option.category} ${box.id === option.id ? 'is-selected' : ''} ${option.available ? '' : 'is-restocking'}" data-account="select-case" data-id="${option.id}" aria-pressed="${box.id === option.id}"><span class="case-art" aria-hidden="true"><b>${option.badge}</b></span><span><strong>${caseName(option)}</strong><small>${option.available ? justizEuro(option.cost) : t('Restocking', 'Wird aufgefüllt')}</small></span></button>`).join('')}</div>
     <section class="case-stage" aria-label="${t('Case opening', 'Kistenöffnung')}"><div class="case-stage-heading"><span>${caseName(box).toUpperCase()}</span><span>${box.available ? `${box.items.length} ${t('FINDS IN THIS EDITION', 'FUNDE IN DIESER AUSGABE')}` : t('MORE FINDS ON THE WAY', 'NEUE FUNDE UNTERWEGS')}</span></div>
     ${box.available ? `<div class="case-window" aria-hidden="true"><div class="case-marker"></div><div class="case-reel">${box.items.slice(0, 10).map(item => tierCard(item.rarity)).join('')}</div></div>` : ''}
     <div class="case-result" role="status">${result ? resultMarkup() : `<h2>${box.available ? t('Open for one item', 'Für einen Gegenstand öffnen') : t('Unavailable', 'Nicht verfügbar')}</h2>${box.available ? '' : infoTip(t('This category needs more distinct items. Stock is checked with each Daily edition.', 'Diese Kategorie benötigt mehr unterschiedliche Lose. Der Bestand wird mit jeder Tagesausgabe geprüft.'))}`}</div>
-    <button class="primary-button case-open" data-account="pull" ${!account || account.tokens < box.cost || !box.available || accountBusy ? 'disabled' : ''}>${!box.available ? t('Currently unavailable', 'Derzeit nicht verfügbar') : account ? `${result ? t('Open another case', 'Weitere Kiste öffnen') : t('Open case', 'Kiste öffnen')} · ${justizEuro(box.cost)}` : t('Log in to open cases', 'Zum Öffnen anmelden')}</button></section>
+    <button class="primary-button case-open" data-account="pull" ${!account || account.tokens < box.cost || !box.available || accountBusy || box.stock?.remaining === 0 ? 'disabled' : ''}>${box.stock?.remaining === 0 ? t('Sold out', 'Ausverkauft') : !box.available ? t('Currently unavailable', 'Derzeit nicht verfügbar') : account ? `${result ? t('Open another case', 'Weitere Kiste öffnen') : t('Open case', 'Kiste öffnen')} · ${justizEuro(box.cost)}` : t('Log in to open cases', 'Zum Öffnen anmelden')}</button></section>
     ${box.available ? `<details class="case-contents"><summary>${t('Edition contents', 'Inhalt der Ausgabe')} · ${box.items.length}</summary><div class="case-contents-note">${infoTip(t('Rarity and J€ resale values are fixed for this edition. Collected items keep them after rotation.', 'Seltenheit und J€-Verkaufswerte sind für diese Ausgabe fest. Gesammelte Lose behalten sie nach dem Wechsel.'))}</div><div class="inventory-grid">${box.items.map(item => itemCard(item, false)).join('')}</div></details>` : ''}
     <p class="data-note">${t('Digital collectibles. No ownership of the real auction item. J€ has no cash value.', 'Digitale Sammelobjekte. Kein Eigentum am echten Auktionsgegenstand. J€ hat keinen Geldwert.')}</p>`;
 }
@@ -678,11 +721,13 @@ async function spinCaseReel(reel, viewport, item, pool, isCurrent) {
 }
 async function pullCase(visit) {
   if (!account) return;
+  caseStockRequest++;
   const owner = account.id, box = accountCatalog.cases.find(box => box.id === accountSelectedCase);
   const storageKey = `justizguessr:pending-case:${owner}:${box.id}`;
   let requestId; try { requestId = localStorage.getItem(storageKey); } catch {}
   requestId ||= crypto.randomUUID(); try { localStorage.setItem(storageKey, requestId); } catch {}
   const result = await accountApi('cases/open', { caseId: box.id, requestId, revision: accountCatalog.revision });
+  box.stock = result.stock;
   try { localStorage.removeItem(storageKey); } catch {}
   if (account?.id !== owner) return;
   updateAccount(result.user); accountResult = null;
@@ -824,7 +869,7 @@ document.addEventListener('click', async event => {
     }
     if (action === 'page') { accountInventoryPage += Number(button.dataset.step); renderAccountPage(); }
   } catch (error) {
-    if (visit === accountVisit) { if (error.code === 'catalog_changed') await navigateAccountPage('/shop', false); showToast(error.message); }
+    if (visit === accountVisit) { if (['catalog_changed', 'case_out_of_stock'].includes(error.code)) await navigateAccountPage('/shop', false); showToast(error.message); }
   } finally {
     accountBusy = false; if (button.isConnected) button.disabled = false;
     if ((action === 'market-adjust' || action === 'market-reset') && visit === accountVisit) {
@@ -836,12 +881,7 @@ document.addEventListener('click', async event => {
         (replacement && !replacement.disabled ? replacement : row?.querySelector('h3'))?.focus({ preventScroll: true });
       }
     }
-    for (const buy of accountContent.querySelectorAll('[data-account="buy-case"]')) {
-      const offer = accountStore?.cases.find(box => box.id === buy.dataset.id);
-      buy.disabled = !account || !offer || account.tokens < offer.cost;
-    }
-    const pull = accountContent.querySelector('[data-account="pull"]');
-    if (pull) { const box = accountCatalog.cases.find(box => box.id === accountSelectedCase); pull.disabled = !account || account.tokens < box.cost || !box.available; }
+    updateCasePurchaseButtons();
   }
 });
 document.addEventListener('submit', async event => {

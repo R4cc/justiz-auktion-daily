@@ -30,7 +30,7 @@ function opening(reduced) {
   const context = vm.createContext({
     Math: Object.assign(Object.create(Math), { random: () => 0.5 }),
     account: { id: 'user' }, accountCatalog: { cases: [{ id: 'test', items: [{ rarity: 'common', title: 'SECRET DECOY', image: '/decoy.jpg' }] }], revision: 'edition' },
-    accountSelectedCase: 'test', accountVisit: 1, accountResult: null, caseOpening: null,
+    accountSelectedCase: 'test', accountVisit: 1, accountResult: null, caseOpening: null, caseStockRequest: 0,
     accountApi: async () => ({ user: { id: 'user' }, item }),
     updateAccount() {}, renderAccountPage() {},
     accountContent: { querySelector: selector => ({ '.case-reel': reel, '.case-window': { clientWidth: 500 }, '.case-result': status })[selector] },

@@ -4,6 +4,7 @@ import { withDatabase, transaction } from './database.mjs';
 import { dailyCaseWeights, drawItem, tokenValue, priceCaseCatalog, dailyRewardCatalog } from './cases.mjs';
 import { chooseCaseTier, ensureSealedCaseSchema, insertSealedCase, prepareMysteryCase, prepareSealedCase } from './sealed-cases.mjs';
 import { ensureCaseStoreSchema, quoteCaseStore, STORE_CASES } from './case-store.mjs';
+import { consumeCaseStock } from './case-stock.mjs';
 import { ECONOMY_BALANCE, GAME_REWARDS, scoreReward } from './economy-balance.mjs';
 import { scoreGuess } from './core.mjs';
 import { AccountError } from './errors.mjs';
@@ -344,7 +345,7 @@ export class Accounts {
         'store_events', 'store_event_checks', 'store_heists', 'store_reviews', 'store_visits', 'store_reactions', 'store_receipts',
         'business_sales', 'business_stock', 'businesses', 'town_plots', 'wholesale_bids', 'wholesale_auctions',
         'primary_palette_bids', 'primary_palette_rewards', 'primary_palette_auctions',
-        'daily_rewards', 'daily_case_rewards', 'xp_events', 'case_openings', 'case_purchases', 'sealed_cases', 'inventory', 'account_games',
+        'daily_rewards', 'daily_case_rewards', 'xp_events', 'case_openings', 'case_purchases', 'case_stock', 'sealed_cases', 'inventory', 'account_games',
         'user_token_grants', 'token_grants', 'account_notifications']) {
         if (hasTable(table)) db.prepare(`DELETE FROM ${table}`).run();
       }
@@ -555,6 +556,7 @@ export class Accounts {
       const box = catalog.cases.find(box => box.id === caseId);
       if (!box) fail('invalid_case');
       if (!box.weights.some(Boolean)) fail('empty_catalog', 503);
+      consumeCaseStock(db, caseId, this.now());
       if (!db.prepare('UPDATE users SET tokens = tokens - ? WHERE id = ? AND tokens >= ?').run(box.cost, user.id, box.cost).changes) fail('insufficient_tokens', 409);
       // marketCategory is frozen with the item, like rarity and sellValue.
       const drawn = drawItem(catalog, box);
@@ -581,13 +583,15 @@ export class Accounts {
         fail('invalid_case');
       }
       if (revision !== quote.revision) fail('catalog_changed', 409);
-      const prepared = prepareMysteryCase(catalog, STORE_CASES.find(box => box.id === caseId), { now: this.now() });
+      const now = this.now();
+      consumeCaseStock(db, caseId, now);
+      const prepared = prepareMysteryCase(catalog, STORE_CASES.find(box => box.id === caseId), { now });
       prepared.item.caseCost = offer.cost;
       prepared.item.edition = catalog.rotationDate;
       prepared.reward.caseCost = offer.cost;
       if (!db.prepare('UPDATE users SET tokens = tokens - ? WHERE id = ? AND tokens >= ?')
         .run(offer.cost, user.id, offer.cost).changes) fail('insufficient_tokens', 409);
-      const item = insertSealedCase(db, user.id, prepared, this.now());
+      const item = insertSealedCase(db, user.id, prepared, now);
       db.prepare('INSERT INTO case_purchases VALUES (?, ?, ?, ?)').run(user.id, requestId, caseId, JSON.stringify(item));
       return currentItemValue(item);
     });

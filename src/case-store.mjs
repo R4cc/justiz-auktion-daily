@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs';
 import { caseCatalog, loadCaseCatalog, RARITIES } from './cases.mjs';
 import { ECONOMY_BALANCE, expectedItemValue } from './economy-balance.mjs';
 import { estimatedValueTokens } from './market.mjs';
+import { ensureCaseStockSchema } from './case-stock.mjs';
 
 // Every store case can draw every rarity. Moving up the price ladder shifts
 // probability toward rarer finds, rather than guaranteeing a minimum tier.
@@ -51,6 +52,7 @@ export function quoteCaseStore(catalog, indexes = {}) {
 // The legacy column name 'tier' stores the purchased case id; retain it so
 // old receipts stay readable and idempotent through the store redesign.
 export function ensureCaseStoreSchema(db) {
+  ensureCaseStockSchema(db);
   db.exec(`CREATE TABLE IF NOT EXISTS case_purchases (
     user_id TEXT NOT NULL REFERENCES users(id), request_id TEXT NOT NULL,
     tier TEXT NOT NULL, item TEXT NOT NULL CHECK(json_valid(item)),
