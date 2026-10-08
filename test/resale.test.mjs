@@ -508,3 +508,29 @@ test('bids and settlement conserve tokens across a full lifecycle and survive re
   assert.deepEqual(inventoryRow(reopened, item.id), { user_id: bidder.id, sold_at: null });
   assert.equal(reopened.db(db => db.prepare('SELECT settled_at FROM resale_auctions WHERE id = ?').get(listing.id).settled_at), settledAt);
 });
+
+test('accepted late bids reset resale deadlines to ten seconds; rejected bids and early bids do not', async t => {
+  const { dir, service, listing, register } = await listedFixture(t);
+  const leader = await register('DeadlineLeader'), rival = await register('DeadlineRival');
+  service.db(db => db.prepare('UPDATE users SET tokens = 100000 WHERE id IN (?, ?)').run(leader.id, rival.id));
+  const end = listing.endsAt;
+  assert.equal(placeBid(dir, leader, listing.id, 100, { now: end - 10001 }).endsAt, end);
+  assert.equal(placeBid(dir, leader, listing.id, 110, { now: end - 10000 }).endsAt, end);
+  assert.throws(() => placeBid(dir, rival, listing.id, 1, { now: end - 1 }), /bid_too_low/);
+  assert.equal(getResale(dir, listing.id, { now: end - 1 }).endsAt, end);
+  // A valid offer beaten by a private maximum still gives humans time to reply.
+  const losing = placeBid(dir, rival, listing.id, 60, { now: end - 9000 });
+  assert.equal(losing.currentBidderId, leader.id); assert.equal(losing.endsAt, end + 1000);
+  assert.equal(placeBid(dir, leader, listing.id, 120, { now: end - 5000 }).endsAt, end + 5000);
+  assert.equal(placeBid(dir, rival, listing.id, 130, { now: end + 4500 }).endsAt, end + 14500);
+  seedNpcBuyers(dir, { now: day });
+  const npc = NPC_BUYERS[0];
+  const extended = placeBid(dir, npc, listing.id, 140, { now: end + 14000 });
+  assert.equal(extended.endsAt, end + 24000);
+  assert.throws(() => placeBid(dir, npc, listing.id, 150, { now: end + 23500 }), /npc_self_outbid/);
+  closeDataStore(dir);
+  assert.equal(getResale(dir, listing.id, { now: end + 23999 }).endsAt, extended.endsAt);
+  assert.throws(() => settleAuction(dir, listing.id, { now: end + 23999 }), /auction_still_active/);
+  assert.throws(() => placeBid(dir, leader, listing.id, 150, { now: extended.endsAt }), /auction_ended/);
+  assert.equal(settleAuction(dir, listing.id, { now: extended.endsAt }).winnerId, npc.id);
+});

@@ -7,6 +7,7 @@ import { estimatedValueTokens, marketIndexes, marketCategoryForItem } from './ma
 import { pushNotification } from './notifications.mjs';
 import { sealedPaletteInventoryIds } from './palette-auctions.mjs';
 import { proxyMinimum, resolveProxyBid } from './proxy-bids.mjs';
+import { auctionEndAfterBid } from './auction-timing.mjs';
 
 // Player resale auctions: eBay-like listings of one or more identical items.
 //
@@ -276,8 +277,8 @@ export function placeBid(dataDir, user, auctionId, amount, { now = Date.now() } 
     if (outcome.autoBid !== null) db.prepare(`INSERT INTO resale_bids
       (auction_id, bidder_id, amount, visible_amount, created_at) VALUES (?, ?, ?, ?, ?)`)
       .run(row.id, row.current_bidder_id, oldMax, outcome.autoBid, now);
-    db.prepare('UPDATE resale_auctions SET current_bid = ?, max_bid = ?, current_bidder_id = ? WHERE id = ?')
-      .run(outcome.visibleBid, outcome.maxBid, outcome.leaderId, row.id);
+    db.prepare('UPDATE resale_auctions SET current_bid = ?, max_bid = ?, current_bidder_id = ?, ends_at = ? WHERE id = ?')
+      .run(outcome.visibleBid, outcome.maxBid, outcome.leaderId, auctionEndAfterBid(row.ends_at, now), row.id);
     if (takesLead && !raise && row.current_bidder_id !== null) {
       const items = listingInventory(db, row);
       const item = JSON.parse(items[0].item), title = quantityTitle(item.title, items.length);

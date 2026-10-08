@@ -89,7 +89,17 @@ window.economyUi = (() => {
     if (!economyFlags[routes[path]]) return;
     await refresh(path, visit, false);
     if (visit !== accountVisit) return;
-    timer = setInterval(() => { if (!document.hidden) refresh(path, visit, true).catch(() => showToast(t('Could not refresh auctions. Try again.', 'Auktionen konnten nicht aktualisiert werden. Versuche es erneut.'))); }, 12_000);
+    let lastRefresh = Date.now(), polling = false;
+    timer = setInterval(() => {
+      if (document.hidden || busy || polling) return;
+      const lots = [...(data.lots || []), ...(data.mine || []), ...(data.bids || [])];
+      const detailEnd = dialog.querySelector('[data-economy-end]')?.dataset.economyEnd;
+      if (detailEnd) lots.push({ status: 'active', endsAt: Number(detailEnd) });
+      if (Date.now() - lastRefresh < auctionPollInterval(lots, Date.now())) return;
+      lastRefresh = Date.now(); polling = true;
+      refresh(path, visit, true).catch(() => showToast(t('Could not refresh auctions. Try again.', 'Auktionen konnten nicht aktualisiert werden. Versuche es erneut.')))
+        .finally(() => { polling = false; });
+    }, 1000);
     clockTimer = setInterval(() => {
       if (document.hidden) return;
       document.querySelectorAll('[data-economy-end]').forEach(node => { node.textContent = remaining(Number(node.dataset.economyEnd)); });
@@ -151,13 +161,18 @@ window.economyUi = (() => {
       if (lot && bidInput) {
         bidInput.min = String(bidMinimum(lot, path === '/auctions'));
         if (document.activeElement !== bidInput && Number(bidInput.value) < Number(bidInput.min)) bidInput.value = bidInput.min;
-        if (lot.status !== 'active' || lot.endsAt <= Date.now()) {
-          const form = bidInput.closest('form');
-          form.querySelector('button[type="submit"]').disabled = true;
-          form.querySelector('.account-error').textContent = t('This auction has ended. Check your auction history.', 'Diese Auktion ist beendet. Sieh in deinem Auktionsverlauf nach.');
-        }
+        const form = bidInput.closest('form'), error = form.querySelector('.account-error');
+        const ended = lot.status !== 'active' || lot.endsAt <= Date.now();
+        form.querySelector('button[type="submit"]').disabled = ended;
+        if (ended) {
+          error.textContent = t('This auction has ended. Check your auction history.', 'Diese Auktion ist beendet. Sieh in deinem Auktionsverlauf nach.');
+          error.dataset.auctionEnded = '1';
+        } else if (error.dataset.auctionEnded) { error.textContent = ''; delete error.dataset.auctionEnded; }
       }
     }
+  }
+  function auctionPollInterval(lots, now) {
+    return lots.some(lot => lot.status === 'active' && lot.endsAt <= now + 15_000 && lot.endsAt >= now - 12_000) ? 1000 : 12_000;
   }
   function bidFacts(lot, primary) {
     return `<div class="economy-bid"><strong>${justizEuro(lot.currentBid ?? (primary ? lot.reserve : lot.startPrice))}</strong><span>${lot.currentBid === null ? t('Starting bid', 'Startgebot') : t('Current bid', 'Aktuelles Gebot')}</span></div>
@@ -291,7 +306,7 @@ window.economyUi = (() => {
     const hasBid = lot.currentBid !== null;
     return `<form data-economy-form="${primary ? 'primary' : 'resale'}" data-id="${esc(lot.id)}" class="economy-form auction-bid-form"><label>${t('Your maximum bid in J€', 'Dein Höchstgebot in J€')}
       <span class="auction-bid-entry"><input name="amount" type="number" inputmode="numeric" min="${min}" step="1" value="${min}" required><button class="primary-button" type="submit">${hasBid ? t('Raise bid', 'Gebot erhöhen') : t('Place bid', 'Gebot abgeben')}</button></span></label>${lot.leading ? `<p>${t('Your current maximum', 'Dein aktuelles Höchstgebot')}: <strong>${justizEuro(lot.highestBid)}</strong></p>` : ''}<p>${t('Available wallet balance', 'Verfügbares Guthaben')}: <strong>${justizEuro(account.tokens)}</strong> ${infoTip(t('Your maximum is held in escrow. Automatic bids raise the visible price only as needed. It is returned if you are outbid; if you win, unused J€ return at settlement.', 'Dein Höchstgebot wird hinterlegt. Automatische Gebote erhöhen den sichtbaren Preis nur bei Bedarf. Wirst du überboten, erhältst du es zurück; beim Gewinn werden übrige J€ nach der Abrechnung erstattet.'), t('How proxy bidding works', 'So funktioniert automatisches Bieten'))}</p>
-      <p class="account-error" role="alert"></p></form>`;
+      <p class="auction-end-rule">${t('Bids in the final 10 seconds reset the countdown to 10 seconds.', 'Gebote in den letzten 10 Sekunden setzen den Countdown auf 10 Sekunden zurück.')}</p><p class="account-error" role="alert"></p></form>`;
   }
   function paletteArtwork(lot) {
     const themes = {

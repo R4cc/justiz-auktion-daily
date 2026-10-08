@@ -548,3 +548,14 @@ test('named mystery cases keep their identity in inventory and marketplace artwo
   assert.match(artwork, /case-design-vault/); assert.match(artwork, /<b>VT<\/b>/);
   assert.doesNotMatch(artwork, /undefined|legendary|rare/);
 });
+
+test('auction polling accelerates around deadlines, including recently expired cached deadlines', () => {
+  const context = vm.createContext({});
+  vm.runInContext(extract(uiSource, '  function auctionPollInterval(', '  function bidFacts('), context);
+  const period = (status, endsAt) => vm.runInContext(`auctionPollInterval([{status:'${status}',endsAt:${endsAt}}],100000)`, context);
+  assert.equal(period('active', 115000), 1000);
+  assert.equal(period('active', 99000), 1000);
+  assert.equal(period('active', 115001), 12000);
+  assert.equal(period('ended', 101000), 12000);
+  assert.equal(period('active', 87999), 12000);
+});

@@ -225,10 +225,11 @@ test('bidding escrows like resale: first bid, outbid refund, raise difference, r
     [reserve, bidder.id, 'Bidder'], [reserve, bidder.id, 'Bidder'],
     [reserve, bidder.id, 'Bidder'], [reserve + 3 * inc, rival.id, 'Rival']
   ]);
-  // Exact deadline behavior: the last instant still accepts a valid bid, at
-  // the deadline the lot rejects everything.
-  bidOnPaletteAuction(dir, bidder, lot.id, reserve + 5 * inc, { now: day + hour - 1 });
-  assert.throws(() => bidOnPaletteAuction(dir, bidder, lot.id, reserve + 6 * inc, { now: day + hour }), { status: 409, message: 'palette_auction_ended' });
+  // A bid at the last instant adds response time; at the new deadline the
+  // lot rejects everything.
+  const late = bidOnPaletteAuction(dir, bidder, lot.id, reserve + 5 * inc, { now: day + hour - 1 });
+  assert.equal(late.endsAt, day + hour + 9999);
+  assert.throws(() => bidOnPaletteAuction(dir, bidder, lot.id, reserve + 6 * inc, { now: late.endsAt }), { status: 409, message: 'palette_auction_ended' });
 });
 
 test('palette proxy ceiling waits for rivals and refunds unused reserve at settlement', async t => {
@@ -541,4 +542,34 @@ test('legacy case opening and resale remain unchanged alongside primary auctions
   const balance = tokensOf(service, player);
   service.sell(player, item.id);
   assert.equal(tokensOf(service, player), balance + item.sellValue);
+});
+
+test('primary auctions repeatedly reset late bid deadlines, including NPCs and proxy challenges, without reviving ended lots', async t => {
+  const { dir, service, admin, register } = await fixture(t);
+  const rival = await register('DeadlineRival');
+  service.db(db => {
+    db.prepare('UPDATE users SET tokens = 1000000 WHERE id IN (?, ?)').run(admin.id, rival.id);
+    db.prepare(`INSERT INTO users (id, username, password_hash, tokens, npc, created_at)
+      VALUES ('deadline-npc', 'Deadline NPC', 'disabled', 1000000, 1, ?)`).run(day);
+  });
+  const lot = createPaletteAuction(dir, { editionId: baseEdition(dir).editionId, requestId: 'deadline-primary-00001' }, { now: day, random: alwaysFirst });
+  const inc = paletteBidIncrement(lot.reserve), end = lot.endsAt, amount = lot.reserve + 5 * inc;
+  assert.equal(bidOnPaletteAuction(dir, admin, lot.id, amount, { now: end - 10001 }).endsAt, end);
+  assert.equal(bidOnPaletteAuction(dir, admin, lot.id, amount + inc, { now: end - 10000 }).endsAt, end);
+  assert.throws(() => bidOnPaletteAuction(dir, rival, lot.id, 1, { now: end - 1 }), /bid_too_low/);
+  assert.equal(getPaletteAuction(dir, lot.id, { now: end - 1 }).endsAt, end);
+  const losing = bidOnPaletteAuction(dir, rival, lot.id, lot.reserve + inc, { now: end - 9000 });
+  assert.equal(rows(dir, 'SELECT current_bidder_id FROM primary_palette_auctions WHERE id = ?', lot.id)[0].current_bidder_id, admin.id);
+  assert.equal(losing.endsAt, end + 1000);
+  assert.equal(bidOnPaletteAuction(dir, admin, lot.id, amount + 2 * inc, { now: end - 5000 }).endsAt, end + 5000);
+  assert.equal(bidOnPaletteAuction(dir, rival, lot.id, amount + 3 * inc, { now: end + 4500 }).endsAt, end + 14500);
+  const npc = { id: 'deadline-npc' };
+  const extended = bidOnPaletteAuction(dir, npc, lot.id, amount + 4 * inc, { now: end + 14000, npc: true });
+  assert.equal(extended.endsAt, end + 24000);
+  assert.throws(() => bidOnPaletteAuction(dir, npc, lot.id, amount + 5 * inc, { now: end + 23500, npc: true }), /npc_self_outbid/);
+  closeDataStore(dir);
+  assert.equal(getPaletteAuction(dir, lot.id, { now: end + 23999 }).endsAt, extended.endsAt);
+  assert.throws(() => settlePaletteAuction(dir, lot.id, { now: end + 23999 }), /auction_still_active/);
+  assert.throws(() => bidOnPaletteAuction(dir, admin, lot.id, amount + 5 * inc, { now: extended.endsAt }), /palette_auction_ended/);
+  assert.equal(settlePaletteAuction(dir, lot.id, { now: extended.endsAt }).winnerId, npc.id);
 });

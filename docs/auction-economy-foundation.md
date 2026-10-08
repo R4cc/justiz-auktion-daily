@@ -44,10 +44,22 @@ Manrope/DM Mono fonts, paper/green palette and rarity presentation are reused.
 Navigation scrolls horizontally on narrow screens. Copy is EN/DE. Dialogs
 restore focus, polling preserves bid form input, and countdowns use aria-live=off.
 
-Auctions and marketplace poll every 12 seconds while the document is visible.
+Auctions and marketplace poll every 12 seconds while the document is visible,
+accelerating to every second within 15 seconds of an active auction deadline
+(and briefly after a cached deadline passes to catch an extension).
 Navigation cancels timers and invalidates pending responses. Requests are guarded
 by visit, request and account identity. Market uses the same visibility-aware
 refresh cadence. No WebSockets or chart dependencies.
+
+Every accepted human/NPC bid leaves at least 10 seconds to respond: the bid
+transaction writes `ends_at = max(ends_at, now + 10000)` together with price,
+leader and escrow changes. This covers primary palettes and all resale lots,
+including supplier stock and sealed cases. Repeated late bids, private maximum
+raises and accepted losing proxy challenges also reset the deadline. Failed bids
+roll back everything; expired lots cannot be revived. Settlement and reward
+reveals use the extended persisted deadline, including after restart. A palette
+extension may run past its edition's original availability window; its frozen
+contents and valuation remain unchanged.
 
 ## Flags and compatibility
 

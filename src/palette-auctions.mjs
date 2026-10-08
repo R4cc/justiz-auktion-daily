@@ -8,6 +8,7 @@ import { paletteStoryForAuction } from './palette-stories.mjs';
 import { levelForXp } from './progression.mjs';
 import { pushNotification } from './notifications.mjs';
 import { proxyMinimum, resolveProxyBid } from './proxy-bids.mjs';
+import { auctionEndAfterBid } from './auction-timing.mjs';
 
 // Re-exported for backwards compatibility with the pre-extraction imports;
 // the curve itself is owned by src/progression.mjs.
@@ -296,8 +297,8 @@ export function bidOnPaletteAuction(dataDir, user, auctionId, amount, { now = Da
     if (outcome.autoBid !== null) db.prepare(`INSERT INTO primary_palette_bids
       (auction_id, bidder_id, amount, visible_amount, created_at) VALUES (?, ?, ?, ?, ?)`)
       .run(row.id, row.current_bidder_id, oldMax, outcome.autoBid, now);
-    db.prepare('UPDATE primary_palette_auctions SET current_bid = ?, max_bid = ?, current_bidder_id = ? WHERE id = ?')
-      .run(outcome.visibleBid, outcome.maxBid, outcome.leaderId, row.id);
+    db.prepare('UPDATE primary_palette_auctions SET current_bid = ?, max_bid = ?, current_bidder_id = ?, ends_at = ? WHERE id = ?')
+      .run(outcome.visibleBid, outcome.maxBid, outcome.leaderId, auctionEndAfterBid(row.ends_at, now), row.id);
     if (takesLead && !raise && row.current_bidder_id !== null) {
       const snapshot = JSON.parse(row.public_snapshot_json);
       pushNotification(db, row.current_bidder_id, {
