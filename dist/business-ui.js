@@ -2,6 +2,9 @@ window.businessUi = (() => {
   const esc = accountEscape;
   let dashboard = null, timer = null, request = 0, busy = false;
   let selectedOffer = null, purchaseReturnFocus = null, restockReturnFocus = null, restockShopId = null, restockGroups = [], restockSignature = null;
+  let editorShopId = null, editorReturnFocus = null;
+  const editorDialog = document.createElement('dialog');
+  editorDialog.className = 'business-editor-dialog'; editorDialog.setAttribute('aria-labelledby', 'business-editor-title'); document.body.append(editorDialog);
   const purchaseDialog = document.createElement('dialog');
   purchaseDialog.className = 'business-buy-dialog';
   purchaseDialog.setAttribute('aria-labelledby', 'business-buy-title');
@@ -39,6 +42,7 @@ window.businessUi = (() => {
     if (current !== request || visit !== accountVisit || account?.id !== owner) return;
     dashboard = shops;
     if (owner) { const session = await accountApi('me'); if (current !== request || visit !== accountVisit || account?.id !== owner) return; updateAccount(session.user); }
+    if (editorDialog.open) syncEditor();
     if (purchaseDialog.open) updatePurchaseSelection();
     if (restockDialog.open) {
       if (stockManagerSignature() !== restockSignature) syncRestockDialog();
@@ -48,6 +52,7 @@ window.businessUi = (() => {
   }
   function stop() {
     clearInterval(timer); timer = null; request++; dashboard = null;
+    editorShopId = null; editorReturnFocus = null; editorDialog.close();
     purchaseReturnFocus = null; if (purchaseDialog.open) purchaseDialog.close();
     restockReturnFocus = null; restockShopId = null; restockSignature = null; if (restockDialog.open) restockDialog.close();
   }
@@ -58,18 +63,49 @@ window.businessUi = (() => {
     if (visit !== accountVisit) return;
     timer = setInterval(() => { if (!document.hidden && !busy) refresh(visit).catch(() => {}); }, 30_000);
   }
+  const editIcon = () => icon('<path d="m8 32 23-23 8 8-23 23-11 3 3-11Z M27 13l8 8 M7 43h34"/>', 'business-action-icon');
+  function storefrontArt(type) {
+    return `<svg class="business-card-scene" viewBox="0 0 280 160" fill="none" aria-hidden="true"><circle cx="228" cy="30" r="15" fill="var(--choice-accent)" opacity=".12"/><path d="M14 144h252" stroke="var(--choice-accent)" opacity=".25"/><rect x="40" y="49" width="200" height="95" rx="3" fill="#fffaf0" stroke="var(--choice-accent)" stroke-width="2"/><rect x="48" y="27" width="184" height="27" rx="3" fill="var(--choice-accent)"/><text x="140" y="45" text-anchor="middle" fill="#fffaf0" font-size="10" font-family="Manrope, sans-serif" font-weight="700" letter-spacing="1">${esc(typeName(type).toUpperCase())}</text><path d="M36 54h208l-10 26H46L36 54Z" fill="var(--choice-accent)"/>${[0,1,2,3,4,5,6].map(n => `<path d="M${36+n*30} 54h15l${n < 3 ? 3 : -3} 26h-15Z" fill="#fffaf0" opacity=".85"/>`).join('')}<rect x="57" y="91" width="91" height="41" rx="2" fill="var(--choice-tint)" stroke="var(--choice-accent)" stroke-width="1.5"/><svg x="82" y="93" width="38" height="38" viewBox="0 0 48 48" stroke="var(--choice-accent)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${typeIcons[type]}</svg><rect x="174" y="91" width="45" height="53" rx="2" fill="var(--choice-tint)" stroke="var(--choice-accent)" stroke-width="1.5"/><path d="M180 97h33v22h-33Z" fill="#fffaf0"/><circle cx="209" cy="130" r="2" fill="var(--choice-accent)"/><path d="M25 143v-15m-7 3 7-13 7 13" stroke="var(--choice-accent)" stroke-width="2" stroke-linecap="round"/><rect x="250" y="127" width="9" height="17" rx="1" fill="var(--choice-accent)" opacity=".45"/></svg>`;
+  }
   function shopCard(shop) {
-    const available = dashboard.inventory.filter(item => item.type === shop.type).length;
-    return `<article class="business-shop"><header><div class="business-owned-title"><span class="business-owned-icon business-type-${esc(shop.type)}">${typeIcon(shop.type)}<span class="business-owned-size">${sizeIcon(shop.size)}</span></span><div><span>${esc(sizeName(shop.size))}</span><h2>${esc(shop.name || typeName(shop.type))}</h2></div></div></header>
-      <dl class="business-stats"><div><dt>${t('Visitors', 'Besucher')}</dt><dd>${number(shop.visitors)}</dd></div><div><dt>${t('Popularity', 'Beliebtheit')}</dt><dd>${number(Math.round(shop.popularity * 100))}%</dd></div><div><dt>${t('Total sales', 'Verkäufe gesamt')}</dt><dd>${number(shop.sales)}</dd></div><div><dt>${t('Sales today', 'Verkäufe heute')}</dt><dd>${number(shop.salesToday)}</dd></div><div><dt>${t('Total revenue', 'Umsatz gesamt')}</dt><dd>${justizEuro(shop.revenue)}</dd></div><div><dt>${t('Revenue today', 'Umsatz heute')}</dt><dd>${justizEuro(shop.revenueToday)}</dd></div><div><dt>${t('Margin', 'Gewinnspanne')}</dt><dd>${number(shop.profitMargin)}%</dd></div><div><dt>${t('Stock', 'Warenbestand')}</dt><dd>${number(shop.stock.length)} / ${number(shop.capacity)}</dd></div></dl>
-      <form class="business-margin" data-business-margin-form data-shop="${esc(shop.id)}"><label>${t('Set margin over market value', 'Gewinnspanne auf Marktwert festlegen')}<span><input name="profitMargin" type="number" min="0" max="100" step="1" value="${shop.profitMargin}" inputmode="numeric" required> %</span></label><button class="secondary-button" type="submit">${t('Save margin', 'Gewinnspanne speichern')}</button><p>${t('Estimated buying rate per visitor', 'Geschätzte Kaufrate pro Besucher')}: <strong>${number(shop.buyChancePercent, 1)}%</strong>. ${t('Higher margins and expensive goods reduce buying, while visitor traffic stays the same.', 'Höhere Gewinnspannen und teure Waren senken die Kaufrate; die Besucherzahl bleibt gleich.')}</p><p class="account-error" role="alert"></p></form>
-      <form class="store-profile-form" data-store-profile data-shop="${esc(shop.id)}"><label>${t('Store name', 'Ladenname')}<input name="storeName" maxlength="60" value="${esc(shop.name || '')}" placeholder="${esc(typeName(shop.type))}"></label><label>${t('Tagline', 'Ladenspruch')}<input name="motto" maxlength="140" value="${esc(shop.motto || '')}"></label><label class="store-guard-choice"><input name="gooseGuard" type="checkbox" ${shop.gooseGuard ? 'checked disabled' : ''}>${shop.gooseGuard ? t('Goose guard on duty · HONK!', 'Wachgans im Dienst · HUP!') : t('Hire a goose guard · J€ 250 once · halves theft chance', 'Wachgans einstellen · einmalig J€ 250 · halbiert Diebstahlchance')}</label><div class="store-action-row"><button type="submit" class="secondary-button">${t('Save storefront', 'Ladenauftritt speichern')}</button><a href="/stores?shop=${encodeURIComponent(shop.id)}" class="secondary-button" data-page>${t('Visit your store', 'Deinen Laden besuchen')} →</a></div><p class="account-error" role="alert"></p></form><div class="business-stock-actions"><div><strong>${t('Inventory', 'Inventar')}</strong><small>${available} ${t('available to add', 'zum Einräumen verfügbar')} · ${Math.max(0, shop.capacity - shop.stock.length)} ${t('spaces free', 'Plätze frei')}</small></div><button class="secondary-button" type="button" data-business="open-restock" data-shop="${esc(shop.id)}">${t('Manage stock', 'Warenbestand verwalten')}</button></div></article>`;
+    const filled = Math.min(100, Math.round(shop.stock.length / shop.capacity * 100));
+    return `<article class="business-shop business-type-${esc(shop.type)}"><div class="business-card-art"><div class="business-card-badges"><span>${esc(sizeName(shop.size))}</span><span class="business-card-state${!shop.stock.length ? ' is-empty' : ''}"><i aria-hidden="true"></i>${shop.stock.length ? t('Open for business', 'Laden geöffnet') : t('Needs stock', 'Waren fehlen')}</span></div>${storefrontArt(shop.type)}</div><div class="business-card-body"><p class="business-card-category">${esc(typeName(shop.type))}</p><h2>${esc(shop.name || typeName(shop.type))}</h2><p class="business-card-motto">${esc(shop.motto || t('A little shop. A lot of possibilities.', 'Ein kleiner Laden. Große Möglichkeiten.'))}</p><dl class="business-card-stats"><div><dt>${t('Revenue today', 'Umsatz heute')}</dt><dd>${justizEuro(shop.revenueToday)}</dd></div><div><dt>${t('Sales today', 'Verkäufe heute')}</dt><dd>${number(shop.salesToday)}</dd></div></dl><div class="business-card-stock"><div><span>${t('On the shelves', 'In den Regalen')}</span><strong>${number(shop.stock.length)} <span>/ ${number(shop.capacity)}</span></strong></div><progress value="${shop.stock.length}" max="${shop.capacity}" aria-label="${esc(t('Shelf capacity used', 'Belegte Regalplätze'))}">${filled}%</progress></div><div class="business-card-details"><span>${number(shop.profitMargin)}% ${t('margin', 'Gewinnspanne')}</span>${shop.gooseGuard ? `<span>${t('Goose protected', 'Wachgans im Dienst')}</span>` : `<span>${number(shop.visitors)} ${t('visitors', 'Besucher')}</span>`}</div><div class="business-card-actions"><button class="business-edit-button" type="button" data-business="open-edit" data-shop="${esc(shop.id)}" aria-label="${esc(t('Edit store', 'Laden bearbeiten'))}: ${esc(shop.name || typeName(shop.type))}">${editIcon()}${t('Edit store', 'Laden bearbeiten')}</button><a href="/stores?shop=${encodeURIComponent(shop.id)}" data-page>${t('Visit', 'Besuchen')} <span aria-hidden="true">↗</span></a></div></div></article>`;
   }
   function shopsView() {
-    if (!account) return `<section class="collection-empty"><h2>${t('Sign in to open a business.', 'Melde dich an, um ein Geschaeft zu eroeffnen.')}</h2><a class="primary-button" href="/login" data-page>${t('Log in', 'Anmelden')}</a></section>`;
-    return `${economyOverviewMarkup()}<p><a href="/stores" data-page class="secondary-button">${t('Visit player stores', 'Spielerläden besuchen')} →</a></p><section class="business-purchase"><h2>${t('Your stores', 'Deine Geschaefte')} <small>${dashboard?.shops.length || 0} / ${dashboard?.maxStores || 3}</small></h2><button class="primary-button" type="button" data-business="open-buy" ${dashboard?.shops.length >= (dashboard?.maxStores || 3) ? 'disabled' : ''}>${t('Buy store', 'Geschaeft kaufen')}</button></section>
-      <p class="store-hint">${t('Store events have a 25% chance every 24 hours after the first day. They can destroy shelf stock, bring a buyout or change your wallet. Your store can always be restocked.', 'Ladenereignisse haben nach dem ersten Tag alle 24 Stunden eine Chance von 25%. Sie können Regalware zerstören, einen Ausverkauf auslösen oder dein Guthaben verändern. Dein Laden kann immer wieder aufgefüllt werden.')}</p><section class="business-owned">${dashboard?.shops.length ? `<div class="business-shop-grid">${dashboard.shops.map(shopCard).join('')}</div>` : `<p class="collection-empty">${t('No stores yet.', 'Noch keine Geschaefte.')}</p>`}</section>`;
+    if (!account) return `<section class="business-guest"><p class="eyebrow">${t('YOUR NEXT CHAPTER', 'DEIN NÄCHSTES KAPITEL')}</p><h1 tabindex="-1">${t('A shop of your own.', 'Dein eigener Laden.')}</h1><p>${t('Turn your finds into a storefront worth visiting.', 'Mach aus deinen Fundstücken einen Laden, den man gerne besucht.')}</p><a class="primary-button" href="/login" data-page>${t('Log in to get started', 'Anmelden und loslegen')}</a></section>`;
+    const shops = dashboard?.shops || [], max = dashboard?.maxStores || 3, canBuy = shops.length < max;
+    const total = key => shops.reduce((sum, shop) => sum + shop[key], 0);
+    return `<div class="business-portfolio"><header class="business-hero"><div><p class="eyebrow">${t('YOUR BUSINESSES', 'DEINE LÄDEN')}</p><h1 tabindex="-1">${t('Your little empire.', 'Dein kleines Imperium.')}</h1><p>${t('Good finds. Full shelves. Big possibilities.', 'Gute Fundstücke. Volle Regale. Große Möglichkeiten.')}</p><a href="/stores" data-page>${t('Explore the neighbourhood', 'Entdecke die Nachbarschaft')} <span aria-hidden="true">↗</span></a></div><div class="business-hero-account"><span class="business-location-count">${shops.length} / ${max} ${t('locations', 'Standorte')}</span><div class="business-location-dots" aria-hidden="true">${Array.from({length:max},(_,n)=>`<span class="${n < shops.length ? 'is-owned' : ''}">${String(n+1).padStart(2,'0')}</span>`).join('')}</div><small>${t('Available to invest', 'Zum Investieren verfügbar')}</small><strong>${justizEuro(account.tokens)}</strong></div></header><dl class="business-portfolio-stats"><div><dt>${t('Revenue today', 'Umsatz heute')}</dt><dd>${justizEuro(total('revenueToday'))}</dd></div><div><dt>${t('Items on shelves', 'Artikel im Regal')}</dt><dd>${number(shops.reduce((sum, shop) => sum + shop.stock.length, 0))}</dd></div><div><dt>${t('Sales today', 'Verkäufe heute')}</dt><dd>${number(total('salesToday'))}</dd></div></dl><section class="business-owned"><div class="business-portfolio-heading"><div><p class="eyebrow">${t('THE PORTFOLIO', 'DEIN PORTFOLIO')}</p><h2>${t('Your storefronts', 'Deine Schaufenster')}</h2></div><button class="business-new-button" type="button" data-business="open-buy" ${canBuy ? '' : 'disabled'}><span aria-hidden="true">＋</span>${canBuy ? t('Open a store', 'Laden eröffnen') : t('All locations filled', 'Alle Standorte belegt')}</button></div><div class="business-shop-grid">${shops.map(shopCard).join('')}${canBuy ? `<button class="business-add-card" type="button" data-business="open-buy"><span class="business-add-icon" aria-hidden="true">＋</span><strong>${shops.length ? t('Room for something new.', 'Platz für etwas Neues.') : t('Every empire starts somewhere.', 'Jedes Imperium fängt klein an.')}</strong><span>${t('Wine, toys, tech or cars. Make the next shop yours.', 'Wein, Spielzeug, Technik oder Autos. Mach den nächsten Laden zu deinem.')}</span><b>${t('Choose your next store', 'Wähle deinen nächsten Laden')} <span aria-hidden="true">→</span></b></button>` : ''}</div></section><aside class="business-events-note"><span aria-hidden="true">✦</span><div><strong>${t('A little chaos comes with the keys.', 'Ein bisschen Chaos gehört dazu.')}</strong><p>${t('After the first day, each stocked store has a 25% event chance every 24 hours. Expect lucky buyouts, surprise losses and the occasional goose. You can always restock.', 'Nach dem ersten Tag hat jeder gefüllte Laden alle 24 Stunden eine Ereignischance von 25%. Freu dich auf glückliche Ausverkäufe, überraschende Verluste und gelegentliche Gänse. Du kannst immer wieder auffüllen.')}</p></div></aside></div>`;
   }
+  function renderEditor(draft = null) {
+    const shop = dashboard?.shops.find(entry => entry.id === editorShopId); if (!shop) return;
+    editorDialog.innerHTML = `<header class="business-editor-header"><span class="business-editor-icon business-type-${esc(shop.type)}">${typeIcon(shop.type)}</span><div><p class="eyebrow">${esc(typeName(shop.type))} · ${esc(sizeName(shop.size))}</p><h2 id="business-editor-title" data-editor-title>${esc(shop.name || typeName(shop.type))}</h2></div><button class="dialog-close" type="button" data-business="close-edit" aria-label="${t('Close', 'Schließen')}">×</button></header><div class="business-editor-content"><div><section class="business-editor-section"><h3>${t('Make it yours', 'Mach ihn zu deinem Laden')}</h3><p>${t('The name above the door. The attitude inside.', 'Der Name über der Tür. Der Charakter dahinter.')}</p><form class="store-profile-form" data-store-profile data-shop="${esc(shop.id)}"><label>${t('Store name', 'Ladenname')}<input name="storeName" maxlength="60" value="${esc(draft?.name ?? shop.name ?? '')}" placeholder="${esc(typeName(shop.type))}"></label><label>${t('Tagline', 'Ladenspruch')}<input name="motto" maxlength="140" value="${esc(draft?.motto ?? shop.motto ?? '')}"></label><label class="store-guard-choice"><input name="gooseGuard" type="checkbox" ${shop.gooseGuard || draft?.guard ? 'checked' : ''} ${shop.gooseGuard ? 'disabled' : ''}><span data-editor-guard>${shop.gooseGuard ? t('Goose guard on duty · HONK!', 'Wachgans im Dienst · HUP!') : t('Hire a goose guard · J€250 once · halves theft chance', 'Wachgans einstellen · einmalig J€250 · halbiert Diebstahlchance')}</span></label><button type="submit" class="business-edit-button">${t('Save storefront', 'Ladenauftritt speichern')}</button><p class="account-error" role="alert"></p></form></section><section class="business-editor-section"><h3>${t('Price it right', 'Der richtige Preis')}</h3><form class="business-margin" data-business-margin-form data-shop="${esc(shop.id)}"><label>${t('Margin over market value', 'Gewinnspanne auf Marktwert')}<span><input name="profitMargin" type="number" min="0" max="100" step="1" value="${draft?.margin ?? shop.profitMargin}" inputmode="numeric" required> %</span></label><button class="secondary-button" type="submit">${t('Save margin', 'Gewinnspanne speichern')}</button><p>${t('Higher margins and expensive items reduce sales per visitor.', 'Höhere Gewinnspannen und teure Artikel senken die Verkäufe pro Besucher.')}</p><p class="account-error" role="alert"></p></form></section></div><div><section class="business-editor-section business-editor-shelves"><span class="business-editor-shelf-art business-type-${esc(shop.type)}">${storefrontArt(shop.type)}</span><h3>${t('Keep the shelves full', 'Halte die Regale voll')}</h3><p data-editor-stock></p><button class="business-edit-button" type="button" data-business="open-restock" data-shop="${esc(shop.id)}">${t('Manage stock', 'Warenbestand verwalten')} <span aria-hidden="true">→</span></button><a href="/marketplace" data-page>${t('Find new stock on the marketplace', 'Neue Waren auf dem Marktplatz finden')} ↗</a></section><section class="business-editor-section"><h3>${t('Behind the counter', 'Hinter der Ladentheke')}</h3><dl class="business-editor-stats" data-editor-stats></dl><a class="business-editor-visit" href="/stores?shop=${encodeURIComponent(shop.id)}" data-page>${t('Visit your storefront', 'Deinen Laden besuchen')} <span aria-hidden="true">↗</span></a></section></div></div>`;
+    syncEditor();
+  }
+  function syncEditor() {
+    const shop = dashboard?.shops.find(entry => entry.id === editorShopId);
+    if (!shop) { if (editorDialog.open) editorDialog.close(); return; }
+    editorDialog.querySelector('[data-editor-title]').textContent = shop.name || typeName(shop.type);
+    const available = dashboard.inventory.filter(item => item.type === shop.type).length;
+    editorDialog.querySelector('[data-editor-stock]').textContent = `${shop.stock.length} / ${shop.capacity} ${t('on shelves', 'im Regal')} · ${available} ${t('ready to add', 'zum Einräumen bereit')}`;
+    const metrics = [[t('Total revenue','Umsatz gesamt'),justizEuro(shop.revenue)],[t('Total sales','Verkäufe gesamt'),number(shop.sales)],[t('Visitors','Besucher'),number(shop.visitors)],[t('Popularity','Beliebtheit'),`${number(Math.round(shop.popularity*100))}%`],[t('Buying rate','Kaufrate'),`${number(shop.buyChancePercent,1)}%`],[t('Margin','Gewinnspanne'),`${shop.profitMargin}%`]];
+    editorDialog.querySelector('[data-editor-stats]').innerHTML = metrics.map(([label,value])=>`<div><dt>${label}</dt><dd>${value}</dd></div>`).join('');
+    if (shop.gooseGuard) {
+      const guard = editorDialog.querySelector('[name="gooseGuard"]'); guard.checked = true; guard.disabled = true;
+      editorDialog.querySelector('[data-editor-guard]').textContent = t('Goose guard on duty · HONK!', 'Wachgans im Dienst · HUP!');
+    }
+  }
+  function openEditor(button) {
+    if (!dashboard?.shops.some(shop => shop.id === button.dataset.shop)) return;
+    editorShopId = button.dataset.shop; editorReturnFocus = button; renderEditor(); editorDialog.showModal();
+    editorDialog.querySelector('.dialog-close').focus({preventScroll:true});
+  }
+  editorDialog.addEventListener('close', () => {
+    const id = editorShopId; editorShopId = null;
+    const replacement = id ? accountContent.querySelector(`[data-business="open-edit"][data-shop="${CSS.escape(id)}"]`) : null;
+    (replacement || (editorReturnFocus?.isConnected ? editorReturnFocus : null))?.focus({preventScroll:true}); editorReturnFocus = null;
+  });
+  editorDialog.addEventListener('click', event => { if (event.target === editorDialog) editorDialog.close(); });
   function renderPurchaseDialog() {
     if (!dashboard) return;
     purchaseDialog.innerHTML = `<form id="business-buy-form"><header class="business-dialog-header"><div><p class="eyebrow">${t('LOCATIONS', 'STANDORTE')}</p><h2 id="business-buy-title">${t('Choose a store', 'Geschaeft waehlen')}</h2></div><button class="dialog-close" type="button" data-business="close-buy" aria-label="${t('Close', 'Schliessen')}">×</button></header>
@@ -199,11 +235,14 @@ window.businessUi = (() => {
   restockDialog.addEventListener('click', event => { if (event.target === restockDialog) restockDialog.close(); });
   function render() {
     if (currentAccountPage !== '/businesses') return;
-    accountContent.innerHTML = pageHeading(t('Businesses', 'Geschaefte')) + shopsView();
+    accountContent.innerHTML = shopsView();
+    if (editorDialog.open) syncEditor();
     window.storeUi.showEvents();
   }
   document.addEventListener('click', async event => {
     const button = event.target.closest('[data-business]'); if (!button || currentAccountPage !== '/businesses') return;
+    if (button.dataset.business === 'open-edit') { openEditor(button); return; }
+    if (button.dataset.business === 'close-edit') { editorDialog.close(); return; }
     if (button.dataset.business === 'open-buy') { openPurchaseDialog(button); return; }
     if (button.dataset.business === 'close-buy') { purchaseDialog.close(); return; }
     if (button.dataset.business === 'open-restock') { openRestockDialog(button); return; }
@@ -257,7 +296,7 @@ window.businessUi = (() => {
         await refresh(visit, false);
         if (visit === accountVisit) showToast(t('Margin saved.', 'Gewinnspanne gespeichert.'));
       } catch (error) { if (visit === accountVisit) form.querySelector('.account-error').textContent = error.message; }
-      finally { busy = false; if (visit === accountVisit) render(); }
+      finally { busy = false; if (button.isConnected) button.disabled = false; if (visit === accountVisit) render(); }
       return;
     }
     if (currentAccountPage !== '/businesses' || !['business-buy-form', 'business-restock-form'].includes(form.id)) return;
@@ -301,6 +340,10 @@ window.businessUi = (() => {
   });
   document.addEventListener('jg:language', () => {
     if (currentAccountPage === '/businesses') render();
+    if (editorDialog.open && !editorDialog.querySelector('button[type="submit"]:disabled')) {
+      const form = editorDialog.querySelector('[data-store-profile]');
+      renderEditor({name:form.elements.storeName.value,motto:form.elements.motto.value,guard:form.elements.gooseGuard.checked,margin:editorDialog.querySelector('[name="profitMargin"]').value});
+    }
     if (purchaseDialog.open) renderPurchaseDialog();
     if (restockDialog.open) {
       const quantities = [...restockDialog.querySelectorAll('input[name="quantity"]')].map(input => Number(input.value));

@@ -39,23 +39,37 @@ test('stock manager keeps add and remove controls together with capacity checks'
   assert.doesNotMatch(source, /business-stock-form|business-bid-form|business-tabs/);
 });
 
-test('each store shows the requested metrics, margin control and stock manager at capacity', () => {
+test('store cards lead with daily results and edit actions; complete controls remain in the editor at capacity', () => {
   const cardSource = source.slice(source.indexOf('  function shopCard('), source.indexOf('  function shopsView('));
-  const context = vm.createContext({ dashboard: { inventory: [] }, esc: String, t: en => en,
-    number: String, justizEuro: value => `J€ ${value}`, typeName: () => 'Toy store', sizeName: () => 'Small shop',
-    typeIcon: () => '', sizeIcon: () => '' });
-  vm.runInContext(`${cardSource}\nthis.shopCard = shopCard;`, context);
-  const markup = context.shopCard({ id: 'shop-1', type: 'toys', size: 'tiny', capacity: 1,
+  const shop = { id: 'shop-1', type: 'toys', size: 'tiny', capacity: 1,
     profitMargin: 45, buyChancePercent: 22.8, visitors: 11, popularity: 1,
     variety: 1, value: 120, sales: 2, salesToday: 1, revenue: 300, revenueToday: 174,
-    stock: [{ id: 'unit-1', item: { title: 'Puzzle' }, referencePrice: 120, askingPrice: 174 }] });
-  for (const label of ['Visitors', 'Popularity', 'Total sales', 'Sales today', 'Total revenue', 'Revenue today', 'Margin', 'Stock'])
-    assert.match(markup, new RegExp(`<dt>${label}</dt>`));
-  assert.match(markup, /<dd>1 \/ 1<\/dd>/);
-  assert.match(markup, /data-business-margin-form data-shop="shop-1"/);
-  assert.match(markup, /name="profitMargin"[^>]*value="45"/);
-  assert.match(markup, /Estimated buying rate per visitor/);
-  assert.match(markup, /data-business="open-restock" data-shop="shop-1"/);
-  assert.doesNotMatch(markup, /data-business="open-restock"[^>]*disabled/);
+    stock: [{ id: 'unit-1', item: { title: 'Puzzle' }, referencePrice: 120, askingPrice: 174 }] };
+  const context = vm.createContext({ dashboard: { inventory: [], shops: [shop] }, editorShopId: shop.id,
+    esc: String, t: en => en, number: String, justizEuro: value => `J€ ${value}`,
+    typeName: () => 'Toy store', sizeName: () => 'Small shop', storefrontArt: () => '', editIcon: () => '', typeIcon: () => '' });
+  vm.runInContext(`${cardSource}\nthis.shopCard = shopCard;`, context);
+  const markup = context.shopCard(shop);
+  for (const label of ['Sales today', 'Revenue today']) assert.match(markup, new RegExp(`<dt>${label}</dt>`));
+  assert.match(markup, /<progress value="1" max="1"/);
+  assert.match(markup, /data-business="open-edit" data-shop="shop-1"/);
+  assert.match(markup, /href="\/stores\?shop=shop-1"/);
+  assert.doesNotMatch(markup, /<form|data-business-margin-form|data-store-profile/);
+
+  // Settings move to an editor without dropping any of the existing controls.
+  const editor = { innerHTML: '' };
+  Object.assign(context, { editorDialog: editor, syncEditor: () => {} });
+  const editorSource = source.slice(source.indexOf('  function renderEditor('), source.indexOf('  function syncEditor('));
+  vm.runInContext(`${editorSource}\nrenderEditor();`, context);
+  assert.match(editor.innerHTML, /data-business-margin-form data-shop="shop-1"/);
+  assert.match(editor.innerHTML, /name="profitMargin"[^>]*value="45"/);
+  assert.match(editor.innerHTML, /data-store-profile data-shop="shop-1"/);
+  assert.match(editor.innerHTML, /name="storeName"/);
+  assert.match(editor.innerHTML, /name="motto"/);
+  assert.match(editor.innerHTML, /name="gooseGuard"/);
+  assert.match(editor.innerHTML, /data-business="open-restock" data-shop="shop-1"/);
+  assert.doesNotMatch(editor.innerHTML, /data-business="open-restock"[^>]*disabled/);
   assert.match(source, /accountApi\('businesses\/margin'/);
+  for (const label of ['Visitors', 'Popularity', 'Total sales', 'Total revenue', 'Buying rate', 'Margin'])
+    assert.ok(source.includes(`t('${label}'`));
 });
