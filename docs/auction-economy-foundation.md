@@ -423,3 +423,31 @@ read-only audit script cover cold, neutral and hot markets, paid-case returns,
 three-draw palette outcomes, compound Daily case odds, NPC demand and business
 margin turnover. Auction schedules, supply limits, the XP curve and transaction
 boundaries remain as described above.
+
+## Store events and ownership limit
+
+`POST /api/account/stores/events/check` checks only the authenticated owner's
+stores and returns pending results plus the current wallet. It ignores client
+choices of event, shop, chance or money. Each stocked store has a 25% chance once
+per rolling 24 hours, starting 24 hours after purchase. Empty and unsuccessful
+checks still consume that interval; missed days produce one check. Ordinary
+elapsed NPC sales settle before the current-stock event. Randomness comes from
+Node's cryptographic generator. The check timestamp, inventory disposal, payout,
+sale history, event result and notification commit together or all roll back.
+
+Bombing and professional heist events clear all shelf stock. Floods destroy half
+(rounding up), goose rampages one quarter. Rich buyers pay all shelf prices;
+collectors buy up to three items for 150% of their current shelf price. Tax raids
+remove up to J€100 without overdrawing; windfalls add J€200. A hired goose guard
+has a 50% chance of stopping the professional heist. Losses consume inventory
+without counting as sales; stock held outside that shop and shop ownership remain.
+
+The EN/DE owner modal appears on `/stores` and `/businesses` and survives reload
+or navigation until `POST /api/account/stores/events/acknowledge` receives its
+IDs. Acknowledgement is owner-scoped and idempotent; notifications retain the
+result afterward. Economy reset deletes event results and check timestamps.
+
+`buyBusiness` enforces three stores across all categories before charging money,
+in the same write transaction. The dashboard exposes `maxStores: 3` and disables
+buying at the cap. Existing larger portfolios retain all stores and stock, but
+cannot purchase another location.

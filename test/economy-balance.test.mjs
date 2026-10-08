@@ -168,6 +168,10 @@ test('business margin has a turnover cost and expensive items sell much more slo
   const f = await fixture(t);
   assert.ok(businessSaleChance(.28, 100) < businessSaleChance(.28, 20) / 10);
   const shop = buyBusiness(f.dir, f.user('seller'), 'electronics', 'tiny', { now }).shop;
+  // Traffic and purchase rolls hash the shop ID. A UUID made this bounded
+  // sample assertion fail randomly even though the sale probabilities held.
+  f.accounts.db(db => db.prepare('UPDATE businesses SET id = ? WHERE id = ?').run('balance-turnover-shop', shop.id));
+  shop.id = 'balance-turnover-shop';
   f.accounts.db(db => {
     for (let n = 0; n < 20; n++) db.prepare('INSERT INTO inventory VALUES (?, ?, ?, ?, NULL)')
       .run(`item-${n}`, 'seller', JSON.stringify({ title: 'Laptop', price: n < 10 ? 120 : 1_000_000,

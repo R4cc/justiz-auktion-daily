@@ -52,6 +52,8 @@ window.businessUi = (() => {
     restockReturnFocus = null; restockShopId = null; restockSignature = null; if (restockDialog.open) restockDialog.close();
   }
   async function load(visit) {
+    if (account) await window.storeUi.loadEvents(visit);
+    if (visit !== accountVisit) return;
     await refresh(visit, false);
     if (visit !== accountVisit) return;
     timer = setInterval(() => { if (!document.hidden && !busy) refresh(visit).catch(() => {}); }, 30_000);
@@ -65,8 +67,8 @@ window.businessUi = (() => {
   }
   function shopsView() {
     if (!account) return `<section class="collection-empty"><h2>${t('Sign in to open a business.', 'Melde dich an, um ein Geschaeft zu eroeffnen.')}</h2><a class="primary-button" href="/login" data-page>${t('Log in', 'Anmelden')}</a></section>`;
-    return `${economyOverviewMarkup()}<p><a href="/stores" data-page class="secondary-button">${t('Visit player stores', 'Spielerläden besuchen')} →</a></p><section class="business-purchase"><h2>${t('Your stores', 'Deine Geschaefte')}</h2><button class="primary-button" type="button" data-business="open-buy">${t('Buy store', 'Geschaeft kaufen')}</button></section>
-      <section class="business-owned">${dashboard?.shops.length ? `<div class="business-shop-grid">${dashboard.shops.map(shopCard).join('')}</div>` : `<p class="collection-empty">${t('No stores yet.', 'Noch keine Geschaefte.')}</p>`}</section>`;
+    return `${economyOverviewMarkup()}<p><a href="/stores" data-page class="secondary-button">${t('Visit player stores', 'Spielerläden besuchen')} →</a></p><section class="business-purchase"><h2>${t('Your stores', 'Deine Geschaefte')} <small>${dashboard?.shops.length || 0} / ${dashboard?.maxStores || 3}</small></h2><button class="primary-button" type="button" data-business="open-buy" ${dashboard?.shops.length >= (dashboard?.maxStores || 3) ? 'disabled' : ''}>${t('Buy store', 'Geschaeft kaufen')}</button></section>
+      <p class="store-hint">${t('Store events have a 25% chance every 24 hours after the first day. They can destroy shelf stock, bring a buyout or change your wallet. Your store can always be restocked.', 'Ladenereignisse haben nach dem ersten Tag alle 24 Stunden eine Chance von 25%. Sie können Regalware zerstören, einen Ausverkauf auslösen oder dein Guthaben verändern. Dein Laden kann immer wieder aufgefüllt werden.')}</p><section class="business-owned">${dashboard?.shops.length ? `<div class="business-shop-grid">${dashboard.shops.map(shopCard).join('')}</div>` : `<p class="collection-empty">${t('No stores yet.', 'Noch keine Geschaefte.')}</p>`}</section>`;
   }
   function renderPurchaseDialog() {
     if (!dashboard) return;
@@ -89,11 +91,11 @@ window.businessUi = (() => {
     const cost = offerCost(type, size);
     summary.textContent = `${typeName(typeId)} · ${sizeName(sizeId)} · ${offerCapacity(type, size)} ${t('spaces', 'Plaetze')}`;
     buy.textContent = account.tokens >= cost ? `${t('Buy store', 'Geschaeft kaufen')} · ${justizEuro(cost)}` : t('Not enough J€', 'Nicht genug J€');
-    buy.disabled = account.tokens < cost || busy;
+    buy.disabled = account.tokens < cost || busy || dashboard.shops.length >= dashboard.maxStores;
     purchaseDialog.querySelectorAll('.business-choice').forEach(card => card.classList.toggle('is-selected', card.querySelector('input').checked));
   }
   function openPurchaseDialog(button) {
-    if (!account || !dashboard) return;
+    if (!account || !dashboard || dashboard.shops.length >= dashboard.maxStores) return;
     selectedOffer = null; purchaseReturnFocus = button;
     renderPurchaseDialog(); purchaseDialog.showModal();
     purchaseDialog.querySelector('.dialog-close')?.focus({ preventScroll: true });
@@ -198,6 +200,7 @@ window.businessUi = (() => {
   function render() {
     if (currentAccountPage !== '/businesses') return;
     accountContent.innerHTML = pageHeading(t('Businesses', 'Geschaefte')) + shopsView();
+    window.storeUi.showEvents();
   }
   document.addEventListener('click', async event => {
     const button = event.target.closest('[data-business]'); if (!button || currentAccountPage !== '/businesses') return;

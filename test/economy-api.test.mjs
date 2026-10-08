@@ -11,6 +11,7 @@ import { marketState } from '../src/market.mjs';
 import { featureFlags } from '../src/features.mjs';
 import { closeDataStore, upsertAuctions } from '../src/database.mjs';
 import { Accounts } from '../src/accounts.mjs';
+import { checkStoreEvents } from '../src/store-events.mjs';
 import { buyBusiness, stockBusiness } from '../src/businesses.mjs';
 
 const password = 'economy-foundation-password';
@@ -330,4 +331,36 @@ test('case store stays public with auction features on or off and purchases seal
     assert.ok((await opened.json()).item.auctionId);
     assert.equal((await post(base, 'cases/buy', { ...payload, caseId: 'seizure' }, cookie)).status, 409);
   }
+});
+
+
+test('store events and the three-store cap use live sessions, CSRF, private results and idempotent acknowledgement', async t => {
+  const { base, dir } = await fixture(t);
+  const accounts = new Accounts(dir), time = Date.now();
+  const ownerCookie = (await post(base, 'login', { username: 'admin', password })).headers.get('set-cookie');
+  const owner = accounts.db(db => db.prepare("SELECT id FROM users WHERE username = 'admin'").get());
+  accounts.db(db => db.prepare('UPDATE users SET tokens=100000 WHERE id=?').run(owner.id));
+  const shop = buyBusiness(dir, owner, 'wine', 'popup', { now: time }).shop;
+  buyBusiness(dir, owner, 'wine', 'popup', { now: time });
+  buyBusiness(dir, owner, 'toys', 'popup', { now: time });
+  const before = accounts.db(db => db.prepare('SELECT tokens FROM users WHERE id=?').get(owner.id).tokens);
+  const capped = await post(base, 'businesses/buy', { type: 'electronics', size: 'popup' }, ownerCookie);
+  assert.equal(capped.status,409); assert.equal((await capped.json()).error,'store_limit_reached');
+  assert.equal(accounts.db(db => db.prepare('SELECT tokens FROM users WHERE id=?').get(owner.id).tokens),before);
+  accounts.db(db => db.prepare('INSERT INTO inventory(id,user_id,item,created_at) VALUES (?,?,?,?)').run('event-api-item',owner.id,JSON.stringify({title:'Event wine',price:100,marketCategory:'wine'}),time));
+  stockBusiness(dir,owner,shop.id,['event-api-item'],{now:time});
+  accounts.db(db => db.prepare('UPDATE businesses SET bought_at=?, last_tick_at=?, traffic_popularity=0 WHERE id=?').run(time-2*86400000,time,shop.id));
+  const event = checkStoreEvents(dir,owner,{now:time,random:()=>0}).events[0];
+  assert.equal((await post(base,'stores/events/check',{})).status,401);
+  assert.equal((await fetch(base+'/api/account/stores/events/acknowledge',{method:'POST',headers:{cookie:ownerCookie,'content-type':'application/json'},body:JSON.stringify({ids:[event.id]})})).status,403);
+  const code=(await (await post(base,'codes',{count:1},ownerCookie)).json()).codes[0];
+  const rivalCookie=(await post(base,'register',{username:'EventRival',password,code})).headers.get('set-cookie');
+  assert.deepEqual((await (await post(base,'stores/events/check',{},rivalCookie)).json()).events,[]);
+  await post(base,'stores/events/acknowledge',{ids:[event.id]},rivalCookie);
+  const pending=(await (await post(base,'stores/events/check',{event:'windfall',random:0,shopId:shop.id},ownerCookie)).json()).events;
+  assert.equal(pending.length,1); assert.equal(pending[0].type,'bombing');
+  assert.equal((await post(base,'stores/events/acknowledge',{ids:[]},ownerCookie)).status,400);
+  assert.deepEqual((await (await post(base,'stores/events/acknowledge',{ids:[event.id]},ownerCookie)).json()).events,[]);
+  assert.deepEqual((await (await post(base,'stores/events/acknowledge',{ids:[event.id]},ownerCookie)).json()).events,[]);
+  assert.deepEqual((await (await post(base,'stores/events/check',{},ownerCookie)).json()).events,[]);
 });

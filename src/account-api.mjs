@@ -1,3 +1,4 @@
+import { checkStoreEvents, acknowledgeStoreEvents } from './store-events.mjs';
 import { Accounts, AccountError } from './accounts.mjs';
 import { adminMarketDashboard, adjustAdminMarket } from './admin-economy.mjs';
 import { clientIp } from './client-ip.mjs';
@@ -183,6 +184,8 @@ export async function createAccountApi({ dataDir, dailyPayload, json, env = proc
       else if (flags.businesses && route === 'businesses/margin') result = { shop: setBusinessMargin(dataDir, user, payload.shopId, payload.profitMargin), user: accounts.profile(user) };
       else if (flags.businesses && route === 'businesses/unstock') result = { shop: unstockBusiness(dataDir, user, payload.shopId, payload.inventoryId), user: accounts.profile(user) };
       else if (flags.businesses && route === 'businesses/profile') result = { receipt: customizeStore(dataDir, user, payload), user: accounts.profile(user) };
+      else if (flags.businesses && route === 'stores/events/check') result = { ...checkStoreEvents(dataDir, user), user: accounts.profile(user) };
+      else if (flags.businesses && route === 'stores/events/acknowledge') result = acknowledgeStoreEvents(dataDir, user, payload.ids);
       else if (flags.businesses && route === 'stores/visit') result = recordStoreVisit(dataDir, user, payload.shopId);
       else if (flags.businesses && route === 'stores/buy') result = { receipt: buyStoreItem(dataDir, user, payload), user: accounts.profile(user) };
       else if (flags.businesses && route === 'stores/review') result = reviewStore(dataDir, user, payload);

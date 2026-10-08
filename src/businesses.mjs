@@ -15,6 +15,7 @@ const WHOLESALE_SLOT = 15 * 60_000;
 const STOCK_SELLER_ID = 'npc-stock-supply';
 export const DEFAULT_PROFIT_MARGIN = ECONOMY_BALANCE.businessDefaultMargin;
 export const MAX_PROFIT_MARGIN = 100;
+export const MAX_STORES_PER_USER = 3;
 const fail = (code, status = 400) => { throw new AccountError(code, status); };
 const hashNumber = value => parseInt(createHash('sha256').update(value).digest('hex').slice(0, 8), 16) / 0x100000000;
 
@@ -238,7 +239,7 @@ export function businessDashboard(dataDir, user, { now = Date.now() } = {}) {
   return withDatabase(dataDir, db => transaction(db, () => {
     ensureBusinessSchema(db); activeUser(db, user); advanceShops(db, now, user.id);
     const sealed = sealedPaletteInventoryIds(db);
-    return { types: SHOP_TYPES, sizes: SHOP_SIZES,
+    return { types: SHOP_TYPES, sizes: SHOP_SIZES, maxStores: MAX_STORES_PER_USER,
       shops: db.prepare('SELECT * FROM businesses WHERE user_id = ? ORDER BY bought_at, id').all(user.id).map(row => publicShop(db, row, now)),
       inventory: db.prepare('SELECT id, item FROM inventory WHERE user_id = ? AND sold_at IS NULL ORDER BY created_at DESC').all(user.id)
         .filter(row => !db.prepare('SELECT 1 FROM business_stock WHERE inventory_id = ? AND sold_at IS NULL').get(row.id)
@@ -254,6 +255,7 @@ export function buyBusiness(dataDir, user, typeId, sizeId, { now = Date.now() } 
   const cost = Math.round(size.cost * type.costFactor);
   return withDatabase(dataDir, db => transaction(db, () => {
     ensureBusinessSchema(db); activeUser(db, user);
+    if (db.prepare('SELECT COUNT(*) AS n FROM businesses WHERE user_id = ?').get(user.id).n >= MAX_STORES_PER_USER) fail('store_limit_reached', 409);
     if (!db.prepare('UPDATE users SET tokens = tokens - ? WHERE id = ? AND tokens >= ?').run(cost, user.id, cost).changes) fail('insufficient_tokens', 409);
     const id = randomUUID();
     db.prepare('INSERT INTO businesses (id, user_id, type, size, bought_at, last_tick_at, profit_margin) VALUES (?, ?, ?, ?, ?, ?, ?)')

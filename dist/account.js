@@ -55,6 +55,8 @@ function accountError(code) {
     heist_not_ready: t('Watch the whole sequence before making your move.', 'Sieh dir die ganze Folge an, bevor du loslegst.'),
     heist_not_found: t('This attempt is no longer available.', 'Dieser Versuch ist nicht mehr verfügbar.'),
     guard_permanent: t('Your goose guard is already hired permanently.', 'Deine Wachgans ist schon dauerhaft eingestellt.'),
+    store_limit_reached: t('You can own at most 3 stores.', 'Du kannst höchstens 3 Läden besitzen.'),
+    invalid_store_events: t('Could not dismiss store events. Try again.', 'Ladenereignisse konnten nicht geschlossen werden. Versuche es erneut.'),
     business_not_found: t('This store is no longer available.', 'Dieser Laden ist nicht mehr verfügbar.'),
     invalid_heist_moves: t('Repeat all six arrows before finishing.', 'Wiederhole alle sechs Pfeile, bevor du abschließt.'),
     insufficient_tokens: t('You do not have enough J€.', 'Du hast nicht genug J€.'),

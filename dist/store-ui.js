@@ -7,11 +7,14 @@ window.storeUi = (() => {
   const reactions = { applause: ['Applaud', 'Applaudieren'], joke: ['Tell a dad joke', 'Schlechten Witz erzählen'], bell: ['Ring the bell', 'Klingeln'] };
   const typeName = type => names[type] ? t(...names[type]) : type;
   let data = null, timer = null, generation = 0, busy = false, game = null, gameVersion = 0, timers = [], returnFocus = null;
+  let eventQueue = [], eventOwner = null, eventPending = false, eventReturnFocus = null;
+  const eventDialog = document.createElement('dialog');
+  eventDialog.className = 'store-event-dialog'; eventDialog.setAttribute('aria-labelledby', 'store-event-title'); document.body.append(eventDialog);
   const heistDialog = document.createElement('dialog');
   heistDialog.className = 'store-heist-dialog'; heistDialog.setAttribute('aria-labelledby', 'store-heist-title'); document.body.append(heistDialog);
   const later = (fn, milliseconds) => { const handle = setTimeout(fn, milliseconds); timers.push(handle); };
   function clearGameTimers() { timers.forEach(clearTimeout); timers = []; gameVersion++; }
-  function stop() { busy = false; clearInterval(timer); timer = null; generation++; clearGameTimers(); game = null; data = null; returnFocus = null; heistDialog.close(); }
+  function stop() { eventQueue = []; eventOwner = null; eventReturnFocus = null; eventDialog.close(); busy = false; clearInterval(timer); timer = null; generation++; clearGameTimers(); game = null; data = null; returnFocus = null; heistDialog.close(); }
   function shopId() { return new URLSearchParams(location.search).get('shop'); }
   async function read(url) {
     const response = await fetch(url, { headers: { accept: 'application/json' } });
@@ -29,6 +32,8 @@ window.storeUi = (() => {
   async function load(visit) {
     await economyReady;
     if (!economyFlags.businesses) { data = { disabled: true }; return; }
+    await loadEvents(visit);
+    if (visit !== accountVisit) return;
     await refresh(visit, false);
     if (visit !== accountVisit) return;
     if (account && data?.store && !data.store.own) {
@@ -37,9 +42,36 @@ window.storeUi = (() => {
       await refresh(visit, false);
     }
     timer = setInterval(() => {
-      if (!document.hidden && !busy && !heistDialog.open && !document.activeElement?.closest('.store-review-form, .store-search')) refresh(visit).catch(() => {});
+      if (!document.hidden && !busy && !heistDialog.open && !eventDialog.open && !document.activeElement?.closest('.store-review-form, .store-search')) refresh(visit).catch(() => {});
     }, 30000);
   }
+  async function loadEvents(visit) {
+    const owner = account?.id; if (!owner) return;
+    const result = await accountApi('stores/events/check', {});
+    if (visit !== accountVisit || account?.id !== owner) return;
+    updateAccount(result.user); eventQueue = result.events; eventOwner = owner;
+  }
+  function showEvents(force = false) {
+    if (eventDialog.open && !force) return;
+    if (!eventQueue.length || eventOwner !== account?.id || !['/stores','/businesses'].includes(currentAccountPage)) return;
+    eventDialog.innerHTML = `<div class="store-event-content"><p class="eyebrow">${t('NEIGHBOURHOOD CHAOS', 'CHAOS IM VIERTEL')}</p><h2 id="store-event-title" tabindex="-1">${t('While you were out…', 'Während du weg warst …')}</h2><div class="store-event-list">${eventQueue.map(event => `<article><p class="store-event-shop">${esc(event.shopName || typeName(event.shopType))}</p><h3>${esc(t(event.titleEn, event.titleDe))}</h3><p>${esc(t(event.bodyEn, event.bodyDe))}</p><div class="store-event-outcome">${event.itemsLost ? `<span>${number(event.itemsLost)} ${t('items lost', 'Artikel verloren')}</span>` : ''}${event.itemsSold ? `<span>${number(event.itemsSold)} ${t('items sold', 'Artikel verkauft')}</span>` : ''}<strong>${event.money > 0 ? '+' : event.money < 0 ? '−' : ''}${justizEuro(Math.abs(event.money))}</strong></div><small>${new Date(event.createdAt).toLocaleString(uiLocale())}</small></article>`).join('')}</div><p class="account-error" role="alert"></p><button class="primary-button" data-store-events-dismiss>${t('Well, that happened.', 'Tja, das ist passiert.')}</button></div>`;
+    if (!eventDialog.open) { eventReturnFocus = document.activeElement; eventDialog.showModal(); eventDialog.querySelector('h2').focus({preventScroll:true}); eventDialog.scrollTop = 0; }
+  }
+  async function dismissEvents() {
+    if (eventPending || eventOwner !== account?.id) return;
+    const visit = accountVisit, owner = eventOwner; eventPending = true;
+    const button = eventDialog.querySelector('button'); button.disabled = true;
+    try {
+      const result = await accountApi('stores/events/acknowledge', { ids: eventQueue.map(event => event.id) });
+      if (visit !== accountVisit || owner !== account?.id) return;
+      eventQueue = result.events;
+      if (eventQueue.length) showEvents(true); else eventDialog.close();
+    } catch (error) { if (visit === accountVisit && eventDialog.open) eventDialog.querySelector('.account-error').textContent = error.message; }
+    finally { eventPending = false; if (button.isConnected) button.disabled = false; }
+  }
+  eventDialog.addEventListener('click', event => { if (event.target.closest('[data-store-events-dismiss]')) dismissEvents(); });
+  eventDialog.addEventListener('cancel', event => { event.preventDefault(); dismissEvents(); });
+  eventDialog.addEventListener('close', () => { if (eventReturnFocus?.isConnected) eventReturnFocus.focus({preventScroll:true}); eventReturnFocus = null; });
   const storeTitle = store => store.name || `${store.owner} · ${typeName(store.type)}`;
   function rating(store) { return store.rating === null ? t('No reviews yet', 'Noch keine Bewertungen') : `★ ${number(store.rating, 1)} / 5 · ${number(store.reviewCount)} ${t('reviews', 'Bewertungen')}`; }
   function card(store) {
@@ -73,6 +105,7 @@ window.storeUi = (() => {
   function render() {
     if (currentAccountPage !== '/stores' || !data) return;
     accountContent.innerHTML = data.disabled ? pageHeading(t('Stores are unavailable.', 'Läden sind nicht verfügbar.')) : data.store ? detail(data.store) : directory();
+    showEvents();
   }
   async function mutate(route, payload, retry = false) {
     let key;
@@ -227,6 +260,6 @@ window.storeUi = (() => {
     } catch (error) { if (visit === accountVisit) form.querySelector('.account-error').textContent = error.message; }
     finally { if (visit === accountVisit) { busy = false; if (button.isConnected) button.disabled = false; } }
   });
-  document.addEventListener('jg:language', () => { if (currentAccountPage === '/stores') render(); });
-  return { load, stop, render };
+  document.addEventListener('jg:language', () => { if (currentAccountPage === '/stores') render(); if (eventDialog.open) showEvents(true); });
+  return { load, stop, render, loadEvents, showEvents };
 })();

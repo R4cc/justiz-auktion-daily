@@ -1482,3 +1482,16 @@ body { padding-left: var(--sidebar-width); }
 .store-direction-pad button { min-height: 70px; font-size: 1.7rem; padding: .5rem; }
 .store-direction-pad small { display: block; font-size: .7rem; }
 @media (max-width: 650px) { .store-search { grid-template-columns: minmax(0,1fr); } .store-front > div:last-child, .store-social, .store-reviews { padding: 1rem; } .store-heist-content { padding: 1.2rem; } .store-action-row button, .store-action-row a { min-height: 44px; } }
+
+.store-event-dialog { width: min(640px, calc(100% - 2rem)); max-height: 90dvh; overflow: auto; padding: 0; border: 1px solid var(--ink); border-radius: 14px; background: var(--paper); color: var(--ink); }
+.store-event-dialog::backdrop { background: #0c211dbb; }
+.store-event-content { padding: clamp(1rem, 4vw, 2rem); overflow-wrap: anywhere; }
+.store-event-content h2 { font-size: 1.5rem; margin: .6rem 0 1.2rem; }
+.store-event-list article { padding: 1rem 0; border-top: 1px solid var(--line); }
+.store-event-list h3 { font-size: 1.05rem; margin: .5rem 0; }
+.store-event-list p { line-height: 1.6; }
+.store-event-shop, .store-event-list small { font-size: .75rem; color: var(--muted); }
+.store-event-outcome { display: flex; flex-wrap: wrap; gap: .6rem 1rem; align-items: center; margin: 1rem 0; font-size: .85rem; }
+.store-event-outcome strong { font-family: 'DM Mono', monospace; }
+.store-event-content > button { width: 100%; min-height: 44px; }
+.business-purchase h2 small { font-size: .85rem; white-space: nowrap; color: var(--muted); }
