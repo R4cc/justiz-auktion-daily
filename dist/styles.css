@@ -1610,21 +1610,40 @@ body { padding-left: var(--sidebar-width); }
 .town-district-tabs { display:flex;flex-wrap:wrap;gap:.4rem;margin-bottom:1.3rem; }
 .town-district-tabs button { min-height:44px;padding:.65rem .8rem;border:1px solid var(--line);border-radius:6px;background:#fffdf7;font-size:.7rem; }
 .town-district-tabs button[aria-pressed="true"] { color:#fffdf7;background:var(--ink);border-color:var(--ink); }
-.town-layout { display:grid;grid-template-columns:minmax(0,1fr) 280px;gap:1.2rem;align-items:start; }
+.town-layout { display:grid;grid-template-columns:minmax(0,1fr);gap:1.2rem;align-items:start; }
 .town-map-shell { min-width:0;overflow:hidden;border:1px solid var(--line);border-radius:14px;background:#fffdf7; }
 .town-map-legend { display:flex;flex-wrap:wrap;gap:.9rem;padding:1rem;font-size:.65rem;border-bottom:1px solid var(--line); }
 .town-map-legend span { display:flex;align-items:center;gap:.4rem; }
 .town-map-legend i { display:block;width:10px;height:10px;border:1px dashed var(--ink);border-radius:3px; }
-.town-map-legend .is-occupied { background:var(--ink);border:0; }.town-map-legend .is-own { background:#dbe99b;border:1px solid var(--ink); }
+.town-map-legend .is-free { border-color:#b35d37; }.town-map-legend .is-occupied { background:#fffdf7;border:1px solid var(--ink); }.town-map-legend .is-own { background:#dbe99b;border:1px solid var(--ink); }
 .town-map-scroll { overflow-x:auto;overscroll-behavior-x:contain; }
-.town-canvas { position:relative;min-width:720px;aspect-ratio:860/730; }
+.town-canvas { position:relative;min-width:1040px;aspect-ratio:860/730; }
 .town-map-art { display:block;width:100%;height:100%; }
-.town-pin { position:absolute;transform:translate(-50%,-50%);width:46px;height:48px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1px;border-radius:6px;text-decoration:none;box-shadow:0 3px 0 #183e3620;line-height:1;background:#fffdf7;transition:box-shadow .15s; }
-.town-pin b { font-size:1.05rem; }.town-pin small { font:9px 'DM Mono',monospace; }
-.town-pin.is-free { border:1px dashed #516e5c;color:var(--ink); }.town-pin.is-selected { outline:3px solid #ce461f;outline-offset:3px; }
-.town-pin.is-occupied { border:1px solid var(--ink);background:var(--ink);color:#fffdf7; }.town-pin.is-own { background:#dbe99b;color:var(--ink); }
-.town-pin.is-unavailable { border:1px solid #888;background:#ccc;color:#666; }.town-pin.is-muted { opacity:.5; }
-.town-pin:hover { box-shadow:0 4px 0 #183e3645; }.town-pin:focus-visible { outline:3px solid var(--red);outline-offset:3px; }
+/* Storefront pins keep labels visible without requiring hover. */
+.town-pin { --shop-color:#c45d34;--shop-roof:#baa089;position:absolute;transform:translate(-50%,-50%);width:86px;height:78px;display:flex;flex-direction:column;align-items:center;justify-content:start;gap:0;padding:0;border:0;border-radius:8px;text-decoration:none;color:var(--ink);line-height:1;background:none;cursor:pointer;transition:filter .15s; }
+.town-pin-building { position:relative;display:block;width:74px;height:45px;flex:none; }
+.town-store-building { display:block;width:100%;height:100%; }
+.town-shop-icon { position:absolute;left:8px;top:20px;display:grid;place-items:center;width:25px;height:25px;border:1px solid #183e3625;border-radius:50%;background:#fffdf7;color:var(--shop-color);box-shadow:0 1px 2px #183e3615; }
+.town-product-icon { width:23px;height:23px;display:block;flex:none; }
+.town-shop-icon .town-product-icon { width:18px;height:18px; }
+.town-pin-info { display:flex;flex-direction:column;align-items:center;justify-content:center;width:100%;min-height:27px;gap:3px;padding:2px 4px;border:1px solid #183e3620;border-radius:4px;background:#fffdf7f2;box-shadow:0 2px 0 #183e360a; }
+.town-pin-info strong { display:block;font:700 10px/1.1 'Manrope',sans-serif;white-space:nowrap;max-width:100%;overflow:hidden;text-overflow:ellipsis; }
+.town-pin-info small,.town-pin-owner { display:block;font:500 10px/1.1 'Manrope',sans-serif;max-width:100%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis; }
+.town-pin-owner { color:#57645b; }
+.town-pin.is-free .town-pin-info { border:1px dashed #b35d37; }.town-pin.is-free .town-shop-icon { color:#b6532e; }
+.town-pin.is-selected { outline:2px solid var(--red);outline-offset:4px;background:#fffdf780; }
+.town-pin.is-own .town-pin-info { border-color:#667e47;background:#ecf1d7; }.town-pin.is-own .town-pin-owner { color:#45612f;font-weight:800; }
+.town-pin.is-unavailable { --shop-color:#929b90;--shop-roof:#9ba098;cursor:default; }.town-pin.is-unavailable .town-pin-info { background:#e7e8e1;color:#747d71; }
+.town-pin.is-muted { opacity:.4; }.town-pin:hover { filter:brightness(1.06); }.town-pin:focus-visible { outline:3px solid var(--red);outline-offset:4px; }
+.town-sells-wine { --shop-color:#944858;--shop-roof:#997461; }
+.town-sells-toys { --shop-color:#b58b26;--shop-roof:#aa8566; }
+.town-sells-electronics { --shop-color:#4d858d;--shop-roof:#7e8c84; }
+.town-sells-cars { --shop-color:#666994;--shop-roof:#7f8391; }
+.town-map-key { display:flex;flex-wrap:wrap;gap:.7rem 1rem;padding:.65rem 1rem;border-bottom:1px solid var(--line);font-size:.62rem;color:var(--muted); }
+.town-map-key>span { display:flex;align-items:center;gap:.35rem; }.town-map-key .town-product-icon { width:17px;height:17px;color:var(--ink); }
+.town-map-key .town-deco-key { margin-left:auto; }
+.town-panel-category { display:flex;align-items:center;gap:.6rem;color:var(--shop-color);font-size:.8rem;font-weight:700;margin:1.1rem 0 .7rem; }
+.town-panel-category .town-product-icon { width:26px;height:26px; }
 .town-map-hint { font-size:.65rem;line-height:1.6;color:var(--muted);margin:0;padding:1rem;border-top:1px solid var(--line); }
 .town-plot-panel { min-width:0;border:1px solid var(--line);border-radius:12px;padding:1.2rem;background:#fffdf7;overflow-wrap:anywhere; }
 .town-plot-panel .eyebrow { color:var(--red);font-size:.65rem; }.town-plot-panel h2 { font-size:1.35rem;line-height:1.25;letter-spacing:-.04em;margin:.6rem 0; }
@@ -1635,7 +1654,7 @@ body { padding-left: var(--sidebar-width); }
 .town-purchase fieldset { min-width:0;border:0;padding:0;margin:0; }.town-purchase legend { font-size:.75rem;font-weight:700;margin-bottom:.7rem; }
 .town-type-grid { display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:.5rem; }
 .town-type-choice { position:relative;display:grid;gap:.4rem;justify-items:start;align-content:start;padding:.7rem;border:1px solid var(--line);border-radius:6px;cursor:pointer;font-size:.63rem;min-height:72px; }
-.town-type-choice input { position:absolute;width:1px;height:1px;opacity:0; }.town-type-choice>span { font:700 1rem 'DM Mono',monospace; }
+.town-type-choice input { position:absolute;width:1px;height:1px;opacity:0; }.town-type-choice>span { display:grid;place-items:center;width:28px;height:28px; }
 .town-type-choice.is-selected { background:#e8eddc;border-color:var(--ink); }.town-type-choice:focus-within { outline:2px solid var(--ink);outline-offset:2px; }
 .town-buy-summary { display:flex;flex-wrap:wrap;justify-content:space-between;gap:.4rem;align-items:center;margin:1rem 0; }.town-buy-summary span { color:var(--muted);font-size:.7rem; }.town-buy-summary strong { font:500 1.15rem 'DM Mono',monospace; }
 .town-purchase .business-edit-button { width:100%;text-decoration:none; }.town-purchase .account-error { font-size:.7rem;line-height:1.6; }.town-purchase .account-error:empty { display:none; }
@@ -1652,3 +1671,12 @@ body { padding-left: var(--sidebar-width); }
 @media(prefers-reduced-motion:reduce) { .town-pin { transition:none; } }
 
 .business-card-address { font-size:.6rem;line-height:1.6;color:var(--muted);margin:0 0 .6rem;overflow-wrap:anywhere;text-underline-offset:3px; }
+
+@media(min-width:1700px) { .town-layout { grid-template-columns:minmax(0,1fr) 280px; } }
+@media(min-width:900px) and (max-width:1699px) {
+  .town-plot-panel:has(.town-purchase) { display:grid;grid-template-columns:minmax(0,1fr) minmax(280px,380px);column-gap:2rem;align-items:start; }
+  .town-plot-panel:has(.town-purchase)>:not(.town-purchase) { grid-column:1; }
+  .town-plot-panel>.town-purchase { grid-column:2;grid-row:1 / span 7; }
+  .town-plot-panel .town-plot-facts { margin:.6rem 0; }
+}
+@media(max-width:650px) { .town-map-key { gap:.6rem .8rem; }.town-map-key .town-deco-key { margin-left:0; } }
