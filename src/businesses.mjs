@@ -108,7 +108,10 @@ function activeUser(db, user) {
 function stockType(item) {
   if (shopType(item.businessCategory)) return item.businessCategory;
   const category = marketCategoryForItem(item);
-  if (category === 'wine' && /\b(wein|wine|riesling|merlot|pinot|chardonnay|sekt)\b/i.test(item.title || '')) return 'wine';
+  // The wine market also covers drinks. Use the same category rule for
+  // supplier units and individual finds; older generic categories can use
+  // the shared title/description classifier without rewriting their values.
+  if (category === 'wine' || (category === 'other' && auctionSelectionCategory(item) === 'Getränke')) return 'wine';
   if (category === 'vehicles' && /\b(auto|car|pkw|limousine|kombi|sedan|volkswagen|vw|bmw|audi|opel|ford|toyota)\b/i.test(item.title || '') && !/\b(modell|reifen|motor|teil|felge)\b/i.test(item.title || '')) return 'cars';
   if (category === 'electronics') return 'electronics';
   if (['collectibles', 'sport_leisure'].includes(category) && /\b(spielzeug|toy|puzzle|lego|baukasten|building set|board game|brettspiel|puppe)\b/i.test(item.title || '')) return 'toys';
@@ -323,7 +326,7 @@ function archivedStock(db) {
     const price = Number(auction.finalPrice ?? auction.currentBid);
     if (!Number.isFinite(price) || price <= 0 || !Number.isSafeInteger(Number(auction.id))) continue;
     const category = auctionSelectionCategory(auction);
-    const type = category === 'Getränke' ? 'wine' : stockType({ title: auction.title, category });
+    const type = stockType({ ...auction, category });
     if (!type) continue;
     const limits = STOCK_BATCHES[type];
     if (price > limits.maxPrice) continue;

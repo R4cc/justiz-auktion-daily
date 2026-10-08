@@ -226,6 +226,46 @@ test('store stock is exclusive, category-checked, and earns once after offline t
   assert.equal(f.count('business_stock', 'sold_price = 37'), 4);
 });
 
+test('individual wines use the same category rule as bulk stock regardless of title wording', async t => {
+  const f = await fixture(t);
+  const shop = buyBusiness(f.dir, f.rival, 'wine', 'popup', { now: start }).shop;
+  const items = [
+    { title: '1 Flasche Bordeaux 2018', category: 'Getränke' },
+    { title: 'Barolo 2019', marketCategory: 'wine' },
+    { title: 'Champagner Brut', category: 'Getränke' },
+    { title: 'Sauvignon Blanc 2021', category: 'wine' },
+    { title: 'Château Margaux 2015', category: 'Getränke' },
+    { title: 'Ornellaia 2020' },
+    { title: 'Tignanello 2021', category: 'Sonstiges' },
+    { title: 'Estate reserve 2017', category: 'Sonstiges', description: 'Eine Flasche, Jahrgang 2017, Alkoholgehalt 13 %.' }
+  ].map((item, n) => ({ ...item, id: `individual-wine-${n}`, price: 20, rarity: 'common' }));
+  const rejected = [
+    { id: 'wine-perfume', title: 'Château fragrance', category: 'Kosmetik' },
+    { id: 'sealed-wine-case', kind: 'case', title: 'Wine Case', caseTier: 'common', price: 20 },
+    { id: 'other-collectible', title: 'Gold Armbanduhr', category: 'Schmuck & Uhren' }
+  ];
+  f.accounts.db(db => {
+    for (const item of [...items, ...rejected]) db.prepare('INSERT INTO inventory (id, user_id, item, created_at) VALUES (?, ?, ?, ?)')
+      .run(item.id, f.rival.id, JSON.stringify(item), start);
+  });
+  const available = businessDashboard(f.dir, f.rival, { now: start }).inventory;
+  assert.deepEqual(new Set(available.filter(item => item.type === 'wine').map(item => item.id)), new Set(items.map(item => item.id)));
+  for (const item of rejected) {
+    assert.ok(!available.some(entry => entry.id === item.id));
+    assert.throws(() => stockBusiness(f.dir, f.rival, shop.id, [item.id], { now: start }), /wrong_shop_type/);
+  }
+  stockBusiness(f.dir, f.rival, shop.id, items.map(item => item.id), { now: start });
+  assert.equal(businessDashboard(f.dir, f.rival, { now: start }).shops[0].stock.length, items.length);
+  // Individual finds enter the existing customer simulation and sell exactly once.
+  const later = start + 7 * 24 * hour;
+  tickBusinesses(f.dir, { now: later });
+  const sold = businessDashboard(f.dir, f.rival, { now: later }).shops[0];
+  assert.equal(sold.sales, items.length); assert.equal(sold.stock.length, 0);
+  const balance = f.balance('rival');
+  tickBusinesses(f.dir, { now: later });
+  assert.equal(f.balance('rival'), balance);
+});
+
 test('profit margin changes buying rate and shelf prices against the current category index, not visitors', async t => {
   const f = await fixture(t);
   const shop = buyBusiness(f.dir, f.rival, 'toys', 'popup', { now: start }).shop;
