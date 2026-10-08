@@ -132,11 +132,30 @@ function markSidebarEntrySeen(link) {
   try { localStorage.setItem(sidebarSeenKey(entry), '1'); } catch {}
   updateNavigation();
 }
+function sidebarLinkMarkup(route, label) {
+  const icons = {
+    '/': '<rect x="3" y="5" width="18" height="16" rx="2"/><path d="M7 3v4m10-4v4M3 11h18m-13 5 2 2 4-4"/>',
+    '/leaderboard': '<path d="M8 3h8v7a4 4 0 0 1-8 0V3Zm0 2H4v3a4 4 0 0 0 4 4m8-7h4v3a4 4 0 0 1-4 4m-4 2v5m-4 2h8m-10 0h12"/>',
+    '/marketplace': '<path d="M4 8h16m-4-4 4 4-4 4M20 16H4m4-4-4 4 4 4"/>',
+    '/auctions': '<path d="m13 3 8 8-4 4-8-8 4-4Zm-4 4L5 11l4 4 4-4m-2 2-8 8M15 21h7m-6-4h5v4"/>',
+    '/shop': '<path d="m3 7 9-4 9 4v10l-9 4-9-4V7Zm0 0 9 4 9-4m-9 4v10M7.5 5 17 9"/>',
+    '/market': '<path d="M3 3v18h18M7 15l4-5 4 3 6-8m-5 0h5v5"/>',
+    '/inventory': '<path d="M9 5V3h6v2m-8 0h10a3 3 0 0 1 3 3v11a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V8a3 3 0 0 1 3-3Z"/><rect x="7" y="12" width="10" height="6" rx="1"/><path d="M8 8h8m-4 4v2"/>',
+    '/town': '<path d="m3 5 6-2 6 2 6-2v16l-6 2-6-2-6 2V5Zm6-2v16m6-14v16"/>',
+    '/businesses': '<path d="M3 10V5h18v5m-18 0 2-6m2 6 1-6m4 6V4m5 6-1-6m5 6-2-6M3 10a3 3 0 0 0 6 0 3 3 0 0 0 6 0 3 3 0 0 0 6 0M5 13v8h14v-8m-9 8v-6h4v6"/>',
+    '/stores': '<path d="M3 11V5h14v6M3 5l-1 6a2.5 2.5 0 0 0 5 0 2.5 2.5 0 0 0 5 0 2.5 2.5 0 0 0 6 0l-1-6M4 14v7h7m-3-4v4m6-4h8m-3-3 3 3-3 3"/>',
+    '/skills': '<circle cx="12" cy="4" r="2"/><circle cx="5" cy="20" r="2"/><circle cx="19" cy="20" r="2"/><circle cx="12" cy="20" r="2"/><path d="M12 6v12m-7 0v-6h14v6"/>',
+    '/profile': '<circle cx="12" cy="8" r="4"/><path d="M4 21v-3a8 8 0 0 1 16 0v3"/>',
+    '/login': '<path d="M14 3h6v18h-6M3 12h12m-4-4 4 4-4 4"/>',
+    '/admin': '<path d="M5 3v4m0 4v10m7-18v10m0 4v4m7-18v4m0 4v10"/><circle cx="5" cy="9" r="2"/><circle cx="12" cy="15" r="2"/><circle cx="19" cy="9" r="2"/>'
+  };
+  return `<svg class="nav-icon" data-nav-icon="${accountEscape(route)}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">${icons[route] || icons['/profile']}</svg><span class="nav-link-label">${accountEscape(label)}</span>`;
+}
 function updateNavigation() {
   const labels = { '/': 'Daily', '/shop': t('Case Store', 'Kisten-Shop'), '/auctions': t('Palette Auctions', 'Paletten-Auktionen'), '/marketplace': t('Marketplace', 'Marktplatz'), '/market': t('Stock Market', 'Aktienmarkt'), '/businesses': t('Your stores', 'Deine Läden'), '/stores': t('Visit stores', 'Läden besuchen'), '/town': t('Town map', 'Stadtplan'), '/inventory': t('Inventory', 'Inventar'), '/leaderboard': t('Leaderboard', 'Rangliste'), '/profile': t('Profile', 'Profil'), '/admin': 'Admin' };
   for (const link of document.querySelectorAll('.site-nav a')) {
     if (link.id !== 'header-auth') {
-      link.textContent = labels[link.getAttribute('href')];
+      link.innerHTML = sidebarLinkMarkup(link.getAttribute('href'), labels[link.getAttribute('href')] || link.textContent);
       const isNew = Boolean(link.dataset.newEntry && !sidebarEntrySeen(link.dataset.newEntry));
       link.classList.toggle('has-new-tag', isNew);
       if (isNew) {
@@ -151,7 +170,7 @@ function updateNavigation() {
   }
   const auth = document.querySelector('#header-auth');
   auth.href = account ? '/profile' : '/login';
-  auth.textContent = account ? account.username : t('Log in / Register', 'Anmelden / Registrieren');
+  auth.innerHTML = sidebarLinkMarkup(auth.getAttribute('href'), account ? account.username : t('Log in / Register', 'Anmelden / Registrieren'));
   if (auth.pathname === location.pathname) auth.setAttribute('aria-current', 'page'); else auth.removeAttribute('aria-current');
   document.querySelector('[data-nav-label="play"]').textContent = t('Play', 'Spielen');
   document.querySelector('[data-nav-label="trading"]').textContent = t('Trading', 'Handel');
