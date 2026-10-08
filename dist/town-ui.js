@@ -3,8 +3,27 @@ window.townUi = (() => {
   const sizeLabels={popup:['Street pop-up','Straßenstand'],tiny:['Small shop','Kleiner Laden'],medium:['Medium shop','Mittlerer Laden'],large:['Large shop','Großer Laden']};
   const artwork=window.townArtwork, sizes={popup:'XS',tiny:'S',medium:'M',large:'L'};
   let data=null,timer=null,request=0,selected=null,district=null,storeType='wine',busy=false;
+  const desktop=matchMedia('(min-width:1100px) and (min-height:700px)');
+  const mapObserver=new ResizeObserver(entries=>{
+    for(const {target} of entries){
+      if(!target.isConnected||!data||currentAccountPage!=='/town')continue;
+      const {width,height}=target.getBoundingClientRect();
+      if(!width||!height)return;
+      target.style.setProperty('--town-upright',desktop.matches?width*730/(height*860):1);
+      if(!desktop.matches)return;
+      // Keep text at 10px while the buildings and hit areas fit the viewport.
+      let pinWidth=86,pinHeight=78;
+      for(let n=0;n<data.plots.length;n++)for(let m=n+1;m<data.plots.length;m++){
+        const a=artwork.position(data.plots[n],data.districts,true),b=artwork.position(data.plots[m],data.districts,true);
+        const dx=Math.abs(a.x-b.x)*width/860,dy=Math.abs(a.y-b.y)*height/730;
+        if(dx<90&&dy<82){if(dx/90>dy/82)pinWidth=Math.min(pinWidth,dx-4);else pinHeight=Math.min(pinHeight,dy-4);}
+      }
+      target.style.setProperty('--town-pin-width',`${Math.max(44,pinWidth)}px`);
+      target.style.setProperty('--town-pin-height',`${Math.max(44,pinHeight)}px`);
+    }
+  });
   const typeName=id=>typeLabels[id]?t(...typeLabels[id]):id, sizeName=id=>sizeLabels[id]?t(...sizeLabels[id]):id;
-  function stop(){clearInterval(timer);timer=null;request++;data=null;busy=false;}
+  function stop(){mapObserver.disconnect();clearInterval(timer);timer=null;request++;data=null;busy=false;}
   async function refresh(visit,repaint=true){
     const current=++request,owner=account?.id,response=await fetch('/api/town',{headers:{accept:'application/json'}}),result=await response.json();
     if(!response.ok)throw Error(accountError(result.error));
@@ -21,14 +40,15 @@ window.townUi = (() => {
     await refresh(visit,false);if(visit!==accountVisit)return;
     timer=setInterval(()=>{if(!document.hidden&&!busy&&!document.activeElement?.closest('.town-purchase'))refresh(visit).catch(()=>{});},30000);
   }
-  function mapArtwork(){return artwork.render(data,district,esc);}
+  function mapPrice(cost){return desktop.matches&&cost>=1000?`${number(cost/1000,Number.isInteger(cost/1000)?0:1)}k`:justizEuro(cost);}
+  function mapArtwork(){return artwork.render(data,district,esc,desktop.matches);}
   function mapPin(plot){
-    const business=plot.business,point=artwork.position(plot,data.districts),position=`left:${point.x/860*100}%;top:${point.y/730*100}%`,muted=district&&plot.districtId!==district?' is-muted':'';
+    const business=plot.business,point=artwork.position(plot,data.districts,desktop.matches),position=`left:${point.x/860*100}%;top:${point.y/730*100}%`,muted=district&&plot.districtId!==district?' is-muted':'';
     const type=business?.type||'plus',state=business?'is-occupied':plot.occupied?'is-unavailable':'is-free';
     const body=`<span class="town-pin-building">${artwork.storefront()}<span class="town-shop-icon">${artwork.icon(plot.occupied&&!business?'lock':type)}</span></span>`;
     if(business)return `<a class="town-pin ${state} town-sells-${esc(business.type)}${business.own?' is-own':''}${selected===plot.id?' is-selected':''}${muted}" style="${position}" href="/stores?shop=${encodeURIComponent(business.id)}" data-page title="${esc(business.name||typeName(business.type))} · ${esc(typeName(business.type))} · @${esc(business.owner)} · ${esc(plot.streetName)}" aria-label="${esc(t('Visit','Besuchen'))}: ${esc(business.name||typeName(business.type))}, ${esc(typeName(business.type))}, ${esc(t('Owner','Besitzer'))}: ${esc(business.owner)}, ${esc(plot.districtName)}">${body}<span class="town-pin-info"><strong>${esc(business.name||typeName(business.type))}</strong><span class="town-pin-owner">${business.own?`${t('you','du')} · `:''}@${esc(business.owner)}</span></span></a>`;
     if(plot.occupied)return `<span class="town-pin ${state}${muted}" style="${position}" title="${t('Plot reserved','Grundstück reserviert')}">${body}<span class="town-pin-info"><strong>${t('Reserved','Reserviert')}</strong><small>${sizes[plot.size]}</small></span></span>`;
-    return `<button class="town-pin ${state}${selected===plot.id?' is-selected':''}${muted}" style="${position}" type="button" data-town-plot="${esc(plot.id)}" title="${esc(plot.streetName)} · ${esc(sizeName(plot.size))}" aria-label="${esc(t('Available shop','Freier Laden'))}: ${esc(plot.streetName)}, ${esc(sizeName(plot.size))}, ${esc(plot.districtName)}" aria-pressed="${selected===plot.id}">${body}<span class="town-pin-info"><strong>${t('Open a shop','Laden eröffnen')}</strong><small>${sizes[plot.size]} · ${justizEuro(plot.costs[storeType])}</small></span></button>`;
+    return `<button class="town-pin ${state}${selected===plot.id?' is-selected':''}${muted}" style="${position}" type="button" data-town-plot="${esc(plot.id)}" title="${esc(plot.streetName)} · ${esc(sizeName(plot.size))} · ${justizEuro(plot.costs[storeType])}" aria-label="${esc(t('Available shop','Freier Laden'))}: ${esc(plot.streetName)}, ${esc(sizeName(plot.size))}, ${esc(plot.districtName)}, ${justizEuro(plot.costs[storeType])}" aria-pressed="${selected===plot.id}">${body}<span class="town-pin-info"><strong>${desktop.matches?t('Open shop','Eröffnen'):t('Open a shop','Laden eröffnen')}</strong><small>${sizes[plot.size]} · ${mapPrice(plot.costs[storeType])}</small></span></button>`;
   }
   function plotPanel(){
     const plot=data.plots.find(entry=>entry.id===selected),area=data.districts.find(entry=>entry.id===(plot?.districtId||district));
@@ -40,12 +60,14 @@ window.townUi = (() => {
   function render(){
     if(currentAccountPage!=='/town'||!data)return;
     if(data.disabled){accountContent.innerHTML=pageHeading(t('Town map is unavailable.','Stadtplan ist nicht verfügbar.'));return;}
-    const previousMap=accountContent.querySelector('.town-map-scroll'),scroll=previousMap?.scrollLeft||0;
+    const previousMap=accountContent.querySelector('.town-map-scroll'),scroll=previousMap?.scrollLeft||0,neighboursOpen=accountContent.querySelector('.town-business-list')?.open;
     // Keep every plot tappable even when an older save needs extra locations.
     let mapWidth=1040;
     for(let n=0;n<data.plots.length;n++)for(let m=n+1;m<data.plots.length;m++){const a=artwork.position(data.plots[n],data.districts),b=artwork.position(data.plots[m],data.districts);mapWidth=Math.max(mapWidth,860*Math.min(90/Math.abs(a.x-b.x),80/Math.abs(a.y-b.y)));}
     const places=data.plots.filter(plot=>plot.business&&(!district||plot.districtId===district));
-    accountContent.innerHTML=`<div class="town-page"><header class="town-heading"><div><p class="eyebrow">${t('WIEN, WITH A LITTLE CHAOS','WIEN, MIT EIN WENIG CHAOS')}</p><h1 tabindex="-1">${t('Town map','Stadtplan')}</h1><p>${data.total} ${t('plots across six districts. Find your corner of the city.','Grundstücke in sechs Bezirken. Finde deine Ecke der Stadt.')}</p></div><a href="/businesses" data-page class="secondary-button">${t('Your businesses','Deine Läden')} ↗</a></header><nav class="town-district-tabs" aria-label="${t('Districts','Bezirke')}"><button type="button" data-town-district="" aria-pressed="${!district}">${t('All of Vienna','Ganz Wien')}</button>${data.districts.map(entry=>`<button type="button" data-town-district="${entry.id}" aria-pressed="${district===entry.id}">${entry.number}. ${esc(entry.name)}</button>`).join('')}</nav><div class="town-layout"><section class="town-map-shell" aria-label="${t('Business plots','Ladengrundstücke')}"><div class="town-map-legend"><span><i class="is-free"></i>${data.available} ${t('available','frei')}</span><span><i class="is-occupied"></i>${data.total-data.available} ${t('occupied','belegt')}</span>${account?`<span><i class="is-own"></i>${t('Your store','Dein Laden')}</span>`:''}</div><div class="town-map-key"><span>${artwork.icon('wine')}${typeName('wine')}</span><span>${artwork.icon('toys')}${typeName('toys')}</span><span>${artwork.icon('electronics')}${typeName('electronics')}</span><span>${artwork.icon('cars')}${typeName('cars')}</span><span class="town-deco-key">▧ ${t('Homes & landmarks','Häuser & Sehenswürdigkeiten')}</span></div><div class="town-map-scroll" tabindex="0" aria-label="${t('Map; scroll horizontally on small screens','Karte; auf kleinen Bildschirmen seitlich scrollen')}"><div class="town-canvas" style="min-width:${Math.ceil(mapWidth)}px">${mapArtwork()}${data.plots.map(mapPin).join('')}</div></div><p class="town-map-hint">${t('Click a store to visit. Select a + plot to open a business. Swipe the map sideways on mobile.','Klicke auf einen Laden zum Besuchen. Wähle ein +-Grundstück zum Eröffnen. Auf dem Handy die Karte seitlich wischen.')}</p></section>${plotPanel()}</div><section class="town-business-list"><h2>${t('Around the neighbourhood','In der Nachbarschaft')}</h2><div>${places.length?places.map(plot=>`<a class="town-store-link" href="/stores?shop=${encodeURIComponent(plot.business.id)}" data-page><span class="town-store-symbol">${artwork.icon(plot.business.type)}</span><div><strong>${esc(plot.business.name||typeName(plot.business.type))}</strong><small>${esc(plot.business.owner)} · ${esc(plot.districtName)} · ${esc(plot.streetName)}</small></div><span aria-hidden="true">↗</span></a>`).join(''):`<p class="collection-empty">${t('No stores here yet. Claim the first corner.','Hier gibt es noch keine Läden. Sichere dir die erste Ecke.')}</p>`}</div></section><p class="town-game-note">${t('A simplified Vienna-inspired game map. District traits are playful stereotypes, not real-world crime statistics.','Ein vereinfachter, von Wien inspirierter Spielplan. Die Bezirksmerkmale sind spielerische Klischees, keine echten Kriminalitätsstatistiken.')}</p></div>`;
+    accountContent.innerHTML=`<div class="town-page"><header class="town-heading"><div><p class="eyebrow">${t('WIEN, WITH A LITTLE CHAOS','WIEN, MIT EIN WENIG CHAOS')}</p><h1 tabindex="-1">${t('Town map','Stadtplan')}</h1><p>${data.total} ${t('plots across six districts. Find your corner of the city.','Grundstücke in sechs Bezirken. Finde deine Ecke der Stadt.')}</p></div><a href="/businesses" data-page class="secondary-button">${t('Your businesses','Deine Läden')} ↗</a></header><nav class="town-district-tabs" aria-label="${t('Districts','Bezirke')}"><button type="button" data-town-district="" aria-pressed="${!district}">${t('All of Vienna','Ganz Wien')}</button>${data.districts.map(entry=>`<button type="button" data-town-district="${entry.id}" aria-pressed="${district===entry.id}">${entry.number}. ${esc(entry.name)}</button>`).join('')}</nav><div class="town-layout"><section class="town-map-shell" aria-label="${t('Business plots','Ladengrundstücke')}"><div class="town-map-legend"><span><i class="is-free"></i>${data.available} ${t('available','frei')}</span><span><i class="is-occupied"></i>${data.total-data.available} ${t('occupied','belegt')}</span>${account?`<span><i class="is-own"></i>${t('Your store','Dein Laden')}</span>`:''}</div><div class="town-map-key"><span>${artwork.icon('wine')}${typeName('wine')}</span><span>${artwork.icon('toys')}${typeName('toys')}</span><span>${artwork.icon('electronics')}${typeName('electronics')}</span><span>${artwork.icon('cars')}${typeName('cars')}</span><span class="town-deco-key">▧ ${t('Homes & landmarks','Häuser & Sehenswürdigkeiten')}</span></div><div class="town-map-scroll" tabindex="0" aria-label="${t('Map; scroll horizontally on small screens','Karte; auf kleinen Bildschirmen seitlich scrollen')}"><div class="town-canvas" style="min-width:${Math.ceil(mapWidth)}px">${mapArtwork()}${data.plots.map(mapPin).join('')}</div></div><p class="town-map-hint">${t('Click a store to visit. Select a + plot to open a business. Swipe the map sideways on mobile.','Klicke auf einen Laden zum Besuchen. Wähle ein +-Grundstück zum Eröffnen. Auf dem Handy die Karte seitlich wischen.')}</p></section><div class="town-details">${plotPanel()}<details class="town-business-list"><summary>${t('Around the neighbourhood','In der Nachbarschaft')}</summary><div>${places.length?places.map(plot=>`<a class="town-store-link" href="/stores?shop=${encodeURIComponent(plot.business.id)}" data-page><span class="town-store-symbol">${artwork.icon(plot.business.type)}</span><div><strong>${esc(plot.business.name||typeName(plot.business.type))}</strong><small>${esc(plot.business.owner)} · ${esc(plot.districtName)} · ${esc(plot.streetName)}</small></div><span aria-hidden="true">↗</span></a>`).join(''):`<p class="collection-empty">${t('No stores here yet. Claim the first corner.','Hier gibt es noch keine Läden. Sichere dir die erste Ecke.')}</p>`}</div></details></div></div><p class="town-game-note">${t('A simplified Vienna-inspired game map. District traits are playful stereotypes, not real-world crime statistics.','Ein vereinfachter, von Wien inspirierter Spielplan. Die Bezirksmerkmale sind spielerische Klischees, keine echten Kriminalitätsstatistiken.')}</p></div>`;
+    accountContent.querySelector('.town-business-list').open=Boolean(neighboursOpen);
+    mapObserver.disconnect();mapObserver.observe(accountContent.querySelector('.town-canvas'));
     accountContent.querySelector('.town-map-scroll').scrollLeft=scroll;
     if(!previousMap)centerPlot(selected);
   }
@@ -69,6 +91,7 @@ window.townUi = (() => {
     }catch(error){if(visit===accountVisit&&account?.id===owner){await refresh(visit,false).catch(()=>{});busy=false;render();accountContent.querySelector('.town-purchase .account-error')?.append(document.createTextNode(error.message));if(!accountContent.querySelector('.town-purchase'))showToast(error.message);}}
     finally{if(visit===accountVisit)busy=false;}
   });
+  desktop.addEventListener('change',()=>{if(currentAccountPage==='/town')render();});
   document.addEventListener('jg:language',()=>{if(currentAccountPage==='/town')render();});
   return {load,stop,render};
 })();
