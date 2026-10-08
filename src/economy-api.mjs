@@ -54,12 +54,13 @@ export function createEconomyApi({ dataDir, json, flags = featureFlags(), accoun
         return true;
       }
       if (flags.market && url.pathname.startsWith('/api/market/') && url.pathname.endsWith('/history')) {
-        // Read-only view of the persisted hourly snapshot grid (charts read
-        // this; nothing here mutates the simulation). Category validity and
-        // the 1..1000 limit bound live in the domain.
+        // Range charts reconstruct bounded minute/intraday samples from the
+        // shared simulation; legacy limit-based readers keep hourly history.
         const category = decoded(url.pathname.slice('/api/market/'.length, -'/history'.length));
-        json(response, 200, { category, history: marketHistory(dataDir, category,
-          { limit: limited(url.searchParams.get('limit'), 168, 1000) }) });
+        const now = Date.now(), range = url.searchParams.get('range');
+        json(response, 200, { category, updatedAt: new Date(now).toISOString(), range,
+          history: marketHistory(dataDir, category,
+            { now, range, limit: limited(url.searchParams.get('limit'), 168, 1000) }) });
         return true;
       }
       if (flags.palettes && url.pathname === '/api/palettes') {

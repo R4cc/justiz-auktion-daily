@@ -528,7 +528,7 @@ test('market chart labels both axes, adapts short time ranges, and keeps readabl
     {capturedAt:'2026-09-19T12:00:00Z',indexValue:100}])`, context);
   const coordinates = adjusted.match(/<polyline points="([^"]+)"/)[1].split(' ').map(point => point.split(',').map(Number));
   assert.ok(coordinates.every(([x, y]) => x >= 58 && x <= 730 && y >= 20 && y <= 226));
-  assert.match(adjusted, />250<\/text>/);
+  assert.match(adjusted, /<td>250<\/td>/);
   assert.match(adjusted, /market-chart-grid is-neutral/);
 });
 
@@ -558,4 +558,48 @@ test('auction polling accelerates around deadlines, including recently expired c
   assert.equal(period('active', 115001), 12000);
   assert.equal(period('ended', 101000), 12000);
   assert.equal(period('active', 87999), 12000);
+});
+
+test('market chart magnifies small intraday changes, supports narrow screens and reports period returns', () => {
+  const context = vm.createContext({ t: en => en, esc: String, number: (value, digits = 0) => Number(value).toFixed(digits),
+    uiLocale: () => 'en-GB', date: String, empty: String, window: { matchMedia: () => ({ matches: true }) } });
+  vm.runInContext(extract(uiSource, '  function marketSummary(', "  document.addEventListener('click'"), context);
+  const points = [{ capturedAt: '2026-10-08T13:00:00Z', indexValue: 121.2 }, { capturedAt: '2026-10-08T12:00:00Z', indexValue: 120 }];
+  context.points = points;
+  const range = vm.runInContext('marketChartRange(points)', context);
+  assert.ok(range.max - range.min < 3);
+  const markup = vm.runInContext('chart(points) + marketSummary(points)', context);
+  assert.match(markup, /viewBox="0 0 360 288"/);
+  assert.match(markup, /class="is-up"/);
+  assert.match(markup, /\+1\.20 \(\+1\.00%\)/);
+  assert.doesNotMatch(markup, /market-chart-grid is-neutral/);
+  assert.match(markup, /market-chart-opening/);
+  const falling = vm.runInContext('marketSummary([...points].reverse())', context);
+  assert.match(falling, /is-down/); assert.match(falling, /-1\.20/);
+});
+
+test('history helper sends an encoded quick range without breaking legacy limits', async () => {
+  const urls = [], context = vm.createContext({ window: {}, fetch: async url => {
+    urls.push(url); return { ok: true, json: async () => ({}) };
+  } });
+  vm.runInContext(dataSource, context);
+  await context.window.justizEconomy.marketHistory('a/b', 720, '1h');
+  await context.window.justizEconomy.marketHistory('wine', 100);
+  assert.equal(urls[1], '/api/market/a%2Fb/history?limit=720&range=1h');
+  assert.equal(urls[2], '/api/market/wine/history?limit=100');
+});
+
+test('chart range switching rejects stale responses from the previous period', async () => {
+  const pending = [];
+  const context = vm.createContext({ accountVisit: 1, historySequence: 0, category: 'wine', marketRange: '1h', historyLoading: false,
+    history: [], api: { marketHistory: (...args) => new Promise(resolve => pending.push({ args, resolve })) },
+    renderMarket: () => {}, t: en => en });
+  vm.runInContext(extract(uiSource, '  async function loadHistory(', '  function renderMarket('), context);
+  const old = vm.runInContext('loadHistory("wine")', context);
+  context.marketRange = '1d';
+  const current = vm.runInContext('loadHistory("wine")', context);
+  pending[1].resolve({ history: [{ indexValue: 110 }] }); await current;
+  pending[0].resolve({ history: [{ indexValue: 90 }] }); await old;
+  assert.equal(context.history[0].indexValue, 110);
+  assert.equal(context.historyLoading, false);
 });

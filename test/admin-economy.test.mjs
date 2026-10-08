@@ -59,11 +59,16 @@ test('history records each adjustment at its time and reconstructs its multiplie
   const first = f.adjust('wine', -80, day + 10 * 60000);
   const second = f.adjust('wine', 10, day + 2 * hour + 10 * 60000);
   assert.equal(f.index('wine', day - 1), original);
-  assert.equal(f.index('wine', day + 5 * 60000), original);
+  const earlyQuote = f.accounts.db(db => marketIndexes(db, day + 5 * 60000).wine);
+  near(f.index('wine', day + 5 * 60000), Math.round(earlyQuote * 100) / 100);
+  assert.ok(f.index('wine', day + 5 * 60000) > 50); // later admin cuts never leak backward
   const later = day + 4 * hour;
   tickMarketDrift(f.dir, { now: later });
   const history = marketHistory(f.dir, 'wine', { now: later });
+  const intraday = marketHistory(f.dir, 'wine', { now: later, range: '1d' });
   for (const receipt of [first, second]) {
+    const sampled = intraday.find(point => point.capturedAt === new Date(receipt.createdAt).toISOString());
+    near(sampled.indexValue, Math.round(receipt.afterIndex * 100) / 100);
     const point = history.find(point => point.capturedAt === new Date(receipt.createdAt).toISOString());
     near(point.indexValue, Math.round(receipt.afterIndex * 100) / 100);
   }

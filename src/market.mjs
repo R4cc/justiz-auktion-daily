@@ -41,6 +41,15 @@ export const SNAPSHOT_INTERVAL_MS = 3600_000;        // hourly UTC snapshot grid
 export const SNAPSHOT_RETENTION_MS = 30 * 24 * 3600_000;
 export const MAX_BACKFILL_BOUNDARIES = 720;          // per refresh, matching the 30-day retention window
 export const SIMULATION_MARKER = 'market_simulation_v1';
+export const INTRADAY_MARKER = 'market_intraday_v1';
+const HISTORY_CURSOR = 'market_history_through_v1';
+export const MARKET_QUOTE_INTERVAL_MS = 60_000;
+export const MARKET_HISTORY_RANGES = {
+  '1h': { duration: 3600_000, interval: 60_000 },
+  '1d': { duration: 24 * 3600_000, interval: 5 * 60_000 },
+  '1w': { duration: 7 * 24 * 3600_000, interval: 15 * 60_000 },
+  '1m': { duration: 30 * 24 * 3600_000, interval: 3600_000 }
+};
 
 // German listing categories (auction-selection.mjs) -> market category ids.
 const LISTING_CATEGORY_MAP = {
@@ -104,7 +113,8 @@ export function computeCategoryIndex(db, category, at) {
   const effects = db.prepare(`SELECT source_id, delta, starts_at FROM market_effects
     WHERE category = ? AND starts_at <= ? AND ends_at > ?`).all(category, at, at)
     .filter(effect => !trend || !effect.source_id.startsWith('drift:'));
-  return indexFromEffects(effects, at, trend?.index_value ?? DEFAULT_MARKET_INDEX) * marketMultiplierAt(db, category, at);
+  return indexFromEffects(effects, at, (trend?.index_value ?? DEFAULT_MARKET_INDEX)
+    + intradayMovement(db, category, at)) * marketMultiplierAt(db, category, at);
 }
 
 // Unrounded, activation-aware index read for domain valuation (e.g. palette
@@ -249,6 +259,35 @@ const TREND_BACKFILL_BUCKETS = 360; // 30 days, matching history retention
 const trendDraw = key => parseInt(createHash('sha256').update(key).digest('hex').slice(0, 8), 16) / 0x100000000;
 const clamp = (value, low, high) => Math.min(high, Math.max(low, value));
 
+// Intraday order flow overlays the durable longer-term trend. Correlated
+// market moves and category-specific flows have different time scales and
+// volatility. Hash-keyed anchors interpolate causally from the previous
+// anchor to the current one, producing runs, reversals and short bursts.
+// Every player/domain sees the same minute quote, independent of request
+// frequency, runtime ticks or restarts; no random draw happens on a read.
+function flowSignal(category, minute) {
+  const flow = (key, period) => {
+    const bucket = Math.floor(minute / period), fraction = (minute % period) / period;
+    const previous = trendDraw(`intraday:${key}:${period}:${bucket - 1}`) * 2 - 1;
+    const current = trendDraw(`intraday:${key}:${period}:${bucket}`) * 2 - 1;
+    return previous + (current - previous) * fraction;
+  };
+  const volatility = .8 + trendDraw(`intraday:${category}:volatility`) * .5;
+  return (flow(category, 3) * .9 + flow(category, 15) * 2.8 + flow(category, 90) * 4.2) * volatility
+    + flow('shared-market', 10) * 1.2 + flow('shared-market', 60) * 2;
+}
+
+function intradayMovement(db, category, at) {
+  const activation = getState(db, INTRADAY_MARKER, null)?.activatedAtMs;
+  if (!Number.isFinite(activation) || at < activation) return 0;
+  const minute = Math.floor(at / MARKET_QUOTE_INTERVAL_MS);
+  const initialMinute = Math.floor(activation / MARKET_QUOTE_INTERVAL_MS);
+  // Preserve the existing quote on deployment, then release the old anchor
+  // over an hour. Earlier prices and saved receipts retain their meaning.
+  return clamp(flowSignal(category, minute)
+    - flowSignal(category, initialMinute) * Math.exp(-(minute - initialMinute) / 60), -12, 12);
+}
+
 export function applyMarketDrift(db, now, random = null) {
   ensureNewsSchema(db);
   ensureMarketSchema(db, now);
@@ -256,6 +295,9 @@ export function applyMarketDrift(db, now, random = null) {
   if (simulationActivation(db) === null) {
     bootstrapMarketEffects(db, now);
     markSimulationActivation(db, now);
+  }
+  if (!getState(db, INTRADAY_MARKER, null)) {
+    setState(db, INTRADAY_MARKER, { activatedAtMs: now });
   }
   const bucket = Math.floor(now / MARKET_DRIFT_INTERVAL_MS);
   const insert = db.prepare(`INSERT INTO market_trend_points
@@ -298,8 +340,14 @@ export function applyMarketDrift(db, now, random = null) {
       applied = true; earliestStep = Math.min(earliestStep, step);
     }
   }
-  if (applied) db.prepare('DELETE FROM market_snapshots WHERE captured_at >= ?')
-    .run(new Date(earliestStep * MARKET_DRIFT_INTERVAL_MS).toISOString());
+  if (applied) {
+    const rebuildFrom = Math.max(earliestStep * MARKET_DRIFT_INTERVAL_MS, simulationActivation(db));
+    db.prepare('DELETE FROM market_snapshots WHERE captured_at >= ?').run(new Date(rebuildFrom).toISOString());
+    const through = getState(db, HISTORY_CURSOR, null);
+    if (Number.isFinite(through) && through >= rebuildFrom) {
+      setState(db, HISTORY_CURSOR, Math.ceil(rebuildFrom / SNAPSHOT_INTERVAL_MS) * SNAPSHOT_INTERVAL_MS - SNAPSHOT_INTERVAL_MS);
+    }
+  }
   return { applied, bucket };
 }
 
@@ -320,7 +368,10 @@ function refreshMarketHistory(db, now, activationMs) {
   const last = Math.floor(now / SNAPSHOT_INTERVAL_MS) * SNAPSHOT_INTERVAL_MS;
   const first = Math.ceil(activationMs / SNAPSHOT_INTERVAL_MS) * SNAPSHOT_INTERVAL_MS;
   const retentionFloor = Math.ceil((now - SNAPSHOT_RETENTION_MS) / SNAPSHOT_INTERVAL_MS) * SNAPSHOT_INTERVAL_MS;
-  let start = Math.max(first, retentionFloor);
+  // Only extend a fully built grid. Arbitrary-time snapshots do not advance
+  // this cursor, and drift backfills rewind it when invalidating history.
+  const through = getState(db, HISTORY_CURSOR, null);
+  let start = Math.max(first, retentionFloor, Number.isFinite(through) ? through + SNAPSHOT_INTERVAL_MS : -Infinity);
   if (start <= last) {
     if (last - start > (MAX_BACKFILL_BOUNDARIES - 1) * SNAPSHOT_INTERVAL_MS) {
       start = last - (MAX_BACKFILL_BOUNDARIES - 1) * SNAPSHOT_INTERVAL_MS;
@@ -371,10 +422,11 @@ function refreshMarketHistory(db, now, activationMs) {
         let modifierPosition = modifierPositions.get(id);
         while (modifierPosition + 1 < changes.length && changes[modifierPosition + 1].created_at <= boundary) modifierPosition++;
         modifierPositions.set(id, modifierPosition);
-        insert.run(id, indexFromEffects(active, boundary, baseline) * (changes[modifierPosition]?.multiplier ?? 1), capturedAt);
+        insert.run(id, indexFromEffects(active, boundary, baseline + intradayMovement(db, id, boundary)) * (changes[modifierPosition]?.multiplier ?? 1), capturedAt);
       }
     }
   }
+  if (last >= first && (!Number.isFinite(through) || last > through)) setState(db, HISTORY_CURSOR, last);
   // Drift backfills can rebuild snapshots. Restore each actual admin change
   // from its receipt, including changes between hourly boundaries.
   const receiptSnapshot = db.prepare('INSERT OR REPLACE INTO market_snapshots (category, index_value, captured_at) VALUES (?, ?, ?)');
@@ -419,7 +471,11 @@ export function marketState(dataDir, { now = Date.now() } = {}) {
     const rows = new Map(db.prepare('SELECT * FROM market_categories').all().map(row => [row.category, row]));
     const categories = MARKET_CATEGORIES.filter(({ id }) => rows.has(id)).map(({ id, name, nameDe }) => {
       const row = rows.get(id);
-      return { category: id, name, nameDe, baseIndex: row.base_index, currentIndex: roundIndex(row.current_index), updatedAt: row.updated_at };
+      const currentIndex = roundIndex(row.current_index);
+      const previous = computeCategoryIndex(db, id, Math.max(activation, now - 3600_000));
+      return { category: id, name, nameDe, baseIndex: row.base_index, currentIndex, updatedAt: row.updated_at,
+        change1h: roundIndex(row.current_index - previous),
+        changePercent1h: previous > 0 ? roundIndex((row.current_index / previous - 1) * 100) : 0 };
     });
     return { updatedAt, categories };
   });
@@ -462,13 +518,36 @@ export function snapshotMarketState(dataDir, { now = Date.now() } = {}) {
   }));
 }
 
-export function marketHistory(dataDir, category, { now = Date.now(), limit = 100 } = {}) {
+export function marketHistory(dataDir, category, { now = Date.now(), limit = 100, range = null } = {}) {
   if (!isMarketCategory(category)) fail('unknown_category', 404);
+  if (range !== null && !Object.hasOwn(MARKET_HISTORY_RANGES, range)) fail('invalid_market_range', 400);
   return withDatabase(dataDir, db => {
     ensureMarketSchema(db, now);
     ensureMarketEffectsSchema(db);
     const activation = simulationActivation(db);
+    if (range !== null && activation !== null && now >= activation) {
+      const { duration, interval } = MARKET_HISTORY_RANGES[range];
+      const start = Math.max(activation, now - duration);
+      // Reconstruct only this category at the requested resolution. This
+      // avoids storing/rebuilding 600,000 minute rows on every public read.
+      // Include the exact opening and live quote, and actual admin receipts
+      // between samples, so jumps and the chart's latest value stay accurate.
+      const times = new Set([start, now]), receipts = new Map();
+      for (let at = Math.ceil(start / interval) * interval; at <= now; at += interval) times.add(at);
+      for (const row of db.prepare(`SELECT created_at, after_index FROM admin_market_adjustments
+        WHERE category = ? AND created_at >= ? AND created_at <= ? ORDER BY created_at, id`).all(category, start, now)) {
+        times.add(row.created_at); receipts.set(row.created_at, row.after_index);
+      }
+      return [...times].filter(at => at <= now).sort((a, b) => b - a).map(at => ({
+        indexValue: roundIndex(receipts.get(at) ?? computeCategoryIndex(db, category, at)), capturedAt: new Date(at).toISOString()
+      }));
+    }
     if (activation !== null) transaction(db, () => refreshMarketHistory(db, now, activation));
+    if (range !== null) return db.prepare(`SELECT index_value AS indexValue, captured_at AS capturedAt
+      FROM market_snapshots WHERE category = ? AND captured_at >= ? AND captured_at <= ?
+      ORDER BY captured_at DESC LIMIT 1000`).all(category,
+        new Date(now - MARKET_HISTORY_RANGES[range].duration).toISOString(), new Date(now).toISOString())
+      .map(row => ({ indexValue: roundIndex(row.indexValue), capturedAt: row.capturedAt }));
     return db.prepare(`SELECT index_value AS indexValue, captured_at AS capturedAt FROM market_snapshots
       WHERE category = ? ORDER BY captured_at DESC, rowid DESC LIMIT ?`)
       .all(category, Math.max(1, Math.min(1000, Math.floor(limit) || 100)))

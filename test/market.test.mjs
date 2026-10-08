@@ -8,7 +8,7 @@ import { Accounts } from '../src/accounts.mjs';
 import { ensureNewsSchema } from '../src/news.mjs';
 import { closeDataStore, upsertAuctions, withDatabase } from '../src/database.mjs';
 import { DEFAULT_MARKET_INDEX, MARKET_CATEGORIES, estimatedValueTokens, marketCategoryForAuction, marketCategoryForItem,
-  marketCategoryForListingCategory, marketCategoryForTheme, markSimulationActivation, marketHistory, marketState,
+  marketCategoryForListingCategory, marketCategoryForTheme, markSimulationActivation, marketHistory, marketIndexes, marketState,
   setMarketIndex, snapshotMarketState, tickMarketDrift } from '../src/market.mjs';
 
 const day = Date.parse('2026-09-12T12:00:00Z');
@@ -171,4 +171,66 @@ test('old drift is carried into the first trend without doubling chart history',
   assert.ok(atBoundary.indexValue > 115 && atBoundary.indexValue < 125, atBoundary.indexValue);
   assert.ok(marketState(dir, { now: day + 30 * 60_000 }).categories
     .find(category => category.category === 'electronics').currentIndex < 125);
+});
+
+test('intraday quotes move each minute with both rallies and pullbacks and are shared by valuations', async t => {
+  const dir = await fixture(t);
+  tickMarketDrift(dir, { now: day });
+  const history = marketHistory(dir, 'electronics', { now: day + 3600_000, range: '1h' });
+  assert.equal(history.length, 61);
+  const moves = history.slice(1).map((point, i) => history[i].indexValue - point.indexValue);
+  assert.ok(moves.filter(move => move !== 0).length >= 50);
+  assert.ok(moves.some(move => move > 0) && moves.some(move => move < 0));
+  assert.ok(Math.max(...history.map(p => p.indexValue)) - Math.min(...history.map(p => p.indexValue)) > 1);
+  const at = day + 3600_000;
+  const shared = withDatabase(dir, db => marketIndexes(db, at).electronics);
+  assert.equal(history[0].indexValue, Math.round(shared * 100) / 100);
+  const card = marketState(dir, { now: at }).categories[0];
+  assert.equal(card.currentIndex, history[0].indexValue);
+  assert.equal(card.change1h, Math.round((shared - withDatabase(dir, db => marketIndexes(db, day).electronics)) * 100) / 100);
+  assert.equal(card.changePercent1h, Math.round((shared / withDatabase(dir, db => marketIndexes(db, day).electronics) - 1) * 10000) / 100);
+  assert.equal(estimatedValueTokens({ price: 1000, marketCategory: 'electronics' }, { electronics: shared }), Math.round(shared * 10));
+});
+
+test('intraday history is identical after frequent reads, sparse ticks and restart', async t => {
+  const frequent = await fixture(t), sparse = await fixture(t);
+  for (const dir of [frequent, sparse]) tickMarketDrift(dir, { now: day });
+  const end = day + 24 * 3600_000;
+  for (let now = day; now <= end; now += 3600_000) {
+    tickMarketDrift(frequent, { now });
+    marketHistory(frequent, 'vehicles', { now, range: '1h' });
+  }
+  tickMarketDrift(sparse, { now: end });
+  const expected = marketHistory(frequent, 'vehicles', { now: end, range: '1d' });
+  assert.deepEqual(marketHistory(sparse, 'vehicles', { now: end, range: '1d' }), expected);
+  closeDataStore(sparse);
+  assert.deepEqual(marketHistory(sparse, 'vehicles', { now: end, range: '1d' }), expected);
+});
+
+test('quick history ranges cover their full duration, include the live quote and stay bounded', async t => {
+  const dir = await fixture(t);
+  tickMarketDrift(dir, { now: day });
+  const now = day + 31 * 24 * 3600_000 + 37_000;
+  tickMarketDrift(dir, { now });
+  const durations = { '1h': 3600_000, '1d': 24 * 3600_000, '1w': 7 * 24 * 3600_000, '1m': 30 * 24 * 3600_000 };
+  for (const [range, duration] of Object.entries(durations)) {
+    const history = marketHistory(dir, 'vehicles', { now, range });
+    assert.equal(Date.parse(history[0].capturedAt), now);
+    assert.equal(Date.parse(history.at(-1).capturedAt), now - duration);
+    assert.ok(history.length <= 722 && history.length >= 60);
+    assert.ok(history.every(p => p.indexValue >= 50 && p.indexValue <= 150));
+    assert.equal(history[0].indexValue, marketState(dir, { now }).categories.find(c => c.category === 'vehicles').currentIndex);
+  }
+  assert.throws(() => marketHistory(dir, 'vehicles', { now, range: 'all' }), /invalid_market_range/);
+});
+
+test('intraday activation preserves earlier quotes and never invents pre-activation data', async t => {
+  const dir = await fixture(t);
+  setMarketIndex(dir, 'electronics', 113, { now: day, snapshot: true });
+  const before = marketHistory(dir, 'electronics', { now: day, range: '1h' });
+  tickMarketDrift(dir, { now: day + 3600_000 });
+  assert.deepEqual(marketHistory(dir, 'electronics', { now: day, range: '1h' }), before);
+  assert.equal(before[0].indexValue, 113);
+  const history = marketHistory(dir, 'electronics', { now: day + 2 * 3600_000, range: '1m' });
+  assert.ok(history.every(p => Date.parse(p.capturedAt) >= day + 3600_000));
 });

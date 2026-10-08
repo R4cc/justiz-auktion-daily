@@ -28,8 +28,8 @@ window.justizEconomy = {
   resaleBid: (id, amount) => accountCall('resale/bid', { id, amount }),
   cancelListing: id => accountCall('resale/cancel', { id }),
   market: () => economyGet('/api/market'),
-  marketHistory: (category, limit = 168) =>
-    economyGet(`/api/market/${encodeURIComponent(category)}/history?limit=${Number(limit) || 168}`),
+  marketHistory: (category, limit = 168, range = null) =>
+    economyGet(`/api/market/${encodeURIComponent(category)}/history?limit=${Number(limit) || 168}${range ? `&range=${encodeURIComponent(range)}` : ""}`),
   palettes: () => economyGet('/api/palettes'),
   paletteAuctions: (limit = 50, offset = 0) =>
     economyGet(`/api/palette-auctions?limit=${Number(limit) || 50}&offset=${Number(offset) || 0}`),

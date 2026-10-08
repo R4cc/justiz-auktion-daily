@@ -14,7 +14,8 @@ window.economyUi = (() => {
   document.body.append(dialog);
   let data = {}, tab = 'public', timer, clockTimer, sequence = 0, dialogSequence = 0, busy = false, archiveOpen = false;
   let category = null, history = [], historySequence = 0, reveal = null, revealPosition = 0, detailId = null, returnFocus;
-  let chartSelectionTime = null, chartPointer = null;
+  let chartSelectionTime = null, chartPointer = null, marketRange = '1d', historyLoading = false;
+  const marketRanges = [['1h', '1h', '1h'], ['1d', '1d', '1T'], ['1w', '1 week', '1 Woche'], ['1m', '1 month', '1 Monat']];
   const name = lot => t(lot.name, lot.nameDe || lot.name);
   const date = value => new Date(value).toLocaleString(uiLocale());
   // Kept in sync with the market category names the server exposes.
@@ -85,6 +86,7 @@ window.economyUi = (() => {
     const query = new URLSearchParams(location.search);
     tab = path === '/auctions' ? 'public' : ({ mine: 'mine', bids: 'bids' })[query.get('view')] || 'browse';
     data = {}; history = []; category = query.get('category'); archiveOpen = false;
+    marketRange = marketRanges.some(([id]) => id === query.get('range')) ? query.get('range') : '1d';
     chartSelectionTime = null; chartPointer = null;
     if (!economyFlags[routes[path]]) return;
     await refresh(path, visit, false);
@@ -95,9 +97,9 @@ window.economyUi = (() => {
       const lots = [...(data.lots || []), ...(data.mine || []), ...(data.bids || [])];
       const detailEnd = dialog.querySelector('[data-economy-end]')?.dataset.economyEnd;
       if (detailEnd) lots.push({ status: 'active', endsAt: Number(detailEnd) });
-      if (Date.now() - lastRefresh < auctionPollInterval(lots, Date.now())) return;
+      if (Date.now() - lastRefresh < (path === '/market' ? 15_000 : auctionPollInterval(lots, Date.now()))) return;
       lastRefresh = Date.now(); polling = true;
-      refresh(path, visit, true).catch(() => showToast(t('Could not refresh auctions. Try again.', 'Auktionen konnten nicht aktualisiert werden. Versuche es erneut.')))
+      refresh(path, visit, true).catch(() => showToast(path === '/market' ? t('Could not refresh the market. Try again.', 'Der Markt konnte nicht aktualisiert werden. Versuche es erneut.') : t('Could not refresh auctions. Try again.', 'Auktionen konnten nicht aktualisiert werden. Versuche es erneut.')))
         .finally(() => { polling = false; });
     }, 1000);
     clockTimer = setInterval(() => {
@@ -417,52 +419,71 @@ window.economyUi = (() => {
   }
   async function loadHistory(id, visit = accountVisit, repaint = true) {
     if (!id) return;
-    const request = ++historySequence;
-    const result = await api.marketHistory(id, 720);
-    if (request !== historySequence || visit !== accountVisit || category !== id) return;
-    if (!result) throw new Error(t('History could not be loaded. Try selecting the category again.', 'Der Verlauf konnte nicht geladen werden. Wähle die Kategorie erneut.'));
+    const request = ++historySequence, range = marketRange;
+    historyLoading = true;
+    const result = await api.marketHistory(id, 720, range);
+    if (request !== historySequence || visit !== accountVisit || category !== id || range !== marketRange) return;
+    historyLoading = false;
+    if (!result) { if (repaint) renderMarket(); throw new Error(t('History could not be loaded. Try selecting the category again.', 'Der Verlauf konnte nicht geladen werden. Wähle die Kategorie erneut.')); }
     history = result.history || [];
     if (repaint) renderMarket();
   }
   function renderMarket() {
     const categories = data.categories || [], selected = categories.find(c => c.category === category);
     const chartFocused = accountContent.querySelector('[data-market-plot]') === document.activeElement;
+    const rangeFocus = document.activeElement?.dataset?.economy === 'market-range' ? document.activeElement.dataset.id : null;
     accountContent.innerHTML = pageHeading(t('Market', 'Markt'), t('100 is neutral. Above 100 means stronger demand; below 100 means weaker demand. Market movement changes buyer valuations.', '100 ist neutral. Darüber ist die Nachfrage stärker, darunter schwächer. Marktbewegungen verändern Käuferbewertungen.')) + economyOverviewMarkup() +
-      `<section class="market-guidance"><div class="section-title-row"><h2>${t("Sell now or hold?", "Jetzt verkaufen oder behalten?")}</h2>${infoTip(t("Above-normal markets support higher estimates. Below normal, waiting may help, but recovery is never guaranteed. Bids decide the final price.", "Über Normalwert steigen die Schätzwerte. Darunter kann Warten helfen, eine Erholung ist aber nie garantiert. Gebote bestimmen den Verkaufspreis."), t('How to use the market', 'So nutzt du den Markt'))}</div><a href="/inventory" data-page>${t("Inventory", "Inventar")} →</a></section><div class="market-categories">${categories.map(c => `<button data-economy="category" data-id="${c.category}" aria-pressed="${category === c.category}"><span>${esc(t(c.name, c.nameDe))}</span><strong>${number(c.currentIndex, 2)} ${c.currentIndex > 100 ? '↑' : c.currentIndex < 100 ? '↓' : '→'}</strong><small>${c.currentIndex >= 100 ? '+' : ''}${number(c.currentIndex - 100, 2)}% ${c.currentIndex > 100 ? t('above normal', 'über Normalwert') : c.currentIndex < 100 ? t('below normal', 'unter Normalwert') : t('normal value', 'Normalwert')}</small><time>${date(c.updatedAt)}</time></button>`).join('')}</div>
-      <section class="market-chart"><div class="section-title-row"><h2>${esc(selected ? t(selected.name, selected.nameDe) : '')}</h2>${infoTip(t('The chart shows the last 30 days and scales to include market adjustments. The dashed line is neutral 100.', 'Das Diagramm zeigt die letzten 30 Tage und passt die Skala an Marktänderungen an. Die gestrichelte Linie ist der neutrale Wert 100.'), t('About this chart', 'Über dieses Diagramm'))}</div>${selected ? `<p><strong>${number(selected.currentIndex, 2)}</strong> · ${number(Math.abs(selected.currentIndex - 100), 2)}% ${selected.currentIndex > 100 ? t('above normal', 'über Normalwert') : selected.currentIndex < 100 ? t('below normal', 'unter Normalwert') : t('from normal', 'vom Normalwert')}</p>` : ''}${chart(history)}</section>`;
+      `<section class="market-guidance"><div class="section-title-row"><h2>${t("Sell now or hold?", "Jetzt verkaufen oder behalten?")}</h2>${infoTip(t("Above-normal markets support higher estimates. Below normal, waiting may help, but recovery is never guaranteed. Bids decide the final price.", "Über Normalwert steigen die Schätzwerte. Darunter kann Warten helfen, eine Erholung ist aber nie garantiert. Gebote bestimmen den Verkaufspreis."), t('How to use the market', 'So nutzt du den Markt'))}</div><a href="/inventory" data-page>${t("Inventory", "Inventar")} →</a></section><div class="market-categories">${categories.map(c => `<button data-economy="category" data-id="${c.category}" aria-pressed="${category === c.category}"><span>${esc(t(c.name, c.nameDe))}</span><strong>${number(c.currentIndex, 2)} ${(c.change1h || 0) > 0 ? '↑' : (c.change1h || 0) < 0 ? '↓' : '→'}</strong><span class="market-card-change ${(c.change1h || 0) > 0 ? 'is-up' : (c.change1h || 0) < 0 ? 'is-down' : 'is-flat'}">${(c.changePercent1h || 0) > 0 ? '+' : ''}${number(c.changePercent1h || 0, 2)}% · 1h</span><small>${c.currentIndex >= 100 ? '+' : ''}${number(c.currentIndex - 100, 2)}% ${c.currentIndex > 100 ? t('above normal', 'über Normalwert') : c.currentIndex < 100 ? t('below normal', 'unter Normalwert') : t('normal value', 'Normalwert')}</small><time>${date(c.updatedAt)}</time></button>`).join('')}</div>
+      <section class="market-chart"><div class="market-chart-toolbar"><div class="section-title-row"><h2>${esc(selected ? t(selected.name, selected.nameDe) : '')}</h2>${infoTip(t('Quotes move every minute. The chart scales to the selected period; the dotted line marks its opening quote. High and low reflect the chart samples.', 'Kurse bewegen sich jede Minute. Die Skala folgt dem gewählten Zeitraum; die gepunktete Linie markiert den Startkurs. Hoch und Tief beziehen sich auf die Diagrammwerte.'), t('About this chart', 'Über dieses Diagramm'))}</div><div class="market-time-filters" role="group" aria-label="${t('Chart time range', 'Diagrammzeitraum')}">${marketRanges.map(([id, en, de]) => `<button type="button" data-economy="market-range" data-id="${id}" aria-pressed="${marketRange === id}">${t(en, de)}</button>`).join('')}</div></div>${marketSummary(history, selected)}${historyLoading && !history.length ? `<p role="status">${t('Loading history…', 'Verlauf wird geladen …')}</p>` : chart(history)}</section>`;
     const chartSection = accountContent.querySelector('.market-chart');
     const categoryGrid = accountContent.querySelector('.market-categories');
     if (chartSection && categoryGrid) accountContent.insertBefore(chartSection, categoryGrid);
     wireMarketChart(chartSection, chartFocused);
+    if (rangeFocus) accountContent.querySelector(`[data-economy="market-range"][data-id="${rangeFocus}"]`)?.focus({ preventScroll: true });
+  }
+  function marketSummary(points, selected) {
+    const latest = points[0]?.indexValue ?? selected?.currentIndex;
+    if (!Number.isFinite(latest)) return '';
+    const opening = points.at(-1)?.indexValue ?? latest, change = latest - opening;
+    const percent = opening > 0 ? change / opening * 100 : 0;
+    const values = points.map(p => p.indexValue);
+    const sign = change > 0 ? '+' : '', direction = change > 0 ? 'is-up' : change < 0 ? 'is-down' : 'is-flat';
+    return `<div class="market-quote-summary"><div><span class="market-live-label">${t('LIVE INDEX · 1 MIN QUOTES', 'LIVE-INDEX · MINUTENKURSE')}</span><strong class="market-current-quote">${number(latest, 2)}</strong><span class="market-period-change ${direction}">${change > 0 ? '↑' : change < 0 ? '↓' : '→'} ${sign}${number(change, 2)} (${sign}${number(percent, 2)}%) <small>${t('in selected period', 'im gewählten Zeitraum')}</small></span></div><dl><div><dt>${t('Open', 'Start')}</dt><dd>${number(opening, 2)}</dd></div><div><dt>${t('High', 'Hoch')}</dt><dd>${number(values.length ? Math.max(...values) : latest, 2)}</dd></div><div><dt>${t('Low', 'Tief')}</dt><dd>${number(values.length ? Math.min(...values) : latest, 2)}</dd></div></dl></div>`;
   }
   function chart(points) {
     if (!points.length) return empty(t('History will appear as the market starts collecting data.', 'Der Verlauf erscheint, sobald der Markt Daten sammelt.'));
     const sorted = [...points].reverse(), start = Date.parse(sorted[0].capturedAt), end = Date.parse(sorted.at(-1).capturedAt);
-    const left = 58, right = 730, top = 20, bottom = 226;
+    const { width, left, right, top, bottom } = marketPlotGeometry();
     const x = p => start === end ? (left + right) / 2
       : left + (right - left) * (Date.parse(p.capturedAt) - start) / (end - start);
     const range = marketChartRange(sorted);
     const y = p => bottom - (p.indexValue - range.min) / (range.max - range.min) * (bottom - top);
     const line = sorted.map(p => `${x(p)},${y(p)}`).join(' ');
     const dateLabel = time => esc(new Date(time).toLocaleString(uiLocale(), end - start < 2 * 86_400_000
-      ? { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }
+      ? { hour: '2-digit', minute: '2-digit', ...(end - start > 3600_000 ? { day: 'numeric', month: 'short' } : {}) }
       : { day: 'numeric', month: 'short' }));
-    const ticks = [...new Set([...Array.from({ length: 5 }, (_, index) => range.min + (range.max - range.min) * index / 4), 100])].sort((a, b) => a - b);
+    const ticks = Array.from({ length: 5 }, (_, index) => range.min + (range.max - range.min) * index / 4);
+    if (range.min <= 100 && range.max >= 100 && !ticks.some(value => Math.abs(value - 100) < .01)) ticks.push(100);
     const yTicks = ticks.map(value => {
       const at = bottom - (value - range.min) / (range.max - range.min) * (bottom - top);
-      return `<line x1="${left}" x2="${right}" y1="${at}" y2="${at}" class="market-chart-grid${value === 100 ? ' is-neutral' : ''}"/><text x="48" y="${at + 4}" text-anchor="end">${number(value)}</text>`;
+      return `<line x1="${left}" x2="${right}" y1="${at}" y2="${at}" class="market-chart-grid${value === 100 ? ' is-neutral' : ''}"/><text x="48" y="${at + 4}" text-anchor="end">${number(value, 2)}</text>`;
     }).join('');
-    const xTicks = (start === end ? [.5] : [0, 1 / 3, 2 / 3, 1]).map((fraction, index) => {
+    const xTicks = (start === end ? [.5] : width < 500 ? [0, 1] : [0, 1 / 3, 2 / 3, 1]).map((fraction, index) => {
       const at = left + fraction * (right - left);
-      return `<line x1="${at}" x2="${at}" y1="${top}" y2="${bottom}" class="market-chart-grid"/><text x="${at}" y="251" text-anchor="${start === end ? 'middle' : index === 0 ? 'start' : index === 3 ? 'end' : 'middle'}">${dateLabel(start + fraction * (end - start))}</text>`;
+      return `<line x1="${at}" x2="${at}" y1="${top}" y2="${bottom}" class="market-chart-grid"/><text x="${at}" y="251" text-anchor="${start === end ? 'middle' : index === 0 ? 'start' : fraction === 1 ? 'end' : 'middle'}">${dateLabel(start + fraction * (end - start))}</text>`;
     }).join('');
-    const latest = sorted.at(-1);
-    return `<p class="market-chart-hint">${t('Hover for a value · focus and use arrow keys to inspect points', 'Für Werte mit der Maus darüberfahren · mit Fokus und Pfeiltasten Punkte ansehen')}</p><div class="market-plot-scroll"><div class="market-plot-wrap"><svg viewBox="0 0 760 288" data-market-plot tabindex="0" role="group" aria-label="${t('Market index over time. Use left and right arrow keys to inspect recorded values.', 'Marktindex im Zeitverlauf. Mit den Pfeiltasten links und rechts Messwerte ansehen.')}"><title>${t('Market index over time', 'Marktindex im Zeitverlauf')}</title>${yTicks}${xTicks}<path d="M${left} ${top}V${bottom}H${right}" class="market-chart-axis"/><text x="14" y="127" transform="rotate(-90 14 127)" text-anchor="middle" class="market-chart-axis-label">Index</text><text x="394" y="281" text-anchor="middle" class="market-chart-axis-label">${t('Date', 'Datum')}</text><polyline points="${line}" class="market-chart-line"/><circle cx="${x(latest)}" cy="${y(latest)}" r="4" class="market-chart-latest"/><line data-market-crosshair x1="0" x2="0" y1="${top}" y2="${bottom}" class="market-chart-crosshair" visibility="hidden"/><circle data-market-marker cx="0" cy="0" r="6" class="market-chart-marker" visibility="hidden"/></svg><div class="market-chart-tooltip" data-market-tooltip role="status" aria-live="polite" hidden></div></div></div><details><summary>${t("Read history as a table", "Verlauf als Tabelle lesen")}</summary><div class="market-history-table"><table><thead><tr><th>${t("Time", "Zeit")}</th><th>Index</th></tr></thead><tbody>${sorted.map(p => `<tr><td>${date(p.capturedAt)}</td><td>${number(p.indexValue, 2)}</td></tr>`).join("")}</tbody></table></div></details>`;
+    const latest = sorted.at(-1), opening = sorted[0];
+    const direction = latest.indexValue > opening.indexValue ? 'is-up' : latest.indexValue < opening.indexValue ? 'is-down' : 'is-flat';
+    return `<p class="market-chart-hint">${t('Hover or touch for a value · use arrow keys to inspect', 'Für Werte berühren oder mit der Maus darüberfahren · Pfeiltasten zum Prüfen')}</p><div class="market-plot-scroll"><div class="market-plot-wrap"><svg viewBox="0 0 ${width} 288" class="${direction}" data-market-plot tabindex="0" role="group" aria-label="${t('Market index over time. Use left and right arrow keys to inspect recorded values.', 'Marktindex im Zeitverlauf. Mit den Pfeiltasten links und rechts Messwerte ansehen.')}"><title>${t('Market index over time', 'Marktindex im Zeitverlauf')}</title>${yTicks}${xTicks}<path d="M${left} ${top}V${bottom}H${right}" class="market-chart-axis"/><text x="14" y="127" transform="rotate(-90 14 127)" text-anchor="middle" class="market-chart-axis-label">Index</text><text x="${(left + right) / 2}" y="281" text-anchor="middle" class="market-chart-axis-label">${t('Date', 'Datum')}</text><line x1="${left}" x2="${right}" y1="${y(opening)}" y2="${y(opening)}" class="market-chart-opening"/><polygon points="${left},${bottom} ${line} ${right},${bottom}" class="market-chart-area"/><polyline points="${line}" class="market-chart-line"/><circle cx="${x(latest)}" cy="${y(latest)}" r="4" class="market-chart-latest"/><line data-market-crosshair x1="0" x2="0" y1="${top}" y2="${bottom}" class="market-chart-crosshair" visibility="hidden"/><circle data-market-marker cx="0" cy="0" r="6" class="market-chart-marker" visibility="hidden"/></svg><div class="market-chart-tooltip" data-market-tooltip role="status" aria-live="polite" hidden></div></div></div><details><summary>${t("Read history as a table", "Verlauf als Tabelle lesen")}</summary><div class="market-history-table"><table><thead><tr><th>${t("Time", "Zeit")}</th><th>Index</th></tr></thead><tbody>${sorted.map(p => `<tr><td>${date(p.capturedAt)}</td><td>${number(p.indexValue, 2)}</td></tr>`).join("")}</tbody></table></div></details>`;
+  }
+  function marketPlotGeometry() {
+    const compact = typeof window !== 'undefined' && window.matchMedia?.('(max-width: 600px)').matches;
+    return { width: compact ? 360 : 760, left: 58, right: compact ? 340 : 730, top: 20, bottom: 226 };
   }
   function marketChartRange(points) {
-    const values = points.map(point => point.indexValue);
-    return { min: Math.min(50, Math.floor(Math.min(...values) / 25) * 25),
-      max: Math.max(150, Math.ceil(Math.max(...values) / 25) * 25) };
+    const values = points.map(point => point.indexValue), low = Math.min(...values), high = Math.max(...values);
+    const padding = Math.max(.3, (high - low) * .12);
+    return { min: low - padding, max: high + padding };
   }
   function wireMarketChart(section, restoreFocus = false) {
     const plot = section?.querySelector('[data-market-plot]');
@@ -470,7 +491,7 @@ window.economyUi = (() => {
     const series = [...history].reverse().map(point => ({ ...point, time: Date.parse(point.capturedAt) }));
     const start = series[0].time, end = series.at(-1).time;
     const range = marketChartRange(series);
-    const left = 58, right = 730, top = 20, bottom = 226;
+    const { width, left, right, top, bottom } = marketPlotGeometry();
     const tooltip = section.querySelector('[data-market-tooltip]');
     const crosshair = plot.querySelector('[data-market-crosshair]');
     const marker = plot.querySelector('[data-market-marker]');
@@ -487,7 +508,7 @@ window.economyUi = (() => {
       crosshair.setAttribute('visibility', 'visible'); marker.setAttribute('visibility', 'visible');
       tooltip.hidden = false;
       tooltip.textContent = `${date(point.capturedAt)} · ${t('Index', 'Index')} ${number(point.indexValue, 2)} (${point.indexValue >= 100 ? '+' : ''}${number(point.indexValue - 100, 2)}%)`;
-      tooltip.style.left = `${Math.max(104, Math.min(plot.clientWidth - 104, x / 760 * plot.clientWidth))}px`;
+      tooltip.style.left = `${Math.max(104, Math.min(plot.clientWidth - 104, x / width * plot.clientWidth))}px`;
       tooltip.style.top = `${y / 288 * plot.clientHeight}px`;
       tooltip.classList.toggle('is-below', y < 85);
     }
@@ -497,7 +518,7 @@ window.economyUi = (() => {
       tooltip.hidden = true;
     }
     function showNear(clientX) {
-      const x = (clientX - plot.getBoundingClientRect().left) / plot.clientWidth * 760;
+      const x = (clientX - plot.getBoundingClientRect().left) / plot.clientWidth * width;
       const time = start + (Math.max(left, Math.min(right, x)) - left) / (right - left) * (end - start);
       let closest = 0;
       for (let index = 1; index < series.length; index++) {
@@ -505,6 +526,7 @@ window.economyUi = (() => {
       }
       show(closest);
     }
+    plot.addEventListener('pointerdown', event => showNear(event.clientX));
     plot.addEventListener('pointermove', event => {
       chartPointer = { x: event.clientX, y: event.clientY };
       showNear(event.clientX);
@@ -540,7 +562,16 @@ window.economyUi = (() => {
     try {
       if (action === 'tab') { tab = id; const query = new URLSearchParams(location.search); query.set('view', id); window.history.replaceState({}, '', currentAccountPage + '?' + query); render(); accountContent.querySelector(`.marketplace-tabs [data-id="${id}"]`)?.focus(); }
       if (action === 'archive') { archiveOpen = !archiveOpen; render(); accountContent.querySelector('[data-economy="archive"]')?.focus({ preventScroll: true }); }
-      if (action === 'category') { category = id; chartSelectionTime = null; chartPointer = null; window.history.replaceState({}, '', '/market?category=' + encodeURIComponent(id)); await loadHistory(id); accountContent.querySelector(`[data-id="${id}"]`)?.focus({ preventScroll: true }); }
+      if (action === 'category' || action === 'market-range') {
+        if (action === 'market-range') {
+          if (!marketRanges.some(([range]) => range === id)) return;
+          marketRange = id;
+        } else category = id;
+        chartSelectionTime = null; chartPointer = null; history = []; historyLoading = true;
+        window.history.replaceState({}, '', `/market?category=${encodeURIComponent(category)}&range=${marketRange}`);
+        renderMarket(); await loadHistory(category);
+        accountContent.querySelector(`[data-economy="${action}"][data-id="${id}"]`)?.focus({ preventScroll: true });
+      }
       if (action === 'list') listingDialog(id);
       if (action === 'quick-list') {
         // One-click listing at the inventory card's default start price, one

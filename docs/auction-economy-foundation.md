@@ -29,7 +29,9 @@ newly initialized NPC buyers. Automatic news publication is dormant.
   Listed items are marked; matching copies remain grouped and the next available
   copy can be listed.
 - `/market`: all category indexes, deviation from neutral 100, update timestamps,
-  category selection and native SVG hourly-history chart.
+  last-hour returns, category selection and a native SVG chart with 1h, 1d,
+  1 week and 1 month filters, opening/high/low quotes and period gain/loss.
+  The chart scales to the selected prices and supports touch and keyboard inspection.
 - `/businesses`: owner management, storefront name/tagline, margins, stock and goose guard.
 - `/stores`: searchable player store directory and shareable `?shop=ID` storefronts,
   shelf purchases, verified reviews, reactions, tips and the theft minigame.
@@ -48,8 +50,9 @@ Auctions and marketplace poll every 12 seconds while the document is visible,
 accelerating to every second within 15 seconds of an active auction deadline
 (and briefly after a cached deadline passes to catch an extension).
 Navigation cancels timers and invalidates pending responses. Requests are guarded
-by visit, request and account identity. Market uses the same visibility-aware
-refresh cadence. No WebSockets or chart dependencies.
+by visit, request and account identity. Market polls every 15 seconds while
+visible and preserves the selected category/range and inspection focus.
+No WebSockets or chart dependencies.
 
 Every accepted human/NPC bid leaves at least 10 seconds to respond: the bid
 transaction writes `ends_at = max(ends_at, now + 10000)` together with price,
@@ -101,7 +104,11 @@ precedes runtime startup in `server.mjs`.
   every two hours. Momentum and week-long regimes produce sustained gains and
   losses; small noise varies the path, and rare shocks produce jumps or crashes.
   Deterministic category/window draws let a restarted runtime reconstruct
-  missed points. The combined index, including short-lived news effects, stays
+  missed points. A minute-level intraday overlay combines correlated market
+  order flow with category-specific volatility and short rallies/pullbacks.
+  Hash-keyed anchors make quotes identical across domain reads and restarts.
+  Its one-time activation preserves the initial quote and earlier history.
+  The combined index, including intraday flow and short-lived news effects, stays
   between 50 and 150 (±50% of neutral 100) before any persistent admin multiplier.
   Admin adjustments can move the final index beyond this band. The market chart retains 30 days.
   The first trend tick also performs the one-time simulation activation.
@@ -291,11 +298,17 @@ all store activity and sale histories before deleting businesses/inventory.
 
 ## Market contracts and dormant news backend
 
-Global market is computed from persisted news effects. Each signed effect
+Global market combines persistent trends, minute-level intraday flow and
+persisted news effects. Each signed effect
 contributes `delta * clamp(1 - elapsed / 72h, 0, 1)`. Index is
-`clamp(trendBaseline + sum(contributions), 50, 150) * adminMultiplier`. Absolute active contribution budget
+`clamp(trendBaseline + intradayFlow + sum(contributions), 50, 150) * adminMultiplier`. Absolute active contribution budget
 is 30/category; opposing effects consume the same budget. Hourly history is
-reconstructed from effects, bounded to 30 days/720 boundaries. Legacy publication
+reconstructed from the shared simulation, bounded to 30 days/720 boundaries.
+A durable cursor extends this grid incrementally and rewinds when drift
+backfills invalidate it. `?range=1h|1d|1w|1m` reconstructs one category on demand
+at 1-minute, 5-minute, 15-minute or hourly resolution, respectively. Responses
+include exact opening/current quotes and admin adjustment receipts; invalid
+ranges return 400. Legacy `?limit=` reads retain their hourly contract. Legacy publication
 receipts remain inert and are never replayed as new effects.
 
 The admin multiplier defaults to 1. Percentage controls compound it by

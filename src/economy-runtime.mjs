@@ -78,7 +78,7 @@ export function tickEconomy(dataDir, { now = Date.now(), flags = featureFlags() 
 
 export function startEconomyRuntime(dataDir, { flags = featureFlags(), now = Date.now,
   onError = result => console.error('Economy tick needs attention:', result) } = {}) {
-  if (!flags.news && !flags.paletteAuctions && !flags.resales && !flags.businesses) return () => {};
+  if (!flags.market && !flags.news && !flags.paletteAuctions && !flags.resales && !flags.businesses) return () => {};
   let stopped = false, timer;
   const tick = () => {
     if (stopped) return;

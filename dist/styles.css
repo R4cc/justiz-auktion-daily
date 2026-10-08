@@ -1083,7 +1083,7 @@ button:focus-visible, a:focus-visible { outline: 3px solid var(--red); outline-o
 .market-chart { border: 1px solid var(--line); border-radius: 12px; padding: 20px; margin-top: 14px; }
 .market-chart-hint { margin: 12px 0 4px; color: var(--muted); font-size: 12px; }
 .market-plot-scroll { overflow-x: auto; }
-.market-plot-wrap { position: relative; min-width: 620px; }
+.market-plot-wrap { position: relative; min-width: 0; }
 .market-chart svg { display: block; width: 100%; height: auto; font: 12px 'DM Mono', monospace; overflow: visible; cursor: crosshair; }
 .market-chart svg:focus-visible { outline: 2px solid var(--ink); outline-offset: -3px; border-radius: 6px; }
 .market-chart-grid { stroke: var(--line); stroke-width: 1; }
@@ -1675,3 +1675,42 @@ body { padding-left: var(--sidebar-width); }
   .town-plot-panel .town-plot-facts { margin:.6rem 0; }
 }
 @media(max-width:650px) { .town-map-key { gap:.6rem .8rem; }.town-map-key .town-deco-key { margin-left:0; } }
+
+/* Minute quotes and quick period comparison. */
+.market-chart-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.market-chart-toolbar h2 { margin: 0; }
+.market-time-filters { display: flex; gap: 4px; padding: 4px; border: 1px solid var(--line); border-radius: 9px; }
+.market-time-filters button { min-height: 40px; margin: 0; padding: 8px 12px; border: 0; border-radius: 6px; background: transparent; font: 600 12px 'DM Mono', monospace; color: var(--muted); cursor: pointer; }
+.market-time-filters button[aria-pressed="true"] { background: var(--ink); color: var(--paper); }
+.market-time-filters button:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
+.market-quote-summary { display: flex; justify-content: space-between; gap: 18px; flex-wrap: wrap; margin: 22px 0 10px; }
+.market-live-label { display: block; color: var(--muted); font: 10px 'DM Mono', monospace; letter-spacing: .08em; }
+.market-current-quote { display: block; margin: 6px 0; font: 600 36px 'DM Mono', monospace; letter-spacing: -.04em; }
+.market-period-change { font: 500 13px 'DM Mono', monospace; }
+.market-period-change small { color: var(--muted); font-size: 11px; }
+.market-quote-summary dl { display: flex; align-items: center; gap: 22px; margin: 0; font: 12px 'DM Mono', monospace; }
+.market-quote-summary dt { margin-bottom: 8px; color: var(--muted); }
+.market-quote-summary dd { margin: 0; font-weight: 600; }
+.market-period-change.is-up { color: #167047; }
+.market-period-change.is-down { color: #b23924; }
+.market-chart svg { --quote-color: var(--ink); }
+.market-chart svg.is-up { --quote-color: #167047; }
+.market-chart svg.is-down { --quote-color: #b23924; }
+.market-chart-line { stroke: var(--quote-color); }
+.market-chart-latest { stroke: var(--quote-color); fill: var(--quote-color); }
+.market-chart-area { fill: var(--quote-color); opacity: .08; }
+.market-chart-opening { stroke: var(--muted); stroke-width: 1; stroke-dasharray: 2 5; }
+@media (max-width: 600px) {
+  .market-chart { padding: 14px 10px; }
+  .market-chart-toolbar { align-items: stretch; }
+  .market-time-filters { width: 100%; }
+  .market-time-filters button { flex: 1; min-height: 44px; padding: 8px 4px; }
+  .market-quote-summary { gap: 14px; padding: 0 4px; }
+  .market-quote-summary dl { width: 100%; justify-content: space-between; }
+  .market-chart svg { font-size: 13px; }
+}
+
+.market-card-change { font: 600 11px 'DM Mono', monospace; }
+.market-card-change.is-up { color: #167047; }
+.market-card-change.is-down { color: #b23924; }
+.market-categories button[aria-pressed="true"] .market-card-change { color: var(--paper); }
