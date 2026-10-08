@@ -4,6 +4,7 @@ let caseStockRequest = 0;
 let account = null, accountCatalog = null, accountItems = [], accountCodes = [], freshCodes = [], freshPasswordReset = null;
 let accountFriends = { friends: [], date: '' }, accountAdmin = { playerCount: 0, users: [], grants: [], lastReset: null };
 let accountLeaderboard = { date: '', leaders: [] }, adminUserFilter = '';
+let adminActiveTab = 'market', adminMarketFilter = '';
 let accountNotifications = [], notificationUnreadCount = 0, notificationOwner = null, notificationTimer = null, notificationBusy = false, notificationRequest = 0;
 let accountAuctions = { query: '', page: 1, pages: 1, total: 0, auctions: [] }, auctionSearchTimer = null;
 const auctionReveal = document.createElement('dialog');
@@ -474,16 +475,30 @@ function friendsMarkup() {
     <h3>${t('Your friends', 'Deine Freunde')} · ${accepted.length}</h3>
     ${accepted.length ? `<div class="friend-grid">${accepted.map(friend => `<article class="friend-card"><h4>${accountEscape(friend.username)}</h4><dl><div><dt>${t('TODAY’S DAILY', 'HEUTIGES DAILY')}</dt><dd>${dailyFriendLabel(friend.daily)}</dd></div><div><dt>${t('INVENTORY VALUE', 'INVENTARWERT')}</dt><dd>${euro(friend.inventoryValueEur)}</dd></div><div><dt>${t('COLLECTED ITEMS', 'GESAMMELTE LOSE')}</dt><dd>${friend.itemCount}</dd></div></dl><button data-account="friend-remove" data-id="${friend.id}">${t('Remove friend', 'Freund entfernen')}</button></article>`).join('')}</div>` : `<p class="collection-empty">${t('No friends yet. Send a request using their username.', 'Noch keine Freunde. Sende eine Anfrage über den Benutzernamen.')}</p>`}`;
 }
+function adminIcon(name) {
+  const paths = {
+    market: '<path d="m3 17 6-6 4 4 8-10M15 5h6v6"/>',
+    players: '<circle cx="9" cy="8" r="3"/><path d="M3 20v-2a6 6 0 0 1 12 0v2M16 5a3 3 0 0 1 0 6M21 20v-2a6 6 0 0 0-3-5"/>',
+    auctions: '<rect x="3" y="4" width="18" height="4" rx="1"/><path d="M5 8v12h14V8M10 12h4"/>',
+    access: '<rect x="5" y="10" width="14" height="11" rx="2"/><path d="M8 10V6a4 4 0 0 1 8 0v4M12 14v3"/>',
+    maintenance: '<path d="m14 6 4 4M3 21l7-7M14 3a6 6 0 0 0-7 7l-4 4a3 3 0 0 0 7 7l4-4a6 6 0 0 0 7-7l-4 4-4-4 4-4Z"/>',
+    refresh: '<path d="M20 7v5h-5M4 17v-5h5M6 6a8 8 0 0 1 13 2M18 18A8 8 0 0 1 5 16"/>',
+    search: '<circle cx="10" cy="10" r="6"/><path d="m15 15 6 6"/>',
+    code: '<path d="m8 8-4 4 4 4M16 8l4 4-4 4M14 5l-4 14"/>'
+  };
+  return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${paths[name] || paths.market}</svg>`;
+}
 function adminUserListMarkup() {
   const query = adminUserFilter.trim().toLowerCase();
   const filtered = accountAdmin.users.filter(user => user.username.toLowerCase().includes(query));
   const rows = filtered.slice(0, 100).map(user => `<div class="user-row${user.banned ? ' is-banned' : ''}">
-    <div class="user-row-main"><strong>${accountEscape(user.username)}</strong><span>${justizEuro(user.tokens)}${user.admin ? ` · ${t('Admin', 'Admin')}` : ''}${user.banned ? ` · ${t('Banned', 'Gesperrt')}` : ''}</span></div>
-    <div class="user-row-actions">${user.admin ? '' : `<button data-account="ban-toggle" data-id="${accountEscape(user.id)}" data-banned="${user.banned ? 'true' : 'false'}">${user.banned ? t('Unban', 'Entsperren') : t('Ban', 'Sperren')}</button><button data-account="password-reset" data-id="${accountEscape(user.id)}">${t('Reset password', 'Passwort zurücksetzen')}</button>`}<button data-account="grant-user" data-id="${accountEscape(user.id)}">${t('Give J€', 'J€ geben')}</button></div>
+    <span class="admin-avatar" aria-hidden="true">${accountEscape(user.username.slice(0, 2).toUpperCase())}</span>
+    <div class="user-row-main"><strong>${accountEscape(user.username)}</strong><span>${justizEuro(user.tokens)} <span class="admin-status${user.banned ? ' is-banned' : user.admin ? ' is-admin' : ''}">${user.banned ? t('Banned', 'Gesperrt') : user.admin ? 'Admin' : t('Player', 'Spieler')}</span></span></div>
+    <div class="user-row-actions">${user.admin ? '' : `<button data-account="ban-toggle" data-id="${accountEscape(user.id)}" data-banned="${user.banned ? 'true' : 'false'}">${user.banned ? t('Unban', 'Entsperren') : t('Ban', 'Sperren')}</button><button data-account="password-reset" data-id="${accountEscape(user.id)}">${t('Reset password', 'Passwort zurücksetzen')}</button>`}<button class="admin-grant-button" data-account="grant-user" data-id="${accountEscape(user.id)}">${t('Give J€', 'J€ geben')}</button></div>
   </div>`).join('');
   const note = filtered.length > 100 ? t(`Showing 100 of ${filtered.length} players. Refine your search.`, `Zeige 100 von ${filtered.length} Spielern. Grenze die Suche weiter ein.`) :
-    filtered.length ? '' : t('No players match this search.', 'Keine Spieler gefunden.');
-  return rows + (note ? `<p class="admin-count">${note}</p>` : '');
+    filtered.length ? t(`${filtered.length} players`, `${filtered.length} Spieler`) : t('No players match this search.', 'Keine Spieler gefunden.');
+  return rows + `<p class="admin-count" role="status">${note}</p>`;
 }
 function auctionResultsMarkup() {
   const rows = accountAuctions.auctions.map(auction => `<tr><td class="auction-cover">${auction.image ? `<img src="${accountEscape(auction.image)}" alt="" loading="lazy">` : ''}</td>
@@ -524,21 +539,27 @@ function renderAuctionDetail(auction) {
   auctionReveal.querySelector('[data-account="close-auction"]').focus({ preventScroll: true });
 }
 function adminMarketMarkup() {
-  return `<section class="admin-section admin-market" id="admin-market-section"><h2>${t('Market controls', 'Marktsteuerung')}</h2>
-    <p>${t('Change current category prices by the selected percentage. Changes compound and persist while the market keeps moving. Reset removes the manual adjustment for that category.', 'Ändere aktuelle Kategoriepreise um den gewählten Prozentsatz. Änderungen wirken nacheinander und bleiben bestehen, während sich der Markt weiterbewegt. Zurücksetzen entfernt die manuelle Änderung für diese Kategorie.')}</p>
+  return `<div class="admin-section admin-market" id="admin-market-section">
+    <div class="admin-panel-heading"><div><p class="eyebrow">${t('ECONOMY', 'WIRTSCHAFT')}</p><h2>${t('Market controls', 'Marktsteuerung')}</h2><p>${t('Fine-tune prices across the player economy.', 'Passe die Preise in der Spielerwirtschaft an.')}</p></div><span class="admin-tag">${number(accountAdminMarket.categories.length)} ${t('categories', 'Kategorien')}</span></div>
+    <details class="admin-help"><summary>${t('How market adjustments work', 'So funktionieren Marktänderungen')}</summary><p>${t('Change current category prices by the selected percentage. Changes compound and persist while the market keeps moving. Reset removes the manual adjustment for that category.', 'Ändere aktuelle Kategoriepreise um den gewählten Prozentsatz. Änderungen wirken nacheinander und bleiben bestehen, während sich der Markt weiterbewegt. Zurücksetzen entfernt die manuelle Änderung für diese Kategorie.')}</p></details>
+    <div class="admin-toolbar"><label class="admin-search">${t('Find a category', 'Kategorie finden')}<span>${adminIcon('search')}<input id="admin-market-search" name="market-search" type="search" autocomplete="off" placeholder="${t('Search categories…', 'Kategorien durchsuchen …')}" value="${accountEscape(adminMarketFilter)}"></span></label></div>
     <div class="admin-market-categories">${accountAdminMarket.categories.map(category => {
       const change = (category.multiplier - 1) * 100;
-      return `<article class="admin-market-category" data-market-category="${accountEscape(category.id)}"><div><h3 tabindex="-1">${accountEscape(t(category.name, category.nameDe))}</h3>
-      <p>${t('Current index', 'Aktueller Index')}: <strong>${number(category.currentIndex, 2)}</strong> · ${t('Manual adjustment', 'Manuelle Änderung')}: <strong>${change > 0 ? '+' : ''}${number(change, 2)}%</strong></p></div>
-      <div class="admin-market-controls" role="group" aria-label="${accountEscape(t(category.name, category.nameDe))}">${accountAdminMarket.presets.map(percent => {
+      const name = t(category.name, category.nameDe);
+      const matches = `${category.name} ${category.nameDe}`.toLowerCase().includes(adminMarketFilter.trim().toLowerCase());
+      return `<article class="admin-market-category" data-market-category="${accountEscape(category.id)}" data-market-name="${accountEscape(`${category.name} ${category.nameDe}`.toLowerCase())}" ${matches ? '' : 'hidden'}>
+      <div class="admin-category-heading"><h3 tabindex="-1">${accountEscape(name)}</h3><span class="admin-status${change > 0 ? ' is-up' : change < 0 ? ' is-down' : ''}">${change === 0 ? t('Unadjusted', 'Unverändert') : `${change > 0 ? '+' : ''}${number(change, 2)}%`}</span></div>
+      <div class="admin-category-value"><strong>${number(category.currentIndex, 2)}</strong><span>${t('Current index', 'Aktueller Index')}<small>${t('Manual adjustment', 'Manuelle Änderung')}: ${change > 0 ? '+' : ''}${number(change, 2)}%</small></span></div>
+      <div class="admin-market-controls" role="group" aria-label="${accountEscape(name)}">${accountAdminMarket.presets.map(percent => {
         const next = category.multiplier * (1 + percent / 100);
-        return `<button type="button" class="${percent < 0 ? 'market-decrease' : 'market-increase'}" data-account="market-adjust" data-category="${accountEscape(category.id)}" data-percent="${percent}" ${accountBusy || next < .001 || next > 100 ? 'disabled' : ''} aria-label="${accountEscape(t(category.name, category.nameDe))} ${percent > 0 ? '+' : ''}${percent}%">${percent > 0 ? '+' : ''}${percent}%</button>`;
-      }).join('')}<button type="button" data-account="market-reset" data-category="${accountEscape(category.id)}" ${accountBusy || category.multiplier === 1 ? 'disabled' : ''}>${t('Reset', 'Zurücksetzen')}</button></div></article>`;
+        return `<button type="button" class="${percent < 0 ? 'market-decrease' : 'market-increase'}" data-account="market-adjust" data-category="${accountEscape(category.id)}" data-percent="${percent}" ${accountBusy || next < .001 || next > 100 ? 'disabled' : ''} aria-label="${accountEscape(name)} ${percent > 0 ? '+' : ''}${percent}%">${percent > 0 ? '+' : ''}${percent}%</button>`;
+      }).join('')}<button type="button" data-account="market-reset" data-category="${accountEscape(category.id)}" ${accountBusy || category.multiplier === 1 ? 'disabled' : ''} aria-label="${accountEscape(name)}: ${t('Remove manual adjustment', 'Manuelle Änderung entfernen')}" title="${t('Remove manual adjustment', 'Manuelle Änderung entfernen')}">${t('Reset', 'Reset')}</button></div></article>`;
     }).join('')}</div>
-    <details class="admin-market-history"><summary>${t('Recent adjustments', 'Letzte Änderungen')}</summary>${accountAdminMarket.history.length ? accountAdminMarket.history.map(entry => {
+    <p class="admin-empty" id="admin-market-empty" role="status" ${accountAdminMarket.categories.some(category => `${category.name} ${category.nameDe}`.toLowerCase().includes(adminMarketFilter.trim().toLowerCase())) ? 'hidden' : ''}>${t('No categories match this search.', 'Keine Kategorien gefunden.')}</p>
+    <details class="admin-market-history admin-history"><summary>${t('Recent adjustments', 'Letzte Änderungen')} <span>${number(accountAdminMarket.history.length)}</span></summary>${accountAdminMarket.history.length ? accountAdminMarket.history.map(entry => {
       const category = accountAdminMarket.categories.find(category => category.id === entry.category);
-      return `<p>${new Date(entry.createdAt).toLocaleString(uiLocale())} · ${accountEscape(entry.username || '')} · ${accountEscape(category ? t(category.name, category.nameDe) : entry.category)} · ${entry.action === 'reset' ? t('Reset', 'Zurücksetzen') : `${entry.percent > 0 ? '+' : ''}${number(entry.percent)}%`} · ${number(entry.beforeIndex, 2)} → ${number(entry.afterIndex, 2)}</p>`;
-    }).join('') : `<p>${t('No manual adjustments yet.', 'Noch keine manuellen Änderungen.')}</p>`}</details></section>`;
+      return `<div class="admin-history-row"><div><strong>${accountEscape(category ? t(category.name, category.nameDe) : entry.category)}</strong><small>${new Date(entry.createdAt).toLocaleString(uiLocale())} · ${accountEscape(entry.username || '')}</small></div><span>${entry.action === 'reset' ? t('Reset', 'Zurücksetzen') : `${entry.percent > 0 ? '+' : ''}${number(entry.percent)}%`} · ${number(entry.beforeIndex, 2)} → ${number(entry.afterIndex, 2)}</span></div>`;
+    }).join('') : `<p class="admin-empty">${t('No manual adjustments yet.', 'Noch keine manuellen Änderungen.')}</p>`}</details></div>`;
 }
 async function applyAdminMarketChange(button, visit) {
   if (!account?.admin) return;
@@ -557,27 +578,52 @@ async function applyAdminMarketChange(button, visit) {
   accountAdminMarket = result.market;
   showToast(t('Market adjustment applied.', 'Marktänderung angewendet.'));
 }
+function selectAdminTab(tab, focus = false) {
+  const button = accountContent.querySelector(`[data-admin-tab="${tab}"]`);
+  if (!button) return;
+  adminActiveTab = tab;
+  for (const control of accountContent.querySelectorAll('[data-admin-tab]')) {
+    const selected = control.dataset.adminTab === tab;
+    control.setAttribute('aria-selected', String(selected));
+    control.tabIndex = selected ? 0 : -1;
+  }
+  for (const panel of accountContent.querySelectorAll('[data-admin-panel]')) panel.hidden = panel.dataset.adminPanel !== tab;
+  if (focus) button.focus({ preventScroll: true });
+}
 function renderAdmin() {
   accountContent.innerHTML = pageHeading(t('Admin', 'Adminbereich'));
   if (!account?.admin) { accountContent.innerHTML += `<p class="collection-empty">${t('Log in with an admin account to access this page.', 'Melde dich mit einem Adminkonto an, um diese Seite zu nutzen.')}</p>`; return; }
-  accountContent.innerHTML += adminMarketMarkup() + `<section class="admin-section"><div class="section-title-row"><h2>${t('Players', 'Spieler')}</h2>${infoTip(t(`Search all ${accountAdmin.playerCount} players to grant J€ or change access. Banned players are signed out immediately.`, `Durchsuche alle ${accountAdmin.playerCount} Spieler, um J€ zu vergeben oder den Zugang zu ändern. Gesperrte Spieler werden sofort abgemeldet.`))}</div>
-    <div class="admin-toolbar"><label>${t('Search', 'Suche')}<input id="user-search" type="search" autocomplete="off" placeholder="${t('Username', 'Benutzername')}" value="${accountEscape(adminUserFilter)}"></label><label>${t('J€ per grant', 'J€ pro Gutschrift')}<input id="grant-amount" type="number" min="1" max="1000000" step="1" value="100"></label></div>
-    <div id="user-list" class="user-list">${adminUserListMarkup()}</div>
-    ${freshPasswordReset ? `<label class="fresh-codes">${t(`Temporary password for ${freshPasswordReset.username} — copy it now, it is shown only once and works for exactly one login`, `Temporäres Passwort für ${freshPasswordReset.username} — jetzt kopieren, es wird nur einmal angezeigt und gilt für genau eine Anmeldung`)}<textarea readonly rows="2">${freshPasswordReset.temporaryPassword}</textarea></label>` : ''}
-    <div class="section-title-row"><h3>${t('Give all players J€', 'Allen Spielern J€ geben')}</h3>${infoTip(t(`Applies to every existing account, including admins (${accountAdmin.playerCount} currently). Later registrations do not receive it.`, `Gilt für alle bestehenden Konten inklusive Admins (aktuell ${accountAdmin.playerCount}). Spätere Registrierungen erhalten nichts.`))}</div>
-    <form id="grant-form" class="grant-form"><label>${t('J€ per player', 'J€ pro Spieler')}<input name="amount" type="number" min="1" max="1000000" step="1" value="100" required></label><button class="primary-button" type="submit">${t('Give J€ to all current players', 'J€ an alle aktuellen Spieler geben')}</button><p class="account-error" role="alert"></p></form>
-    <div class="grant-history">${accountAdmin.grants.map(grant => `<p>${new Date(grant.createdAt).toLocaleString(uiLocale())} · ${justizEuro(grant.amount)} ${t('each', 'je Spieler')} · ${grant.recipients} ${t('players', 'Spieler')}</p>`).join('')}</div></section>
-    <section class="admin-section"><div class="section-title-row"><h2>${t('Auctions', 'Auktionen')}</h2>${infoTip(t('Search the archive by title, description, category or ID.', 'Durchsuche das Archiv nach Titel, Beschreibung, Kategorie oder ID.'))}</div>
-    <div class="admin-toolbar"><label>${t('Search', 'Suche')}<input id="auction-search" type="search" autocomplete="off" placeholder="${t('Title, description, category or ID', 'Titel, Beschreibung, Kategorie oder ID')}" value="${accountEscape(accountAuctions.query)}"></label></div>
-    <div id="auction-results">${auctionResultsMarkup()}</div></section>
-    <section class="admin-section"><div class="section-title-row"><h2>${t('Registration codes', 'Registrierungscodes')}</h2>${infoTip(t('Each code allows one registration. Full codes are shown only immediately after creation.', 'Jeder Code erlaubt eine Registrierung. Vollständige Codes werden nur direkt nach dem Erstellen angezeigt.'))}</div>
-    <form id="code-form" class="code-form"><label>${t('Number of codes', 'Anzahl der Codes')}<input name="count" type="number" min="1" max="50" value="5" required></label><button class="primary-button" type="submit">${t('Create codes', 'Codes erstellen')}</button><p class="account-error" role="alert"></p></form>
-    ${freshCodes.length ? `<label class="fresh-codes">${t('New codes — copy and save them now', 'Neue Codes — jetzt kopieren und aufbewahren')}<textarea readonly rows="${Math.min(10, freshCodes.length + 1)}">${freshCodes.join('\n')}</textarea></label>` : ''}
-    <div class="code-list">${accountCodes.map(code => `<div><code>…${accountEscape(code.label)}</code><span>${code.used_at !== null ? t('Used', 'Verwendet') : code.revoked ? t('Revoked', 'Widerrufen') : t('Available', 'Verfügbar')}</span>${code.used_at === null && !code.revoked ? `<button data-account="revoke" data-id="${code.id}">${t('Revoke', 'Widerrufen')}</button>` : ''}</div>`).join('') || `<p>${t('No codes created yet.', 'Noch keine Codes erstellt.')}</p>`}</div></section>
-    <section class="admin-section economy-reset"><p class="eyebrow">${t('DANGER ZONE', 'GEFAHRENBEREICH')}</p><h2>${t('Reset the player economy', 'Spielerwirtschaft zurücksetzen')}</h2>
-    <p>${t('Every human account returns to J€ 1,000 and 0 XP. Inventories, game progress, rewards, grants, bids and both auction histories are deleted. Usernames, passwords, active login sessions, registration codes, bans, admin roles and friendships stay intact.', 'Jedes menschliche Konto wird auf J€ 1.000 und 0 XP gesetzt. Inventare, Spielfortschritt, Belohnungen, Gutschriften, Gebote und beide Auktionsverläufe werden gelöscht. Benutzernamen, Passwörter, aktive Anmeldungen, Registrierungscodes, Sperren, Adminrollen und Freundschaften bleiben erhalten.')}</p>
-    ${accountAdmin.lastReset ? `<p class="reset-history">${t('Last reset', 'Letzter Reset')}: ${new Date(accountAdmin.lastReset.createdAt).toLocaleString(uiLocale())} · ${number(accountAdmin.lastReset.playerCount)} ${t('accounts', 'Konten')} · ${number(accountAdmin.lastReset.inventoryCount)} ${t('items removed', 'Gegenstände entfernt')}</p>` : ''}
-    <form id="reset-economy-form" class="reset-economy-form"><label>${t('Type RESET ECONOMY to confirm', 'Zur Bestätigung RESET ECONOMY eingeben')}<input name="confirmation" required autocomplete="off" spellcheck="false" pattern="RESET ECONOMY"></label><button class="danger-button" type="submit">${t('Reset economy for every player', 'Wirtschaft für alle Spieler zurücksetzen')}</button><p class="account-error" role="alert"></p></form></section>`;
+  const tabs = [['market', t('Markets', 'Märkte')], ['players', t('Players', 'Spieler')], ['auctions', t('Archive', 'Archiv')], ['access', t('Access', 'Zugang')], ['maintenance', t('Maintenance', 'Wartung')]];
+  const availableCodes = accountCodes.filter(code => code.used_at === null && !code.revoked).length;
+  const banned = accountAdmin.users.filter(user => user.banned).length;
+  const panel = (tab, content) => `<section id="admin-panel-${tab}" class="admin-panel" role="tabpanel" aria-labelledby="admin-tab-${tab}" data-admin-panel="${tab}" tabindex="0" ${adminActiveTab === tab ? '' : 'hidden'}>${content}</section>`;
+  accountContent.innerHTML = `<div class="admin-dashboard">
+    <header class="admin-hero"><div><p class="eyebrow">${adminIcon('access')} ${t('ADMIN WORKSPACE', 'ADMINBEREICH')}</p><h1 tabindex="-1">${t('Keep the game in balance.', 'Alles im Gleichgewicht.')}</h1><p>${t('Your players, markets and access. All in one place.', 'Spieler, Märkte und Zugänge. Alles an einem Ort.')}</p></div><button class="secondary-button admin-refresh" data-account="refresh">${adminIcon('refresh')}${t('Refresh data', 'Daten aktualisieren')}</button></header>
+    <div class="admin-overview" aria-label="${t('Admin overview', 'Adminübersicht')}">
+      <div class="admin-metric"><span class="admin-metric-icon">${adminIcon('players')}</span><div><span>${t('Player accounts', 'Spielerkonten')}</span><strong>${number(accountAdmin.playerCount)}</strong><small>${number(banned)} ${t('banned', 'gesperrt')}</small></div></div>
+      <div class="admin-metric"><span class="admin-metric-icon">${adminIcon('market')}</span><div><span>${t('Market categories', 'Marktkategorien')}</span><strong>${number(accountAdminMarket.categories.length)}</strong><small>${t('Live price controls', 'Aktuelle Preissteuerung')}</small></div></div>
+      <div class="admin-metric"><span class="admin-metric-icon">${adminIcon('code')}</span><div><span>${t('Available invites', 'Verfügbare Einladungen')}</span><strong>${number(availableCodes)}</strong><small>${t('Single-use registration codes', 'Einmalige Registrierungscodes')}</small></div></div>
+    </div>
+    <div class="admin-tabs" role="tablist" aria-label="${t('Admin tools', 'Adminwerkzeuge')}">${tabs.map(([id, label]) => `<button type="button" role="tab" id="admin-tab-${id}" aria-controls="admin-panel-${id}" aria-selected="${adminActiveTab === id}" tabindex="${adminActiveTab === id ? 0 : -1}" data-admin-tab="${id}">${adminIcon(id)}<span>${label}</span></button>`).join('')}</div>
+    ${panel('market', adminMarketMarkup())}
+    ${panel('players', `<div class="admin-section"><div class="admin-panel-heading"><div><p class="eyebrow">${t('COMMUNITY', 'COMMUNITY')}</p><h2>${t('Player management', 'Spielerverwaltung')}</h2><p>${t('Find an account, manage access or give a little extra J€.', 'Finde ein Konto, verwalte Zugänge oder vergib zusätzliche J€.')}</p></div>${infoTip(t('Banned players are signed out immediately. The grant amount below applies to each Give J€ button.', 'Gesperrte Spieler werden sofort abgemeldet. Der folgende Betrag gilt für jede Schaltfläche J€ geben.'))}</div>
+      <div class="admin-toolbar"><label class="admin-search">${t('Find a player', 'Spieler finden')}<span>${adminIcon('search')}<input id="user-search" name="user-search" type="search" autocomplete="off" placeholder="${t('Search usernames…', 'Benutzernamen durchsuchen …')}" value="${accountEscape(adminUserFilter)}"></span></label><label>${t('J€ per grant', 'J€ pro Gutschrift')}<input id="grant-amount" name="grant-amount" type="number" min="1" max="1000000" step="1" value="100"></label></div>
+      ${freshPasswordReset ? `<label class="fresh-codes admin-notice">${t(`Temporary password for ${freshPasswordReset.username} — copy it now, it is shown only once and works for exactly one login`, `Temporäres Passwort für ${freshPasswordReset.username} — jetzt kopieren, es wird nur einmal angezeigt und gilt für genau eine Anmeldung`)}<textarea readonly rows="2">${accountEscape(freshPasswordReset.temporaryPassword)}</textarea></label>` : ''}
+      <div id="user-list" class="user-list">${adminUserListMarkup()}</div>
+      <div class="admin-subpanel"><div class="admin-panel-heading"><div><h3>${t('A boost for everyone', 'Ein Bonus für alle')}</h3><p>${t('Give the same J€ amount to every current player, including admins. Future accounts are excluded.', 'Vergib denselben J€-Betrag an alle aktuellen Spieler inklusive Admins. Künftige Konten sind ausgeschlossen.')}</p></div></div>
+      <form id="grant-form" class="grant-form"><label>${t('J€ per player', 'J€ pro Spieler')}<input name="amount" type="number" min="1" max="1000000" step="1" value="100" required></label><button class="primary-button" type="submit">${t('Give J€ to all players', 'J€ an alle Spieler geben')}</button><p class="account-error" role="alert"></p></form>
+      <details class="admin-history"><summary>${t('Recent grants', 'Letzte Gutschriften')} <span>${number(accountAdmin.grants.length)}</span></summary><div class="grant-history">${accountAdmin.grants.map(grant => `<div class="admin-history-row"><div><strong>${justizEuro(grant.amount)} ${t('per player', 'pro Spieler')}</strong><small>${new Date(grant.createdAt).toLocaleString(uiLocale())}</small></div><span>${number(grant.recipients)} ${t('players', 'Spieler')}</span></div>`).join('') || `<p class="admin-empty">${t('No grants yet.', 'Noch keine Gutschriften.')}</p>`}</div></details></div></div>`)}
+    ${panel('auctions', `<div class="admin-section"><div class="admin-panel-heading"><div><p class="eyebrow">${t('CATALOGUE', 'KATALOG')}</p><h2>${t('Auction archive', 'Auktionsarchiv')}</h2><p>${t('Explore the real listings behind the game.', 'Entdecke die echten Angebote hinter dem Spiel.')}</p></div></div>
+      <div class="admin-toolbar"><label class="admin-search">${t('Search the archive', 'Archiv durchsuchen')}<span>${adminIcon('search')}<input id="auction-search" name="auction-search" type="search" autocomplete="off" placeholder="${t('Title, description, category or ID', 'Titel, Beschreibung, Kategorie oder ID')}" value="${accountEscape(accountAuctions.query)}"></span></label></div><div id="auction-results">${auctionResultsMarkup()}</div></div>`)}
+    ${panel('access', `<div class="admin-section"><div class="admin-panel-heading"><div><p class="eyebrow">${t('INVITATIONS', 'EINLADUNGEN')}</p><h2>${t('Registration codes', 'Registrierungscodes')}</h2><p>${t('Invite new players with a single-use code.', 'Lade neue Spieler mit einem einmaligen Code ein.')}</p></div><span class="admin-tag">${number(availableCodes)} ${t('available', 'verfügbar')}</span></div>
+      <div class="admin-subpanel admin-invite-form"><h3>${t('Make room for new players', 'Platz für neue Spieler')}</h3><p>${t('Full codes are shown only once after creation. Copy and save them before leaving.', 'Vollständige Codes werden nur einmal nach dem Erstellen angezeigt. Kopiere und speichere sie vor dem Verlassen.')}</p><form id="code-form" class="code-form"><label>${t('Number of codes', 'Anzahl der Codes')}<input name="count" type="number" min="1" max="50" value="5" required></label><button class="primary-button" type="submit">${adminIcon('code')}${t('Create codes', 'Codes erstellen')}</button><p class="account-error" role="alert"></p></form></div>
+      ${freshCodes.length ? `<label class="fresh-codes admin-notice">${t('New codes — copy and save them now', 'Neue Codes — jetzt kopieren und aufbewahren')}<textarea readonly rows="${Math.min(10, freshCodes.length + 1)}">${accountEscape(freshCodes.join('\n'))}</textarea></label>` : ''}
+      <h3 class="admin-list-heading">${t('Code history', 'Codeverlauf')}</h3><div class="code-list">${accountCodes.map(code => `<div><span class="admin-code-icon">${adminIcon('code')}</span><code>…${accountEscape(code.label)}</code><span class="admin-status${code.used_at !== null || code.revoked ? '' : ' is-up'}">${code.used_at !== null ? t('Used', 'Verwendet') : code.revoked ? t('Revoked', 'Widerrufen') : t('Available', 'Verfügbar')}</span>${code.used_at === null && !code.revoked ? `<button data-account="revoke" data-id="${accountEscape(code.id)}">${t('Revoke', 'Widerrufen')}</button>` : ''}</div>`).join('') || `<p class="admin-empty">${t('No codes created yet.', 'Noch keine Codes erstellt.')}</p>`}</div></div>`)}
+    ${panel('maintenance', `<div class="admin-section"><div class="admin-panel-heading"><div><p class="eyebrow">${t('MAINTENANCE', 'WARTUNG')}</p><h2>${t('Economy reset', 'Wirtschaft zurücksetzen')}</h2><p>${t('Start the player economy over from a clean slate.', 'Starte die Spielerwirtschaft neu.')}</p></div></div>
+      <div class="economy-reset"><p class="eyebrow">${t('DANGER ZONE', 'GEFAHRENBEREICH')}</p><h3>${t('Reset the player economy', 'Spielerwirtschaft zurücksetzen')}</h3><p>${t('Every human account returns to J€ 1,000 and 0 XP. Inventories, game progress, rewards, grants, bids and both auction histories are deleted. Usernames, passwords, active login sessions, registration codes, bans, admin roles and friendships stay intact.', 'Jedes menschliche Konto wird auf J€ 1.000 und 0 XP gesetzt. Inventare, Spielfortschritt, Belohnungen, Gutschriften, Gebote und beide Auktionsverläufe werden gelöscht. Benutzernamen, Passwörter, aktive Anmeldungen, Registrierungscodes, Sperren, Adminrollen und Freundschaften bleiben erhalten.')}</p>
+      ${accountAdmin.lastReset ? `<p class="reset-history">${t('Last reset', 'Letzter Reset')}: ${new Date(accountAdmin.lastReset.createdAt).toLocaleString(uiLocale())} · ${number(accountAdmin.lastReset.playerCount)} ${t('accounts', 'Konten')} · ${number(accountAdmin.lastReset.inventoryCount)} ${t('items removed', 'Gegenstände entfernt')}</p>` : ''}
+      <form id="reset-economy-form" class="reset-economy-form"><label>${t('Type RESET ECONOMY to confirm', 'Zur Bestätigung RESET ECONOMY eingeben')}<input name="confirmation" required autocomplete="off" spellcheck="false" pattern="RESET ECONOMY"></label><button class="danger-button" type="submit">${t('Reset economy for every player', 'Wirtschaft für alle Spieler zurücksetzen')}</button><p class="account-error" role="alert"></p></form></div></div>`)}
+  </div>`;
 }
 function caseStockLabel(box) {
   const stock = box.stock;
@@ -791,6 +837,19 @@ document.addEventListener('click', async event => {
   }
 });
 window.addEventListener('popstate', () => { if (accountPaths.includes(location.pathname)) navigateAccountPage(location.pathname, false); else renderStart(); });
+document.addEventListener('click', event => {
+  const tab = event.target.closest('[data-admin-tab]');
+  if (tab && currentAccountPage === '/admin') selectAdminTab(tab.dataset.adminTab);
+});
+document.addEventListener('keydown', event => {
+  const tab = event.target.closest('[data-admin-tab]');
+  if (!tab || !['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
+  event.preventDefault();
+  const tabs = [...accountContent.querySelectorAll('[data-admin-tab]')];
+  const index = tabs.indexOf(tab);
+  const next = event.key === 'Home' ? 0 : event.key === 'End' ? tabs.length - 1 : (index + (event.key === 'ArrowRight' ? 1 : -1) + tabs.length) % tabs.length;
+  selectAdminTab(tabs[next].dataset.adminTab, true);
+});
 document.addEventListener('click', async event => {
   const button = event.target.closest('[data-account]'); if (!button || accountBusy) return;
   const action = button.dataset.account, visit = accountVisit;
@@ -933,6 +992,14 @@ document.addEventListener('submit', async event => {
 });
 document.addEventListener('change', event => { if (event.target.id === 'rarity-filter') { accountFilter = event.target.value; accountInventoryPage = 0; renderAccountPage(); } });
 document.addEventListener('input', event => {
+  if (event.target.id === 'admin-market-search') {
+    adminMarketFilter = event.target.value;
+    const query = adminMarketFilter.trim().toLowerCase();
+    const rows = [...accountContent.querySelectorAll('[data-market-category]')];
+    for (const row of rows) row.hidden = !row.dataset.marketName.includes(query);
+    const empty = accountContent.querySelector('#admin-market-empty');
+    if (empty) empty.hidden = rows.some(row => !row.hidden);
+  }
   if (event.target.id === 'user-search') {
     adminUserFilter = event.target.value;
     const list = document.querySelector('#user-list');
