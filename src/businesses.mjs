@@ -57,6 +57,7 @@ const lotId = (bucket, stockId) => `${bucket}:${stockId}`;
 const marketCategory = type => type === 'cars' ? 'vehicles' : type === 'toys' ? 'collectibles' : type;
 
 export function ensureBusinessSchema(db) {
+  const migrateSales = !db.prepare("SELECT 1 FROM sqlite_schema WHERE type = 'table' AND name = 'business_sales'").get();
   db.exec(`CREATE TABLE IF NOT EXISTS businesses (
     id TEXT PRIMARY KEY, user_id TEXT NOT NULL REFERENCES users(id), type TEXT NOT NULL,
     size TEXT NOT NULL, bought_at INTEGER NOT NULL, last_tick_at INTEGER NOT NULL,
@@ -71,6 +72,11 @@ export function ensureBusinessSchema(db) {
     stocked_at INTEGER NOT NULL, asking_price INTEGER NOT NULL, sold_at INTEGER, sold_price INTEGER
   ) STRICT;
   CREATE INDEX IF NOT EXISTS business_stock_active ON business_stock(business_id, sold_at);
+  CREATE TABLE IF NOT EXISTS business_sales (
+    id TEXT PRIMARY KEY, business_id TEXT NOT NULL REFERENCES businesses(id),
+    inventory_id TEXT NOT NULL, price INTEGER NOT NULL, sold_at INTEGER NOT NULL
+  ) STRICT;
+  CREATE INDEX IF NOT EXISTS business_sales_time ON business_sales(business_id, sold_at);
   CREATE TABLE IF NOT EXISTS wholesale_auctions (
     id TEXT PRIMARY KEY, stock_id TEXT NOT NULL, starts_at INTEGER NOT NULL, ends_at INTEGER NOT NULL,
     reserve INTEGER NOT NULL, current_bid INTEGER, bidder_id TEXT REFERENCES users(id),
@@ -87,6 +93,14 @@ export function ensureBusinessSchema(db) {
   if (!db.prepare('PRAGMA table_info(businesses)').all().some(column => column.name === 'profit_margin')) {
     db.exec('ALTER TABLE businesses ADD COLUMN profit_margin INTEGER NOT NULL DEFAULT 30 CHECK(profit_margin BETWEEN 0 AND 100)');
   }
+  for (const [name, definition] of [['store_name', "TEXT NOT NULL DEFAULT ''"], ['store_motto', "TEXT NOT NULL DEFAULT ''"], ['goose_guard', 'INTEGER NOT NULL DEFAULT 0']]) {
+    if (!db.prepare('PRAGMA table_info(businesses)').all().some(column => column.name === name)) db.exec(`ALTER TABLE businesses ADD COLUMN ${name} ${definition}`);
+  }
+  // Keep sale history independently of physical shelf rows: a player purchase
+  // transfers that same inventory item, which its new owner may stock again.
+  if (migrateSales) db.exec(`INSERT OR IGNORE INTO business_sales (id, business_id, inventory_id, price, sold_at)
+    SELECT 'npc:' || inventory_id, business_id, inventory_id, COALESCE(sold_price, asking_price), sold_at
+    FROM business_stock WHERE sold_at IS NOT NULL`);
   if (!db.prepare('PRAGMA table_info(businesses)').all().some(column => column.name === 'traffic_popularity')) {
     db.exec('ALTER TABLE businesses ADD COLUMN traffic_popularity REAL NOT NULL DEFAULT 0 CHECK(traffic_popularity BETWEEN 0 AND 1.5)');
     // Existing stores inherit the appeal of their current assortment once.
@@ -139,7 +153,7 @@ function shelfPrice(db, item, type, profitMargin, at) {
   return profitMargin ? Math.max(reference + 1, Math.round(reference * (1 + profitMargin / 100))) : reference;
 }
 
-function shopStock(db, id, type, profitMargin, now = Date.now()) {
+export function shopStock(db, id, type, profitMargin, now = Date.now()) {
   return db.prepare(`SELECT s.inventory_id AS id, s.asking_price AS askingPrice, s.stocked_at AS stockedAt,
     i.item FROM business_stock s JOIN inventory i ON i.id = s.inventory_id
     WHERE s.business_id = ? AND s.sold_at IS NULL ORDER BY s.stocked_at, s.inventory_id`).all(id)
@@ -164,7 +178,7 @@ function shopMetrics(db, row, stock, at) {
   return { variety, value, popularity: Math.round(popularity * 100) / 100, capacity };
 }
 
-function advanceShop(db, row, now) {
+export function advanceShop(db, row, now) {
   let stock = shopStock(db, row.id, row.type, row.profit_margin, now);
   let visitors = 0, sales = 0, revenue = 0;
   const until = Math.floor(now / HOUR) * HOUR;
@@ -184,6 +198,8 @@ function advanceShop(db, row, now) {
       const salePrice = shelfPrice(db, sold.item, row.type, row.profit_margin, hour);
       db.prepare('UPDATE business_stock SET sold_at = ?, sold_price = ? WHERE inventory_id = ? AND sold_at IS NULL')
         .run(hour, salePrice, sold.id);
+      db.prepare('INSERT INTO business_sales (id, business_id, inventory_id, price, sold_at) VALUES (?, ?, ?, ?, ?)')
+        .run(`npc:${sold.id}`, row.id, sold.id, salePrice, hour);
       if (!db.prepare('UPDATE inventory SET sold_at = ? WHERE id = ? AND sold_at IS NULL AND user_id = ?')
         .run(hour, sold.id, row.user_id).changes) fail('stock_conflict', 409);
       sales++; revenue += salePrice;
@@ -204,10 +220,11 @@ function advanceShops(db, now, userId = null) {
 function publicShop(db, row, now = Date.now()) {
   const stock = shopStock(db, row.id, row.type, row.profit_margin, now);
   const dayStart = Math.floor(now / (24 * HOUR)) * 24 * HOUR;
-  const today = db.prepare(`SELECT COUNT(*) AS sales, COALESCE(SUM(COALESCE(sold_price, asking_price)), 0) AS revenue
-    FROM business_stock WHERE business_id = ? AND sold_at >= ? AND sold_at < ?`)
+  const today = db.prepare(`SELECT COUNT(*) AS sales, COALESCE(SUM(price), 0) AS revenue
+    FROM business_sales WHERE business_id = ? AND sold_at >= ? AND sold_at < ?`)
     .get(row.id, dayStart, dayStart + 24 * HOUR);
   return { id: row.id, type: row.type, size: row.size, boughtAt: row.bought_at,
+    name: row.store_name, motto: row.store_motto, gooseGuard: Boolean(row.goose_guard),
     visitors: row.visitors, sales: row.sales, salesToday: today.sales,
     revenue: row.revenue, revenueToday: today.revenue, profitMargin: row.profit_margin,
     buyChancePercent: Math.round((stock.length ? stock.reduce((sum, entry) => sum

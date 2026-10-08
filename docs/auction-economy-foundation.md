@@ -30,9 +30,12 @@ newly initialized NPC buyers. Automatic news publication is dormant.
   copy can be listed.
 - `/market`: all category indexes, deviation from neutral 100, update timestamps,
   category selection and native SVG hourly-history chart.
+- `/businesses`: owner management, storefront name/tagline, margins, stock and goose guard.
+- `/stores`: searchable player store directory and shareable `?shop=ID` storefronts,
+  shelf purchases, verified reviews, reactions, tips and the theft minigame.
 - `/profile`: XP, level, progress and remaining XP; level 20 is terminal.
-- `/shop`: compatibility alias to Auctions when primary auctions are enabled;
-  otherwise the original case shop. Daily gameplay is otherwise unchanged.
+- `/shop`: permanent named mystery-case store with improving rarity odds at higher prices.
+  Purchases add sealed cases to inventory. Daily gameplay is otherwise unchanged.
 
 The authored frontend is vanilla JS in `dist/`. `economy.js` owns data helpers;
 `economy-ui.js` owns new views and dialogs; `account.js` owns authentication,
@@ -229,6 +232,50 @@ No parallel NPC currency/accounting system or recurring mint/refill exists.
 
 Resale domain applies no per-seller cap on active listings. Backend duration
 support remains 1 minute–30 days.
+
+## Player storefronts
+
+`storefronts.mjs` shares the business shelf pricing and hourly NPC settlement.
+Public directory/detail responses allowlist merchandise and storefront fields;
+guests see masked usernames. Only the current player sees their review, reaction
+state or memory challenge. The random escape roll is never serialized.
+
+Shelf purchases debit the buyer, credit the owner, remove the shelf row and
+transfer the existing inventory row within one transaction. Independent
+`business_sales` history preserves reporting if the buyer stocks or sells that
+item again; old sold shelf rows migrate once. Reviews require a saved purchase
+receipt and have one editable row per customer/store. Visits and each reaction
+count once per player/store/UTC day. Reactions are cosmetic. Tips transfer J€.
+
+The six-arrow memory game starts with a disclosed fee paid to the owner, including
+on failure/abandonment. Fee = `max(5, ceil(referenceValue * 0.1))`. Chance is
+`max(5, floor(35 / (1 + referenceValue / 500)))%`; a goose guard applies a 0.5
+factor before flooring, with a 2% minimum, and costs J€250 once. The server stores
+the sequence and random roll at start, enforces a five-second observation window,
+a 65-second expiry, a 30-minute actor cooldown and a 5-minute store cooldown.
+A successful sequence still needs the chance roll. Only the first terminal
+result counts; retries return it unchanged. Stock is not reserved during the
+game; sale/removal/banning makes it unavailable and prevents transfer. No escrow
+remains when a player disconnects. Successful theft is a stock transfer, not a sale.
+
+Public `GET /api/stores?query=&type=&offset=0&limit=24` returns
+`{stores,total,offset,limit}` (limit capped at 48). `GET /api/stores/:id` returns
+`{store}`. Authenticated CSRF-protected POST routes under `/api/account/`:
+
+- `businesses/profile`: `{shopId,name,motto,gooseGuard,requestId}`.
+- `stores/visit`: `{shopId}`; `stores/react`: `{shopId,reaction}` where reaction
+  is `applause`, `joke` or `bell`.
+- `stores/buy`: `{shopId,inventoryId,expectedPrice,requestId}`.
+- `stores/tip`: `{shopId,amount,requestId}`; amount is 5, 10 or 25.
+- `stores/review`: `{shopId,stars,comment}`; 1–5 stars, at most 240 characters.
+- `stores/heist/start`: `{shopId,inventoryId,expectedPrice,expectedFee,expectedChance,requestId}`;
+  `stores/heist/finish`: `{heistId,moves}` (six direction integers 0–3).
+
+All routes follow `FEATURE_BUSINESSES`. Purchases reject stale shelf prices.
+Heist starts also reject changed fees or odds before charging. Financial actions
+have actor/request-ID receipts, conflict checks and retry
+protection. Authority and stock ownership are checked live. Economy Reset clears
+all store activity and sale histories before deleting businesses/inventory.
 
 ## Market contracts and dormant news backend
 

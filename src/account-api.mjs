@@ -14,6 +14,7 @@ import { archivedListingsBidOnByUser, cancelListing, listItem, listingsBidOnByUs
 import { maskLeaderboard } from './username-privacy.mjs';
 import { markNotificationsRead, notificationsForUser } from './notifications.mjs';
 import { businessDashboard, buyBusiness, setBusinessMargin, stockBusiness, unstockBusiness } from './businesses.mjs';
+import { buyStoreItem, customizeStore, finishStoreHeist, reactToStore, recordStoreVisit, reviewStore, startStoreHeist, tipStore, visitStore } from './storefronts.mjs';
 
 const AUCTION_PAGE_SIZE = 25;
 
@@ -181,6 +182,17 @@ export async function createAccountApi({ dataDir, dailyPayload, json, env = proc
       else if (flags.businesses && route === 'businesses/stock') result = { shop: stockBusiness(dataDir, user, payload.shopId, payload.inventoryIds), user: accounts.profile(user) };
       else if (flags.businesses && route === 'businesses/margin') result = { shop: setBusinessMargin(dataDir, user, payload.shopId, payload.profitMargin), user: accounts.profile(user) };
       else if (flags.businesses && route === 'businesses/unstock') result = { shop: unstockBusiness(dataDir, user, payload.shopId, payload.inventoryId), user: accounts.profile(user) };
+      else if (flags.businesses && route === 'businesses/profile') result = { receipt: customizeStore(dataDir, user, payload), user: accounts.profile(user) };
+      else if (flags.businesses && route === 'stores/visit') result = recordStoreVisit(dataDir, user, payload.shopId);
+      else if (flags.businesses && route === 'stores/buy') result = { receipt: buyStoreItem(dataDir, user, payload), user: accounts.profile(user) };
+      else if (flags.businesses && route === 'stores/review') result = reviewStore(dataDir, user, payload);
+      else if (flags.businesses && route === 'stores/react') result = reactToStore(dataDir, user, payload);
+      else if (flags.businesses && route === 'stores/tip') result = { receipt: tipStore(dataDir, user, payload), user: accounts.profile(user) };
+      else if (flags.businesses && route === 'stores/heist/start') {
+        const receipt = startStoreHeist(dataDir, user, payload);
+        result = { receipt, ...visitStore(dataDir, user, payload.shopId), user: accounts.profile(user) };
+      }
+      else if (flags.businesses && route === 'stores/heist/finish') result = { heist: finishStoreHeist(dataDir, user, payload), user: accounts.profile(user) };
       else if (flags.paletteAuctions && route === 'admin/palette-auctions') {
         // Narrow test/operations surface for trusted lot creation. Only
         // editionId and requestId reach the domain; callers cannot inject a

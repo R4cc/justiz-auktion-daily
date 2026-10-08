@@ -1410,3 +1410,58 @@ body { padding-left: var(--sidebar-width); }
 .admin-market-history summary { cursor: pointer; }
 .admin-market-history p { overflow-wrap: anywhere; }
 @media (max-width: 1000px) { .admin-market-category { flex-direction: column; align-items: stretch; } .admin-market-controls { max-width: none; } }
+
+/* Player storefronts */
+.store-action-row { display: flex; flex-wrap: wrap; align-items: center; gap: .6rem; margin: .8rem 0; }
+.store-action-row > * { margin: 0; }
+.store-search { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 1fr) auto; gap: 1rem; align-items: end; margin: 1.5rem 0; }
+.store-search label, .store-review-form label, .store-profile-form label { display: grid; gap: .4rem; font-size: .8rem; min-width: 0; }
+.store-search input, .store-search select, .store-review-form select, .store-review-form textarea, .store-profile-form input:not([type="checkbox"]) { width: 100%; min-width: 0; padding: .8rem; background: white; color: var(--ink); border: 1px solid var(--line); border-radius: 6px; font: inherit; }
+.store-directory, .store-shelf-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 260px), 1fr)); gap: 1rem; }
+.store-card { display: block; border: 1px solid var(--line); border-radius: 12px; overflow: hidden; color: var(--ink); text-decoration: none; background: white; }
+.store-card:hover { border-color: var(--accent); }
+.store-card-content { padding: 1.2rem; overflow-wrap: anywhere; }
+.store-card h2 { margin: .6rem 0; font-size: 1.2rem; overflow-wrap: anywhere; }
+.store-card p, .store-front p { overflow-wrap: anywhere; }
+.store-card strong, .store-card small, .store-hint { font-size: .8rem; color: var(--muted); line-height: 1.6; }
+.store-type-wine { --store-color: #883c54; }
+.store-type-toys { --store-color: #ba7c1e; }
+.store-type-electronics { --store-color: #297979; }
+.store-type-cars { --store-color: #35538c; }
+.store-awning { min-height: 96px; background: repeating-linear-gradient(90deg, var(--store-color) 0 32px, #f7eddd 32px 64px); display: flex; justify-content: center; align-items: center; padding: 1rem; border-bottom: 8px solid var(--store-color); }
+.store-awning span { padding: .6rem 1.4rem; background: #fffaf0; color: var(--store-color); border: 3px solid currentColor; border-radius: 5px; font: 700 1.3rem 'DM Mono', monospace; letter-spacing: .15em; }
+.store-front { background: white; border: 1px solid var(--line); border-radius: 12px; overflow: hidden; margin-bottom: 1.5rem; }
+.store-front > div:last-child { padding: 1.5rem; }
+.store-front .page-heading { margin-bottom: 0; }
+.store-front h1 { overflow-wrap: anywhere; }
+.store-goose { color: #795018; font-weight: 700; font-size: .8rem; }
+.store-social, .store-reviews { background: #fffcf4; border: 1px solid var(--line); border-radius: 10px; padding: 1.2rem; margin: 1.5rem 0; }
+.store-social h2, .store-shelves h2, .store-reviews h2 { font-size: 1.1rem; }
+.store-shelf-card { display: flex; flex-direction: column; border: 1px solid var(--line); background: white; border-radius: 10px; overflow: hidden; }
+.store-shelf-card > img { width: 100%; height: 180px; object-fit: contain; padding: .8rem; background: #f0ede4; }
+.store-item-placeholder { min-height: 140px; display: grid; place-items: center; background: #f0ede4; color: var(--muted); font: 700 2rem 'DM Mono', monospace; }
+.store-shelf-info { padding: 1rem; display: flex; flex-direction: column; flex: 1; }
+.store-shelf-info h3 { margin: 0; overflow-wrap: anywhere; font-size: 1rem; }
+.store-price { font: 700 1.2rem 'DM Mono', monospace; }
+.store-shelf-info small { color: var(--muted); font-size: .75rem; line-height: 1.5; }
+.store-review-form, .store-profile-form { display: grid; gap: .8rem; margin: 1rem 0; }
+.store-profile-form { padding-top: 1rem; border-top: 1px solid var(--line); }
+.store-profile-form .store-guard-choice { display: flex; align-items: flex-start; line-height: 1.6; }
+.store-guard-choice input { flex: none; width: 18px; height: 18px; margin: 2px 0; }
+.store-review-form textarea { resize: vertical; }
+.store-review-list article { padding: 1rem 0; border-top: 1px solid var(--line); }
+.store-review-list header { display: flex; flex-wrap: wrap; gap: .7rem; align-items: center; justify-content: space-between; }
+.store-review-list header span, .store-review-list small { font-size: .75rem; color: var(--muted); }
+.store-review-list p { white-space: pre-wrap; overflow-wrap: anywhere; }
+.store-review-list { overflow-wrap: anywhere; }
+.store-heist-dialog { max-width: 560px; width: calc(100% - 2rem); border: 1px solid var(--line); border-radius: 14px; padding: 0; color: var(--ink); background: var(--paper); max-height: 90dvh; overflow: auto; }
+.store-heist-dialog::backdrop { background: #0c211d99; }
+.store-heist-content { padding: 2rem; position: relative; }
+.store-heist-content h2 { padding-right: 1.5rem; font-size: 1.4rem; }
+.store-heist-content h3 { overflow-wrap: anywhere; }
+.store-heist-content p { line-height: 1.6; }
+.store-memory-arrow { display: grid; place-items: center; height: 120px; font: 700 4rem 'DM Mono', monospace; color: var(--accent); background: white; border: 1px solid var(--line); border-radius: 12px; }
+.store-direction-pad { display: grid; grid-template-columns: repeat(4,minmax(0,1fr)); gap: .5rem; }
+.store-direction-pad button { min-height: 70px; font-size: 1.7rem; padding: .5rem; }
+.store-direction-pad small { display: block; font-size: .7rem; }
+@media (max-width: 650px) { .store-search { grid-template-columns: minmax(0,1fr); } .store-front > div:last-child, .store-social, .store-reviews { padding: 1rem; } .store-heist-content { padding: 1.2rem; } .store-action-row button, .store-action-row a { min-height: 44px; } }

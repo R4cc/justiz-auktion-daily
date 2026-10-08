@@ -44,7 +44,7 @@ window.businessUi = (() => {
       if (stockManagerSignature() !== restockSignature) syncRestockDialog();
       else updateRestockSelection();
     }
-    if (repaint && !busy && !restockDialog.open && !document.activeElement?.closest('[data-business-margin-form]')) render();
+    if (repaint && !busy && !restockDialog.open && !document.activeElement?.closest('[data-business-margin-form], [data-store-profile]')) render();
   }
   function stop() {
     clearInterval(timer); timer = null; request++; dashboard = null;
@@ -58,14 +58,14 @@ window.businessUi = (() => {
   }
   function shopCard(shop) {
     const available = dashboard.inventory.filter(item => item.type === shop.type).length;
-    return `<article class="business-shop"><header><div class="business-owned-title"><span class="business-owned-icon business-type-${esc(shop.type)}">${typeIcon(shop.type)}<span class="business-owned-size">${sizeIcon(shop.size)}</span></span><div><span>${esc(sizeName(shop.size))}</span><h2>${esc(typeName(shop.type))}</h2></div></div></header>
+    return `<article class="business-shop"><header><div class="business-owned-title"><span class="business-owned-icon business-type-${esc(shop.type)}">${typeIcon(shop.type)}<span class="business-owned-size">${sizeIcon(shop.size)}</span></span><div><span>${esc(sizeName(shop.size))}</span><h2>${esc(shop.name || typeName(shop.type))}</h2></div></div></header>
       <dl class="business-stats"><div><dt>${t('Visitors', 'Besucher')}</dt><dd>${number(shop.visitors)}</dd></div><div><dt>${t('Popularity', 'Beliebtheit')}</dt><dd>${number(Math.round(shop.popularity * 100))}%</dd></div><div><dt>${t('Total sales', 'Verkäufe gesamt')}</dt><dd>${number(shop.sales)}</dd></div><div><dt>${t('Sales today', 'Verkäufe heute')}</dt><dd>${number(shop.salesToday)}</dd></div><div><dt>${t('Total revenue', 'Umsatz gesamt')}</dt><dd>${justizEuro(shop.revenue)}</dd></div><div><dt>${t('Revenue today', 'Umsatz heute')}</dt><dd>${justizEuro(shop.revenueToday)}</dd></div><div><dt>${t('Margin', 'Gewinnspanne')}</dt><dd>${number(shop.profitMargin)}%</dd></div><div><dt>${t('Stock', 'Warenbestand')}</dt><dd>${number(shop.stock.length)} / ${number(shop.capacity)}</dd></div></dl>
       <form class="business-margin" data-business-margin-form data-shop="${esc(shop.id)}"><label>${t('Set margin over market value', 'Gewinnspanne auf Marktwert festlegen')}<span><input name="profitMargin" type="number" min="0" max="100" step="1" value="${shop.profitMargin}" inputmode="numeric" required> %</span></label><button class="secondary-button" type="submit">${t('Save margin', 'Gewinnspanne speichern')}</button><p>${t('Estimated buying rate per visitor', 'Geschätzte Kaufrate pro Besucher')}: <strong>${number(shop.buyChancePercent, 1)}%</strong>. ${t('Higher margins and expensive goods reduce buying, while visitor traffic stays the same.', 'Höhere Gewinnspannen und teure Waren senken die Kaufrate; die Besucherzahl bleibt gleich.')}</p><p class="account-error" role="alert"></p></form>
-      <div class="business-stock-actions"><div><strong>${t('Inventory', 'Inventar')}</strong><small>${available} ${t('available to add', 'zum Einräumen verfügbar')} · ${Math.max(0, shop.capacity - shop.stock.length)} ${t('spaces free', 'Plätze frei')}</small></div><button class="secondary-button" type="button" data-business="open-restock" data-shop="${esc(shop.id)}">${t('Manage stock', 'Warenbestand verwalten')}</button></div></article>`;
+      <form class="store-profile-form" data-store-profile data-shop="${esc(shop.id)}"><label>${t('Store name', 'Ladenname')}<input name="storeName" maxlength="60" value="${esc(shop.name || '')}" placeholder="${esc(typeName(shop.type))}"></label><label>${t('Tagline', 'Ladenspruch')}<input name="motto" maxlength="140" value="${esc(shop.motto || '')}"></label><label class="store-guard-choice"><input name="gooseGuard" type="checkbox" ${shop.gooseGuard ? 'checked disabled' : ''}>${shop.gooseGuard ? t('Goose guard on duty · HONK!', 'Wachgans im Dienst · HUP!') : t('Hire a goose guard · J€ 250 once · halves theft chance', 'Wachgans einstellen · einmalig J€ 250 · halbiert Diebstahlchance')}</label><div class="store-action-row"><button type="submit" class="secondary-button">${t('Save storefront', 'Ladenauftritt speichern')}</button><a href="/stores?shop=${encodeURIComponent(shop.id)}" class="secondary-button" data-page>${t('Visit your store', 'Deinen Laden besuchen')} →</a></div><p class="account-error" role="alert"></p></form><div class="business-stock-actions"><div><strong>${t('Inventory', 'Inventar')}</strong><small>${available} ${t('available to add', 'zum Einräumen verfügbar')} · ${Math.max(0, shop.capacity - shop.stock.length)} ${t('spaces free', 'Plätze frei')}</small></div><button class="secondary-button" type="button" data-business="open-restock" data-shop="${esc(shop.id)}">${t('Manage stock', 'Warenbestand verwalten')}</button></div></article>`;
   }
   function shopsView() {
     if (!account) return `<section class="collection-empty"><h2>${t('Sign in to open a business.', 'Melde dich an, um ein Geschaeft zu eroeffnen.')}</h2><a class="primary-button" href="/login" data-page>${t('Log in', 'Anmelden')}</a></section>`;
-    return `${economyOverviewMarkup()}<section class="business-purchase"><h2>${t('Your stores', 'Deine Geschaefte')}</h2><button class="primary-button" type="button" data-business="open-buy">${t('Buy store', 'Geschaeft kaufen')}</button></section>
+    return `${economyOverviewMarkup()}<p><a href="/stores" data-page class="secondary-button">${t('Visit player stores', 'Spielerläden besuchen')} →</a></p><section class="business-purchase"><h2>${t('Your stores', 'Deine Geschaefte')}</h2><button class="primary-button" type="button" data-business="open-buy">${t('Buy store', 'Geschaeft kaufen')}</button></section>
       <section class="business-owned">${dashboard?.shops.length ? `<div class="business-shop-grid">${dashboard.shops.map(shopCard).join('')}</div>` : `<p class="collection-empty">${t('No stores yet.', 'Noch keine Geschaefte.')}</p>`}</section>`;
   }
   function renderPurchaseDialog() {
@@ -304,5 +304,5 @@ window.businessUi = (() => {
       renderRestockDialog(quantities);
     }
   });
-  return { load, stop, render };
+  return { load, stop, render, refresh };
 })();

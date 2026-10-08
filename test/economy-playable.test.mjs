@@ -365,7 +365,9 @@ test('NPC bids use human escrow/refunds, react to outbids, win ownership and pay
   assert.throws(() => placeBid(f.dir, { id: first.currentBidderId }, lot.id, first.currentBid + 1,
     { now: day + 75_001 }), /npc_self_outbid/);
   assert.equal(getResale(f.dir, lot.id, { now: day + 75_001 }).bids.length, first.bidCount);
-  const humanBid = first.currentBid + 1;
+  // Force an actual outbid of the NPC's private maximum. Matching it can
+  // leave the earlier NPC leading at exactly humanBid, depending on its draw.
+  const humanBid = firstMax + first.bidIncrement;
   placeBid(f.dir, f.user('buyer'), lot.id, humanBid, { now: day + 46_000 });
   if (getResale(f.dir, lot.id, { now: day + 46_000 }).currentBidderId === 'buyer') {
     assert.equal(balance(f, first.currentBidderId), NPC_BALANCE);

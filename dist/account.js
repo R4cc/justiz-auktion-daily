@@ -20,7 +20,7 @@ caseReveal.addEventListener('close', () => {
 });
 let accountSelectedCase = 'fundkiste', accountInventoryPage = 0, accountFilter = 'all';
 let currentAccountPage = null, accountVisit = 0, pageLoaded = false;
-const accountPaths = ['/auctions', '/marketplace', '/market', '/businesses', '/shop', '/inventory', '/profile', '/login', '/register', '/admin', '/leaderboard'];
+const accountPaths = ['/auctions', '/marketplace', '/market', '/businesses', '/stores', '/shop', '/inventory', '/profile', '/login', '/register', '/admin', '/leaderboard'];
 const accountPage = document.querySelector('#account-page');
 const accountContent = document.querySelector('#account-content');
 const notificationButton = document.querySelector('#notification-button');
@@ -44,6 +44,19 @@ function accountError(code) {
     login_required: t('Please sign in again.', 'Bitte melde dich erneut an.'),
     market_adjustment_limit: t('This would exceed the manual adjustment range. Reset this category first.', 'Damit wird der Bereich für manuelle Änderungen überschritten. Setze diese Kategorie zuerst zurück.'),
     invalid_market_adjustment: t('Choose a valid percentage change.', 'Wähle eine gültige prozentuale Änderung.'),
+    own_store: t('Choose another player’s store for this action.', 'Wähle für diese Aktion den Laden eines anderen Spielers.'),
+    store_price_changed: t('The shelf price changed. Refresh the store and try again.', 'Der Regalpreis hat sich geändert. Lade den Laden neu und versuche es erneut.'),
+    store_risk_changed: t('The theft fee or odds changed. Check the updated offer before starting.', 'Die Diebstahlgebühr oder Chance hat sich geändert. Prüfe das aktualisierte Angebot vor dem Start.'),
+    stock_not_found: t('This item has left the shelf. Refresh the store.', 'Dieser Artikel ist nicht mehr im Regal. Lade den Laden neu.'),
+    purchase_required: t('Buy something here before leaving a review.', 'Kaufe hier etwas, bevor du eine Bewertung abgibst.'),
+    invalid_store_review: t('Choose 1–5 stars and keep your review under 240 characters.', 'Wähle 1–5 Sterne und schreibe höchstens 240 Zeichen.'),
+    invalid_store_profile: t('Use up to 60 characters for the name and 140 for the tagline.', 'Nutze höchstens 60 Zeichen für den Namen und 140 für den Spruch.'),
+    heist_cooldown: t('The coast isn’t clear yet. Wait for the cooldown.', 'Die Luft ist noch nicht rein. Warte die Abklingzeit ab.'),
+    heist_not_ready: t('Watch the whole sequence before making your move.', 'Sieh dir die ganze Folge an, bevor du loslegst.'),
+    heist_not_found: t('This attempt is no longer available.', 'Dieser Versuch ist nicht mehr verfügbar.'),
+    guard_permanent: t('Your goose guard is already hired permanently.', 'Deine Wachgans ist schon dauerhaft eingestellt.'),
+    business_not_found: t('This store is no longer available.', 'Dieser Laden ist nicht mehr verfügbar.'),
+    invalid_heist_moves: t('Repeat all six arrows before finishing.', 'Wiederhole alle sechs Pfeile, bevor du abschließt.'),
     insufficient_tokens: t('You do not have enough J€.', 'Du hast nicht genug J€.'),
     try_later: t('Too many attempts. Try again later.', 'Zu viele Versuche. Versuche es später erneut.'),
     forbidden: t('This action is not allowed.', 'Diese Aktion ist nicht erlaubt.'),
@@ -109,7 +122,7 @@ function markSidebarEntrySeen(link) {
   updateNavigation();
 }
 function updateNavigation() {
-  const labels = { '/': 'Daily', '/shop': t('Case Store', 'Kisten-Shop'), '/auctions': t('Palette Auctions', 'Paletten-Auktionen'), '/marketplace': t('Marketplace', 'Marktplatz'), '/market': t('Stock Market', 'Aktienmarkt'), '/businesses': t('Businesses', 'Geschaefte'), '/inventory': t('Inventory', 'Inventar'), '/leaderboard': t('Leaderboard', 'Rangliste'), '/profile': t('Profile', 'Profil'), '/admin': 'Admin' };
+  const labels = { '/': 'Daily', '/shop': t('Case Store', 'Kisten-Shop'), '/auctions': t('Palette Auctions', 'Paletten-Auktionen'), '/marketplace': t('Marketplace', 'Marktplatz'), '/market': t('Stock Market', 'Aktienmarkt'), '/businesses': t('Businesses', 'Geschaefte'), '/stores': t('Visit stores', 'Läden besuchen'), '/inventory': t('Inventory', 'Inventar'), '/leaderboard': t('Leaderboard', 'Rangliste'), '/profile': t('Profile', 'Profil'), '/admin': 'Admin' };
   for (const link of document.querySelectorAll('.site-nav a')) {
     if (link.id !== 'header-auth') {
       link.textContent = labels[link.getAttribute('href')];
@@ -231,6 +244,7 @@ function showGamePage() {
   document.querySelector('.daily-case-dialog')?.close();
   window.economyUi?.stop();
   window.businessUi?.stop();
+  window.storeUi?.stop();
   currentAccountPage = null; accountVisit++; pageLoaded = false;
   accountPage.hidden = true; document.querySelector('#app').hidden = false;
   if (location.pathname !== '/') history.pushState({}, '', '/');
@@ -243,6 +257,7 @@ async function navigateAccountPage(path, push = true) {
   document.querySelector('.daily-case-dialog')?.close();
   window.economyUi?.stop();
   window.businessUi?.stop();
+  window.storeUi?.stop();
   if (!accountPaths.includes(path)) { renderStart(); return; }
   if (push && location.pathname + location.search !== destination.pathname + destination.search) history.pushState({}, '', destination.pathname + destination.search);
   const visit = ++accountVisit;
@@ -272,6 +287,7 @@ async function navigateAccountPage(path, push = true) {
       await window.businessUi.load(visit);
       if (visit !== accountVisit) return;
     }
+    if (path === '/stores') { await window.storeUi.load(visit); if (visit !== accountVisit) return; }
     if (path === '/shop') {
       const store = await accountApi('case-store'); if (visit !== accountVisit) return; accountStore = store;
     }
@@ -324,6 +340,7 @@ function renderAccountPage() {
   if (account?.mustChangePassword) { renderPasswordChange(); return; }
   if (window.economyUi?.isRoute(currentAccountPage)) window.economyUi.render();
   else if (currentAccountPage === '/businesses') window.businessUi.render();
+  else if (currentAccountPage === '/stores') window.storeUi.render();
   else if (currentAccountPage === '/shop') renderShop();
   else if (currentAccountPage === '/inventory') renderInventory();
   else if (currentAccountPage === '/profile') renderProfile();

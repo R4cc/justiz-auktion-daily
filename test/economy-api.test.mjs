@@ -10,6 +10,8 @@ import { maskListing, maskUsername } from '../src/username-privacy.mjs';
 import { marketState } from '../src/market.mjs';
 import { featureFlags } from '../src/features.mjs';
 import { closeDataStore, upsertAuctions } from '../src/database.mjs';
+import { Accounts } from '../src/accounts.mjs';
+import { buyBusiness, stockBusiness } from '../src/businesses.mjs';
 
 const password = 'economy-foundation-password';
 const lots = Array.from({ length: 8 }, (_, i) => ({ id: i + 1, title: `Product ${i + 100}`,
@@ -46,6 +48,57 @@ async function fixture(t, flags = env) {
 
 const post = (base, route, value, cookie = '') => fetch(`${base}/api/account/${route}`, { method: 'POST',
   headers: { 'content-type': 'application/json', 'x-requested-with': 'JUSTIZGUESSR', cookie }, body: JSON.stringify(value) });
+
+test('public storefronts and player interactions use feature flags, sessions, CSRF and atomic live stock', async t => {
+  const { base, dir } = await fixture(t);
+  const accounts = new Accounts(dir), time = Date.now();
+  const ownerCookie = (await post(base, 'login', { username: 'admin', password })).headers.get('set-cookie');
+  const owner = accounts.db(db => db.prepare("SELECT id FROM users WHERE username = 'admin'").get());
+  accounts.db(db => {
+    db.prepare('UPDATE users SET tokens = 100000 WHERE id = ?').run(owner.id);
+    for (let n = 0; n < 3; n++) db.prepare('INSERT INTO inventory (id, user_id, item, created_at) VALUES (?, ?, ?, ?)')
+      .run(`http-wine-${n}`, owner.id, JSON.stringify({ title: 'API Wine', price: 100, marketCategory: 'wine' }), time);
+  });
+  const shop = buyBusiness(dir, owner, 'wine', 'popup', { now: time }).shop;
+  stockBusiness(dir, owner, shop.id, ['http-wine-0','http-wine-1','http-wine-2'], { now: time });
+  const codes = (await (await post(base, 'codes', { count: 2 }, ownerCookie)).json()).codes;
+  const buyerCookie = (await post(base, 'register', { username: 'StoreBuyer', password, code: codes[0] })).headers.get('set-cookie');
+  const rivalCookie = (await post(base, 'register', { username: 'StoreRival', password, code: codes[1] })).headers.get('set-cookie');
+  assert.equal((await (await fetch(`${base}/api/stores`)).json()).stores[0].owner, 'ad****');
+  const view = async cookie => (await (await fetch(`${base}/api/stores/${shop.id}`, { headers: { cookie } })).json()).store;
+  assert.equal((await view(buyerCookie)).owner, 'admin');
+  const payload = { shopId: shop.id, inventoryId: 'http-wine-0', expectedPrice: 120, requestId: 'store-http-purchase-0001' };
+  assert.equal((await post(base, 'stores/buy', payload)).status, 401);
+  assert.equal((await fetch(`${base}/api/account/stores/buy`, { method: 'POST', headers: { cookie: buyerCookie, 'content-type': 'application/json' }, body: JSON.stringify(payload) })).status, 403);
+  const [buyer, rival] = await Promise.all([post(base, 'stores/buy', payload, buyerCookie), post(base, 'stores/buy', { ...payload, requestId: 'store-http-rival-000001' }, rivalCookie)]);
+  assert.deepEqual([buyer.status, rival.status].sort(), [200,409]);
+  const winnerCookie = buyer.status === 200 ? buyerCookie : rivalCookie, winningPayload = buyer.status === 200 ? payload : { ...payload, requestId: 'store-http-rival-000001' };
+  const replay = await post(base, 'stores/buy', winningPayload, winnerCookie);
+  assert.equal(replay.status, 200); assert.equal((await view(winnerCookie)).stock.length, 2);
+  assert.equal((await post(base, 'stores/review', { shopId: shop.id, stars: 5, comment: 'Great shop!' }, winnerCookie)).status, 200);
+  assert.equal((await view(winnerCookie)).reviewCount, 1);
+  assert.equal((await post(base, 'stores/visit', { shopId: shop.id }, winnerCookie)).status, 200);
+  assert.equal((await post(base, 'stores/react', { shopId: shop.id, reaction: 'bell' }, winnerCookie)).status, 200);
+  const start = await post(base, 'stores/heist/start', { ...payload, inventoryId: 'http-wine-1', expectedFee: 10, expectedChance: 29, requestId: 'store-http-heist-000001' }, winnerCookie);
+  assert.equal(start.status, 200);
+  const { store: { heist } } = await start.json();
+  assert.ok(heist.sequence.length === 6); assert.ok(!('roll' in heist));
+  assert.equal((await view('')).heist, null);
+  assert.equal((await post(base, 'stores/heist/finish', { heistId: heist.id, moves: heist.sequence, won: true }, winnerCookie)).status, 409);
+  accounts.db(db => db.prepare('UPDATE store_heists SET ready_at = ?, roll = 0 WHERE id = ?').run(time - 1, heist.id));
+  const finish = await post(base, 'stores/heist/finish', { heistId: heist.id, moves: heist.sequence }, winnerCookie);
+  assert.equal(finish.status, 200); assert.equal((await finish.json()).heist.outcome, 'stolen');
+  const hidden = createEconomyApi({ dataDir: dir, json: () => {}, flags: { ...featureFlags({}), businesses: false } });
+  assert.equal(hidden({ method: 'GET' }, null, new URL('/api/stores', base)), false);
+  assert.equal(hidden({ method: 'GET' }, null, new URL(`/api/stores/${shop.id}`, base)), false);
+});
+
+test('disabled businesses hide authenticated store interactions', async t => {
+  const { base } = await fixture(t, { ...env, FEATURE_BUSINESSES: 'false' });
+  const cookie = (await post(base, 'login', { username: 'admin', password })).headers.get('set-cookie');
+  for (const route of ['stores/buy','stores/heist/start','stores/review','stores/visit','businesses/profile']) assert.equal((await post(base, route, {}, cookie)).status, 404);
+  assert.equal((await fetch(`${base}/api/stores`)).status, 404);
+});
 
 test('admin market controls enforce sessions, authority and CSRF and safely replay concurrent adjustments', async t => {
   const { base } = await fixture(t);

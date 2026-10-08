@@ -9,6 +9,7 @@ import { Accounts } from './accounts.mjs';
 import { maskListing } from './username-privacy.mjs';
 import { supplyStockAuctions } from './businesses.mjs';
 import { supplyCaseAuctions } from './case-supply.mjs';
+import { listStores, visitStore } from './storefronts.mjs';
 
 // Read-only public endpoints for the flag-gated economy foundation.
 // Every route is off until its feature flag is enabled; disabled routes fall
@@ -20,16 +21,24 @@ export function createEconomyApi({ dataDir, json, flags = featureFlags(), accoun
   let sessionAccounts = accounts;
   // Resale listings and bid history carry usernames; signed-in viewers see
   // them in full, everyone else gets the censored prefix.
-  const signedIn = request => {
+  const sessionUser = request => {
     sessionAccounts ||= new Accounts(dataDir, { flags });
     const token = request.headers.cookie?.split(';').map(part => part.trim()).find(part => part.startsWith('jg_session='))?.slice(11);
-    return Boolean(sessionAccounts.user(token));
+    return sessionAccounts.user(token);
   };
+  const signedIn = request => Boolean(sessionUser(request));
   return (request, response, url) => {
     if (request.method !== 'GET' || !url.pathname.startsWith('/api/')) return false;
     try {
       if (url.pathname === '/api/features') {
         json(response, 200, { features: Object.fromEntries(Object.keys(featureFlags({})).map(key => [key, Boolean(flags[key])])) });
+        return true;
+      }
+      if (flags.businesses && (url.pathname === '/api/stores' || url.pathname.startsWith('/api/stores/'))) {
+        const session = sessionUser(request), viewer = session?.mustChangePassword ? null : session;
+        json(response, 200, url.pathname === '/api/stores'
+          ? listStores(dataDir, viewer, { query: url.searchParams.get('query') || '', type: url.searchParams.get('type') || '', offset: url.searchParams.get('offset'), limit: url.searchParams.get('limit') })
+          : visitStore(dataDir, viewer, decoded(url.pathname.slice('/api/stores/'.length))));
         return true;
       }
       if (flags.news && url.pathname === '/api/news') {

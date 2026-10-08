@@ -340,6 +340,7 @@ test('profit margin changes sales without changing visitors, even when stock sel
     db.prepare('UPDATE businesses SET visitors = 0, sales = 0, revenue = 0, last_tick_at = ?, profit_margin = 100 WHERE id = ?')
       .run(start, shop.id);
     db.prepare('UPDATE business_stock SET sold_at = NULL, sold_price = NULL WHERE business_id = ?').run(shop.id);
+    db.prepare('DELETE FROM business_sales WHERE business_id = ?').run(shop.id);
     db.prepare("UPDATE inventory SET sold_at = NULL WHERE user_id = 'rival' AND id LIKE 'traffic-toy-%'").run();
   });
   const high = businessDashboard(f.dir, f.rival, { now: start + 7 * 24 * hour }).shops[0];
@@ -364,6 +365,8 @@ test('business dashboard reports sales and revenue for the current UTC day', asy
     db.prepare('UPDATE inventory SET sold_at = ? WHERE id = ?').run(start + 12 * hour, 'today-toy');
     db.prepare('UPDATE businesses SET sales = 2, revenue = 320, last_tick_at = ? WHERE id = ?')
       .run(start + 23 * hour, shop.id);
+    db.prepare('INSERT INTO business_sales VALUES (?, ?, ?, ?, ?)').run('npc:yesterday-toy', shop.id, 'yesterday-toy', 120, start + 11 * hour);
+    db.prepare('INSERT INTO business_sales VALUES (?, ?, ?, ?, ?)').run('npc:today-toy', shop.id, 'today-toy', 190, start + 12 * hour);
   });
   const yesterday = businessDashboard(f.dir, f.rival, { now: start + 11 * hour }).shops[0];
   assert.equal(yesterday.salesToday, 1);
