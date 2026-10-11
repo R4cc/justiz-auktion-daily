@@ -6,7 +6,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { Accounts } from '../src/accounts.mjs';
 import { closeDataStore, transaction } from '../src/database.mjs';
-import { advanceShop, businessDashboard, buyBusiness, ensureBusinessSchema, stockBusiness } from '../src/businesses.mjs';
+import { advanceShop, businessDashboard, buyBusiness, ensureBusinessSchema, stockBusiness, SHOP_SIZES, setBusinessMargin } from '../src/businesses.mjs';
 import { ensureTownSchema, TOWN_PLOTS } from '../src/town-plots.mjs';
 import { townMap } from '../src/town-map.mjs';
 import { visitStore, startStoreHeist, customizeStore } from '../src/storefronts.mjs';
@@ -23,6 +23,7 @@ async function fixture(t) {
     for (const user of [owner, buyer]) db.prepare(`INSERT INTO users (id, username, password_hash, tokens, created_at, admin)
       VALUES (?, ?, 'disabled', 1000000, ?, ?)`).run(user.id, `${user.id}Name`, now, Number(Boolean(user.admin)));
   });
+  accounts.db(db => db.prepare('UPDATE users SET xp = 8100').run());
   t.after(async () => { closeDataStore(dir); await rm(dir, { recursive: true, force: true }); });
   return { dir, accounts, owner, buyer, balance: user => accounts.db(db => db.prepare('SELECT tokens FROM users WHERE id=?').get(user.id).tokens) };
 }
@@ -50,6 +51,35 @@ test('town has 25 durable plots in six districts, fixed sizes, prices and public
   assert.equal(reserved.occupied, true); assert.equal(reserved.business, null);
   closeDataStore(f.dir);
   assert.deepEqual(townMap(f.dir, null, { now }).plots.map(p => [p.id, p.size]), initial.plots.map(p => [p.id, p.size]));
+});
+
+test('store size levels use persisted XP, enforce exact thresholds and preserve existing stores', async t => {
+  assert.deepEqual(SHOP_SIZES.map(size => size.requiredLevel), [1, 3, 6, 10]);
+  for (const size of SHOP_SIZES) {
+    const f = await fixture(t), threshold = 100 * (size.requiredLevel - 1) ** 2;
+    f.accounts.db(db => db.prepare('UPDATE users SET xp = ? WHERE id = ?').run(Math.max(0, threshold - 1), f.owner.id));
+    const map = townMap(f.dir, f.owner, { now });
+    const plot = map.plots.find(plot => plot.size === size.id && !plot.occupied);
+    assert.equal(plot.requiredLevel, size.requiredLevel);
+    assert.equal(townMap(f.dir, null, { now }).playerLevel, null);
+    if (threshold) {
+      const before = f.balance(f.owner);
+      const spoofed = { ...f.owner, xp: 1000000, progression: { level: 20 } };
+      assert.throws(() => buyBusiness(f.dir, spoofed, 'wine', null, { now, plotId: plot.id }), { message: 'store_level_required', status: 403 });
+      assert.throws(() => buyBusiness(f.dir, spoofed, 'wine', size.id, { now }), /store_level_required/);
+      assert.equal(f.balance(f.owner), before);
+      assert.equal(townMap(f.dir, f.owner, { now }).plots.find(p => p.id === plot.id).occupied, false);
+      assert.equal(businessDashboard(f.dir, f.owner, { now }).shops.length, 0);
+    }
+    f.accounts.db(db => db.prepare('UPDATE users SET xp = ? WHERE id = ?').run(threshold, f.owner.id));
+    closeDataStore(f.dir);
+    new Accounts(f.dir, { now: () => now });
+    assert.equal(townMap(f.dir, f.owner, { now }).playerLevel, size.requiredLevel);
+    const shop = buyBusiness(f.dir, f.owner, 'wine', null, { now, plotId: plot.id }).shop;
+    f.accounts.db(db => db.prepare('UPDATE users SET xp = 0 WHERE id = ?').run(f.owner.id));
+    assert.equal(businessDashboard(f.dir, f.owner, { now }).shops[0].id, shop.id);
+    assert.equal(setBusinessMargin(f.dir, f.owner, shop.id, 25, { now }).profitMargin, 25);
+  }
 });
 
 test('legacy businesses receive unique plots once without losing size, stock, names or money', async t => {
@@ -188,6 +218,11 @@ test('public town HTTP routes respect feature flags and sessions; simultaneous c
   const payload = {type:'electronics',plotId:'favoriten-2',cost:1,capacity:999};
   assert.equal((await post('businesses/buy',payload)).status,401);
   assert.equal((await post('businesses/buy',payload,cookie,false)).status,403);
+  const locked = await post('businesses/buy', {...payload, xp: 100000, requiredLevel: 1}, cookie);
+  assert.equal(locked.status, 403);
+  assert.deepEqual(await locked.json(), {error:'store_level_required'});
+  assert.equal((await (await fetch(base+'/api/town',{headers:{cookie}})).json()).playerLevel,1);
+  f.accounts.db(db => db.prepare("UPDATE users SET xp=400 WHERE username='admin'").run());
   const responses = await Promise.all([post('businesses/buy',payload,cookie),post('businesses/buy',payload,cookie)]);
   assert.deepEqual(responses.map(res=>res.status).sort(),[200,409]);
   const results = await Promise.all(responses.map(res=>res.json()));

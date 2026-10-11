@@ -167,6 +167,7 @@ test('palette pricing preserves resale headroom across cold and hot markets', ()
 test('business margin has a turnover cost and expensive items sell much more slowly', async t => {
   const f = await fixture(t);
   assert.ok(businessSaleChance(.28, 100) < businessSaleChance(.28, 20) / 10);
+  f.accounts.db(db => db.prepare("UPDATE users SET xp = 400 WHERE id = 'seller'").run());
   const shop = buyBusiness(f.dir, f.user('seller'), 'electronics', 'tiny', { now }).shop;
   // Traffic and purchase rolls hash the shop ID. A UUID made this bounded
   // sample assertion fail randomly even though the sale probabilities held.

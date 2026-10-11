@@ -37,6 +37,7 @@ function accountError(code) {
     instant_sell_disabled: t('List this item in the Auction House to sell it.', 'Biete diesen Gegenstand im Auktionshaus an.'),
     mischief_disabled: t('This owner has disabled player mischief. You can buy the item instead.', 'Dieser Laden erlaubt keinen Spielerunfug. Du kannst den Gegenstand kaufen.'),
     level_required: t('Your level is too low for this palette. Complete Daily games and sell items to earn XP.', 'Dein Level ist für diese Palette zu niedrig. Spiele Daily und verkaufe Gegenstände für XP.'),
+    store_level_required: t('Your level is too low for this store size. Choose a smaller store or earn XP through Daily and trading.', 'Dein Level ist für diese Ladengröße zu niedrig. Wähle einen kleineren Laden oder verdiene XP mit Daily und Handel.'),
     palette_auction_ended: t('This auction has ended. Check My bids.', 'Diese Auktion ist beendet. Sieh unter Meine Gebote nach.'),
     rewards_unavailable: t('Rewards become available after settlement.', 'Gewinne werden nach der Abrechnung verfügbar.'),
     palette_rewards_not_found: t('Only the winner can reveal this palette.', 'Nur der Gewinner kann diese Palette aufdecken.'),

@@ -39,6 +39,7 @@ async function fixture(t) {
         VALUES (?, ?, 'disabled', ?, ?, ?)`).run(id, id, tokens, start, admin);
     }
   });
+  accounts.db(db => db.prepare('UPDATE users SET xp = 400').run());
   t.after(async () => { closeDataStore(dir); await rm(dir, { recursive: true, force: true }); });
   return { dir, accounts, owner: { id: 'owner', admin: true }, rival: { id: 'rival' },
     balance: id => accounts.db(db => db.prepare('SELECT tokens FROM users WHERE id = ?').get(id).tokens),

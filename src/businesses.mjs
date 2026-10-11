@@ -12,6 +12,7 @@ import { ensureNotificationSchema } from './notifications.mjs';
 import { auctionSelectionCategory } from './auction-selection.mjs';
 import { auctionGallery } from './auction-images.mjs';
 import { recordSale, tradingTotals, acquisition, milestone, ensureTraderSchema } from './trader.mjs';
+import { levelForXp } from './progression.mjs';
 
 const HOUR = 3_600_000;
 const WHOLESALE_PERIOD = 2 * HOUR;
@@ -30,10 +31,10 @@ export const SHOP_TYPES = [
   { id: 'cars', name: 'Car dealership', nameDe: 'Autohaus', costFactor: 2.5, typicalValue: 2500, conversion: .06 }
 ];
 export const SHOP_SIZES = [
-  { id: 'popup', name: 'Street pop-up', nameDe: 'Strassenstand', cost: 1000, capacity: 10, carCapacity: 1, visitorsPerHour: 1 },
-  { id: 'tiny', name: 'Small shop', nameDe: 'Kleiner Laden', cost: 4000, capacity: 25, carCapacity: 3, visitorsPerHour: 2 },
-  { id: 'medium', name: 'Medium shop', nameDe: 'Mittlerer Laden', cost: 15000, capacity: 60, carCapacity: 8, visitorsPerHour: 5 },
-  { id: 'large', name: 'Large shop', nameDe: 'Grosser Laden', cost: 50000, capacity: 150, carCapacity: 20, visitorsPerHour: 11 }
+  { id: 'popup', name: 'Street pop-up', nameDe: 'Strassenstand', requiredLevel: 1, cost: 1000, capacity: 10, carCapacity: 1, visitorsPerHour: 1 },
+  { id: 'tiny', name: 'Small shop', nameDe: 'Kleiner Laden', requiredLevel: 3, cost: 4000, capacity: 25, carCapacity: 3, visitorsPerHour: 2 },
+  { id: 'medium', name: 'Medium shop', nameDe: 'Mittlerer Laden', requiredLevel: 6, cost: 15000, capacity: 60, carCapacity: 8, visitorsPerHour: 5 },
+  { id: 'large', name: 'Large shop', nameDe: 'Grosser Laden', requiredLevel: 10, cost: 50000, capacity: 150, carCapacity: 20, visitorsPerHour: 11 }
 ];
 
 // Retained only to migrate bids on stock auctions created by older versions.
@@ -120,7 +121,7 @@ export function ensureBusinessSchema(db, { now = Date.now() } = {}) {
 }
 
 function activeUser(db, user) {
-  const row = db.prepare('SELECT id, tokens FROM users WHERE id = ? AND npc = 0 AND banned = 0').get(user?.id);
+  const row = db.prepare('SELECT id, tokens, xp FROM users WHERE id = ? AND npc = 0 AND banned = 0').get(user?.id);
   if (!row) fail('login_required', 401);
   return row;
 }
@@ -251,9 +252,10 @@ export function buyBusiness(dataDir, user, typeId, sizeId, { now = Date.now(), p
   const type = shopType(typeId);
   if (!type || (sizeId != null && !shopSize(sizeId)) || (plotId === null && !shopSize(sizeId))) fail('invalid_business');
   return withDatabase(dataDir, db => transaction(db, () => {
-    ensureBusinessSchema(db, { now }); activeUser(db, user);
+    ensureBusinessSchema(db, { now }); const player = activeUser(db, user);
     if (db.prepare('SELECT COUNT(*) AS n FROM businesses WHERE user_id = ?').get(user.id).n >= MAX_STORES_PER_USER) fail('store_limit_reached', 409);
     const plot = availableTownPlot(db, sizeId, plotId), size = shopSize(plot.size);
+    if (levelForXp(player.xp) < size.requiredLevel) fail('store_level_required', 403);
     const cost = Math.round(size.cost * type.costFactor * plotLocation(db, plot.id).priceMultiplier);
     if (!db.prepare('UPDATE users SET tokens = tokens - ? WHERE id = ? AND tokens >= ?').run(cost, user.id, cost).changes) fail('insufficient_tokens', 409);
     const id = randomUUID();

@@ -39,6 +39,8 @@ The resulting chance of a legendary **item**, accounting for both draws, ranges 
 
 ## Upgrade behavior
 
+New store purchases require level 1 for pop-ups, 3 for small shops, 6 for medium shops and 10 for large shops. The server derives eligibility from saved XP for both plot and size purchases. Existing stores retain their size, stock and management access regardless of their owner's level.
+
 Direct Case Store stock refills globally every four hours: Lost Property 100, Evidence Locker 60, Seized Treasure 35, Vault 20, and Collector's Cache 10. Legacy themed openings retain 10 per category. Upgrades preserve the current window's sold counts and all purchase receipts; prices and drop odds are unchanged.
 
 Reward receipts migrate atomically from `(user, date)` to `(user, date, mode)` without paying again or modifying balances. Existing runs retain their saved rates, including old flat Daily rewards; new default runs include the score bonus. Already-earned Higher or Lower rewards count toward later top-ups, including amounts above the new cap from an older schedule.
