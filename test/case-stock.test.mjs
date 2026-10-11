@@ -5,7 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { Accounts } from '../src/accounts.mjs';
 import { loadCaseStoreCatalog, quoteCaseStore } from '../src/case-store.mjs';
-import { CASE_STOCK_LIMIT, CASE_STOCK_WINDOW_MS, withCaseStock } from '../src/case-stock.mjs';
+import { CASE_STOCK_LIMIT, CASE_STOCK_LIMITS, caseStockLimit, consumeCaseStock, CASE_STOCK_WINDOW_MS, withCaseStock } from '../src/case-stock.mjs';
 import { closeDataStore } from '../src/database.mjs';
 import { marketIndexes } from '../src/market.mjs';
 
@@ -34,10 +34,11 @@ async function fixture(t) {
 
 test('direct case stock is global per type, persists on restart and ignores inventory openings', async t => {
   const f = await fixture(t), initial = f.quote();
-  assert.ok(initial.cases.every(box => box.stock.remaining === CASE_STOCK_LIMIT));
+  assert.deepEqual(initial.cases.map(box => box.stock.limit), [100, 60, 35, 20, 10]);
+  assert.ok(initial.cases.every(box => box.stock.remaining === caseStockLimit(box.id)));
   assert.equal(initial.cases[0].stock.restocksAt, start + CASE_STOCK_WINDOW_MS);
   let first;
-  for (let i = 0; i < CASE_STOCK_LIMIT; i++) {
+  for (let i = 0; i < caseStockLimit('lost-property'); i++) {
     const item = f.buy(i % 2 ? f.other : f.buyer, 'lost-property', `global-case-stock-${i}-0001`);
     first ||= item;
   }
@@ -51,7 +52,7 @@ test('direct case stock is global per type, persists on restart and ignores inve
   f.accounts.openSealedCase(f.buyer, first.id);
   assert.equal(f.quote().cases[0].stock.remaining, 0);
   f.buy(f.buyer, 'vault', 'global-case-stock-vault-0001');
-  assert.equal(f.quote().cases.find(box => box.id === 'vault').stock.remaining, 9);
+  assert.equal(f.quote().cases.find(box => box.id === 'vault').stock.remaining, 19);
   closeDataStore(f.dir);
   const restarted = new Accounts(f.dir, { now: () => start });
   assert.throws(() => restarted.buyCase(f.other, f.catalog(), 'lost-property', 'restarted-case-stock-0001', initial.revision), /case_out_of_stock/);
@@ -61,17 +62,17 @@ test('direct case stock is global per type, persists on restart and ignores inve
 test('stock refills at the exact four-hour boundary without carrying unused units or counting old retries', async t => {
   const f = await fixture(t), first = f.buy(f.buyer, 'lost-property', 'boundary-case-stock-0001');
   f.setNow(start + CASE_STOCK_WINDOW_MS - 1);
-  assert.equal(f.quote().cases[0].stock.remaining, 9);
+  assert.equal(f.quote().cases[0].stock.remaining, 99);
   f.setNow(start + CASE_STOCK_WINDOW_MS);
-  assert.equal(f.quote().cases[0].stock.remaining, 10);
+  assert.equal(f.quote().cases[0].stock.remaining, 100);
   assert.equal(f.quote().cases[0].stock.restocksAt, start + 2 * CASE_STOCK_WINDOW_MS);
   assert.deepEqual(f.buy(f.buyer, 'lost-property', 'boundary-case-stock-0001'), first);
-  assert.equal(f.quote().cases[0].stock.remaining, 10);
+  assert.equal(f.quote().cases[0].stock.remaining, 100);
   f.buy(f.other, 'lost-property', 'boundary-case-stock-0002');
-  assert.equal(f.quote().cases[0].stock.remaining, 9);
+  assert.equal(f.quote().cases[0].stock.remaining, 99);
   assert.equal(f.state().stock.length, 1, 'only the current counter is stored');
   f.setNow(start + 2 * 86400000);
-  assert.equal(f.quote().cases[0].stock.remaining, 10, 'edition rotation does not break restocks');
+  assert.equal(f.quote().cases[0].stock.remaining, 100, 'edition rotation does not break restocks');
 });
 
 test('invalid, unaffordable and rolled-back purchases do not reserve stock', async t => {
@@ -92,9 +93,9 @@ test('invalid, unaffordable and rolled-back purchases do not reserve stock', asy
   assert.deepEqual(f.state(), before);
   f.accounts.db(db => db.exec('DROP TRIGGER fail_stock_receipt'));
   f.buy(f.buyer, 'lost-property', 'rollback-case-stock-0001');
-  assert.equal(f.quote().cases[0].stock.remaining, 9);
+  assert.equal(f.quote().cases[0].stock.remaining, 99);
   f.accounts.resetEconomy(f.buyer, 'RESET ECONOMY');
-  assert.equal(f.quote().cases[0].stock.remaining, 10, 'an explicit economy reset clears stock');
+  assert.equal(f.quote().cases[0].stock.remaining, 100, 'an explicit economy reset clears stock');
 });
 
 test('legacy direct openings share the same category stock across users and keep retries idempotent', async t => {
@@ -111,4 +112,35 @@ test('legacy direct openings share the same category stock across users and keep
   assert.deepEqual(f.state(), before);
   assert.deepEqual(f.accounts.openCase(f.buyer, catalog, box.id, 'legacy-stock-open-0-0001'), first);
   assert.equal(stock().remaining, 0);
+});
+
+test('each price tier enforces its own cap and refills independently', async t => {
+  const f = await fixture(t);
+  for (const [id, limit] of Object.entries(CASE_STOCK_LIMITS)) {
+    for (let i = 0; i < limit; i++) f.accounts.atomic(db => consumeCaseStock(db, id, start));
+    assert.throws(() => f.accounts.atomic(db => consumeCaseStock(db, id, start)), /case_out_of_stock/);
+    assert.equal(f.quote().cases.find(box => box.id === id).stock.remaining, 0);
+  }
+  f.setNow(start + CASE_STOCK_WINDOW_MS);
+  assert.ok(f.quote().cases.every(box => box.stock.remaining === caseStockLimit(box.id)));
+});
+
+test('legacy ten-unit stock schema upgrades without resetting counters or purchase receipts', async t => {
+  const f = await fixture(t);
+  const first = f.buy(f.buyer, 'lost-property', 'migration-case-stock-0001');
+  f.accounts.db(db => db.exec(`ALTER TABLE case_stock RENAME TO saved_case_stock;
+    CREATE TABLE case_stock (case_id TEXT PRIMARY KEY, window_start INTEGER NOT NULL,
+      sold INTEGER NOT NULL CHECK(sold >= 0 AND sold <= 10)) STRICT;
+    INSERT INTO case_stock SELECT * FROM saved_case_stock;
+    DROP TABLE saved_case_stock`));
+  const before = f.state();
+  closeDataStore(f.dir);
+  const restarted = new Accounts(f.dir, { now: () => start });
+  assert.deepEqual(f.state(), before);
+  assert.equal(f.quote().cases[0].stock.remaining, 99);
+  assert.deepEqual(restarted.buyCase(f.buyer, f.catalog(), 'lost-property', 'migration-case-stock-0001', f.quote().revision), first);
+  for (let i = 1; i < 100; i++) restarted.atomic(db => consumeCaseStock(db, 'lost-property', start));
+  assert.equal(f.quote().cases[0].stock.remaining, 0);
+  assert.throws(() => restarted.atomic(db => consumeCaseStock(db, 'lost-property', start)), /case_out_of_stock/);
+  assert.equal(f.state().receipts, before.receipts);
 });

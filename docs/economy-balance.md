@@ -39,6 +39,8 @@ The resulting chance of a legendary **item**, accounting for both draws, ranges 
 
 ## Upgrade behavior
 
+Direct Case Store stock refills globally every four hours: Lost Property 100, Evidence Locker 60, Seized Treasure 35, Vault 20, and Collector's Cache 10. Legacy themed openings retain 10 per category. Upgrades preserve the current window's sold counts and all purchase receipts; prices and drop odds are unchanged.
+
 Reward receipts migrate atomically from `(user, date)` to `(user, date, mode)` without paying again or modifying balances. Existing runs retain their saved rates, including old flat Daily rewards; new default runs include the score bonus. Already-earned Higher or Lower rewards count toward later top-ups, including amounts above the new cap from an older schedule.
 
 Palette pricing v4 migrates v1 single-draw expectations once, and preserves v2/v3 bundle expectations without multiplying again. Edition reference metadata uses frozen valuation inputs; live reserves, proxy ceilings, bid history, hidden reward JSON, ownership and existing inventory never change. A v4 marker makes the migration idempotent. Existing prepared Daily cases retain their old sealed result and face value. Already recorded store sales and owner-selected margins remain intact; unsold stock uses the updated demand curve.

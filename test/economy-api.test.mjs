@@ -325,9 +325,9 @@ test('case store stays public with auction features on or off and purchases seal
     assert.deepEqual(retry.item, first.item);
     assert.equal(first.user.tokens, before - quote.cases[0].cost);
     assert.equal(first.item.kind, 'case'); assert.equal(first.item.caseType, 'lost-property');
-    assert.equal(first.store.cases[0].stock.remaining, 9);
+    assert.equal(first.store.cases[0].stock.remaining, 99);
     const publicStock = await (await fetch(`${base}/api/account/case-store`)).json();
-    assert.equal(publicStock.cases[0].stock.remaining, 9);
+    assert.equal(publicStock.cases[0].stock.remaining, 99);
     assert.equal(publicStock.revision, quote.revision);
     assert.ok(!('reward' in first.item) && !('auctionId' in first.item));
     const inventory = await (await fetch(`${base}/api/account/inventory`, { headers: { cookie } })).json();
@@ -348,10 +348,12 @@ test('concurrent direct case purchases cannot exceed global stock over HTTP', as
   const cookie = login.headers.get('set-cookie');
   const quote = await (await fetch(`${base}/api/account/case-store`)).json();
   const before = (await (await fetch(`${base}/api/account/me`, { headers: { cookie } })).json()).user.tokens;
-  const results = await Promise.all(Array.from({ length: 12 }, (_, i) => post(base, 'cases/buy', {
+  const limit = quote.cases[0].stock.limit;
+  assert.equal(limit, 100);
+  const results = await Promise.all(Array.from({ length: limit + 2 }, (_, i) => post(base, 'cases/buy', {
     caseId: 'lost-property', revision: quote.revision, requestId: `concurrent-case-stock-${i}-0001`
   }, cookie)));
-  assert.equal(results.filter(response => response.status === 200).length, 10);
+  assert.equal(results.filter(response => response.status === 200).length, limit);
   const rejected = results.filter(response => response.status !== 200);
   assert.equal(rejected.length, 2);
   for (const response of rejected) {
@@ -360,11 +362,11 @@ test('concurrent direct case purchases cannot exceed global stock over HTTP', as
   }
   const stock = await (await fetch(`${base}/api/account/case-store`)).json();
   assert.equal(stock.cases[0].stock.remaining, 0);
-  assert.ok(stock.cases.slice(1).every(box => box.stock.remaining === 10));
+  assert.deepEqual(stock.cases.slice(1).map(box => box.stock.remaining), [60, 35, 20, 10]);
   const inventory = await (await fetch(`${base}/api/account/inventory`, { headers: { cookie } })).json();
-  assert.equal(inventory.items.length, 10);
+  assert.equal(inventory.items.length, limit);
   const after = (await (await fetch(`${base}/api/account/me`, { headers: { cookie } })).json()).user.tokens;
-  assert.equal(after, before - 10 * quote.cases[0].cost);
+  assert.equal(after, before - limit * quote.cases[0].cost);
 });
 
 test('store events and the three-store cap use live sessions, CSRF, private results and idempotent acknowledgement', async t => {
