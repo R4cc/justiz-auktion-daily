@@ -77,6 +77,7 @@ test('listing references the owned inventory row without copying or minting it',
   const { dir, service, admin, listing, item } = await listedFixture(t);
   assert.equal(listing.status, 'active');
   assert.equal(listing.sellerId, admin.id);
+  assert.equal(listing.sellerType, 'player');
   assert.equal(listing.startPrice, 50);
   assert.equal(listing.currentBid, null);
   assert.equal(listing.winnerId, null);

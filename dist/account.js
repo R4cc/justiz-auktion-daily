@@ -154,6 +154,7 @@ function sidebarLinkMarkup(route, label) {
   return `<svg class="nav-icon" data-nav-icon="${accountEscape(route)}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">${icons[route] || icons['/profile']}</svg><span class="nav-link-label">${accountEscape(label)}</span>`;
 }
 function updateNavigation() {
+  renderPersistentProgression(account);
   const labels = { '/': 'Daily', '/shop': t('Case Store', 'Kisten-Shop'), '/auctions': t('Palette Auctions', 'Paletten-Auktionen'), '/auction-house': t('Auction House', 'Auktionshaus'), '/marketplace': t('Auction House', 'Auktionshaus'), '/market': t('Market Trends', 'Markttrends'), '/businesses': t('Your stores', 'Deine Läden'), '/stores': t('Visit stores', 'Läden besuchen'), '/town': t('Town map', 'Stadtplan'), '/inventory': t('Inventory', 'Inventar'), '/leaderboard': t('Leaderboard', 'Rangliste'), '/profile': t('Profile', 'Profil'), '/admin': 'Admin' };
   for (const link of document.querySelectorAll('.site-nav a')) {
     if (link.id !== 'header-auth') {
@@ -234,6 +235,11 @@ async function loadNotifications(showFresh = true) {
     // The open inbox already shows fresh entries in the same top-right area;
     // avoid stacking transient notification toasts over the panel.
     if (showFresh && notificationPanel.hidden) for (const entry of result.fresh || []) showNotificationToast(entry);
+    // Sales can settle while any page is open. Refresh the visible XP alongside the inbox.
+    if (showFresh && !document.hidden) {
+      const session = await accountApi('me');
+      if (request === notificationRequest && account?.id === owner && session.user?.id === owner) updateAccount(session.user);
+    }
   } catch { /* Session refresh handles authentication failures elsewhere. */ }
   finally { if (request === notificationRequest) notificationBusy = false; }
 }
@@ -257,8 +263,9 @@ function giftToast(gifts) {
     ? t(`You were given ${justizEuro(total)}.`, `Du hast ${justizEuro(total)} geschenkt bekommen.`)
     : t(`You were given ${justizEuro(total)} across ${gifts.length} gifts.`, `Du hast ${justizEuro(total)} aus ${gifts.length} Geschenken erhalten.`);
 }
-function updateAccount(user) {
+function updateAccount(user, progressionOptions) {
   account = user;
+  updatePersistentProgression(user, progressionOptions);
   if (user?.gifts?.length) showToast(giftToast(user.gifts));
   updateNavigation();
   startNotifications(user);
@@ -998,7 +1005,7 @@ document.addEventListener('submit', async event => {
       if (visit === accountVisit) { await navigateAccountPage('/admin', false); showToast(t(`Gave ${justizEuro(result.grant.amount)} each to ${result.grant.recipients} existing players.`, `${result.grant.recipients} bestehende Spieler haben je ${justizEuro(result.grant.amount)} erhalten.`)); }
     } else if (form.id === 'reset-economy-form') {
       const result = await accountApi('admin/reset-economy', { confirmation: data.confirmation });
-      updateAccount(result.user); accountDailyRun = null; higherLowerRequest++; higherLowerRun = null;
+      updateAccount(result.user, { reset: true }); accountDailyRun = null; higherLowerRequest++; higherLowerRun = null;
       accountResult = null; accountItems = [];
       if (visit === accountVisit) {
         await navigateAccountPage('/admin', false);

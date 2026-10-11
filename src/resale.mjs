@@ -152,10 +152,11 @@ function serializeListing(db, row, { bids = false, now = Date.now(), indexes = m
   const inventory = listingInventory(db, row);
   if (!inventory.length) fail('settlement_conflict', 409);
   const item = JSON.parse(inventory[0].item), quantity = inventory.length;
-  const seller = db.prepare('SELECT username FROM users WHERE id = ?').get(row.seller_id);
+  const seller = db.prepare('SELECT username, npc FROM users WHERE id = ?').get(row.seller_id);
   const bidCount = db.prepare('SELECT COUNT(*) AS count FROM resale_bids WHERE auction_id = ?').get(row.id).count;
   return {
     id: row.id, sellerId: row.seller_id, sellerUsername: seller?.username || null,
+    sellerType: seller?.npc ? 'npc' : 'player',
     inventoryId: row.inventory_id, quantity,
     item: { title: item.title, ...(item.auctionId != null ? { auctionId: item.auctionId } : {}),
       ...(item.titleDe ? { titleDe: item.titleDe } : {}), image: item.image || null, price: item.price,

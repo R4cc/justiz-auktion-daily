@@ -10,7 +10,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
-    <link rel="stylesheet" href="/styles.css?v=20261010-1" />
+    <link rel="stylesheet" href="/styles.css?v=20261011-2" />
     <link rel="stylesheet" href="/admin.css?v=20261008-1" />
   </head>
   <body>
@@ -23,6 +23,7 @@
         <button class="sidebar-toggle" type="button" data-action="sidebar" aria-controls="site-menu" aria-expanded="false" aria-label="Open navigation"><span></span><span></span><span></span></button>
       </div>
       <div class="sidebar-panel" id="site-menu">
+        <a id="sidebar-progression" class="sidebar-progression" href="/profile" data-page hidden></a>
         <nav class="site-nav" aria-label="Main navigation">
           <div class="nav-group" role="group" aria-labelledby="nav-play-title">
             <p id="nav-play-title" class="nav-group-label" data-nav-label="play">Play</p>
@@ -53,6 +54,8 @@
         </div>
       </div>
     </header>
+    <a id="mobile-progression" class="mobile-progression" href="/profile" data-page hidden></a>
+    <div id="xp-announcement" class="sr-only" role="status" aria-live="polite" aria-atomic="true"></div>
     <button id="notification-button" class="icon-button notification-button" type="button" data-notification="toggle" aria-controls="notification-panel" aria-expanded="false" aria-label="Notifications" hidden><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 9a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4"/></svg><span class="notification-badge" hidden>0</span></button>
     <button class="sidebar-backdrop" type="button" data-action="sidebar-close" aria-label="Close navigation" hidden></button>
     <aside id="notification-panel" class="notification-panel" aria-labelledby="notification-title" hidden>
@@ -70,9 +73,10 @@
     <div id="toast" class="toast" role="status" aria-live="polite"></div>
     <script src="/i18n.js?v=20261010-1" defer></script>
     <script src="/economy.js?v=20261008-1" defer></script>
-    <script src="/account.js?v=20261010-1" defer></script>
+    <script src="/progression-ui.js?v=20261011-1" defer></script>
+    <script src="/account.js?v=20261011-2" defer></script>
     <script src="/trader-ui.js?v=20261010-1" defer></script>
-    <script src="/economy-ui.js?v=20261010-1" defer></script>
+    <script src="/economy-ui.js?v=20261011-1" defer></script>
     <script src="/town-art.js?v=20261008-2" defer></script>
     <script src="/town-ui.js?v=20261010-1" defer></script>
     <script src="/business-ui.js?v=20261010-1" defer></script>

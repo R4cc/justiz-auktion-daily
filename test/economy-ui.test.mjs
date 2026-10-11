@@ -556,6 +556,37 @@ test('market chart magnifies small intraday changes, supports narrow screens and
   assert.match(falling, /is-down/); assert.match(falling, /-1\.20/);
 });
 
+test('Auction House player filter excludes owned, NPC and primary lots and preserves type and stock filters', () => {
+  const context = uiContext({ URLSearchParams, location: { search: '?seller=players&type=stock&stock=electronics' },
+    account: { id: 'me' }, tab: 'browse', economyFlags: { market: true }, accountContent: { innerHTML: '' },
+    t: en => en, esc: String, categoryName: String, pageHeading: String, economyOverviewMarkup: () => '',
+    traderMilestonesMarkup: () => { throw new Error('Auction House must not render milestone banner'); },
+    lotCard: lot => `<article>${lot.id}</article>`, data: { palettes: [{ id: 'primary' }], lots: [
+      { id: 'other', sellerId: 'other', sellerType: 'player', quantity: 2, item: { businessType: 'electronics' } },
+      { id: 'own', sellerId: 'me', sellerType: 'player', quantity: 2, item: { businessType: 'electronics' } },
+      { id: 'npc', sellerId: 'supply', sellerType: 'npc', quantity: 2, item: { businessType: 'electronics' } },
+      { id: 'single', sellerId: 'other', sellerType: 'player', quantity: 1, item: { businessType: 'electronics' } },
+      { id: 'wine', sellerId: 'other', sellerType: 'player', quantity: 2, item: { businessType: 'wine' } }
+    ] } });
+  vm.runInContext(extract(uiSource, '  function renderHouse(', '  function render()'), context);
+  vm.runInContext('renderHouse()', context);
+  let html = context.accountContent.innerHTML;
+  assert.match(html, /<article>other<\/article>/);
+  assert.doesNotMatch(html, /<article>(own|npc|primary|single|wine)<\/article>/);
+  assert.match(html, /class="house-case-store-card" href="\/shop"/);
+  assert.match(html, /Mystery pallets/);
+  assert.match(html, /data-economy="lot-seller" data-id="players" aria-pressed="true"/);
+  context.location.search = '?seller=all';
+  vm.runInContext('renderHouse()', context);
+  html = context.accountContent.innerHTML;
+  assert.match(html, /<article>npc<\/article>/);
+  assert.match(html, /<article>primary<\/article>/);
+  assert.doesNotMatch(html, /<article>own<\/article>/);
+  context.location.search = '?seller=players&type=mystery';
+  vm.runInContext('renderHouse()', context);
+  assert.match(context.accountContent.innerHTML, /No lots here yet/);
+});
+
 test('history helper sends an encoded quick range without breaking legacy limits', async () => {
   const urls = [], context = uiContext({ window: {}, fetch: async url => {
     urls.push(url); return { ok: true, json: async () => ({}) };

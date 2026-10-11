@@ -240,15 +240,15 @@ window.economyUi = (() => {
   // already revealed) leave the live board and stay reachable here.
   const archiveToggle = count => `<button class="text-button archive-toggle" type="button" data-economy="archive" aria-expanded="${archiveOpen}">${archiveOpen ? t('Hide archived auctions', 'Archivierte Auktionen ausblenden') : t('Archived auctions', 'Archivierte Auktionen')} (${count})</button>`;
   function renderHouse() {
-    const query = new URLSearchParams(location.search), filter = query.get('type') || 'all', stockType = query.get('stock'), palette = query.get('palette');
+    const query = new URLSearchParams(location.search), filter = query.get('type') || 'all', stockType = query.get('stock'), palette = query.get('palette'), playersOnly = query.get('seller') === 'players';
     const palettes = (data.palettes || []).filter(lot => !palette || lot.paletteId === palette);
     const accepts = lot => !stockType || lot.item.businessType === stockType || lot.item.businessCategory === stockType;
-    const types = [['all',t('All lots','Alle Lose')],['items',t('Individual items','Einzelne Gegenstände')],['stock',t('Stock bundles','Warenpakete')],['mystery',t('Mystery lots','Überraschungslose')]];
+    const types = [['all',t('All lots','Alle Lose')],['items',t('Individual items','Einzelne Gegenstände')],['stock',t('Stock bundles','Warenpakete')],['mystery',t('Mystery pallets','Überraschungspaletten')]];
     const resaleType = lot => lot.item.kind === 'case' ? 'mystery' : lot.quantity > 1 ? 'stock' : 'items';
     const matches = lot => accepts(lot) && (filter === 'all' || filter === resaleType(lot));
     const cards = rows => rows.length ? `<div class="economy-grid">${rows.join('')}</div>` : `<div class="collection-empty"><p>${t('No lots here yet. Try another filter, play Daily, or list a find.', 'Noch keine Lose hier. Wähle einen anderen Filter, spiele Daily oder biete einen Fund an.')}</p><a href="/" data-page>${t('Play Daily','Daily spielen')} →</a></div>`;
-    accountContent.innerHTML = pageHeading(t('Auction House','Auktionshaus')) + economyOverviewMarkup() + traderMilestonesMarkup() +
-      `<div class="trader-links"><a href="/shop" data-page>${t('Case Store · one mystery item','Kisten-Shop · ein Überraschungsfund')} →</a>${economyFlags.market ? `<a href="/market" data-page>${t('Market Trends','Markttrends')} ↗</a>` : ''}<a href="/inventory" data-page>${t('Manage your finds','Funde verwalten')} →</a></div>
+    accountContent.innerHTML = pageHeading(t('Auction House','Auktionshaus')) + economyOverviewMarkup() +
+      `<div class="auction-house-shortcuts"><a class="house-case-store-card" href="/shop" data-page><svg viewBox="0 0 64 64" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="m8 20 24-12 24 12v28L32 60 8 48V20Zm0 0 24 12 24-12M32 32v28M20 14l24 12v12"/></svg><span><strong>${t('Case Store','Kisten-Shop')}</strong><small>${t('One mystery item per case','Ein Überraschungsfund pro Kiste')}</small></span><span aria-hidden="true">→</span></a><div class="trader-links">${economyFlags.market ? `<a href="/market" data-page>${t('Market Trends','Markttrends')} ↗</a>` : ''}<a href="/inventory" data-page>${t('Manage your finds','Funde verwalten')} →</a></div></div>
       <nav class="economy-tabs marketplace-tabs" aria-label="${t('Auction House sections','Auktionshaus-Bereiche')}">${[['browse',t('Browse','Entdecken')],['bids',t('My bids','Meine Gebote')],['mine',t('My listings','Meine Angebote')]].map(([id,label])=>`<button data-economy="tab" data-id="${id}" aria-pressed="${tab===id}">${label}</button>`).join('')}</nav>`;
     if (tab !== 'browse' && !account) { accountContent.innerHTML += loginNotice(t('auctions','Auktionen')); return; }
     if (tab === 'mine') {
@@ -260,9 +260,9 @@ window.economyUi = (() => {
         ...(data.archivedBids || []).map(lot=>lotCard(lot,false,'bid-done'))
       ]);
     } else {
-      accountContent.innerHTML += `<nav class="economy-tabs lot-filters" aria-label="${t('Lot types','Losarten')}">${types.map(([id,label])=>`<button data-economy="lot-type" data-id="${id}" aria-pressed="${filter===id}">${label}</button>`).join('')}</nav>${stockType?`<p>${t('Stock for','Waren für')}: ${esc(categoryName(({cars:'vehicles',toys:'collectibles'})[stockType]||stockType))} <a href="/auction-house" data-page>${t('Clear filter','Filter entfernen')}</a></p>`:''}` + cards([
-        ...(data.lots || []).filter(lot=>lot.sellerId!==account?.id && matches(lot)).map(lot=>lotCard(lot,false,'other')),
-        ...((filter==='all'||filter==='mystery')&&!stockType ? palettes.map(lot=>lotCard(lot,true)) : [])
+      accountContent.innerHTML += `<nav class="economy-tabs lot-filters" aria-label="${t('Lot types','Losarten')}">${types.map(([id,label])=>`<button data-economy="lot-type" data-id="${id}" aria-pressed="${filter===id}">${label}</button>`).join('')}</nav><nav class="economy-tabs lot-filters" aria-label="${t('Listing sellers','Anbieter')}">${[['all',t('All sellers','Alle Anbieter')],['players',t('Other player listings only','Nur Angebote anderer Spieler')]].map(([id,label])=>`<button data-economy="lot-seller" data-id="${id}" aria-pressed="${playersOnly===(id==='players')}">${label}</button>`).join('')}</nav>${stockType?`<p>${t('Stock for','Waren für')}: ${esc(categoryName(({cars:'vehicles',toys:'collectibles'})[stockType]||stockType))} <a href="/auction-house" data-page>${t('Clear filter','Filter entfernen')}</a></p>`:''}` + cards([
+        ...(data.lots || []).filter(lot=>lot.sellerId!==account?.id && (!playersOnly || lot.sellerType === 'player') && matches(lot)).map(lot=>lotCard(lot,false,'other')),
+        ...((filter==='all'||filter==='mystery')&&!stockType&&!playersOnly ? palettes.map(lot=>lotCard(lot,true)) : [])
       ]);
     }
   }
@@ -605,6 +605,7 @@ window.economyUi = (() => {
     try {
       if (action === 'tab') { tab = id; const query = new URLSearchParams(location.search); query.set('view', id); window.history.replaceState({}, '', currentAccountPage + '?' + query); render(); accountContent.querySelector(`.marketplace-tabs [data-id="${id}"]`)?.focus(); }
       if (action === 'lot-type') { const query = new URLSearchParams(location.search); query.set('type',id); window.history.replaceState({},'',currentAccountPage+'?'+query); render(); accountContent.querySelector(`[data-economy="lot-type"][data-id="${id}"]`)?.focus(); }
+      if (action === 'lot-seller') { const query = new URLSearchParams(location.search); query.set('seller',id); window.history.replaceState({},'',currentAccountPage+'?'+query); render(); accountContent.querySelector(`[data-economy="lot-seller"][data-id="${id}"]`)?.focus(); }
       if (action === 'archive') { archiveOpen = !archiveOpen; render(); accountContent.querySelector('[data-economy="archive"]')?.focus({ preventScroll: true }); }
       if (action === 'category' || action === 'market-range') {
         if (action === 'market-range') {

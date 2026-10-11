@@ -60,6 +60,7 @@ test('stock batches use marketplace escrow, bid history, and inventory transfer'
   assert.equal(wine.quantity, 24);
   assert.equal(wine.startPrice, 490);
   assert.equal(wine.sellerUsername, 'Stock Supply');
+  assert.equal(wine.sellerType, 'npc');
   const suppliedUnits = lots.reduce((sum, lot) => sum + lot.quantity, 0);
   assert.equal(f.count('inventory'), suppliedUnits);
   const physicalItems = f.accounts.db(db => db.prepare("SELECT item FROM inventory WHERE user_id = 'npc-stock-supply'").all());
