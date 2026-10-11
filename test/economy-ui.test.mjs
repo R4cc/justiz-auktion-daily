@@ -7,11 +7,12 @@ const accountSource = await readFile(new URL('../dist/account.js', import.meta.u
 const uiSource = await readFile(new URL('../dist/economy-ui.js', import.meta.url), 'utf8');
 const dataSource = await readFile(new URL('../dist/economy.js', import.meta.url), 'utf8');
 const traderSource = await readFile(new URL('../dist/trader-ui.js', import.meta.url), 'utf8');
+const caseArtSource = await readFile(new URL('../dist/case-art.js', import.meta.url), 'utf8');
 const uiContext = values => vm.createContext({location:{search:''}, URLSearchParams, ...values});
 const i18nSource = await readFile(new URL('../dist/i18n.js', import.meta.url), 'utf8');
 const extract = (source, from, to) => {
   let fragment = source.slice(source.indexOf(from), source.indexOf(to, source.indexOf(from)));
-  if(source===accountSource&&fragment.includes('function itemCard(')) fragment=traderSource.slice(0,traderSource.indexOf('const traderStockDialog'))+fragment;
+  if(source===accountSource&&fragment.includes('function itemCard(')) fragment=caseArtSource+traderSource.slice(0,traderSource.indexOf('const traderStockDialog'))+fragment;
   return source === uiSource && fragment.includes('bidMinimum(')
     ? source.slice(source.indexOf('  const bidMinimum ='), source.indexOf('  const empty =')) + fragment
     : fragment;
@@ -520,10 +521,10 @@ test('named mystery cases keep their identity in inventory and marketplace artwo
     + extract(uiSource, '  const stockSymbols =', '  const remaining ='), context);
   const markup = vm.runInContext(`itemCard(${JSON.stringify(item)})`, context);
   assert.match(markup, /case-design-vault/); assert.match(markup, /Sealed case/);
-  assert.match(markup, /Vault Case/); assert.match(markup, /<b>VT<\/b>/);
+  assert.match(markup, /Vault Case/); assert.match(markup, /class="case-object-badge">VT<\/text>/);
   assert.doesNotMatch(markup, /undefined|legendary case|rare case/i);
   const artwork = vm.runInContext(`stockLotArtwork({ item: ${JSON.stringify(item)} })`, context);
-  assert.match(artwork, /case-design-vault/); assert.match(artwork, /<b>VT<\/b>/);
+  assert.match(artwork, /case-design-vault/); assert.match(artwork, /class="case-object-badge">VT<\/text>/);
   assert.doesNotMatch(artwork, /undefined|legendary|rare/);
 });
 

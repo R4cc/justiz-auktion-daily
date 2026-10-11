@@ -1,0 +1,132 @@
+/* Illustrated cases and the interactive Case Store showroom. */
+.case-design-lost-property { --case-accent:#be9b68; --case-front:#b18a53; --case-side:#987043; --case-top:#d2b381; --case-trim:#695637; }
+.case-design-evidence-locker { --case-accent:#8dccda; --case-front:#457385; --case-side:#345f73; --case-top:#799ca8; --case-trim:#a6c7cc; }
+.case-design-seizure { --case-accent:#e2b466; --case-front:#96613d; --case-side:#77452c; --case-top:#bb8251; --case-trim:#efc97d; }
+.case-design-vault { --case-accent:#ada9ec; --case-front:#617082; --case-side:#3e4c61; --case-top:#8b96a8; --case-trim:#c2c7dc; }
+.case-design-collectors-cache { --case-accent:#efca72; --case-front:#67567f; --case-side:#463654; --case-top:#8a739a; --case-trim:#efca72; }
+.case-object { width:100%; max-width:360px; position:relative; line-height:0; --rarity:var(--case-accent); }
+.case-object svg { display:block; width:100%; height:auto; overflow:visible; filter:drop-shadow(0 14px 10px #091d232d); }
+.case-surface-top { fill:var(--case-top); stroke:var(--case-trim); stroke-width:1.5; stroke-linejoin:round; }
+.case-surface-front { fill:var(--case-front); stroke:var(--case-trim); stroke-width:1.5; stroke-linejoin:round; }
+.case-surface-side { fill:var(--case-side); stroke:var(--case-trim); stroke-width:1.5; stroke-linejoin:round; }
+.case-band { fill:var(--case-trim); }
+.case-edge { stroke:var(--case-trim); stroke-width:2; }
+.case-wood-lines { stroke:#725d38; stroke-width:2; opacity:.4; }
+.case-vault-door { fill:#56657a; stroke:#b5bfce; stroke-width:2; }
+.case-gold-line { stroke:#e8c783; stroke-width:2; stroke-linejoin:round; }
+.case-object-shadow { fill:#0b181f; opacity:.17; }
+.case-object-badge { fill:#fff1d3; font:700 10px 'DM Mono',monospace; letter-spacing:1px; }
+.case-boutique { --case-ink:#193b33; }
+.case-boutique-header { display:flex; flex-wrap:wrap; align-items:center; gap:18px; margin-bottom:24px; }
+.case-boutique-header > :first-child { flex:1; margin:0; min-width:180px; }
+.case-boutique-header h1 { margin:0; }
+.case-wallet { display:flex; gap:12px; align-items:center; padding:10px 15px; background:#e8eadb; border:1px solid #d2d8c9; border-radius:10px; }
+.case-wallet span { color:#4c6258; font-size:12px; }
+.case-wallet strong { color:var(--ink); font:600 16px 'DM Mono',monospace; }
+.case-showcase { display:grid; grid-template-columns:minmax(0,1.15fr) minmax(0,1fr); overflow:hidden; border:1px solid #c7cfbd; border-radius:24px; background:#fffdf6; box-shadow:0 10px 30px #193b3308; }
+.case-showroom { position:relative; display:flex; flex-direction:column; align-items:center; justify-content:center; isolation:isolate; min-height:490px; overflow:hidden; background:radial-gradient(ellipse at 50% 43%,#35655e 0,#1a3936 52%,#142c2c 100%); }
+.case-showroom::before { content:''; position:absolute; inset:0; z-index:-1; opacity:.1; background-image:linear-gradient(#cdd8bb 1px,transparent 1px),linear-gradient(90deg,#cdd8bb 1px,transparent 1px); background-size:40px 40px; mask-image:linear-gradient(transparent,#000,transparent); }
+.case-showroom::after { content:''; position:absolute; width:66%; height:140px; bottom:76px; background:radial-gradient(ellipse,var(--case-accent),transparent 70%); opacity:.14; }
+.case-stage-seal { position:absolute; top:24px; left:26px; color:#aec4b3; padding:7px 10px; border:1px solid #b8cfbf40; border-radius:4px; font:12px 'DM Mono',monospace; letter-spacing:.13em; }
+.case-showroom .case-object { width:90%; max-width:430px; z-index:2; animation:case-hover 6s ease-in-out infinite; }
+.case-showroom .case-object svg { filter:drop-shadow(0 22px 15px #030f1380); }
+.case-orbit { position:absolute; width:72%; aspect-ratio:1; border:1px solid #adc9b132; border-radius:50%; transform:rotate(-25deg) scaleY(.75); }
+.case-orbit::before,.case-orbit::after { content:''; position:absolute; width:7px; height:7px; border-radius:50%; background:var(--case-accent); box-shadow:0 0 12px var(--case-accent); top:15%; left:14%; }
+.case-orbit::after { top:84%; left:81%; width:4px; height:4px; }
+.case-showroom-rays { position:absolute; width:80%; aspect-ratio:1; border-radius:50%; background:conic-gradient(from 30deg,transparent 0 15%,#d9dfcb0a 15% 20%,transparent 20% 45%,#d9dfcb0a 45% 50%,transparent 50% 75%,#d9dfcb0a 75% 80%,transparent 80%); mask-image:radial-gradient(#000,transparent 70%); animation:case-rays 28s linear infinite; }
+.case-pedestal { position:absolute; width:76%; bottom:88px; height:66px; border-radius:50%; background:linear-gradient(#516e6550,#193b3350); border-top:1px solid #c1d4b552; box-shadow:0 12px 0 #11292580,0 25px 35px #07161b50; }
+.case-stage-caption { position:absolute; bottom:34px; color:#b9cbbd; font:11px 'DM Mono',monospace; letter-spacing:.15em; }
+.case-showcase-info { padding:32px; align-self:center; min-width:0; animation:case-stage-enter .3s ease-out; }
+.case-edition-label { color:#60746a; font:10px 'DM Mono',monospace; letter-spacing:.12em; }
+.case-showcase-info h2 { margin:12px 0 8px; font-size:clamp(24px,3vw,38px); letter-spacing:-.05em; line-height:1.15; color:var(--case-ink); overflow-wrap:anywhere; }
+.case-showcase-rule { font-size:13px; color:#53675d; margin:0 0 22px; }
+.case-stock-summary { color:#51675c; font-size:11px; line-height:1.5; }
+.case-stock-summary meter { display:block; width:100%; height:8px; margin-top:8px; border:0; border-radius:8px; background:#e6eadd; appearance:none; }
+.case-stock-summary meter::-webkit-meter-bar { height:8px; border:0; background:#e6eadd; border-radius:8px; }
+.case-stock-summary meter::-webkit-meter-optimum-value { background:#527c65; border-radius:8px; }
+.case-stock-summary meter::-moz-meter-bar { background:#527c65; border-radius:8px; }
+.case-price-row { display:flex; gap:12px; align-items:baseline; margin:24px 0 16px; }
+.case-price-row strong { color:var(--case-ink); font:600 clamp(25px,3vw,36px) 'DM Mono',monospace; letter-spacing:-.06em; }
+.case-price-row span { color:#69776c; font-size:12px; }
+.case-buy-button { width:100%; display:block; position:relative; overflow:hidden; text-align:center; border-radius:12px; padding:15px 20px; box-shadow:0 4px 0 #102a2350; transition:transform .18s,box-shadow .18s; }
+.case-buy-button:not(:disabled):hover { transform:translateY(-2px); box-shadow:0 6px 0 #102a2350; }
+.case-buy-button::after { content:''; position:absolute; inset:0; background:linear-gradient(110deg,transparent 30%,#fff3 50%,transparent 70%); transform:translateX(-120%); pointer-events:none; }
+.case-buy-button:not(:disabled):hover::after,.case-buy-button:focus-visible::after { animation:case-shine .65s ease-out; }
+.case-buy-button:disabled { box-shadow:none; opacity:.5; cursor:not-allowed; }
+.case-store-shortfall { margin:10px 0 0; font-size:12px; }
+.case-odds-heading { display:flex; align-items:center; justify-content:space-between; margin:22px 0 9px; }
+.case-odds-heading h3 { margin:0; color:var(--case-ink); font-size:12px; font-weight:700; }
+.case-odds-track { height:5px; display:flex; gap:3px; overflow:hidden; border-radius:8px; }
+.case-odds-track i { background:var(--rarity); min-width:3px; }
+.case-odds-list { display:grid; grid-template-columns:repeat(5,minmax(0,1fr)); gap:6px; margin:10px 0 0; }
+.case-odds-list div { min-width:0; }
+.case-odds-list dt { color:#53645a; font-size:10px; overflow-wrap:anywhere; }
+.case-odds-list dt::before { content:''; display:inline-block; width:5px; height:5px; background:var(--rarity); border-radius:50%; margin-right:4px; }
+.case-odds-list dd { margin:5px 0 0; color:var(--case-ink); font:11px 'DM Mono',monospace; }
+.case-selection { margin:28px 0; }
+.case-selection-heading { display:flex; flex-wrap:wrap; align-items:baseline; gap:10px; justify-content:space-between; margin-bottom:14px; }
+.case-selection-heading h2 { margin:0; font-size:17px; letter-spacing:-.03em; }
+.case-selection-heading > span { color:#5d7165; font-size:11px; }
+.case-selector-grid { display:grid; grid-template-columns:repeat(5,minmax(0,1fr)); gap:12px; }
+.case-selector-grid::-webkit-scrollbar { height:5px; }
+.case-selector-grid::-webkit-scrollbar-thumb { background:#849983; border-radius:8px; }
+.case-selector { display:flex; position:relative; flex-direction:column; align-items:stretch; text-align:left; min-width:0; padding:18px 12px 30px; color:var(--ink); background:#fffdf6; border:1px solid #ced5c7; border-radius:15px; cursor:pointer; transition:background .2s,border-color .2s,transform .2s,box-shadow .2s; }
+.case-selector::before { content:''; position:absolute; inset:0; border-radius:inherit; border:2px solid transparent; pointer-events:none; }
+.case-selector:hover { transform:translateY(-4px); box-shadow:0 12px 20px #193b3310; border-color:var(--case-accent); }
+.case-selector.is-selected { background:#edf0e2; }
+.case-selector.is-selected::before { border-color:#315c4b; }
+.case-selector:focus-visible { outline:3px solid #c2783d; outline-offset:4px; }
+.case-selector-number { color:#7c8778; font:10px 'DM Mono',monospace; }
+.case-selector .case-object { margin:-3px 0 5px; transition:transform .25s; }
+.case-selector:hover .case-object,.case-selector:focus-visible .case-object { transform:translateY(-4px) rotate(-3deg); }
+.case-selector > strong { font-size:12px; line-height:1.45; min-height:2.9em; }
+.case-selector-price { font:13px 'DM Mono',monospace; margin:10px 0; }
+.case-selector-stock { color:#5d6e62; font-size:9px; line-height:1.65; }
+.case-selector-check { position:absolute; bottom:10px; right:12px; color:#315c4b; font:15px 'DM Mono',monospace; }
+.case-selector.is-sold-out .case-object { opacity:.45; }
+.case-boutique .case-store-contents { border:1px solid #d0d6c7; border-radius:12px; padding:17px 20px; background:#fffcf4; }
+.case-boutique .case-store-contents summary { font-size:12px; line-height:1.5; }
+.case-boutique .case-store-contents ul { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:0 24px; }
+.case-boutique .case-store-contents li { font-size:12px; border-bottom:1px solid #193b3312; padding:6px 0; }
+.case-boutique .data-note { margin-top:18px; font-size:11px; }
+.sealed-case-art { background:radial-gradient(ellipse,#dbe4d4,transparent 75%); border:0; height:150px; }
+.sealed-case-art .case-object { width:100%; max-width:190px; }
+.economy-lot-image .sealed-case-art { background:radial-gradient(ellipse,#dbe4d4,#edf0e3); }
+.economy-lot-image .sealed-case-art .case-object { max-width:290px; }
+.case-reveal { border:1px solid #c1cabc; box-shadow:0 30px 120px #051719a0; }
+.case-reveal:has(.case-opening-content) { width:min(760px,calc(100vw - 32px)); }
+.case-reveal .dialog-close { position:absolute; z-index:5; top:12px; right:12px; }
+.case-purchase-content,.case-opening-content { position:relative; isolation:isolate; padding:34px; overflow:hidden; text-align:center; color:#f8f3e2; background:radial-gradient(ellipse at 50% 30%,#34564c,#183830 65%); }
+.case-purchase-content .dialog-close,.case-opening-content .dialog-close { color:#f8f3e2; border-color:#f8f3e260; }
+.case-purchase-content .case-object { width:80%; max-width:280px; margin:8px auto; animation:case-receipt-enter .6s cubic-bezier(.16,1,.3,1) both; }
+.case-purchase-content .case-object svg { filter:drop-shadow(0 15px 18px #061c1b70); }
+.case-receipt-label { color:#d5c392; font:10px 'DM Mono',monospace; letter-spacing:.12em; }
+.case-purchase-content h2 { color:#f8f3e2; }
+.case-purchase-content .secondary-button { background:transparent; color:#f8f3e2; border-color:#e4e6d96b; }
+.case-purchase-content .primary-button { background:#ecd58d; color:#1b3c33; }
+.case-purchase-burst { position:absolute; top:36%; left:50%; pointer-events:none; z-index:-1; }
+.case-purchase-burst i { position:absolute; width:5px; height:10px; border-radius:2px; background:#e3cf8b; opacity:0; --angle:calc(var(--particle)*30deg); animation:case-confetti 1s .1s ease-out both; }
+.case-opening-content .case-object { width:130px; margin:0 auto -15px; animation:case-unseal .75s ease-out both; }
+.case-opening-content .case-window { margin-top:22px; border-color:#547a65; border-radius:14px; box-shadow:inset 0 0 70px #061a1b; }
+.case-opening-content h2 { color:#f8f3e2; }
+.case-opening-content > p { color:#c0d0bd; }
+.case-tier { background:radial-gradient(ellipse at 50% 45%,color-mix(in srgb,var(--rarity) 25%,#17362e),#17362e); position:relative; overflow:hidden; box-shadow:inset 0 0 24px #08281b70; }
+.case-tier::after { content:''; position:absolute; inset:7px; border:1px solid color-mix(in srgb,var(--rarity) 25%,transparent); border-radius:5px; pointer-events:none; }
+.case-tier-symbol { font-size:68px; }
+.case-tier.is-pulled { box-shadow:0 0 35px color-mix(in srgb,var(--rarity) 45%,transparent),inset 0 0 30px color-mix(in srgb,var(--rarity) 25%,transparent); }
+.case-unboxed { position:relative; isolation:isolate; overflow:hidden; animation:case-result-enter .45s ease-out; }
+.case-unboxed::before { content:''; position:absolute; top:55px; left:10%; width:80%; aspect-ratio:1; z-index:-1; background:radial-gradient(ellipse,color-mix(in srgb,var(--rarity) 24%,transparent),transparent 65%); }
+.case-unboxed .rarity-label { padding:6px 12px; border:1px solid color-mix(in srgb,var(--rarity) 40%,transparent); border-radius:20px; background:color-mix(in srgb,var(--rarity) 12%,var(--paper)); }
+.case-unboxed img { border:1px solid color-mix(in srgb,var(--rarity) 25%,#d1d9cc); box-shadow:0 8px 24px #193b3310; }
+@keyframes case-hover { 0%,100% { transform:translateY(-3px) rotate(-1deg); } 50% { transform:translateY(-14px) rotate(1deg); } }
+@keyframes case-rays { to { transform:rotate(360deg); } }
+@keyframes case-stage-enter { from { opacity:0; transform:translateY(8px); } to { opacity:1; transform:translateY(0); } }
+@keyframes case-shine { to { transform:translateX(120%); } }
+@keyframes case-receipt-enter { from { opacity:0; transform:translateY(28px) scale(.7) rotate(-8deg); } to { opacity:1; transform:translateY(0) scale(1) rotate(0); } }
+@keyframes case-confetti { 0% { opacity:0; transform:rotate(var(--angle)) translateY(30px) rotate(0deg); } 25% { opacity:1; } 100% { opacity:0; transform:rotate(var(--angle)) translateY(145px) rotate(90deg); } }
+@keyframes case-unseal { from { opacity:.2; transform:scale(.8) translateY(12px); } to { opacity:1; transform:scale(1) translateY(0); } }
+@keyframes case-result-enter { from { opacity:.3; transform:scale(.97); } to { opacity:1; transform:scale(1); } }
+@media (max-width:1100px) { .case-showcase { grid-template-columns:minmax(0,1fr) minmax(0,1.1fr); } .case-showroom { min-height:460px; } .case-showcase-info { padding:26px 22px; } .case-selector-grid { gap:8px; } .case-selector { padding:14px 10px 30px; } }
+@media (max-width:700px) { .case-boutique { display:flex; flex-direction:column; } .case-boutique-header { order:0; } .case-selection { order:1; margin:0 0 18px; } .case-showcase { order:2; } .case-boutique > .case-store-contents { order:3; margin-top:20px; } .case-boutique > .data-note { order:4; } .case-showcase { grid-template-columns:1fr; } .case-showroom { min-height:300px; } .case-showroom .case-object { max-width:300px; width:70%; } .case-orbit { width:58%; max-width:290px; } .case-pedestal { width:62%; bottom:50px; height:38px; } .case-stage-caption { bottom:20px; } .case-stage-seal { top:18px; left:18px; font-size:10px; } .case-selector-grid { grid-template-columns:repeat(5,minmax(140px,1fr)); overflow-x:auto; padding:4px 4px 10px; margin-inline:-4px; scroll-snap-type:x proximity; } .case-selector { scroll-snap-align:start; } .case-showcase-info { padding:24px; } .case-boutique-header .case-wallet { order:3; width:100%; justify-content:space-between; } }
+@media (max-width:430px) { .case-showroom { min-height:255px; } .case-selector-grid { gap:10px; } .case-selector { padding:14px 14px 30px; } .case-boutique-header { gap:10px; } .case-boutique-header > :first-child { min-width:130px; } .case-boutique-header .secondary-button { padding:10px; font-size:12px; } .case-showcase-info { padding:22px 18px; } .case-odds-list { gap:3px; } .case-odds-list dt { font-size:9px; } .case-odds-list dd { font-size:10px; } .case-purchase-content,.case-opening-content { padding:30px 18px 22px; } .case-boutique .case-store-contents ul { grid-template-columns:1fr; } }
+@media (prefers-reduced-motion:reduce) { .case-showroom .case-object,.case-showroom-rays,.case-showcase-info,.case-purchase-content .case-object,.case-purchase-burst i,.case-opening-content .case-object,.case-unboxed { animation:none; } .case-selector,.case-selector .case-object,.case-buy-button { transition:none; } .case-selector:hover,.case-selector:hover .case-object,.case-selector:focus-visible .case-object,.case-buy-button:not(:disabled):hover { transform:none; } .case-buy-button::after { display:none; } }

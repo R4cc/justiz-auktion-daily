@@ -38,9 +38,7 @@ window.economyUi = (() => {
   };
   function stockLotArtwork(lot) {
     if (lot.item?.kind === 'case') {
-      const style = lot.item.caseType ? `case-design-${esc(lot.item.caseType)}` : `rarity-${esc(lot.item.caseTier)}`;
-      const badge = lot.item.caseType ? esc(lot.item.caseBadge || 'JG') : rarityLabel(lot.item.caseTier);
-      return `<div class="sealed-case-art ${style}" aria-hidden="true"><span>◇</span><b>${badge}</b></div>`;
+      return `<div class="sealed-case-art" aria-hidden="true">${caseArtwork(lot.item)}</div>`;
     }
     const type = lot.item?.businessCategory, symbol = stockSymbols[type];
     return symbol ? `<div class="stock-lot-art stock-lot-art-${type}" aria-hidden="true"><svg viewBox="0 0 96 96" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">${symbol}</svg></div>` : null;

@@ -11,6 +11,7 @@ const flush = () => new Promise(resolve => setImmediate(resolve));
 function opening(reduced) {
   const timers = [], frames = [], transforms = [];
   let revealed = 0, elapsed = 0, markup = '';
+  const animations = [];
   const reel = {
     isConnected: true, classList: { add() {} }, children: [],
     style: { set transform(value) { transforms.push(value); } },
@@ -22,7 +23,12 @@ function opening(reduced) {
     },
     get innerHTML() { return markup; },
     animate(frames, options) {
-      return { finished: new Promise(resolve => timers.push({ resolve, ms: options.duration })) };
+      let rejectAnimation;
+      const animation = { frames, options,
+        finished: new Promise((resolve, reject) => { rejectAnimation = reject; timers.push({ resolve, ms: options.duration }); }),
+        cancel: () => rejectAnimation(Error('Animation cancelled')) };
+      animations.push(animation);
+      return animation;
     }
   };
   const item = { id: 'pull', rarity: 'legendary', title: 'SECRET WINNER', image: '/secret.jpg', caseId: 'test' };
@@ -41,7 +47,7 @@ function opening(reduced) {
     resultMarkup: () => 'REVEALED', revealCaseItem: () => { revealed++; }
   });
   vm.runInContext(tierSource + pullSource, context);
-  return { context, reel, frames, transforms, status, start: () => vm.runInContext('pullCase(1)', context),
+  return { context, reel, frames, transforms, animations, status, start: () => vm.runInContext('pullCase(1)', context),
     get revealed() { return revealed; }, get elapsed() { return elapsed; },
     async tick() { const timer = timers.shift(); assert.ok(timer); elapsed += timer.ms; timer.resolve(); await flush(); return timer.ms; }
   };
@@ -53,24 +59,22 @@ for (const reduced of [false, true]) {
     await flush();
     assert.equal(run.context.accountResult, null);
     const delays = [];
-    for (let step = 0; step < (reduced ? 12 : 1); step++) {
+    for (let step = 0; step < 1; step++) {
       assert.equal(run.revealed, 0);
       delays.push(await run.tick());
     }
-    assert.deepEqual(delays, reduced ? [80, 90, 110, 140, 180, 240, 320, 420, 540, 680, 820, 1000] : [5050]);
-    assert.equal(run.elapsed, reduced ? 4620 : 5050);
+    assert.deepEqual(delays, [5050]);
+    assert.equal(run.elapsed, 5050);
     assert.equal(run.revealed, 0);
     assert.match(run.status.innerHTML, /legendary/);
     assert.ok(run.frames.every(frame => !/SECRET|<img|secret.jpg|decoy.jpg/.test(frame)));
-    if (reduced) {
-      assert.equal(run.reel.children.length, 42);
-      // random() = 0.5 seeds winner 34 and a dead-center landing bias of 85px.
-      const winner = 28 + Math.floor(0.5 * 12), at = index => -(index * (170 + 12) + 170 * (0.25 + 0.5 * 0.5) - 500 / 2);
-      const stops = [...Array(12)].map((_, step) => Math.round(winner * (step + 1) / 12));
-      assert.deepEqual(run.transforms, stops.map(index => `translateX(${at(index)}px)`).concat(`translateX(${at(winner)}px)`));
-    }
+    assert.equal(run.reel.children.length, 42);
+    // The requested full spin and exact landing also apply to reduced motion.
+    const winner = 28 + Math.floor(0.5 * 12), at = -(winner * (170 + 12) + 170 * (0.25 + 0.5 * 0.5) - 500 / 2);
+    assert.equal(run.animations.length, 1);
+    assert.equal(run.animations[0].frames[1].transform, `translateX(${at}px)`);
     await run.tick(); await done;
-    assert.equal(run.elapsed, reduced ? 5370 : 5800);
+    assert.equal(run.elapsed, 5800);
     assert.equal(run.revealed, 1);
     assert.equal(run.context.accountResult.title, 'SECRET WINNER');
     assert.equal(run.context.caseOpening, null);
@@ -82,5 +86,11 @@ for (const reduced of [false, true]) {
     await run.tick(); await done;
     assert.equal(run.revealed, 0);
     assert.equal(run.context.caseOpening, null);
+  });
+  test(`cancelling a hidden reel releases opening state without an error (${reduced ? 'reduced' : 'normal'})`, async () => {
+    const run = opening(reduced), done = run.start();
+    await flush(); run.context.accountVisit = 2; run.animations[0].cancel();
+    await done;
+    assert.equal(run.revealed, 0); assert.equal(run.context.caseOpening, null);
   });
 }

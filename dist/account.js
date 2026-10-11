@@ -1,6 +1,7 @@
 let accountAdminMarket = { categories: [], presets: [], history: [] };
 let accountStore = null;
 let caseStockRequest = 0;
+let accountSelectedStoreCase = 'lost-property';
 let account = null, accountCatalog = null, accountItems = [], accountCodes = [], freshCodes = [], freshPasswordReset = null;
 let accountFriends = { friends: [], date: '' }, accountAdmin = { playerCount: 0, users: [], grants: [], lastReset: null };
 let accountLeaderboard = { date: '', leaders: [] }, adminUserFilter = '';
@@ -18,7 +19,8 @@ caseReveal.className = 'case-reveal';
 caseReveal.setAttribute('aria-labelledby', 'case-reveal-title');
 document.body.append(caseReveal);
 caseReveal.addEventListener('close', () => {
-  if (currentAccountPage === '/shop') accountContent.querySelector('[data-account="pull"]')?.focus({ preventScroll: true });
+  for (const animation of caseReveal.querySelector('.case-reel')?.getAnimations() || []) animation.cancel();
+  if (currentAccountPage === '/shop') (accountContent.querySelector('[data-account="buy-case"]') || accountContent.querySelector('[data-account="pull"]'))?.focus({ preventScroll: true });
   else if (currentAccountPage === '/inventory') accountContent.querySelector('h1')?.focus({ preventScroll: true });
 });
 let accountSelectedCase = 'fundkiste', accountInventoryPage = 0, accountFilter = 'all';
@@ -442,7 +444,7 @@ function itemCard(item, controls = true) {
   const isCase=item.kind==='case', style=isCase&&item.caseType?'case-design-'+accountEscape(item.caseType):'rarity-'+accountEscape(item.rarity||item.caseTier||'common');
   const highlighted=new URLSearchParams(location.search).get('focus')===chosen.id;
   return `<article class="collection-item ${isCase?'sealed-case-item ':''}${style}${highlighted?' is-highlighted':''}"><span class="rarity-label">${isCase?t('Sealed case','Versiegelte Kiste'):rarityLabel(item.rarity)}</span>${copies.length>1?`<span class="item-count" aria-label="${available.length} ${t('available copies','verfügbare Exemplare')}">×${copies.length}</span>`:''}
-    ${isCase?`<div class="sealed-case-art" aria-hidden="true"><span>◇</span><b>${accountEscape(item.caseBadge||rarityLabel(item.caseTier))}</b></div>`:item.image?`<img src="${accountEscape(item.image)}" alt="" loading="lazy">`:'<div class="collection-item-placeholder" aria-hidden="true">◇</div>'}
+    ${isCase?`<div class="sealed-case-art" aria-hidden="true">${caseArtwork(item)}</div>`:item.image?`<img src="${accountEscape(item.image)}" alt="" loading="lazy">`:'<div class="collection-item-placeholder" aria-hidden="true">◇</div>'}
     <h3>${accountEscape(t(item.title,item.titleDe||item.title))}</h3>${isCase?`<p>${t('One mystery item · any category','Ein geheimer Gegenstand · jede Kategorie')}</p>`:''}<p>${t('Estimated market value','Geschätzter Marktwert')} · ${justizEuro(item.estimatedValueTokens??item.price)}${item.marketIndex!=null?` · ${number(item.marketIndex-100,1)}% ${t('vs. normal','gegenüber normal')}</p>`:'</p>'}
     ${controls?traderItemFacts(chosen):''}${controls&&isCase?`<button class="primary-button" data-account="open-inventory-case" data-id="${accountEscape(chosen.id)}" ${available.length?'':'disabled'}>${t('Open case','Kiste öffnen')}</button>`:''}
     ${controls?traderItemActions(chosen,copies):''}${controls&&!economyFlags.resales&&available.length&&!isCase?`<button class="secondary-button" data-account="sell" data-id="${accountEscape(chosen.id)}">${t('Sell','Verkaufen')} · ${justizEuro(chosen.sellValue)}</button>`:''}</article>`;
@@ -673,6 +675,14 @@ async function refreshCaseStock(visit) {
     const box = [...(accountStore?.cases || []), ...(accountCatalog?.cases || [])].find(box => box.id === element.dataset.caseStock);
     if (box) element.textContent = caseStockLabel(box);
   }
+  for (const meter of accountContent.querySelectorAll('[data-case-stock-meter]')) {
+    const box = accountStore?.cases.find(box => box.id === meter.dataset.caseStockMeter);
+    if (box?.stock) { meter.max = box.stock.limit; meter.value = box.stock.remaining; }
+  }
+  for (const selector of accountContent.querySelectorAll('[data-account="select-store-case"]')) {
+    const box = accountStore?.cases.find(box => box.id === selector.dataset.id);
+    if (box) selector.classList?.toggle('is-sold-out', box.stock?.remaining === 0);
+  }
   updateCasePurchaseButtons();
 }
 function updateCasePurchaseButtons() {
@@ -695,24 +705,35 @@ setInterval(() => {
 }, 30_000);
 function renderShop() {
   if (!accountStore) return;
-  accountContent.innerHTML = pageHeading(t('Case Store', 'Kisten-Shop')) +
-    `<div class="case-store-intro"><p>${t('Five mystery cases. Each type has 10 cases shared by all players, refilled every 4 hours. More expensive cases improve your chances of rarer finds. Buy with J€ and open from your inventory.', 'Fünf Überraschungskisten. Jeder Typ hat 10 Kisten für alle Spieler zusammen, alle 4 Stunden aufgefüllt. Teurere Kisten erhöhen deine Chancen auf seltenere Funde. Kaufe mit J€ und öffne sie aus deinem Inventar.')}</p><a class="secondary-button" href="/inventory" data-page>${t('Go to inventory', 'Zum Inventar')} →</a></div>
-    <div class="shop-balance">${account ? `${justizEuro(account.tokens)} ${t('available', 'verfügbar')}` : `<a href="/login" data-page>${t('Log in to buy cases', 'Zum Kistenkauf anmelden')} →</a>`}</div>
-    <p class="shop-edition"><span>${t('DAILY CONTENTS', 'TAGESINHALTE')} · ${accountStore.rotationDate}</span>${infoTip(t('Contents refresh at 00:00 UTC. Prices follow the market. Purchased cases keep their sealed contents.', 'Inhalte wechseln um 00:00 UTC. Preise folgen dem Markt. Gekaufte Kisten behalten ihre versiegelten Inhalte.'))}</p>
-    <div class="case-store-grid">${accountStore.cases.map(box => `<article class="case-store-card case-design-${accountEscape(box.id)}">
-      <span class="case-store-art" aria-hidden="true">◇<b>${accountEscape(box.badge)}</b></span><span class="case-store-stock" data-case-stock="${accountEscape(box.id)}">${accountEscape(caseStockLabel(box))}</span>
-      <h2>${accountEscape(t(box.name, box.nameDe))}</h2><p>${t('One mystery item · every rarity possible', 'Ein geheimer Gegenstand · jede Seltenheit möglich')}</p>
-      <strong class="case-store-price">${justizEuro(box.cost)}</strong>
-      ${account ? `<button class="primary-button" data-account="buy-case" data-id="${accountEscape(box.id)}" ${accountBusy || account.tokens < box.cost || box.stock?.remaining === 0 ? 'disabled' : ''}>${box.stock?.remaining === 0 ? t('Sold out', 'Ausverkauft') : t('Buy case', 'Kiste kaufen')}</button>${account.tokens < box.cost ? `<small class="case-store-shortfall">${t(`You need ${justizEuro(box.cost - account.tokens)} more`, `Dir fehlen ${justizEuro(box.cost - account.tokens)}`)}</small>` : ''}` : `<a class="primary-button" href="/login" data-page>${t('Log in to buy', 'Zum Kaufen anmelden')}</a>`}
-      <dl class="case-store-chances" aria-label="${t('Drop chances', 'Fundchancen')}">${box.dropChances.map(chance => `<div><dt class="rarity-${accountEscape(chance.rarity)}">${rarityLabel(chance.rarity)}</dt><dd>${number(chance.percent, 2)}%</dd></div>`).join('')}</dl>
-      <details class="case-store-contents"><summary>${t('Possible contents', 'Mögliche Inhalte')} · ${number(box.items.length)}</summary><ul>${box.items.map(item => `<li><span>${accountEscape(item.title)}</span><small class="rarity-${accountEscape(item.rarity)}">${rarityLabel(item.rarity)}</small></li>`).join('')}</ul></details>
-    </article>`).join('')}</div>
-    <p class="data-note">${t('Digital collectibles. J€ has no cash value. Each case contains one item; its value can be lower than the purchase price.', 'Digitale Sammelobjekte. J€ hat keinen Geldwert. Jede Kiste enthält einen Gegenstand; sein Wert kann unter dem Kaufpreis liegen.')}</p>`;
+  const selectionScroll = accountContent.querySelector('.case-selector-grid')?.scrollLeft || 0;
+  const box = accountStore.cases.find(entry => entry.id === accountSelectedStoreCase) || accountStore.cases[0];
+  if (!box) { accountContent.innerHTML = pageHeading(t('Case Store', 'Kisten-Shop')); return; }
+  accountSelectedStoreCase = box.id;
+  const soldOut = box.stock?.remaining === 0;
+  accountContent.innerHTML = `<div class="case-boutique">
+    <header class="case-boutique-header">${pageHeading(t('Case Store', 'Kisten-Shop'))}<div class="case-wallet">${account ? `<span>${t('Available', 'Verfügbar')}</span><strong>${justizEuro(account.tokens)}</strong>` : `<a href="/login" data-page>${t('Log in to buy', 'Zum Kaufen anmelden')} →</a>`}</div><a class="secondary-button" href="/inventory" data-page>${t('Inventory', 'Inventar')} ↗</a></header>
+    <section class="case-showcase case-design-${accountEscape(box.id)}" aria-label="${t('Selected case', 'Ausgewählte Kiste')}">
+      <div class="case-showroom"><span class="case-stage-seal">JG / ${accountEscape(box.badge)}</span><div class="case-orbit" aria-hidden="true"></div><div class="case-showroom-rays" aria-hidden="true"></div>${caseArtwork(box)}<div class="case-pedestal" aria-hidden="true"></div><span class="case-stage-caption">${t('SEALED', 'VERSIEGELT')} · ${t('ONE ITEM', 'EIN GEGENSTAND')}</span></div>
+      <div class="case-showcase-info"><span class="case-edition-label">${t('CONTENTS', 'INHALTE')} / ${accountEscape(accountStore.rotationDate)}</span><h2>${accountEscape(t(box.name, box.nameDe))}</h2><p class="case-showcase-rule">${t('One mystery item. All rarities possible.', 'Ein geheimer Gegenstand. Jede Seltenheit möglich.')}</p>
+        <div class="case-stock-summary"><span data-case-stock="${accountEscape(box.id)}">${accountEscape(caseStockLabel(box))}</span><meter data-case-stock-meter="${accountEscape(box.id)}" min="0" max="${box.stock?.limit || 1}" value="${box.stock?.remaining || 0}" aria-label="${t('Global stock', 'Globaler Bestand')}"></meter></div>
+        <div class="case-price-row"><strong>${justizEuro(box.cost)}</strong><span>${t('per case', 'pro Kiste')}</span></div>
+        ${account ? `<button class="primary-button case-buy-button" data-account="buy-case" data-id="${accountEscape(box.id)}" ${accountBusy || account.tokens < box.cost || soldOut ? 'disabled' : ''}>${soldOut ? t('Sold out', 'Ausverkauft') : t('Buy case', 'Kiste kaufen')}</button>${account.tokens < box.cost ? `<p class="case-store-shortfall">${t(`You need ${justizEuro(box.cost - account.tokens)} more`, `Dir fehlen ${justizEuro(box.cost - account.tokens)}`)} · <a href="/" data-page>Daily →</a></p>` : ''}` : `<a class="primary-button case-buy-button" href="/login" data-page>${t('Log in to buy', 'Zum Kaufen anmelden')}</a>`}
+        <div class="case-odds-heading"><h3>${t('Drop chances', 'Fundchancen')}</h3>${infoTip(t('Higher prices improve the odds of rarer finds. Any case can contain a common item, worth less than its price.', 'Höhere Preise verbessern die Chancen auf seltenere Funde. Jede Kiste kann einen gewöhnlichen Gegenstand enthalten, der weniger als ihr Preis wert ist.'), t('About drop chances', 'Über Fundchancen'))}</div>
+        <div class="case-odds-track" aria-hidden="true">${box.dropChances.map(chance => `<i class="rarity-${accountEscape(chance.rarity)}" style="flex-grow:${Math.max(0, Number(chance.percent) || 0)}"></i>`).join('')}</div>
+        <dl class="case-odds-list">${box.dropChances.map(chance => `<div><dt class="rarity-${accountEscape(chance.rarity)}">${rarityLabel(chance.rarity)}</dt><dd>${number(chance.percent, 2)}%</dd></div>`).join('')}</dl>
+      </div>
+    </section>
+    <section class="case-selection" aria-label="${t('Case selection', 'Kistenauswahl')}"><div class="case-selection-heading"><h2>${t('Choose a case', 'Kiste auswählen')}</h2><span>${t('Global stock · refills every 4 hours', 'Globaler Bestand · alle 4 Stunden aufgefüllt')}</span></div><div class="case-selector-grid">${accountStore.cases.map((entry, index) => `<button class="case-selector case-design-${accountEscape(entry.id)} ${entry.id === box.id ? 'is-selected' : ''} ${entry.stock?.remaining === 0 ? 'is-sold-out' : ''}" type="button" data-account="select-store-case" data-id="${accountEscape(entry.id)}" aria-pressed="${entry.id === box.id}"><span class="case-selector-number" aria-hidden="true">0${index + 1}</span>${caseArtwork(entry)}<strong>${accountEscape(t(entry.name, entry.nameDe))}</strong><span class="case-selector-price">${justizEuro(entry.cost)}</span><span class="case-selector-stock" data-case-stock="${accountEscape(entry.id)}">${accountEscape(caseStockLabel(entry))}</span><span class="case-selector-check" aria-hidden="true">${entry.id === box.id ? '✓' : '+'}</span></button>`).join('')}</div></section>
+    <details class="case-store-contents"><summary>${t('Possible contents', 'Mögliche Inhalte')} · ${accountEscape(t(box.name, box.nameDe))} · ${number(box.items.length)}</summary><ul>${box.items.map(item => `<li><span>${accountEscape(item.title)}</span><small class="rarity-${accountEscape(item.rarity)}">${rarityLabel(item.rarity)}</small></li>`).join('')}</ul></details>
+    <p class="data-note">${t('Each case contains one digital collectible. Its value can be lower than the purchase price. J€ has no cash value.', 'Jede Kiste enthält ein digitales Sammelobjekt. Sein Wert kann unter dem Kaufpreis liegen. J€ hat keinen Geldwert.')}</p>
+  </div>`;
   if (!economyFlags.paletteAuctions) {
     const storeMarkup = accountContent.innerHTML;
     renderLegacyShop();
     accountContent.innerHTML = storeMarkup + `<section class="case-store-legacy">${accountContent.innerHTML}</section>`;
   }
+  const selection = accountContent.querySelector('.case-selector-grid');
+  if (selection) selection.scrollLeft = selectionScroll;
 }
 async function buyStoreCase(caseId, visit) {
   if (!account) return;
@@ -727,7 +748,9 @@ async function buyStoreCase(caseId, visit) {
   if (visit !== accountVisit) return;
   accountStore = result.store;
   renderAccountPage();
-  showToast(t(`${t(result.item.title, result.item.titleDe)} added to inventory.`, `${t(result.item.title, result.item.titleDe)} zum Inventar hinzugefügt.`));
+  caseReveal.innerHTML = `<div class="case-purchase-content"><button class="dialog-close" data-account="close-reveal" aria-label="${t('Close', 'Schließen')}">×</button><div class="case-purchase-burst" aria-hidden="true">${Array.from({length: 12}, (_, i) => `<i style="--particle:${i}"></i>`).join('')}</div><p class="case-receipt-label">${t('ADDED TO INVENTORY', 'ZUM INVENTAR HINZUGEFÜGT')}</p>${caseArtwork(result.item)}<h2 id="case-reveal-title">${accountEscape(t(result.item.title, result.item.titleDe))}</h2><p>${t('Open now or keep it sealed.', 'Jetzt öffnen oder versiegelt behalten.')}</p><div class="case-reveal-actions"><button class="primary-button" data-account="open-inventory-case" data-id="${accountEscape(result.item.id)}">${t('Open case', 'Kiste öffnen')}</button><button class="secondary-button" data-account="close-reveal">${t('Keep sealed', 'Versiegelt behalten')}</button></div></div>`;
+  if (!caseReveal.open) caseReveal.showModal();
+  caseReveal.querySelector('[data-account="open-inventory-case"]').focus({preventScroll: true});
 }
 function renderLegacyShop() {
   const box = accountCatalog.cases.find(box => box.id === accountSelectedCase) || accountCatalog.cases[0];
@@ -755,7 +778,7 @@ function tierCard(rarity) {
 }
 function revealCaseItem() {
   const box = accountCatalog.cases.find(box => box.id === accountResult.caseId);
-  caseReveal.innerHTML = `<div class="case-reveal-content rarity-${accountEscape(accountResult.rarity)}"><h2 id="case-reveal-title">${accountEscape(accountResult.title)}</h2><img src="${accountEscape(accountResult.image)}" alt=""><p class="rarity-label">${rarityLabel(accountResult.rarity)}</p><p>${t('Historical real-auction value', 'Historischer Wert der echten Auktion')} ${euro(accountResult.price)}</p><p role="status">${accountResult.sold ? t('Sold. J€ added.', 'Verkauft. J€ gutgeschrieben.') : t('Added to inventory.', 'Zum Inventar hinzugefügt.')}</p><div class="case-reveal-actions">${accountResult.sold || economyFlags.resales ? '' : `<button class="secondary-button" data-account="sell-result" data-id="${accountEscape(accountResult.id)}">${t('Sell now', 'Sofort verkaufen')} · ${justizEuro(accountResult.sellValue)}</button>`}<button class="primary-button" data-account="pull" ${!account || account.tokens < box.cost || !box.available ? 'disabled' : ''}>${t('Open another case', 'Weitere Kiste öffnen')} · ${justizEuro(box.cost)}</button><button class="text-button" data-account="close-reveal" autofocus>${accountResult.sold ? t('Close', 'Schließen') : t('Keep item', 'Behalten')}</button></div></div>`;
+  caseReveal.innerHTML = `<div class="case-reveal-content case-unboxed rarity-${accountEscape(accountResult.rarity)}"><h2 id="case-reveal-title">${accountEscape(accountResult.title)}</h2><img src="${accountEscape(accountResult.image)}" alt=""><p class="rarity-label">${rarityLabel(accountResult.rarity)}</p><p>${t('Historical real-auction value', 'Historischer Wert der echten Auktion')} ${euro(accountResult.price)}</p><p role="status">${accountResult.sold ? t('Sold. J€ added.', 'Verkauft. J€ gutgeschrieben.') : t('Added to inventory.', 'Zum Inventar hinzugefügt.')}</p><div class="case-reveal-actions">${accountResult.sold || economyFlags.resales ? '' : `<button class="secondary-button" data-account="sell-result" data-id="${accountEscape(accountResult.id)}">${t('Sell now', 'Sofort verkaufen')} · ${justizEuro(accountResult.sellValue)}</button>`}<button class="primary-button" data-account="pull" ${!account || account.tokens < box.cost || !box.available ? 'disabled' : ''}>${t('Open another case', 'Weitere Kiste öffnen')} · ${justizEuro(box.cost)}</button><button class="text-button" data-account="close-reveal" autofocus>${accountResult.sold ? t('Close', 'Schließen') : t('Keep item', 'Behalten')}</button></div></div>`;
   if (!caseReveal.open) caseReveal.showModal();
   caseReveal.querySelector('[data-account="close-reveal"]').focus({ preventScroll: true });
 }
@@ -778,23 +801,13 @@ async function spinCaseReel(reel, viewport, item, pool, isCurrent) {
   const winnerIndex = 28 + Math.floor(Math.random() * 12);
   const cards = Array.from({ length: 42 }, (_, index) => index === winnerIndex ? item : pool[Math.floor(Math.random() * pool.length)]);
   reel.innerHTML = cards.map(item => tierCard(item.rarity)).join('');
-  const pause = ms => new Promise(resolve => setTimeout(resolve, ms));
   const width = reel.children[0].getBoundingClientRect().width;
   const landingBias = width * (0.25 + Math.random() * 0.5);
   const landingAt = index => index * (width + 12) + landingBias - viewport.clientWidth / 2;
-  if (matchMedia('(prefers-reduced-motion: reduce)').matches) {
-    // Jump the full reel between centered stops, simulating a wheel without interpolation.
-    const tierDelays = [80, 90, 110, 140, 180, 240, 320, 420, 540, 680, 820, 1000];
-    for (let step = 0; step < tierDelays.length; step++) {
-      if (!isCurrent() || !reel.isConnected) return;
-      reel.style.transform = `translateX(${-landingAt(Math.round(winnerIndex * (step + 1) / tierDelays.length))}px)`;
-      await pause(tierDelays[step]);
-    }
-    reel.style.transform = `translateX(${-landingAt(winnerIndex)}px)`;
-  } else {
+  // The opening reel always spins, including when reduced motion is enabled.
   const animation = reel.animate([{ transform: 'translateX(0)' }, { transform: `translateX(${-landingAt(winnerIndex)}px)` }], { duration: 4600 + Math.round(Math.random() * 900), easing: 'cubic-bezier(.12,.72,.12,1)', fill: 'forwards' });
-  await animation.finished;
-  }
+  try { await animation.finished; }
+  catch (error) { if (!isCurrent() || !reel.isConnected) return; throw error; }
   if (!isCurrent() || !reel.isConnected) return;
   (reel.children[winnerIndex] || reel.children[0]).classList.add('is-pulled');
 }
@@ -881,8 +894,15 @@ document.addEventListener('keydown', event => {
   selectAdminTab(tabs[next].dataset.adminTab, true);
 });
 document.addEventListener('click', async event => {
-  const button = event.target.closest('[data-account]'); if (!button || accountBusy) return;
+  const button = event.target.closest('[data-account]'); if (!button) return;
   const action = button.dataset.account, visit = accountVisit;
+  if (action === 'close-reveal') { caseReveal.close(); return; }
+  if (accountBusy) return;
+  if (action === 'select-store-case') {
+    accountSelectedStoreCase = button.dataset.id; renderShop();
+    [...accountContent.querySelectorAll('[data-account="select-store-case"]')].find(entry => entry.dataset.id === accountSelectedStoreCase)?.focus({preventScroll: true});
+    return;
+  }
   if (action === 'refresh') { await navigateAccountPage(currentAccountPage, false); return; }
   accountBusy = true; button.disabled = true;
   try {
@@ -892,27 +912,31 @@ document.addEventListener('click', async event => {
       await navigateAccountPage('/login');
     }
     if (action === 'select-case') { accountSelectedCase = button.dataset.id; accountResult = null; renderAccountPage(); }
-    if (action === 'close-reveal') caseReveal.close();
     if (action === 'market-adjust' || action === 'market-reset') await applyAdminMarketChange(button, visit);
     if (action === 'buy-case') await buyStoreCase(button.dataset.id, visit);
     if (action === 'pull') { caseReveal.close(); await pullCase(visit); }
     if (action === 'open-inventory-case') {
       const owner = account.id;
+      const dialogWasOpen = caseReveal.open;
+      const sealedItem = accountItems.find(item => item.id === button.dataset.id) || {caseType: accountSelectedStoreCase};
       const result = await accountApi('inventory/case/open', { id: button.dataset.id });
       if (account?.id !== owner) return;
       updateAccount(result.user);
-      accountItems = (await accountApi('inventory?includeStores=1')).items;
+      const [inventory, stores] = await Promise.all([accountApi('inventory?includeStores=1'), economyFlags.businesses ? accountApi('businesses') : null]);
       if (visit !== accountVisit || account?.id !== owner) return;
+      accountItems = inventory.items; traderStores = stores?.shops || [];
+      if (dialogWasOpen && !caseReveal.open) { renderAccountPage(); return; }
       renderAccountPage();
-      caseReveal.innerHTML = `<div class="case-reveal-content rarity-${accountEscape(result.item.rarity)}"><h2 id="case-reveal-title">${t('Opening case…', 'Kiste wird geöffnet …')}</h2><div class="case-window"><div class="case-marker"></div><div class="case-reel"></div></div></div>`;
-      caseReveal.showModal();
-      const pool = accountCatalog?.cases?.find(box => box.id === 'fundkiste')?.items || [result.item];
+      caseReveal.innerHTML = `<div class="case-opening-content"><button class="dialog-close" data-account="close-reveal" aria-label="${t('Close', 'Schließen')}">×</button>${caseArtwork(sealedItem)}<h2 id="case-reveal-title">${t('Opening case…', 'Kiste wird geöffnet …')}</h2><div class="case-window" aria-hidden="true"><div class="case-marker"></div><div class="case-reel"></div></div><p>${t('Your item is already saved in inventory.', 'Dein Gegenstand ist bereits im Inventar gespeichert.')}</p></div>`;
+      if (!caseReveal.open) caseReveal.showModal();
+      caseReveal.querySelector('[data-account="close-reveal"]').focus({preventScroll: true});
+      const pool = accountCatalog?.cases?.find(box => box.id === 'fundkiste')?.items || accountStore?.cases?.[0]?.items || [result.item];
       try { await spinCaseReel(caseReveal.querySelector('.case-reel'), caseReveal.querySelector('.case-window'), result.item,
         pool.length ? pool : [result.item], () => caseReveal.open && visit === accountVisit && account?.id === owner); }
       catch { /* The awarded item is already in inventory; still show it. */ }
       if (visit !== accountVisit || account?.id !== owner || !caseReveal.open) return;
-      caseReveal.innerHTML = `<div class="case-reveal-content rarity-${accountEscape(result.item.rarity)}"><h2 id="case-reveal-title">${accountEscape(result.item.title)}</h2>${result.item.image ? `<img src="${accountEscape(result.item.image)}" alt="">` : ''}<p class="rarity-label">${rarityLabel(result.item.rarity)}</p><p>${t('Historical real-auction value', 'Historischer Wert der echten Auktion')} ${euro(result.item.price)}</p><p>${t('Added to inventory.', 'Zum Inventar hinzugefügt.')}</p><div class="case-reveal-actions">${traderItemActions(accountItems.find(item=>item.id===result.item.id)||result.item,[accountItems.find(item=>item.id===result.item.id)||result.item])}<button class="primary-button" data-account="close-reveal">${t('Continue to inventory', 'Weiter zum Inventar')}</button></div></div>`;
-      caseReveal.querySelector('[data-account="close-reveal"]').focus({ preventScroll: true });
+      caseReveal.innerHTML = `<div class="case-reveal-content case-unboxed rarity-${accountEscape(result.item.rarity)}"><button class="dialog-close" data-account="close-reveal" aria-label="${t('Close', 'Schließen')}">×</button><p class="case-receipt-label">${t('CASE OPENED', 'KISTE GEÖFFNET')}</p><h2 id="case-reveal-title">${accountEscape(result.item.title)}</h2>${result.item.image ? `<img src="${accountEscape(result.item.image)}" alt="">` : ''}<p class="rarity-label">${rarityLabel(result.item.rarity)}</p><p>${t('Historical real-auction value', 'Historischer Wert der echten Auktion')} ${euro(result.item.price)}</p><p>${t('Added to inventory.', 'Zum Inventar hinzugefügt.')}</p><div class="case-reveal-actions">${traderItemActions(accountItems.find(item=>item.id===result.item.id)||result.item,[accountItems.find(item=>item.id===result.item.id)||result.item])}${currentAccountPage === '/inventory' ? `<button class="primary-button" data-account="close-reveal">${t('Keep item', 'Behalten')}</button>` : `<a class="primary-button" href="/inventory" data-page>${t('Go to inventory', 'Zum Inventar')} →</a>`}</div></div>`;
+      caseReveal.querySelector('.case-reveal-actions button, .case-reveal-actions a').focus({ preventScroll: true });
     }
     if (action === 'sell' || action === 'sell-all' || action === 'sell-result') {
       const owner = account.id, result = await accountApi(action === 'sell-all' ? 'inventory/sell-all' : 'inventory/sell', { id: button.dataset.id });
