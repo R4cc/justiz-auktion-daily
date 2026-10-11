@@ -379,20 +379,20 @@ function renderStart() {
     <section class="start-screen">
       <div class="start-main">
         <div class="section-title-row"><p class="eyebrow game-number"><span class="live-dot" aria-hidden="true"></span> ${t("DAILY", "DAILY")} · #${gameNumber()}</p>${infoTip(t('Guess the bids on five public justice auctions. Sign in to keep rewards and progress across devices.', 'Schätze die Gebote von fünf öffentlichen Justiz-Auktionen. Melde dich an, um Belohnungen und Fortschritt geräteübergreifend zu behalten.'), t('How Daily works', 'So funktioniert Daily'))}</div>
-        <h1 class="hero-title">${t("Going once.", "Zum Ersten.")}<br>${t("Going twice.", "Zum Zweiten.")}<br><span>${t("Your guess!", "Dein Tipp!")}</span></h1>
+        <h1 class="hero-title">Daily</h1>
         <div class="start-actions">
           <button class="primary-button" type="button" data-action="play">${buttonText}<span class="button-arrow">→</span></button>
           <button class="secondary-button random-button" type="button" data-action="random">${t("Start a free game", "Freies Spiel starten")} <span aria-hidden="true">↻</span></button>
           <button class="secondary-button hl-start" type="button" data-action="higher-lower"><span>Higher or Lower</span><span aria-hidden="true">↑↓</span></button>
         </div>
-        ${economyFlags.paletteAuctions ? `<a class="home-auction-ticket" href="/auctions" data-page><strong>${t("Mystery Palette auctions", "Mystery-Palette-Auktionen")}</strong><span>${t("Bid with J€", "Mit J€ bieten")} →</span></a>` : ""}
+        ${economyFlags.paletteAuctions ? `<a class="home-auction-ticket" href="/auction-house" data-page><strong>${t('Auction House', 'Auktionshaus')}</strong><span>${t("Bid with J€", "Mit J€ bieten")} →</span></a>` : ""}
       </div>
       <aside class="start-side" aria-label="${t("Daily statistics", "Tagesstatistik")}">
         <div class="auction-art" aria-hidden="true">
           <span class="art-spark art-spark--one">✳</span><span class="art-spark art-spark--two">✦</span>
           <div class="bid-paddle"><span>${t("BIDDER NUMBER", "BIETERNUMMER")}</span><strong>001</strong></div>
           <div class="gavel"><i class="gavel-head"></i><i class="gavel-handle"></i></div>
-          <span class="art-stamp">${t("TODAY", "HEUTE")}<br><strong>${t("5 LOTS", "5 LOSE")}</strong><br>${t("FOR YOU", "FÜR DICH")}</span>
+          <span class="art-stamp">${t("TODAY", "HEUTE")}<br><strong>${t("5 LOTS", "5 LOSE")}</strong></span>
         </div>
         <div class="ticket">
           <div class="ticket-top">
@@ -615,7 +615,7 @@ function finishGame() {
 
 function renderDailyCaseDialog() {
   const score = state.answers.reduce((total, answer) => total + answer.score, 0);
-  dailyCaseDialog.innerHTML = `<div class="daily-case-prompt rarity-${auctionEscape(accountDailyRun?.dailyCase?.tier || 'common')}"><span class="daily-case-gift" aria-hidden="true">◇</span><p class="eyebrow">${t('DAILY COMPLETE', 'DAILY ABGESCHLOSSEN')}</p><h2 id="daily-case-title">${t('Your sealed case is ready', 'Deine versiegelte Kiste ist bereit')}</h2><p class="rarity-label">${rarityLabel(accountDailyRun?.dailyCase?.tier || 'common')}</p><p>${t('Your score determined the case tier. Keep it, auction it, or open it later from your inventory for one mystery item from any category.', 'Dein Ergebnis hat die Kistenstufe bestimmt. Behalte sie, versteigere sie oder öffne sie später im Inventar für einen geheimen Gegenstand aus jeder Kategorie.')}</p><strong>${number(score)} / ${number(5000)} ${t('points', 'Punkte')}</strong><div class="case-reveal-actions"><button class="primary-button" type="button" data-action="daily-case-claim" ${dailyCaseBusy ? 'disabled' : ''}>${t('Add to inventory', 'Zum Inventar hinzufügen')}</button><button class="secondary-button" type="button" data-action="daily-case-close">${t('View results', 'Ergebnis ansehen')}</button></div></div>`;
+  dailyCaseDialog.innerHTML = `<div class="daily-case-prompt rarity-${auctionEscape(accountDailyRun?.dailyCase?.tier || 'common')}"><span class="daily-case-gift" aria-hidden="true">◇</span><p class="eyebrow">${t('DAILY COMPLETE', 'DAILY ABGESCHLOSSEN')}</p><h2 id="daily-case-title">${t('Your sealed case is ready', 'Deine versiegelte Kiste ist bereit')}</h2><p class="rarity-label">${rarityLabel(accountDailyRun?.dailyCase?.tier || 'common')}</p><p class="daily-trader-reward"><strong>+${justizEuro(accountDailyRun?.earned || account.rewardsByMode?.daily?.earned || 0)}</strong> ${t('trading capital + one sealed case', 'Handelskapital + eine versiegelte Kiste')}</p><strong>${number(score)} / ${number(5000)} ${t('points', 'Punkte')}</strong><div class="case-reveal-actions"><button class="primary-button" type="button" data-action="daily-case-claim" data-choice="open" ${dailyCaseBusy ? 'disabled' : ''}>${t('Claim and open', 'Abholen und öffnen')}</button><button class="secondary-button" data-action="daily-case-claim" data-choice="keep" ${dailyCaseBusy ? 'disabled' : ''}>${t('Claim and keep', 'Abholen und behalten')}</button>${economyFlags.resales ? `<button class="secondary-button" data-action="daily-case-claim" data-choice="list" ${dailyCaseBusy ? 'disabled' : ''}>${t('Claim and list', 'Abholen und anbieten')}</button>` : ''}<button class="secondary-button" type="button" data-action="daily-case-close">${t('View results', 'Ergebnis ansehen')}</button></div></div>`;
   if (!dailyCaseDialog.open) dailyCaseDialog.showModal();
   dailyCaseDialog.querySelector('[data-action="daily-case-claim"], [data-action="daily-case-close"]')?.focus({ preventScroll: true });
 }
@@ -627,18 +627,20 @@ function promptDailyCase() {
   renderDailyCaseDialog();
 }
 
-async function claimDailyCase() {
+async function claimDailyCase(choice = 'keep') {
   if (dailyCaseBusy || !account || accountDailyRun?.dailyCase?.status !== 'ready') return;
-  const owner = account.id, runId = accountDailyRun.id;
+  const owner = account.id, runId = accountDailyRun.id, visit = accountVisit;
   dailyCaseBusy = true; renderDailyCaseDialog();
   try {
     const result = await accountApi('games/daily-case/claim', { id: runId });
     if (account?.id !== owner || accountDailyRun?.id !== runId) return;
     updateAccount(result.user);
     accountDailyRun = { ...accountDailyRun, dailyCase: { ...accountDailyRun.dailyCase, status: 'claimed' } };
+    if (visit !== accountVisit || state.view !== 'results') return;
     renderResults();
     dailyCaseDialog.close();
     showToast(t('Case added to inventory.', 'Kiste zum Inventar hinzugefügt.'));
+    await navigateAccountPage('/inventory?focus='+encodeURIComponent(result.item.id)+(choice==='keep'?'':'&action='+choice));
   } catch (error) {
     if (account?.id === owner && accountDailyRun?.id === runId) {
       showToast(error.message);
@@ -674,7 +676,7 @@ function renderResults() {
       </div>
       <div class="results-actions">
         ${account && gameMode === 'daily' && accountDailyRun?.dailyCase?.status === 'ready' ? `<button class="primary-button" type="button" data-action="daily-case-prompt">${t('Claim Daily Case', 'Daily-Kiste abholen')} ◇</button>` : ''}
-        ${account && gameMode === 'daily' ? `<a class="secondary-button" href="/shop" data-page>${t('Case Store', 'Kisten-Shop')} ◈</a>` : ''}
+        ${account && gameMode === 'daily' ? `<p class="daily-trader-reward">+${justizEuro(accountDailyRun?.earned || account.rewardsByMode?.daily?.earned || 0)} ${t('earned · one sealed reward case','verdient · eine versiegelte Belohnungskiste')}</p><a class="secondary-button" href="/inventory" data-page>${t('Manage your reward', 'Belohnung verwalten')} →</a><a href="/auction-house" class="secondary-button" data-page>${t('Browse auctions','Auktionen ansehen')} →</a>` : ''}
         ${gameMode === 'random' ? `<button class="primary-button" type="button" data-action="random">${t('New random round', 'Neue Zufallsrunde')} <span class="button-arrow">↻</span></button>` : ''}
         <button class="${gameMode === 'random' ? 'secondary' : 'primary'}-button" type="button" data-action="share">${t("Share result", "Ergebnis teilen")} <span class="button-arrow">↗</span></button>
         <button class="secondary-button" type="button" data-action="copy">${t("Copy text", "Text kopieren")}</button>
@@ -788,7 +790,7 @@ document.addEventListener('click', event => {
   if (action === 'hl-image') higherLowerImage(event.target.closest('[data-action]'));
   if (action === 'next') nextRound();
   if (action === 'daily-case-prompt') renderDailyCaseDialog();
-  if (action === 'daily-case-claim') claimDailyCase();
+  if (action === 'daily-case-claim') claimDailyCase(event.target.closest('[data-choice]')?.dataset.choice || 'keep');
   if (action === 'daily-case-close') dailyCaseDialog.close();
   if (action === 'share') shareResult();
   if (action === 'copy') copyResult();

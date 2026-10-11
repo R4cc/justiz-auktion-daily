@@ -1,5 +1,7 @@
+import { businessTypeForItem } from './stock-compatibility.mjs';
 import { resaleBidIncrement } from './economy-balance.mjs';
 import { randomUUID } from 'node:crypto';
+import { recordSale, acquireItems, milestone } from './trader.mjs';
 import { AccountError } from './errors.mjs';
 import { transaction, withDatabase } from './database.mjs';
 import { awardXp, resaleXp } from './xp.mjs';
@@ -160,7 +162,7 @@ function serializeListing(db, row, { bids = false, now = Date.now(), indexes = m
       ...(item.kind ? { kind: item.kind } : {}),
       ...(item.caseTier ? { caseTier: item.caseTier } : {}),
       ...(item.caseType ? { caseType: item.caseType, caseBadge: item.caseBadge } : {}),
-      rarity: item.rarity, marketCategory: marketCategoryForItem(item),
+      rarity: item.rarity, businessType: businessTypeForItem(item), marketCategory: marketCategoryForItem(item),
       ...(item.businessCategory ? { businessCategory: item.businessCategory } : {}) },
     estimatedValueTokens: estimatedValueTokens(item, indexes) * quantity,
     currentBidderId: row.current_bidder_id,
@@ -217,6 +219,7 @@ export function listItem(dataDir, user, { inventoryId, quantity = 1, startPrice,
       VALUES (?, ?, ?, ?, NULL, NULL, 'active', ?, ?)`).run(id, user.id, inventoryId, startPrice, now, end);
     const addItem = db.prepare('INSERT INTO resale_auction_items (auction_id, inventory_id, position) VALUES (?, ?, ?)');
     selected.forEach((candidate, position) => addItem.run(id, candidate.id, position));
+    milestone(db,user.id,'find',now);
     return serializeListing(db, db.prepare('SELECT * FROM resale_auctions WHERE id = ?').get(id), { bids: true, now });
   }));
 }
@@ -327,7 +330,9 @@ function settleListingRow(db, row, now) {
   // Transfer every existing inventory row — never insert or mint copies — and
   // release the visible price to the seller and unused maximum to the winner.
   const transfer = db.prepare('UPDATE inventory SET user_id = ? WHERE id = ? AND user_id = ? AND sold_at IS NULL');
+  recordSale(db,row.seller_id,items.map(item=>item.id),row.current_bid,`resale:${row.id}`,now);
   for (const item of items) if (!transfer.run(row.winner_id, item.id, row.seller_id).changes) fail('settlement_conflict', 409);
+  acquireItems(db,row.winner_id,items.map(item=>item.id),row.current_bid,'purchase',now);
   db.prepare('UPDATE users SET tokens = tokens + ? WHERE id = ?').run(row.current_bid, row.seller_id);
   if (held > row.current_bid) db.prepare('UPDATE users SET tokens = tokens + ? WHERE id = ?')
     .run(held - row.current_bid, row.winner_id);

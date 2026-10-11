@@ -151,6 +151,7 @@ test('district theft odds appear in quotes, reject stale odds and freeze into pa
       .run(`wine-${n}`, f.owner.id, JSON.stringify({title:'Riesling',price:100,marketCategory:'wine'}), now));
     stockBusiness(f.dir, f.owner, shop.id, [`wine-${n}`], { now });
   }
+  f.accounts.db(db => db.prepare('UPDATE businesses SET mischief_enabled=1').run());
   const stock = shop => visitStore(f.dir, f.buyer, shop.id, { now }).store.stock[0];
   assert.equal(stock(shops[0]).theft.chancePercent, 52); assert.equal(stock(shops[1]).theft.chancePercent, 18);
   const payload = { shopId:shops[0].id, inventoryId:'wine-0', expectedPrice:120, expectedFee:10, expectedChance:29, requestId:'town-heist-attempt-001' };

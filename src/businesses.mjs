@@ -1,3 +1,5 @@
+import { businessTypeForItem } from './stock-compatibility.mjs';
+export { businessTypeForItem } from './stock-compatibility.mjs';
 import { ensureTownSchema, availableTownPlot, plotLocation } from './town-plots.mjs';
 import { ECONOMY_BALANCE } from './economy-balance.mjs';
 import { createHash, randomUUID } from 'node:crypto';
@@ -9,6 +11,7 @@ import { sealedPaletteInventoryIds } from './palette-auctions.mjs';
 import { ensureNotificationSchema } from './notifications.mjs';
 import { auctionSelectionCategory } from './auction-selection.mjs';
 import { auctionGallery } from './auction-images.mjs';
+import { recordSale, tradingTotals, acquisition, milestone, ensureTraderSchema } from './trader.mjs';
 
 const HOUR = 3_600_000;
 const WHOLESALE_PERIOD = 2 * HOUR;
@@ -95,7 +98,7 @@ export function ensureBusinessSchema(db, { now = Date.now() } = {}) {
   if (!db.prepare('PRAGMA table_info(businesses)').all().some(column => column.name === 'profit_margin')) {
     db.exec('ALTER TABLE businesses ADD COLUMN profit_margin INTEGER NOT NULL DEFAULT 30 CHECK(profit_margin BETWEEN 0 AND 100)');
   }
-  for (const [name, definition] of [['store_name', "TEXT NOT NULL DEFAULT ''"], ['store_motto', "TEXT NOT NULL DEFAULT ''"], ['goose_guard', 'INTEGER NOT NULL DEFAULT 0']]) {
+  for (const [name, definition] of [['store_name', "TEXT NOT NULL DEFAULT ''"], ['store_motto', "TEXT NOT NULL DEFAULT ''"], ['goose_guard', 'INTEGER NOT NULL DEFAULT 0'], ['mischief_enabled','INTEGER NOT NULL DEFAULT 0 CHECK(mischief_enabled IN (0,1))']]) {
     if (!db.prepare('PRAGMA table_info(businesses)').all().some(column => column.name === name)) db.exec(`ALTER TABLE businesses ADD COLUMN ${name} ${definition}`);
   }
   // Keep sale history independently of physical shelf rows: a player purchase
@@ -122,19 +125,7 @@ function activeUser(db, user) {
   return row;
 }
 
-function stockType(item) {
-  if (shopType(item.businessCategory)) return item.businessCategory;
-  const category = marketCategoryForItem(item);
-  // The wine market also covers drinks. Use the same category rule for
-  // supplier units and individual finds; older generic categories can use
-  // the shared title/description classifier without rewriting their values.
-  if (category === 'wine' || (category === 'other' && auctionSelectionCategory(item) === 'Getränke')) return 'wine';
-  if (category === 'vehicles' && /\b(auto|car|pkw|limousine|kombi|sedan|volkswagen|vw|bmw|audi|opel|ford|toyota)\b/i.test(item.title || '') && !/\b(modell|reifen|motor|teil|felge)\b/i.test(item.title || '')) return 'cars';
-  if (category === 'electronics') return 'electronics';
-  if (['collectibles', 'sport_leisure'].includes(category) && /\b(spielzeug|toy|puzzle|lego|baukasten|building set|board game|brettspiel|puppe)\b/i.test(item.title || '')) return 'toys';
-  return null;
-}
-
+const stockType = businessTypeForItem;
 export function businessSaleChance(baseConversion, profitMargin) {
   // Discounting improves turnover; the default margin is 20%, while
   // very high margins still sell occasionally. Visitors are calculated apart.
@@ -204,7 +195,8 @@ export function advanceShop(db, row, now) {
       db.prepare('UPDATE business_stock SET sold_at = ?, sold_price = ? WHERE inventory_id = ? AND sold_at IS NULL')
         .run(hour, salePrice, sold.id);
       db.prepare('INSERT INTO business_sales (id, business_id, inventory_id, price, sold_at) VALUES (?, ?, ?, ?, ?)')
-        .run(`npc:${sold.id}`, row.id, sold.id, salePrice, hour);
+          .run(`npc:${sold.id}`, row.id, sold.id, salePrice, hour);
+      recordSale(db,row.user_id,[sold.id],salePrice,`npc:${sold.id}`,hour,row.id);
       if (!db.prepare('UPDATE inventory SET sold_at = ? WHERE id = ? AND sold_at IS NULL AND user_id = ?')
         .run(hour, sold.id, row.user_id).changes) fail('stock_conflict', 409);
       sales++; revenue += salePrice;
@@ -229,13 +221,15 @@ function publicShop(db, row, now = Date.now()) {
     FROM business_sales WHERE business_id = ? AND sold_at >= ? AND sold_at < ?`)
     .get(row.id, dayStart, dayStart + 24 * HOUR);
   return { id: row.id, type: row.type, size: row.size, boughtAt: row.bought_at,
-    location: plotLocation(db, row.plot_id), name: row.store_name, motto: row.store_motto, gooseGuard: Boolean(row.goose_guard),
+    location: plotLocation(db, row.plot_id), name: row.store_name, motto: row.store_motto, gooseGuard: Boolean(row.goose_guard), mischiefEnabled: Boolean(row.mischief_enabled),
+    ...tradingTotals(db,row.user_id,row.id),
     visitors: row.visitors, sales: row.sales, salesToday: today.sales,
     revenue: row.revenue, revenueToday: today.revenue, profitMargin: row.profit_margin,
     buyChancePercent: Math.round((stock.length ? stock.reduce((sum, entry) => sum
       + businessItemSaleChance(shopType(row.type), row.profit_margin, entry.referencePrice), 0) / stock.length
       : businessSaleChance(shopType(row.type).conversion, row.profit_margin)) * 1000) / 10,
-    ...shopMetrics(db, row, stock, now), popularity: row.traffic_popularity, stock };
+    ...shopMetrics(db, row, stock, now), popularity: row.traffic_popularity,
+    stock: stock.map(entry=>({...entry,...acquisition(db,entry.id,row.user_id)})) };
 }
 
 export function businessDashboard(dataDir, user, { now = Date.now() } = {}) {
@@ -265,6 +259,8 @@ export function buyBusiness(dataDir, user, typeId, sizeId, { now = Date.now(), p
     const id = randomUUID();
     db.prepare('INSERT INTO businesses (id, user_id, type, size, bought_at, last_tick_at, profit_margin, plot_id, plot_since) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)')
       .run(id, user.id, type.id, size.id, now, Math.floor(now / HOUR) * HOUR, DEFAULT_PROFIT_MARGIN, plot.id, now);
+    ensureTraderSchema(db);
+    if (db.prepare("SELECT 1 FROM trader_milestones WHERE user_id=? AND step='sale'").get(user.id)) milestone(db,user.id,'reinvest',now);
     return { shop: publicShop(db, db.prepare('SELECT * FROM businesses WHERE id = ?').get(id), now), cost };
   }));
 }
@@ -302,6 +298,7 @@ export function stockBusiness(dataDir, user, shopId, inventoryIds, { now = Date.
       db.prepare('INSERT INTO business_stock (inventory_id, business_id, stocked_at, asking_price) VALUES (?, ?, ?, ?)')
         .run(id, shop.id, now, askingPrice);
     }
+    milestone(db,user.id,'find',now);
     const stock = shopStock(db, shop.id, shop.type, shop.profit_margin, now);
     db.prepare('UPDATE businesses SET traffic_popularity = ? WHERE id = ?')
       .run(shopMetrics(db, shop, stock, now).popularity, shop.id);

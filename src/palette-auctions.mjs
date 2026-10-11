@@ -1,4 +1,5 @@
 import { randomInt, randomUUID } from 'node:crypto';
+import { acquireItems } from './trader.mjs';
 import { AccountError } from './errors.mjs';
 import { transaction, withDatabase } from './database.mjs';
 import { RARITIES } from './cases.mjs';
@@ -302,7 +303,7 @@ export function bidOnPaletteAuction(dataDir, user, auctionId, amount, { now = Da
     if (takesLead && !raise && row.current_bidder_id !== null) {
       const snapshot = JSON.parse(row.public_snapshot_json);
       pushNotification(db, row.current_bidder_id, {
-        type: 'outbid', sourceKey: `palette:outbid:${row.id}:${bid.lastInsertRowid}`, href: '/auctions',
+        type: 'outbid', sourceKey: `palette:outbid:${row.id}:${bid.lastInsertRowid}`, href: '/auction-house?view=bids',
         titleEn: 'You were outbid', titleDe: 'Du wurdest überboten',
         bodyEn: `${snapshot.name} is now at J€ ${outcome.visibleBid}.`, bodyDe: `${snapshot.nameDe || snapshot.name} steht jetzt bei J€ ${outcome.visibleBid}.`
       }, now);
@@ -358,13 +359,14 @@ function settleAuctionRow(db, row, now) {
     insertInventory.run(reward.inventory_id, winnerId,
       JSON.stringify(composeRewardItem(reward.item_json, row, reward, winningBid)), now);
   }
+  acquireItems(db,winnerId,rewards.map(reward=>reward.inventory_id),winningBid,'purchase',now);
   if (held > winningBid) db.prepare('UPDATE users SET tokens = tokens + ? WHERE id = ?')
     .run(held - winningBid, winnerId);
   if (!db.prepare('UPDATE primary_palette_auctions SET settled_at = ? WHERE id = ? AND settled_at IS NULL')
     .run(now, row.id).changes) fail('palette_auction_inconsistent', 500);
   const snapshot = JSON.parse(row.public_snapshot_json);
   pushNotification(db, winnerId, {
-    type: 'won', sourceKey: `palette:won:${row.id}`, href: '/auctions',
+    type: 'won', sourceKey: `palette:won:${row.id}`, href: '/auction-house?view=bids',
     titleEn: 'You won a Mystery Palette', titleDe: 'Du hast eine Mystery-Palette gewonnen',
     bodyEn: `${snapshot.name} is ready to reveal.`, bodyDe: `${snapshot.nameDe || snapshot.name} kann jetzt aufgedeckt werden.`
   }, now);

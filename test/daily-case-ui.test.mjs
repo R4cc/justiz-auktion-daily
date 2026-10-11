@@ -17,12 +17,13 @@ test('Daily completion prompts to add a sealed case, then returns to the final s
     gameMode: 'daily', state: { view: 'results', answers: [{ score: 700 }, { score: 800 }] },
     accountApi: async (...args) => { requests.push(args); return { user: { id: 'player' }, item: { id: 'sealed', kind: 'case' } }; },
     updateAccount() {}, renderResults() { results++; }, showToast: message => messages.push(message),
+    accountVisit:0, economyFlags:{resales:true}, justizEuro:String, navigateAccountPage:async ()=>{},
     t: en => en, number: String, rarityLabel: id => id, auctionEscape: String
   });
   vm.runInContext('let dailyCasePromptedRun = null, dailyCaseBusy = false;' + functions, context);
   vm.runInContext('promptDailyCase()', context);
   assert.equal(dialog.open, true);
-  assert.match(dialog.innerHTML, /Add to inventory/);
+  assert.match(dialog.innerHTML, /Claim and keep/);
   assert.match(dialog.innerHTML, /epic/);
   assert.doesNotMatch(dialog.innerHTML, /one item from/i);
   await vm.runInContext('claimDailyCase()', context);

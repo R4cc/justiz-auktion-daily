@@ -448,12 +448,7 @@ elapsed NPC sales settle before the current-stock event. Randomness comes from
 Node's cryptographic generator. The check timestamp, inventory disposal, payout,
 sale history, event result and notification commit together or all roll back.
 
-Bombing and professional heist events clear all shelf stock. Floods destroy half
-(rounding up), goose rampages one quarter. Rich buyers pay all shelf prices;
-collectors buy up to three items for 150% of their current shelf price. Tax raids
-remove up to J€100 without overdrawing; windfalls add J€200. A hired goose guard
-has a 50% chance of stopping the professional heist. Losses consume inventory
-without counting as sales; stock held outside that shop and shop ownership remain.
+New bombing, heist, flood and goose events are cosmetic and preserve every stock item. Rich buyers pay all shelf prices; collectors buy up to three items for 150% of their current shelf price. Tax raids remove up to J€100 without overdrawing; windfalls add J€200. Persisted old results are returned unchanged. Player theft is independently controlled by owner `mischiefEnabled`, default false. The goose guard still halves player theft chance.
 
 The EN/DE owner modal appears on `/stores` and `/businesses` and survives reload
 or navigation until `POST /api/account/stores/events/acknowledge` receives its

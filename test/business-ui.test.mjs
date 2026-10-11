@@ -70,6 +70,6 @@ test('store cards lead with daily results and edit actions; complete controls re
   assert.match(editor.innerHTML, /data-business="open-restock" data-shop="shop-1"/);
   assert.doesNotMatch(editor.innerHTML, /data-business="open-restock"[^>]*disabled/);
   assert.match(source, /accountApi\('businesses\/margin'/);
-  for (const label of ['Visitors', 'Popularity', 'Total sales', 'Total revenue', 'Buying rate', 'Margin'])
+  for (const label of ['Visitors', 'Popularity', 'Total sales', 'Total revenue', 'Buying rate', 'Markup over estimate'])
     assert.ok(source.includes(`t('${label}'`));
 });

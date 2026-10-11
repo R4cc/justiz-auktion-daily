@@ -16,7 +16,8 @@ import { featureFlags } from './features.mjs';
 import { estimatedValueTokens, marketIndexes } from './market.mjs';
 import { progressionForXp } from './progression.mjs';
 import { ensureNotificationSchema, pushNotification } from './notifications.mjs';
-import { ensureBusinessSchema } from './businesses.mjs';
+import { ensureBusinessSchema, businessTypeForItem } from './businesses.mjs';
+import { acquisition, acquireItems, recordSale, tradingTotals, traderProgress, milestone } from './trader.mjs';
 
 export { AccountError };
 
@@ -341,7 +342,7 @@ export class Accounts {
       // Auction state goes first so escrow and inventory locks disappear in the
       // same transaction that restores balances. Authentication/social tables,
       // registration codes, passwords, bans and account_sessions are untouched.
-      for (const table of ['resale_npc_interest', 'resale_bids', 'resale_auctions',
+      for (const table of ['trader_sales', 'item_acquisitions', 'trader_milestones', 'resale_npc_interest', 'resale_bids', 'resale_auctions',
         'store_events', 'store_event_checks', 'store_heists', 'store_reviews', 'store_visits', 'store_reactions', 'store_receipts',
         'business_sales', 'business_stock', 'businesses', 'town_plots', 'wholesale_bids', 'wholesale_auctions',
         'primary_palette_bids', 'primary_palette_rewards', 'primary_palette_auctions',
@@ -431,10 +432,25 @@ export class Accounts {
         .sort((left, right) => left.created_at - right.created_at).map(gift => ({ amount: gift.amount, createdAt: gift.created_at }));
       db.prepare('UPDATE users SET grants_seen_at = ? WHERE id = ?').run(this.now(), user.id);
       const { created_at, grants_seen_at, xp, must_change_password, ...publicRow } = row;
+      let heldInBids = 0;
+      for (const table of ['resale_auctions', 'primary_palette_auctions']) {
+        if (db.prepare("SELECT 1 FROM sqlite_schema WHERE type='table' AND name=?").get(table))
+          heldInBids += db.prepare(`SELECT COALESCE(SUM(COALESCE(max_bid,current_bid)),0) AS held FROM ${table}
+            WHERE current_bidder_id=? AND settled_at IS NULL AND status != 'cancelled'`).get(user.id).held;
+      }
+      const traderStock={available:0,listed:0,inStores:0}, hidden=sealedPaletteInventoryIds(db);
+      const locked=lockedInventoryIds(db);
+      for (const item of db.prepare('SELECT id FROM inventory WHERE user_id=? AND sold_at IS NULL').all(user.id)) {
+        if (hidden.has(item.id)) continue;
+        const shelved=db.prepare('SELECT 1 FROM business_stock WHERE inventory_id=? AND sold_at IS NULL').get(item.id);
+        traderStock[shelved?'inStores':locked.has(item.id)?'listed':'available']++;
+      }
       // Progression derives from the freshly read users.xp through the shared
       // curve — no level arithmetic lives in this class.
       return { ...publicRow, mustChangePassword: Boolean(must_change_password),
-        progression: progressionForXp(xp), ...this.summary(db, user.id), admin: Boolean(row.admin), reward: reward || null, rewardsByMode, gifts, date: day(this.now()) };
+        progression: progressionForXp(xp), ...this.summary(db, user.id), heldInBids, traderStock,
+        ...tradingTotals(db,user.id), traderMilestones: traderProgress(db,user.id,this.now()),
+        admin: Boolean(row.admin), reward: reward || null, rewardsByMode, gifts, date: day(this.now()) };
     });
   }
   summary(db, userId) {
@@ -468,7 +484,7 @@ export class Accounts {
     return { inventoryValueEur: inventory.cents / 100, accountValueEur: inventory.cents / 100,
       inventoryMarketValue, activeBids, itemCount: inventory.itemCount, daily };
   }
-  leaderboard() {
+  leaderboard(view = 'collection') {
     return this.db(db => {
       const players = db.prepare(`SELECT u.id, u.username,
         COALESCE((SELECT SUM(CASE WHEN json_extract(i.item, '$.kind') = 'case' THEN 0
@@ -481,7 +497,9 @@ export class Accounts {
         const run = JSON.parse(row.payload);
         scores.set(row.user_id, run.answers.reduce((total, guess, i) => total + scoreGuess(guess, run.auctions[i].actualBid), 0));
       }
-      return { date: day(this.now()), leaders: players.map((row, index) => ({ rank: index + 1, id: row.id,
+      if (view === 'daily') players.splice(0,players.length,...db.prepare('SELECT id,username,0 AS cents FROM users WHERE banned=0 AND npc=0').all()
+        .filter(row=>scores.has(row.id)).sort((a,b)=>scores.get(b.id)-scores.get(a.id)||a.username.localeCompare(b.username)).slice(0,100));
+      return { date: day(this.now()), view: view === 'daily' ? 'daily' : 'collection', leaders: players.map((row, index) => ({ rank: index + 1, id: row.id,
         username: row.username, inventoryValueEur: row.cents / 100, score: scores.get(row.id) ?? null })) };
     });
   }
@@ -523,16 +541,18 @@ export class Accounts {
     const pair = [user.id, String(friendId)].sort();
     this.db(db => db.prepare('DELETE FROM friendships WHERE user_a = ? AND user_b = ?').run(...pair));
   }
-  inventory(user) {
+  inventory(user, { includeStores = false } = {}) {
     return this.db(db => {
       const indexes = this.flags.resales || this.flags.market ? marketIndexes(db, this.now()) : null;
       const locked = lockedInventoryIds(db);
       const sealed = sealedPaletteInventoryIds(db);
       return db.prepare('SELECT id, item, created_at FROM inventory WHERE user_id = ? AND sold_at IS NULL ORDER BY created_at DESC, id')
-      .all(user.id).filter(row => !sealed.has(row.id) && !db.prepare('SELECT 1 FROM business_stock WHERE inventory_id = ? AND sold_at IS NULL').get(row.id))
+      .all(user.id).filter(row => !sealed.has(row.id) && (includeStores || !db.prepare('SELECT 1 FROM business_stock WHERE inventory_id = ? AND sold_at IS NULL').get(row.id)))
       .map(row => {
         const item = currentItemValue(JSON.parse(row.item));
+        const stock = db.prepare('SELECT business_id FROM business_stock WHERE inventory_id=? AND sold_at IS NULL').get(row.id);
         return { ...item, id: row.id, createdAt: row.created_at,
+          ...acquisition(db,row.id,user.id), businessType: businessTypeForItem(item), storeId: stock?.business_id || null,
           ...(indexes ? { estimatedValueTokens: estimatedValueTokens(item, indexes),
             // Current category index (100 = neutral): lets the inventory card
             // show the market-adjusted euro value and the ±% since the last
@@ -540,6 +560,14 @@ export class Accounts {
             marketIndex: item.marketCategory ? indexes[item.marketCategory] ?? null : null,
             listed: locked.has(row.id) } : {}) };
       });
+    });
+  }
+  keepItem(user, inventoryId) {
+    return this.atomic(db=>{
+      const row=db.prepare('SELECT id FROM inventory WHERE id=? AND user_id=? AND sold_at IS NULL').get(String(inventoryId),user.id);
+      if(!row||sealedPaletteInventoryIds(db).has(row.id)) fail('item_not_found',404);
+      milestone(db,user.id,'find',this.now());
+      return {kept:row.id};
     });
   }
   openCase(user, catalog, caseId, requestId, revision = catalog.revision) {
@@ -564,6 +592,8 @@ export class Accounts {
         marketCategory: marketCategoryForItem(drawn),
         edition: catalog.rotationDate, createdAt: this.now() };
       db.prepare('INSERT INTO inventory (id, user_id, item, created_at) VALUES (?, ?, ?, ?)').run(item.id, user.id, JSON.stringify(item), this.now());
+      acquireItems(db,user.id,[item.id],box.cost,'purchase',this.now());
+      milestone(db,user.id,'find',this.now());
       db.prepare('INSERT INTO case_openings VALUES (?, ?, ?, ?)').run(user.id, requestId, caseId, JSON.stringify(item));
       return item;
     });
@@ -592,6 +622,7 @@ export class Accounts {
       if (!db.prepare('UPDATE users SET tokens = tokens - ? WHERE id = ? AND tokens >= ?')
         .run(offer.cost, user.id, offer.cost).changes) fail('insufficient_tokens', 409);
       const item = insertSealedCase(db, user.id, prepared, now);
+      acquireItems(db,user.id,[item.id],offer.cost,'purchase',now);
       db.prepare('INSERT INTO case_purchases VALUES (?, ?, ?, ?)').run(user.id, requestId, caseId, JSON.stringify(item));
       return currentItemValue(item);
     });
@@ -622,6 +653,8 @@ export class Accounts {
         reward: stored
       };
       const item = insertSealedCase(db, user.id, prepared, this.now());
+      acquireItems(db,user.id,[item.id],0,'reward',this.now());
+      milestone(db,user.id,'find',this.now());
       db.prepare('UPDATE daily_case_rewards SET opened_at = ?, case_inventory_id = ? WHERE run_id = ?')
         .run(this.now(), item.id, runId);
       return currentItemValue(item);
@@ -641,6 +674,9 @@ export class Accounts {
         db.prepare('UPDATE inventory SET sold_at = ? WHERE id = ?').run(this.now(), inventoryId);
         db.prepare('INSERT INTO inventory (id, user_id, item, created_at) VALUES (?, ?, ?, ?)')
           .run(item.id, user.id, sealed.reward, this.now());
+        const basis = acquisition(db,inventoryId,user.id);
+        acquireItems(db,user.id,[item.id],basis.acquisitionCost,basis.acquisitionSource,this.now(),{reinvest:false});
+        milestone(db,user.id,'find',this.now());
         db.prepare('UPDATE sealed_cases SET opened_at = ? WHERE inventory_id = ?').run(this.now(), inventoryId);
       }
       return currentItemValue(item);
@@ -661,6 +697,7 @@ export class Accounts {
         if (!Number.isSafeInteger(balance + item.sellValue)) fail('token_balance_limit', 409);
         db.prepare('UPDATE inventory SET sold_at = ? WHERE id = ?').run(this.now(), row.id);
         db.prepare('UPDATE users SET tokens = tokens + ? WHERE id = ?').run(item.sellValue, user.id);
+        recordSale(db,user.id,[row.id],item.sellValue,`instant:${row.id}`,this.now());
       }
       return { sold: row.id, value: item.sellValue };
     });
@@ -684,7 +721,10 @@ export class Accounts {
       if (!Number.isSafeInteger(balance + value)) fail('token_balance_limit', 409);
       if (rows.length) {
         const markSold = db.prepare('UPDATE inventory SET sold_at = ? WHERE id = ? AND sold_at IS NULL');
-        for (const row of rows) markSold.run(this.now(), row.id);
+        for (const row of rows) {
+          markSold.run(this.now(), row.id);
+          recordSale(db,user.id,[row.id],currentItemValue(JSON.parse(row.item)).sellValue,`instant:${row.id}`,this.now());
+        }
         db.prepare('UPDATE users SET tokens = tokens + ? WHERE id = ?').run(value, user.id);
       }
       return { sold: rows.map(row => row.id), value };

@@ -24,6 +24,7 @@ async function fixture(t) {
   const shop = buyBusiness(dir, owner, 'wine', 'popup', { now }).shop;
   stockBusiness(dir, owner, shop.id, Array.from({ length: 8 }, (_, n) => `wine-${n}`), { now });
   accounts.db(ensureStoreSchema);
+  accounts.db(db=>db.prepare('UPDATE businesses SET mischief_enabled=1 WHERE id=?').run(shop.id));
   t.after(async () => { closeDataStore(dir); await rm(dir, { recursive: true, force: true }); });
   let next = 0;
   const payload = (inventoryId = 'wine-0') => ({ shopId: shop.id, inventoryId, expectedPrice: 120, expectedFee: 10, expectedChance: 29, requestId: `store-request-${++next}-0001` });
@@ -177,6 +178,7 @@ test('theft failure, chance, expiry and sold-out races cannot be forged or rerol
     assert.throws(() => startStoreHeist(f.dir, f.rival, f.payload('wine-1'), { now: now + 7000 }), /heist_cooldown/);
     startStoreHeist(f.dir, f.rival, f.payload('wine-1'), { now: now + STORE_HEIST_COOLDOWN + 1, draw: caught });
     const other = buyBusiness(f.dir, f.owner, 'wine', 'popup', { now }).shop;
+    f.accounts.db(db=>db.prepare('UPDATE businesses SET mischief_enabled=1 WHERE id=?').run(other.id));
     unstockBusiness(f.dir, f.owner, f.shop.id, 'wine-2', { now });
     stockBusiness(f.dir, f.owner, other.id, ['wine-2'], { now });
     assert.throws(() => startStoreHeist(f.dir, f.buyer, { ...f.payload('wine-2'), shopId: other.id }, { now: now + 8000 }), /heist_cooldown/);

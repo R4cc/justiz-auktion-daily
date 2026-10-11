@@ -1,5 +1,7 @@
 import { withDatabase, transaction } from './database.mjs';
-import { ensureBusinessSchema, advanceShop, SHOP_TYPES, SHOP_SIZES, MAX_STORES_PER_USER } from './businesses.mjs';
+import { ensureBusinessSchema, advanceShop, SHOP_TYPES, SHOP_SIZES, MAX_STORES_PER_USER, businessTypeForItem } from './businesses.mjs';
+import { inventoryIsLocked } from './resale.mjs';
+import { sealedPaletteInventoryIds } from './palette-auctions.mjs';
 import { TOWN_DISTRICTS, TOWN_STREETS, plotLocation } from './town-plots.mjs';
 import { marketIndexes } from './market.mjs';
 import { maskUsername } from './username-privacy.mjs';
@@ -17,7 +19,12 @@ export function townMap(dataDir, viewer = null, { now = Date.now() } = {}) {
         business:shop && !shop.banned && !shop.npc ? {id:shop.id,type:shop.type,name:shop.store_name,owner:player ? shop.username : maskUsername(shop.username),own:player?.id===shop.user_id,
           stockCount:db.prepare('SELECT COUNT(*) AS n FROM business_stock WHERE business_id=? AND sold_at IS NULL').get(shop.id).n} : null};
     });
-    return {districts:TOWN_DISTRICTS,streets:TOWN_STREETS,types:SHOP_TYPES,sizes:SHOP_SIZES,plots,total:plots.length,available:plots.filter(plot=>!plot.occupied).length,
+    const sealed = sealedPaletteInventoryIds(db), compatibleStock = Object.fromEntries(SHOP_TYPES.map(type=>[type.id,0]));
+    if (player) for (const row of db.prepare('SELECT id,item FROM inventory WHERE user_id=? AND sold_at IS NULL').all(player.id)) {
+      if (sealed.has(row.id) || inventoryIsLocked(db,row.id) || db.prepare('SELECT 1 FROM business_stock WHERE inventory_id=? AND sold_at IS NULL').get(row.id)) continue;
+      const type = businessTypeForItem(JSON.parse(row.item)); if (type) compatibleStock[type]++;
+    }
+    return {districts:TOWN_DISTRICTS,streets:TOWN_STREETS,types:SHOP_TYPES,sizes:SHOP_SIZES,plots,total:plots.length,available:plots.filter(plot=>!plot.occupied).length, compatibleStock,
       myStoreCount:player ? businesses.filter(shop=>shop.user_id===player.id).length : 0,maxStores:MAX_STORES_PER_USER};
   }));
 }

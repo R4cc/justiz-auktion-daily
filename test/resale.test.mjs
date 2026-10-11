@@ -82,7 +82,7 @@ test('listing references the owned inventory row without copying or minting it',
   assert.equal(listing.winnerId, null);
   assert.equal(listing.settledAt, null);
   assert.deepEqual(listing.item, { auctionId: item.auctionId, title: item.title, image: item.image, price: item.price,
-    rarity: item.rarity, marketCategory: item.marketCategory });
+    rarity: item.rarity, businessType: null, marketCategory: item.marketCategory });
   // Exactly one inventory row exists, still owned by the seller.
   const rows = service.db(db => db.prepare('SELECT COUNT(*) AS count FROM inventory WHERE id = ?').get(item.id));
   assert.equal(rows.count, 1);

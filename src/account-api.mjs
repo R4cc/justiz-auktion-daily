@@ -86,7 +86,7 @@ export async function createAccountApi({ dataDir, dailyPayload, json, env = proc
         else if (route === 'cases') json(response, 200, accounts.db(db => withCaseStock(db, publicCaseCatalog(getCatalog()))));
         else if (route === 'leaderboard') {
           // Public page: only signed-in viewers get uncensored names.
-          const board = accounts.leaderboard();
+            const board = accounts.leaderboard(url.searchParams.get('view'));
           json(response, 200, user ? board : maskLeaderboard(board));
         }
         else {
@@ -94,7 +94,7 @@ export async function createAccountApi({ dataDir, dailyPayload, json, env = proc
           // A temporary password may only read its own session state; every
           // other surface waits until a real password is set.
           if (user.must_change_password && route !== 'me') throw new AccountError('password_change_required', 403);
-          if (route === 'inventory') json(response, 200, { items: accounts.inventory(user) });
+          if (route === 'inventory') json(response, 200, { items: accounts.inventory(user, {includeStores:url.searchParams.get('includeStores')==='1'}) });
           else if (route === 'notifications') json(response, 200, notificationsForUser(dataDir, user.id));
           else if (route === 'resale/listings' && flags.resales) json(response, 200, { listings: listingsByUser(dataDir, user.id) });
           else if (route === 'resale/bids' && flags.resales) json(response, 200, { listings: listingsBidOnByUser(dataDir, user.id) });
@@ -222,6 +222,7 @@ export async function createAccountApi({ dataDir, dailyPayload, json, env = proc
         result = { item: accounts.openCase(user, getCatalog(), payload.caseId, payload.requestId, payload.revision), user: accounts.profile(user),
           stock: accounts.db(db => withCaseStock(db, { cases: [{ id: payload.caseId }] }).cases[0].stock) };
       }
+      else if (route === 'inventory/keep') result = { ...accounts.keepItem(user, payload.id), user: accounts.profile(user) };
       else if (route === 'inventory/sell') result = { ...accounts.sell(user, payload.id), user: accounts.profile(user) };
       else if (route === 'inventory/sell-all') result = { ...accounts.sellAll(user, payload.id), user: accounts.profile(user) };
       else if (route === 'games/start') {

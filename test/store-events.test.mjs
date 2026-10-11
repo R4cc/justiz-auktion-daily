@@ -1,6 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtemp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { Accounts } from '../src/accounts.mjs';
 import { closeDataStore } from '../src/database.mjs';
 import { buyBusiness, stockBusiness, businessDashboard, unstockBusiness } from '../src/businesses.mjs';
@@ -8,7 +10,7 @@ import { checkStoreEvents, acknowledgeStoreEvents, STORE_EVENT_INTERVAL, STORE_E
 import { visitStore, buyStoreItem, startStoreHeist, finishStoreHeist } from '../src/storefronts.mjs';
 const now = Date.parse('2026-10-08T12:30:00Z'), due = now + STORE_EVENT_INTERVAL;
 async function fixture(t) {
-  const dir = await mkdtemp('/tmp/jg-store-events-'), accounts = new Accounts(dir, { now: () => now });
+  const dir = await mkdtemp(join(tmpdir(), 'jg-store-events-')), accounts = new Accounts(dir, { now: () => now });
   const owner = { id: 'owner', admin: true }, rival = { id: 'rival' };
   accounts.db(db => {
     for (const user of [owner, rival]) db.prepare("INSERT INTO users(id, username, password_hash, tokens, created_at, admin) VALUES (?, ?, 'disabled', 100000, ?, ?)").run(user.id, user.id, now, Number(Boolean(user.admin)));
@@ -37,22 +39,23 @@ test('store limit is atomic, covers every category and leaves legacy stores inta
   assert.throws(()=>buyBusiness(f.dir,f.owner,'cars','popup',{now}),/store_limit_reached/);
   assert.ok(buyBusiness(f.dir,f.rival,'wine','popup',{now}).shop);
 });
-for(const [name,roll] of [['bombing',0],['heist',3]]) test(`${name} wipes shelf items only, pays nothing and cannot be replayed`,async t=>{
+for(const [name,roll] of [['bombing',0],['heist',3]]) test(`${name} is cosmetic, preserves shelves and cannot be replayed`,async t=>{
   const f=await fixture(t), before=f.balance(), event=run(f,roll);
-  assert.equal(event.type,name);assert.equal(event.itemsLost,8);assert.equal(event.money,0);assert.equal(f.balance(),before);
-  assert.equal(f.query('SELECT * FROM business_stock WHERE sold_at IS NULL').length,0);
+  assert.equal(event.type,name);assert.equal(event.itemsLost,0);assert.equal(event.money,0);assert.equal(f.balance(),before);
+  assert.equal(f.query('SELECT * FROM business_stock WHERE sold_at IS NULL').length,8);
   assert.equal(f.query('SELECT * FROM business_sales').length,0);
-  assert.equal(f.query("SELECT * FROM inventory WHERE sold_at IS NULL AND user_id='owner'").length,1);
+  assert.equal(f.query("SELECT * FROM inventory WHERE sold_at IS NULL AND user_id='owner'").length,9);
   assert.equal(f.query('SELECT * FROM businesses').length,1);
-  assert.throws(()=>unstockBusiness(f.dir,f.owner,f.shop.id,'wine-0',{now:due}),/stock_not_found/);
+
   closeDataStore(f.dir);
   assert.deepEqual(checkStoreEvents(f.dir,f.owner,{now:due+1,random:()=>{throw Error('rerolled');}}).events,[event]);
   acknowledgeStoreEvents(f.dir,f.rival,[event.id],{now:due});
   assert.equal(checkStoreEvents(f.dir,f.owner,{now:due+1}).events.length,1);
   acknowledgeStoreEvents(f.dir,f.owner,[event.id],{now:due});
   assert.equal(checkStoreEvents(f.dir,f.owner,{now:due+1}).events.length,0);
+  unstockBusiness(f.dir,f.owner,f.shop.id,'wine-0',{now:due+1});
   stockBusiness(f.dir,f.owner,f.shop.id,['wine-8'],{now:due+1});
-  assert.equal(visitStore(f.dir,f.rival,f.shop.id,{now:due+1}).store.stock.length,1);
+  assert.equal(visitStore(f.dir,f.rival,f.shop.id,{now:due+1}).store.stock.length,8);
 });
 test('rich buyer pays frozen current shelf prices exactly once and records normal sales',async t=>{
   const f=await fixture(t), before=f.balance(), event=run(f,10);
@@ -64,7 +67,7 @@ test('rich buyer pays frozen current shelf prices exactly once and records norma
   checkStoreEvents(f.dir,f.owner,{now:due+1});assert.equal(f.balance(),before+960);
 });
 test('partial disasters, collector premium, fine and windfall have bounded real effects',async t=>{
-  for(const [type,roll,lost,sold,money] of [['flood',35,4,0,0],['goose_rampage',45,2,0,0],['tax_raid',53,0,0,-100],['collector',65,0,3,540],['windfall',85,0,0,200]]) {
+  for(const [type,roll,lost,sold,money] of [['flood',35,0,0,0],['goose_rampage',45,0,0,0],['tax_raid',53,0,0,-100],['collector',65,0,3,540],['windfall',85,0,0,200]]) {
     const f=await fixture(t), before=f.balance(),event=run(f,roll);
     assert.equal(event.type,type);assert.equal(event.itemsLost,lost);assert.equal(event.itemsSold,sold);assert.equal(event.money,money);
     assert.equal(f.balance(),before+money);assert.equal(visitStore(f.dir,f.rival,f.shop.id,{now:due}).store.stock.length,8-lost-sold);
@@ -83,13 +86,13 @@ test('new-store grace, empty shelves, failed rolls and skipped days cannot be fa
   f.accounts.db(db=>db.prepare('DELETE FROM business_stock').run());
   assert.equal(checkStoreEvents(f.dir,f.owner,{now:due+31*STORE_EVENT_INTERVAL,random:()=>{throw Error('empty stock');}}).events.length,1);
 });
-test('goose guard can foil a full-stock heist and live player purchases are never removed by events',async t=>{
+test('cosmetic heists preserve guarded shelves and live player purchases',async t=>{
   const f=await fixture(t);f.accounts.db(db=>db.prepare('UPDATE businesses SET goose_guard=1').run());
-  assert.equal(run(f,3,0).type,'goose_guard');assert.equal(f.query('SELECT * FROM inventory WHERE sold_at IS NULL').length,9);
-  const g=await fixture(t);
+  assert.equal(run(f,3,0).type,'heist');assert.equal(f.query('SELECT * FROM inventory WHERE sold_at IS NULL').length,9);
+  const g=await fixture(t);g.accounts.db(db=>db.prepare('UPDATE businesses SET mischief_enabled=1').run());
   buyStoreItem(g.dir,g.rival,{shopId:g.shop.id,inventoryId:'wine-0',expectedPrice:120,requestId:'event-purchase-0001'},{now});
   const attempt=startStoreHeist(g.dir,g.rival,{shopId:g.shop.id,inventoryId:'wine-1',expectedPrice:120,expectedFee:10,expectedChance:29,requestId:'event-heist-start-001'},{now,draw:()=>0});
-  assert.equal(run(g,0).itemsLost,7);
+  assert.equal(run(g,0).itemsLost,0);
   assert.equal(g.query("SELECT user_id, sold_at FROM inventory WHERE id='wine-0'")[0].user_id,g.rival.id);
   assert.equal(g.query("SELECT sold_at FROM inventory WHERE id='wine-0'")[0].sold_at,null);
   const ended=finishStoreHeist(g.dir,g.rival,{heistId:attempt.id,moves:[0,0,0,0,0,0]},{now:due});
@@ -107,4 +110,10 @@ test('event failures roll back stock, money, check, sale history and modal resul
   f.accounts.db(db=>db.prepare("UPDATE users SET banned=0 WHERE id='owner'").run());
   f.accounts.resetEconomy(f.owner,'RESET ECONOMY');
   for(const table of ['store_events','store_event_checks','businesses']) assert.equal(f.query(`SELECT * FROM ${table}`).length,0);
+});
+
+test('historical stock-loss outcomes remain byte-for-byte unchanged after the risk migration',async t=>{
+  const f=await fixture(t),result={id:'old-event',shopId:f.shop.id,type:'bombing',itemsLost:8,itemsSold:0,money:0,titleEn:'Historical outcome'};
+  f.accounts.db(db=>db.prepare('INSERT INTO store_events VALUES (?,?,?,?,?,NULL)').run(result.id,f.shop.id,f.owner.id,JSON.stringify(result),now));
+  assert.deepEqual(checkStoreEvents(f.dir,f.owner,{now:now+1}).events,[result]);
 });

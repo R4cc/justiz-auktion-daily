@@ -1,0 +1,21 @@
+# Cohesive trader loop
+
+Daily is appraisal practice that earns trading capital and one sealed reward. Its three choices claim and open, keep, or list the same saved reward. Inventory is the place to keep, auction or stock a find, with state, category and rarity filters. Cases contain one mystery item; palettes contain three themed finds. Store ownership is optional: a full town or the three-store cap never blocks player auctions.
+
+The five primary destinations are Daily, Auction House, Inventory, Your Stores and Town. Auction House combines Browse, My bids (including outcomes and winning reveals), and My listings. Filters distinguish individual items, stock bundles and mystery lots. `/marketplace` and `/auctions` map into this view, preserving queries and existing notification links. Market Trends and the Case Store remain contextual destinations; Collection prestige, Daily scores and friends live under Profile. Settlement APIs and feature flags retain their existing rules.
+
+## Private accounting
+
+`item_acquisitions` records the current owner's cost separately from tradable item JSON. `trader_sales` records immutable seller proceeds and cost inside the existing sale transaction, keyed by the source transaction and inventory ID. A paid transfer replaces the new owner's basis without changing the old seller's receipt. Failed transactions roll back balances, ownership and accounting together; existing transaction receipts keep retries safe.
+
+One-item case openings inherit the current owner's case basis. Palettes and purchased stock bundles split the actual final paid price equally in persisted item order; early positions receive rounding remainders. Free Daily rewards have zero cost and their sale proceeds are shown separately. Legacy items have unknown cost and are excluded from realized profit. Opening an existing paid case is not a new reinvestment.
+
+Private profiles expose available `tokens`, `heldInBids`, `inventoryMarketValue`, `realizedTradingProfit`, `rewardProceeds`, `unknownCostSales`, `traderStock` and persistent `traderMilestones`. Authenticated inventory adds `acquisitionCost`, `acquisitionSource`, `businessType` and `storeId`; `includeStores=1` opts into stocked inventory, preserving the old default. Public listings, storefronts, friends and rankings expose neither acquisition records nor proxy ceilings. Historical real-auction euro prices remain clearly separate from J€ market estimates.
+
+Realized trading profit includes tracked paid item sales only. Shop investment, operating events and mischief fees are separate from that measure. Revenue and markup over market estimate are never described as profit. Collection prestige continues to rank held collection value; the independent Daily leaderboard ranks completed Daily scores.
+
+## Progress and risk
+
+Complete Daily → manage a find → complete a sale → reinvest. Milestones are persistent, non-blocking, and award no additional currency. Guidance follows outstanding listings or store stock and offers trading alternatives when stock, funds or plots are unavailable. Purchasing a store shows price, remaining spending money and compatible owned stock; restocking links carry the store category into Auction House.
+
+New random store mishaps are cosmetic. Existing event outcomes remain unchanged, and positive customer events keep their existing payouts. Owner `mischiefEnabled` is false by default; only the owner can enable it. New theft attempts are refused server-side while off, before charging fees. Already paid attempts finish under their frozen rules even if the owner disables mischief. The goose guard and playful events remain.

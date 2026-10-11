@@ -6,9 +6,12 @@ import vm from 'node:vm';
 const accountSource = await readFile(new URL('../dist/account.js', import.meta.url), 'utf8');
 const uiSource = await readFile(new URL('../dist/economy-ui.js', import.meta.url), 'utf8');
 const dataSource = await readFile(new URL('../dist/economy.js', import.meta.url), 'utf8');
+const traderSource = await readFile(new URL('../dist/trader-ui.js', import.meta.url), 'utf8');
+const uiContext = values => vm.createContext({location:{search:''}, URLSearchParams, ...values});
 const i18nSource = await readFile(new URL('../dist/i18n.js', import.meta.url), 'utf8');
 const extract = (source, from, to) => {
-  const fragment = source.slice(source.indexOf(from), source.indexOf(to, source.indexOf(from)));
+  let fragment = source.slice(source.indexOf(from), source.indexOf(to, source.indexOf(from)));
+  if(source===accountSource&&fragment.includes('function itemCard(')) fragment=traderSource.slice(0,traderSource.indexOf('const traderStockDialog'))+fragment;
   return source === uiSource && fragment.includes('bidMinimum(')
     ? source.slice(source.indexOf('  const bidMinimum ='), source.indexOf('  const empty =')) + fragment
     : fragment;
@@ -16,7 +19,7 @@ const extract = (source, from, to) => {
 
 test('economy helpers use authenticated history/list/bid/cancel contracts and safe encoded IDs', async () => {
   const calls = [], reads = [];
-  const context = vm.createContext({ window: { accountApi: async (...args) => { calls.push(args); return {}; } },
+  const context = uiContext({ window: { accountApi: async (...args) => { calls.push(args); return {}; } },
     fetch: async url => { reads.push(url); return { ok: true, json: async () => ({ features: { resales: true } }) }; } });
   vm.runInContext(dataSource, context);
   const api = context.window.justizEconomy;
@@ -34,7 +37,7 @@ test('economy helpers use authenticated history/list/bid/cancel contracts and sa
 
 test('resale inventory and legacy reward markup never render instant-sell buttons; flags off retain them', () => {
   const item = { id: 'item', title: 'Tool', price: 100, sellValue: 100, estimatedValueTokens: 120, rarity: 'common', image: '/tool.jpg' };
-  const context = vm.createContext({ economyFlags: { resales: true }, accountResult: item,
+  const context = uiContext({ economyFlags: { resales: true }, accountResult: item,
     t: en => en, number: String, justizEuro: value => `J€ ${value}`, euro: value => `EUR ${value}`, accountEscape: String, rarityLabel: String });
   vm.runInContext(extract(accountSource, 'function itemCard(', 'function groupedInventory(')
     + extract(accountSource, 'function resultMarkup(', 'function tierCard('), context);
@@ -45,14 +48,13 @@ test('resale inventory and legacy reward markup never render instant-sell button
   assert.match(vm.runInContext(`itemCard(${JSON.stringify(item)}) + resultMarkup()`, context), /data-account="sell/);
   context.economyFlags = { resales: true };
   const listed = vm.runInContext(`itemCard(${JSON.stringify({ ...item, listed: true })})`, context);
-  assert.match(listed, /disabled/); assert.match(listed, /Already listed/);
-  assert.match(listed, /data-economy="quick-list"[^>]*disabled/);
+  assert.match(listed,/Listed for auction/); assert.doesNotMatch(listed,/data-economy="list"/);
 });
 
 test('sealed cases show open and auction actions in inventory without a market category', () => {
   const item = { id: 'sealed', kind: 'case', caseTier: 'rare', title: 'Rare Case', titleDe: 'Seltene Kiste',
     rarity: 'rare', price: 90, estimatedValueTokens: 90, listed: false };
-  const context = vm.createContext({ economyFlags: { resales: true }, t: en => en,
+  const context = uiContext({ economyFlags: { resales: true }, t: en => en,
     number: String, justizEuro: value => `J€ ${value}`, euro: String, accountEscape: String, rarityLabel: String });
   vm.runInContext(extract(accountSource, 'function itemCard(', 'function groupedInventory('), context);
   const markup = vm.runInContext(`itemCard(${JSON.stringify(item)})`, context);
@@ -64,30 +66,17 @@ test('sealed cases show open and auction actions in inventory without a market c
   assert.match(locked, /data-account="open-inventory-case"[^>]*disabled/);
 });
 
-test('inventory quick list starts a one-item auction at the card default price in one click', () => {
-  const item = { id: 'item', title: 'Tool', price: 100, sellValue: 100, estimatedValueTokens: 120, rarity: 'common', image: '/tool.jpg' };
-  const context = vm.createContext({ economyFlags: { resales: true }, accountResult: item,
-    t: en => en, number: String, justizEuro: value => `J€ ${value}`, euro: value => `EUR ${value}`, accountEscape: String, rarityLabel: String });
-  vm.runInContext(extract(accountSource, 'function itemCard(', 'function groupedInventory('), context);
-  const markup = vm.runInContext(`itemCard(${JSON.stringify(item)})`, context);
-  assert.match(markup, /data-economy="quick-list" data-id="item" data-price="84"/);
-  assert.match(markup, /Quick list<small>@ J€ 84<\/small>/);
-  // The handler posts the listing dialog's defaults straight to the listing
-  // API: one item, the card's default start price, 15-minute duration.
-  const handler = extract(uiSource, "action === 'quick-list'", "if (action === 'primary'");
-  assert.match(handler, /api\.listItem\(\{ inventoryId: id, quantity: 1,/);
-  assert.match(handler, /startPrice: Math\.max\(1, Number\(button\.dataset\.price\) \|\| 1\)/);
-  assert.match(handler, /900_000/);
-  assert.match(handler, /accountApi\('inventory'\)/);
-  // Unpriced items fall back to the J€ 1 minimum instead of a NaN start price.
-  const unpriced = vm.runInContext(`itemCard(${JSON.stringify({ ...item, estimatedValueTokens: null })})`, context);
-  assert.match(unpriced, /data-price="1"/);
+test('inventory uses explicit keep, auction and stock decisions instead of a duplicate quick list',()=>{
+ const context=uiContext({economyFlags:{resales:true},t:en=>en,number:String,justizEuro:String,euro:String,accountEscape:String,rarityLabel:String});
+ vm.runInContext(extract(accountSource,'function itemCard(','function groupedInventory('),context);
+ const html=vm.runInContext('itemCard({id:"a",title:"Find",price:100,rarity:"common"})',context);
+ assert.match(html,/data-trader="keep"/);assert.match(html,/data-economy="list"/);assert.doesNotMatch(html,/quick-list/);
 });
 
 test('inventory copy badge counts copies still available after quick listing', () => {
   const item = { title: 'Laptop', auctionId: 42, price: 100, sellValue: 100,
     estimatedValueTokens: 120, rarity: 'common', image: '/laptop.jpg' };
-  const context = vm.createContext({ economyFlags: { resales: true }, t: en => en,
+  const context = uiContext({ economyFlags: { resales: true }, t: en => en,
     number: String, justizEuro: String, euro: String, accountEscape: String, rarityLabel: String });
   vm.runInContext(extract(accountSource, 'function itemCard(', 'function renderInventory()'), context);
   const before = vm.runInContext(`itemCard(groupedInventory(${JSON.stringify([
@@ -96,42 +85,30 @@ test('inventory copy badge counts copies still available after quick listing', (
   assert.match(before, /item-count[^>]*>×3</);
   const after = vm.runInContext(`itemCard(groupedInventory(${JSON.stringify([
     { ...item, id: 'a', listed: true }, { ...item, id: 'b', listed: false }, { ...item, id: 'c', listed: false }
-  ])})[0])`, context);
+  ])}).find(group=>!group.listed))`, context);
   assert.match(after, /item-count[^>]*>×2</);
-  assert.match(after, /data-economy="quick-list" data-id="b"/);
+  assert.match(after, /data-economy="list" data-id="b"/);
 });
 
-test('inventory cards show the market value with a delta badge when the market is priced', () => {
-  const item = { id: 'item', title: 'Tool', price: 100, sellValue: 100, estimatedValueTokens: 125, marketCategory: 'electronics', marketIndex: 125, rarity: 'common', image: '/tool.jpg' };
-  const context = vm.createContext({ economyFlags: { resales: true }, accountResult: item,
-    t: en => en, number: String, justizEuro: value => `J€ ${value}`, euro: value => `EUR ${value}`, accountEscape: String, rarityLabel: String });
-  vm.runInContext(extract(accountSource, 'function itemCard(', 'function groupedInventory('), context);
-  const markup = vm.runInContext(`itemCard(${JSON.stringify(item)})`, context);
-  assert.match(markup, /Market value J€ 125/);
-  assert.match(markup, /market-delta is-up/);
-  assert.match(markup, /↑ \+25%/);
-  assert.doesNotMatch(markup, /Auction value/);
-  const cold = vm.runInContext(`itemCard(${JSON.stringify({ ...item, marketIndex: 77.7 })})`, context);
-  assert.match(cold, /Market value J€ 77.7/);
-  assert.match(cold, /market-delta is-down/);
-  assert.match(cold, /↓ −22%/);
-  const unpriced = vm.runInContext(`itemCard(${JSON.stringify({ ...item, marketIndex: null, estimatedValueTokens: null })})`, context);
-  assert.match(unpriced, /Auction value/);
-  assert.doesNotMatch(unpriced, /market-delta/);
+test('inventory shows one estimate, acquisition cost and historical source details',()=>{
+ const context=uiContext({economyFlags:{resales:true,market:true},t:en=>en,number:String,justizEuro:v=>'J€ '+v,euro:v=>'EUR '+v,accountEscape:String,rarityLabel:String});
+ vm.runInContext(extract(accountSource,'function itemCard(','function groupedInventory('),context);
+ const html=vm.runInContext('itemCard({id:"a",title:"Find",price:100,estimatedValueTokens:125,marketIndex:125,marketCategory:"electronics",rarity:"common",acquisitionCost:80})',context);
+ assert.match(html,/Estimated market value · J€ 125/);assert.match(html,/Acquisition cost/);assert.match(html,/J€ 80/);assert.match(html,/Historical real-auction value/);assert.match(html,/market\?category=electronics/);
 });
 
 test('economy overview prominently shows J€, active bids and inventory value', () => {
-  const context = vm.createContext({ account: { tokens: 1319, activeBids: 3, inventoryMarketValue: 2840 },
+  const context = uiContext({ account: { tokens: 1319, heldInBids: 300, inventoryMarketValue: 2840 },
     t: en => en, number: String, justizEuro: value => `J€ ${value}` });
   vm.runInContext(extract(accountSource, 'function economyOverviewMarkup(', 'function loginNotice('), context);
   const markup = vm.runInContext('economyOverviewMarkup()', context);
   assert.match(markup, /economy-overview-primary/);
   assert.match(markup, /AVAILABLE J€/);
   assert.match(markup, /J€ 1319/);
-  assert.match(markup, /ACTIVE BIDS[\s\S]*>3</);
-  assert.match(markup, /INVENTORY VALUE[\s\S]*J€ 2840/);
+  assert.match(markup, /J€ HELD IN BIDS[\s\S]*J€ 300/);
+  assert.match(markup, /ESTIMATED STOCK VALUE[\s\S]*J€ 2840/);
   assert.match(accountSource, /renderInventory\(\)[\s\S]*economyOverviewMarkup\(\)/);
-  assert.equal((uiSource.match(/economyOverviewMarkup\(\)/g) || []).length, 2);
+  assert.ok((uiSource.match(/economyOverviewMarkup\(\)/g) || []).length >= 2);
 });
 
 test('open notification inbox suppresses overlapping notification toasts', () => {
@@ -139,7 +116,7 @@ test('open notification inbox suppresses overlapping notification toasts', () =>
 });
 
 test('lot cards mark leading bids green and overbid red on the public board', () => {
-  const context = vm.createContext({ economyFlags: { paletteAuctions: true }, account: null, tab: 'public',
+  const context = uiContext({ economyFlags: { paletteAuctions: true }, account: null, tab: 'public',
     data: { mine: [] }, t: en => en, esc: String, name: lot => lot.name, status: () => 'Active',
     justizEuro: value => `J€ ${value}`, bidFacts: () => '', paletteArtwork: () => '<div class="palette-artwork"></div>',
     categoryName: () => 'Other' });
@@ -175,7 +152,7 @@ test('marketplace keeps tabs, sell action and quantity controls in the source', 
 });
 
 test('merged My bids keeps bidder-state borders without a separate primary tab', () => {
-  const context = vm.createContext({ economyFlags: { paletteAuctions: true }, account: null, tab: 'mine',
+  const context = uiContext({ economyFlags: { paletteAuctions: true }, account: null, tab: 'mine',
     data: { mine: [{ id: 'l1', leading: true }] }, t: en => en, esc: String, name: lot => lot.name,
     status: () => 'Active', justizEuro: value => `J€ ${value}`, bidFacts: () => '',
     paletteArtwork: () => '<div class="palette-artwork"></div>', categoryName: () => 'Other' });
@@ -192,7 +169,7 @@ test('primary auction board separates My bids above all other live auctions', ()
   const lost = { id: 'lost', status: 'ended', won: false, revealAvailable: false, highestBid: 5, name: 'Lost', paletteId: 'fundkiste', reserve: 10, currentBid: 9, bidCount: 2, requiredLevel: 1, endsAt: future - 7200_000 };
   const revealed = { id: 'revealed', status: 'ended', won: true, revealAvailable: false, highestBid: 31, name: 'Revealed', paletteId: 'fundkiste', reserve: 10, currentBid: 31, bidCount: 2, requiredLevel: 1, endsAt: future - 7200_000 };
   const publicLot = id => ({ id, status: 'active', name: id, paletteId: 'fundkiste', reserve: 10, currentBid: null, bidCount: 0, requiredLevel: 1 });
-  const context = vm.createContext({ economyFlags: { paletteAuctions: true }, account: { tokens: 277, progression: { level: 2 } }, accountContent: { innerHTML: '' },
+  const context = uiContext({ economyFlags: { paletteAuctions: true }, account: { tokens: 277, progression: { level: 2 } }, accountContent: { innerHTML: '' },
     currentAccountPage: '/auctions', tab: 'public', routes: { '/auctions': 'paletteAuctions' }, location: { search: '' },
     data: { lots: [publicLot('plain'), publicLot('lead'), publicLot('outbid'), publicLot('other')],
       mine: [won, leadMine, outbidMine, lost, revealed] },
@@ -230,7 +207,7 @@ test('primary auction board separates My bids above all other live auctions', ()
 test('marketplace tabs show one context at a time with ended history inside its tab', () => {
   const activeBid = { id: 'lead-bid', status: 'active', leading: true, highestBid: 20, currentBid: 20, bidCount: 2, quantity: 1, item: { title: 'Radio', marketCategory: 'electronics' } };
   const wonBid = { id: 'won-bid', status: 'ended', won: true, leading: false, highestBid: 20, currentBid: 20, winnerId: 'player', bidCount: 3, quantity: 1, item: { title: 'Lamp', marketCategory: 'household' } };
-  const context = vm.createContext({ economyFlags: { resales: true },
+  const context = uiContext({ economyFlags: { resales: true },
     account: { id: 'player', tokens: 500, activeBids: 1, progression: { level: 2 } }, accountContent: { innerHTML: '' },
     currentAccountPage: '/marketplace', tab: 'browse', routes: { '/marketplace': 'resales' }, location: { search: '' },
     data: { lots: [{ id: 'rival', sellerId: 'rival' }], mine: [{ id: 'live', status: 'active' }, { id: 'sold', status: 'ended' }],
@@ -280,7 +257,7 @@ test('marketplace tabs show one context at a time with ended history inside its 
 });
 
 test('own live-listing cards keep the standard layout, hide the seller and cancel only without bids', () => {
-  const context = vm.createContext({ account: { id: 'seller', tokens: 100, progression: { level: 1 } }, tab: 'mine', data: { mine: [] },
+  const context = uiContext({ account: { id: 'seller', tokens: 100, progression: { level: 1 } }, tab: 'mine', data: { mine: [] },
     t: en => en, esc: String, status: () => 'Active', justizEuro: value => `J€ ${value}`,
     bidFacts: () => '<div class="economy-bid"></div>', categoryName: () => 'Other', stockLotArtwork: () => null });
   vm.runInContext(extract(uiSource, '  function lotCard(', '  function render('), context);
@@ -298,7 +275,7 @@ test('own live-listing cards keep the standard layout, hide the seller and cance
 });
 
 test('archived bid cards mark wins green and losses red once the auction ended', () => {
-  const context = vm.createContext({ economyFlags: { paletteAuctions: true },
+  const context = uiContext({ economyFlags: { paletteAuctions: true },
     account: { id: 'player', tokens: 100, progression: { level: 2 } }, tab: 'public', data: { mine: [] },
     t: en => en, esc: String, name: lot => lot.name, status: () => 'Ended',
     justizEuro: value => `J€ ${value}`, bidFacts: () => '',
@@ -322,9 +299,9 @@ test('archived bid cards mark wins green and losses red once the auction ended',
 });
 
 test('auction bid history is chronological and marks the signed-in player as chat bubbles', () => {
-  const context = vm.createContext({ account: { id: 'mine' }, t: en => en, esc: String,
+  const context = uiContext({ account: { id: 'mine' }, t: en => en, esc: String,
     justizEuro: value => `J€ ${value}`, date: String });
-  vm.runInContext(extract(uiSource, '  const bidHistory =', '  const story ='), context);
+  vm.runInContext(extract(uiSource, '  const bidHistory =', '  function stop('), context);
   const markup = vm.runInContext(`bidHistory([
     {id:'2', bidderId:'other', bidderUsername:'Rival', amount:120, createdAt:20},
     {id:'1', bidderId:'mine', bidderUsername:'Player', amount:100, createdAt:10}
@@ -336,7 +313,7 @@ test('auction bid history is chronological and marks the signed-in player as cha
 });
 
 test('legacy story copy moves fiction notices into the single site disclaimer', () => {
-  const context = vm.createContext({});
+  const context = uiContext({});
   vm.runInContext(extract(i18nSource, 'function immersiveCopy(', 'function uiLocale('), context);
   assert.equal(vm.runInContext(`immersiveCopy('Fiction: In fictional Grayfield, an invented warehouse opens.')`, context),
     'In Grayfield, a warehouse opens.');
@@ -347,7 +324,7 @@ test('legacy story copy moves fiction notices into the single site disclaimer', 
 });
 
 test('information tips are labelled, keyboard focusable and escape their copy', () => {
-  const context = vm.createContext({ language: 'en' });
+  const context = uiContext({ language: 'en' });
   vm.runInContext(extract(i18nSource, 'function t(', 'function paletteName('), context);
   const markup = vm.runInContext(`infoTip('Balance < reserve & fees', 'Bid details')`, context);
   assert.match(markup, /<button type="button" aria-label="Bid details" aria-describedby="info-tip-1">\?/);
@@ -355,18 +332,18 @@ test('information tips are labelled, keyboard focusable and escape their copy', 
   assert.match(markup, /Balance &lt; reserve &amp; fees/);
 });
 
-test('auction detail uses media, story and bid-room columns with the bid form below the log', async () => {
+test('auction detail uses media, facts and bidding without flavour descriptions', async () => {
   let markup = '';
-  const lot = { id: 'lot', name: 'Palette', story: { parody: true }, items: [{ title: 'Camera', image: '/camera.jpg', rarity: 'rare' }],
+  const lot = { id: 'lot', name: 'Palette', story: { title: 'The story', body: 'A mysterious customs lot.', shortDescription: 'Customs warehouse bust', parody: true }, items: [{ title: 'Camera', image: '/camera.jpg', rarity: 'rare' }],
     currentBid: 120, currentBidderId: 'mine', bidCount: 2, reserve: 100, requiredLevel: 1,
     allowedMarketCategories: ['electronics'], status: 'active', endsAt: Date.now() + 60_000,
     bids: [{ id: 'b', bidderId: 'mine', bidderUsername: 'Player', amount: 120, createdAt: 1 }] };
-  const context = vm.createContext({
+  const context = uiContext({
     account: { id: 'mine', tokens: 500, progression: { level: 2 } }, data: { mine: [] }, dialogSequence: 0,
     accountVisit: 1, detailId: null, api: { paletteAuction: async () => ({ auction: lot }) },
     t: en => en, esc: String, justizEuro: value => `J€ ${value}`, name: value => value.name,
     infoTip: text => `<span class="info-tip">${text}</span>`,
-    story: () => ({ title: 'The story', body: 'A mysterious customs lot.', shortDescription: 'Customs warehouse bust', parody: true }), categoryName: String,
+    categoryName: String,
     rarityLabel: String, euro: String, accountError: String, status: () => 'Active',
     bidFacts: () => '<div>J€ 120</div>', bidHistory: () => '<li>bid bubble</li>',
     openDialog: value => { markup = value; }, dialog: { querySelector: () => ({ scrollTop: 0, scrollHeight: 100 }) }
@@ -380,14 +357,14 @@ test('auction detail uses media, story and bid-room columns with the bid form be
   assert.doesNotMatch(markup, /camera\.jpg|Camera|Possible contents/);
   assert.match(markup, /palette-artwork/);
   assert.match(markup, /Sealed until your winning reveal/);
-  assert.match(markup, /A mysterious customs lot/);
+  assert.doesNotMatch(markup, /The story|A mysterious customs lot/);
   assert.doesNotMatch(markup, /Customs warehouse bust/);
   assert.doesNotMatch(markup, /PARODY CASE/);
   assert.doesNotMatch(markup, /auction-story-badges/);
 });
 
 test('leading bidder form raises the private maximum instead of the visible price', () => {
-  const context = vm.createContext({ account: { id: 'leader', tokens: 200, progression: { level: 5 } },
+  const context = uiContext({ account: { id: 'leader', tokens: 200, progression: { level: 5 } },
     t: en => en, esc: String, justizEuro: value => `J€ ${value}`,
     infoTip: text => text, accountError: String });
   vm.runInContext(extract(uiSource, '  function bidForm(', '  function paletteArtwork('), context);
@@ -402,7 +379,7 @@ test('leading bidder form raises the private maximum instead of the visible pric
 });
 
 test('mystery cards never read candidate items and resale media keeps its item photo', () => {
-  const context = vm.createContext({ t: en => en, esc: String, account: null, data: {}, tab: 'public',
+  const context = uiContext({ t: en => en, esc: String, account: null, data: {}, tab: 'public',
     name: lot => lot.name, story: () => ({ shortDescription: 'Customs case', body: 'Sealed evidence.' }),
     categoryName: String, bidFacts: () => '', status: () => 'Active' });
   vm.runInContext(extract(uiSource, '  function paletteArtwork(', '  function auctionContents(')
@@ -425,7 +402,7 @@ test('mystery cards never read candidate items and resale media keeps its item p
 test('palette reveal animates exactly one fixed server reward per continuation, then shows summary', async () => {
   const rewards = ['first', 'second', 'third'].map(title => ({ item: { title, rarity: 'common', price: 100 } }));
   const animations = [], statuses = [], summaries = [];
-  const context = vm.createContext({
+  const context = uiContext({
     reveal: { rewards, pool: [{ title: 'decoy', rarity: 'common' }] }, revealPosition: 0, dialogSequence: 0, accountVisit: 1,
     dialog: { open: true, querySelector: selector => selector === '.palette-result' ? {
       set innerHTML(value) { statuses.push(value); }
@@ -443,7 +420,7 @@ test('palette reveal animates exactly one fixed server reward per continuation, 
 
 test('closing or navigating during palette animation suppresses the pending item', async () => {
   let finish, writes = 0;
-  const context = vm.createContext({ reveal: { rewards: [{ item: { title: 'secret' } }], pool: [] }, revealPosition: 0,
+  const context = uiContext({ reveal: { rewards: [{ item: { title: 'secret' } }], pool: [] }, revealPosition: 0,
     dialogSequence: 0, accountVisit: 1, dialog: { open: true, querySelector: () => ({ set innerHTML(_) { writes++; } }) },
     openDialog() {}, spinCaseReel: () => new Promise(resolve => { finish = resolve; }), t: en => en, esc: String });
   vm.runInContext(extract(uiSource, '  async function revealNext(', '  function revealSummary('), context);
@@ -455,7 +432,7 @@ test('closing or navigating during palette animation suppresses the pending item
 test('palette summary tallies finds, subtracts the winning bid and declares profit or loss', async () => {
   let markup = '';
   const rewards = [{ item: { title: 'Sneakers', price: 50 } }, { item: { title: 'Esprimo', price: 277 } }, { item: { title: 'Toothbrush', price: 15 } }];
-  const context = vm.createContext({
+  const context = uiContext({
     openDialog: value => { markup = value; },
     itemCard: item => `<div class="card">${item.title}</div>`,
     t: en => en, esc: String, number: value => String(value), justizEuro: value => `J€ ${value}`, euro: value => `€${value}`,
@@ -470,23 +447,24 @@ test('palette summary tallies finds, subtracts the winning bid and declares prof
   assert.match(markup, /<b>J€ 342<\/b>/);
   assert.match(markup, /−J€ 797/);
   assert.match(markup, /palette-ledger-verdict is-loss/);
-  assert.match(markup, />Loss</);
+  assert.match(markup, />Estimated shortfall</);
   assert.match(markup, /−J€ 455/);
   vm.runInContext(`revealSummary(${JSON.stringify({ rewards, bundleCostTokens: 100 })})`, context);
   assert.match(markup, /palette-ledger-verdict is-profit/);
-  assert.match(markup, />Profit</);
+  assert.match(markup, />Estimated upside</);
   assert.match(markup, /\+J€ 242/);
 });
 
 test('progression terminal state and active economy routes remain in syntax verification', async () => {
-  const context = vm.createContext({ t: en => en, number: String, justizEuro: value => `J€ ${value}`, infoTip: text => `<span>${text}</span>` });
+  const context = uiContext({ t: en => en, number: String, justizEuro: value => `J€ ${value}`, infoTip: text => `<span>${text}</span>` });
   vm.runInContext(uiSource.slice(0, uiSource.indexOf('window.economyUi')), context);
   const terminal = vm.runInContext('progressionMarkup({level:20,xp:36100,nextLevelXp:null,progress:1})', context);
   assert.match(terminal, /Level 20 reached/); assert.doesNotMatch(terminal, /NaN/);
   const index = await readFile(new URL('../dist/index.html', import.meta.url), 'utf8');
-  for (const route of ['/auctions', '/marketplace', '/market']) assert.ok(index.includes(`href="${route}"`));
+  for (const route of ['/', '/auction-house', '/inventory', '/businesses', '/town']) assert.ok(index.includes(`href="${route}"`));
   assert.ok(!index.includes('href="/news"'));
-  assert.match(index, /id="nav-play-title"[\s\S]*href="\/"[\s\S]*href="\/leaderboard"[\s\S]*id="nav-trading-title"[\s\S]*href="\/marketplace"[\s\S]*href="\/inventory"[\s\S]*id="nav-town-title"[\s\S]*href="\/town"[\s\S]*href="\/businesses"[\s\S]*href="\/stores"[\s\S]*id="nav-account-title"[\s\S]*id="header-auth"[\s\S]*href="\/admin"/);
+  assert.doesNotMatch(index, /href="\/(auctions|marketplace|market|shop|leaderboard|stores)"/);
+  assert.match(index, /id="nav-play-title"[\s\S]*href="\/"[\s\S]*id="nav-trading-title"[\s\S]*href="\/auction-house"[\s\S]*href="\/inventory"[\s\S]*id="nav-town-title"[\s\S]*href="\/businesses"[\s\S]*href="\/town"[\s\S]*id="nav-account-title"[\s\S]*id="header-auth"[\s\S]*href="\/admin"/);
   assert.match(index, /class="sidebar-toggle"[\s\S]*aria-controls="site-menu"[\s\S]*aria-expanded="false"/);
   assert.match(index, /id="notification-button"[\s\S]*class="notification-badge"[\s\S]*id="notification-panel"[\s\S]*id="notification-toasts"/);
   assert.match(index, /JUSTIZGUESSR is a fictional game/);
@@ -494,7 +472,7 @@ test('progression terminal state and active economy routes remain in syntax veri
 });
 
 test('bulk stock listings show category artwork in cards and the auction room', () => {
-  const context = vm.createContext({ t: en => en, esc: String, paletteArtwork: () => '' });
+  const context = uiContext({ t: en => en, esc: String, paletteArtwork: () => '' });
   vm.runInContext(extract(uiSource, '  const stockSymbols =', '  const remaining =')
     + extract(uiSource, '  function auctionMedia(', '  function auctionContents('), context);
   for (const type of ['wine', 'toys', 'electronics', 'cars']) {
@@ -509,7 +487,7 @@ test('bulk stock listings show category artwork in cards and the auction room', 
 });
 
 test('market chart labels both axes, adapts short time ranges, and keeps readable history', () => {
-  const context = vm.createContext({ t: en => en, esc: String, number: String, uiLocale: () => 'en-GB', date: String, empty: String });
+  const context = uiContext({ t: en => en, esc: String, number: String, uiLocale: () => 'en-GB', date: String, empty: String });
   vm.runInContext(extract(uiSource, '  function chart(', "  document.addEventListener('click'"), context);
   const markup = vm.runInContext(`chart([{capturedAt:'2026-09-19T12:00:00Z',indexValue:107}])`, context);
   assert.match(markup, /<circle/); assert.match(markup, /<table>/); assert.match(markup, /107/); assert.doesNotMatch(markup, /NaN/);
@@ -535,7 +513,7 @@ test('market chart labels both axes, adapts short time ranges, and keeps readabl
 test('named mystery cases keep their identity in inventory and marketplace artwork without a guaranteed tier label', () => {
   const item = { id: 'named-case', kind: 'case', caseType: 'vault', caseBadge: 'VT',
     title: 'Vault Case', titleDe: 'Tresor-Kiste', price: 150, listed: false };
-  const context = vm.createContext({ economyFlags: { resales: true }, t: en => en,
+  const context = uiContext({ economyFlags: { resales: true }, t: en => en,
     number: String, justizEuro: value => `J€ ${value}`, euro: String, accountEscape: String, esc: String,
     rarityLabel: String });
   vm.runInContext(extract(accountSource, 'function itemCard(', 'function groupedInventory(')
@@ -550,7 +528,7 @@ test('named mystery cases keep their identity in inventory and marketplace artwo
 });
 
 test('auction polling accelerates around deadlines, including recently expired cached deadlines', () => {
-  const context = vm.createContext({});
+  const context = uiContext({});
   vm.runInContext(extract(uiSource, '  function auctionPollInterval(', '  function bidFacts('), context);
   const period = (status, endsAt) => vm.runInContext(`auctionPollInterval([{status:'${status}',endsAt:${endsAt}}],100000)`, context);
   assert.equal(period('active', 115000), 1000);
@@ -561,7 +539,7 @@ test('auction polling accelerates around deadlines, including recently expired c
 });
 
 test('market chart magnifies small intraday changes, supports narrow screens and reports period returns', () => {
-  const context = vm.createContext({ t: en => en, esc: String, number: (value, digits = 0) => Number(value).toFixed(digits),
+  const context = uiContext({ t: en => en, esc: String, number: (value, digits = 0) => Number(value).toFixed(digits),
     uiLocale: () => 'en-GB', date: String, empty: String, window: { matchMedia: () => ({ matches: true }) } });
   vm.runInContext(extract(uiSource, '  function marketSummary(', "  document.addEventListener('click'"), context);
   const points = [{ capturedAt: '2026-10-08T13:00:00Z', indexValue: 121.2 }, { capturedAt: '2026-10-08T12:00:00Z', indexValue: 120 }];
@@ -579,7 +557,7 @@ test('market chart magnifies small intraday changes, supports narrow screens and
 });
 
 test('history helper sends an encoded quick range without breaking legacy limits', async () => {
-  const urls = [], context = vm.createContext({ window: {}, fetch: async url => {
+  const urls = [], context = uiContext({ window: {}, fetch: async url => {
     urls.push(url); return { ok: true, json: async () => ({}) };
   } });
   vm.runInContext(dataSource, context);
@@ -591,7 +569,7 @@ test('history helper sends an encoded quick range without breaking legacy limits
 
 test('chart range switching rejects stale responses from the previous period', async () => {
   const pending = [];
-  const context = vm.createContext({ accountVisit: 1, historySequence: 0, category: 'wine', marketRange: '1h', historyLoading: false,
+  const context = uiContext({ accountVisit: 1, historySequence: 0, category: 'wine', marketRange: '1h', historyLoading: false,
     history: [], api: { marketHistory: (...args) => new Promise(resolve => pending.push({ args, resolve })) },
     renderMarket: () => {}, t: en => en });
   vm.runInContext(extract(uiSource, '  async function loadHistory(', '  function renderMarket('), context);

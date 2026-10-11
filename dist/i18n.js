@@ -70,7 +70,7 @@ function renderStaticUi() {
   const rewards = window.justizRewards || { daily: 200, higherLowerPerCorrect: 40, higherLowerMax: 400, minimumStreak: 3 };
   document.documentElement.lang = language;
   document.title = t('JUSTIZGUESSR — The daily auction game', 'JUSTIZGUESSR — Das tägliche Auktionsspiel');
-  document.querySelector('meta[name="description"]').content = t('Five real auctions. Guess the price, collect the surprises.', 'Fünf echte Auktionen. Schätze den Preis und sammle Fundstücke.');
+  document.querySelector('meta[name="description"]').content = t('Guess the prices of five public auctions each day.', 'Schätze täglich die Preise von fünf öffentlichen Auktionen.');
   document.querySelector('#language-select').value = language;
   document.querySelector('#language-select').setAttribute('aria-label', t('Language', 'Sprache'));
   document.querySelector('.wordmark').setAttribute('aria-label', t('Home', 'Zur Startseite'));

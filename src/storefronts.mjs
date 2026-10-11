@@ -7,6 +7,7 @@ import { marketIndexes } from './market.mjs';
 import { inventoryIsLocked } from './resale.mjs';
 import { pushNotification } from './notifications.mjs';
 import { maskUsername } from './username-privacy.mjs';
+import { recordSale, acquireItems } from './trader.mjs';
 
 export const GOOSE_GUARD_COST = 250;
 export const HEIST_COOLDOWN = 30 * 60000;
@@ -112,7 +113,7 @@ function publicCard(db, shop, viewer) {
   const rating = db.prepare(`SELECT COUNT(*) AS count, AVG(r.stars) AS average FROM store_reviews r
     JOIN users u ON u.id = r.user_id WHERE r.business_id = ? AND u.banned = 0`).get(shop.id);
   return { id: shop.id, ownerId: shop.user_id, owner: viewer ? shop.username : maskUsername(shop.username),
-    location: plotLocation(db, shop.plot_id), name: shop.store_name, motto: shop.store_motto, type: shop.type, size: shop.size, gooseGuard: Boolean(shop.goose_guard),
+    location: plotLocation(db, shop.plot_id), name: shop.store_name, motto: shop.store_motto, type: shop.type, size: shop.size, gooseGuard: Boolean(shop.goose_guard), mischiefEnabled: Boolean(shop.mischief_enabled),
     stockCount: db.prepare('SELECT COUNT(*) AS n FROM business_stock WHERE business_id = ? AND sold_at IS NULL').get(shop.id).n,
     playerVisits: db.prepare('SELECT COUNT(*) AS n FROM store_visits WHERE business_id = ?').get(shop.id).n,
     rating: rating.average === null ? null : Math.round(rating.average * 10) / 10, reviewCount: rating.count };
@@ -157,7 +158,7 @@ export function visitStore(dataDir, viewer, shopId, { now = Date.now() } = {}) {
     return { store: { ...publicCard(db, shop, player), own,
       stock: shopStock(db, shop.id, shop.type, shop.profit_margin, now).map(entry => ({ id: entry.id, price: entry.askingPrice,
         item: { title: entry.item.title, image: entry.item.image || null, rarity: entry.item.rarity || 'common' },
-        theft: theftQuote(entry.referencePrice, shop.goose_guard, plotLocation(db, shop.plot_id)?.theftMultiplier ?? 1) })),
+        theft: shop.mischief_enabled ? theftQuote(entry.referencePrice, shop.goose_guard, plotLocation(db, shop.plot_id)?.theftMultiplier ?? 1) : null })),
       reviews: rows.map(row => ({ ...row, username: player ? row.username : maskUsername(row.username) })), reactions,
       canReview: Boolean(player && !own && db.prepare("SELECT 1 FROM store_receipts WHERE business_id = ? AND user_id = ? AND action = 'buy'").get(shop.id, player.id)),
       myReview: player ? db.prepare('SELECT stars, comment FROM store_reviews WHERE business_id = ? AND user_id = ?').get(shop.id, player.id) || null : null,
@@ -176,7 +177,10 @@ export function buyStoreItem(dataDir, user, payload, { now = Date.now() } = {}) 
     const shop = store(db, payload.shopId); otherStore(shop, player);
     const entry = shelf(db, shop, payload.inventoryId, now);
     if (!Number.isSafeInteger(payload.expectedPrice) || payload.expectedPrice !== entry.askingPrice) fail('store_price_changed', 409);
-    transferMoney(db, player.id, shop.user_id, entry.askingPrice); moveItem(db, shop, player, entry.id);
+    transferMoney(db, player.id, shop.user_id, entry.askingPrice);
+    recordSale(db,shop.user_id,[entry.id],entry.askingPrice,`store:${id}`,now,shop.id);
+    moveItem(db, shop, player, entry.id);
+    acquireItems(db,player.id,[entry.id],entry.askingPrice,'purchase',now);
     db.prepare('INSERT INTO business_sales VALUES (?, ?, ?, ?, ?)').run(`player:${id}`, shop.id, entry.id, entry.askingPrice, now);
     db.prepare('UPDATE businesses SET sales = sales + 1, revenue = revenue + ? WHERE id = ?').run(entry.askingPrice, shop.id);
     notify(db, shop, id, 'A player bought something!', 'Ein Spieler hat eingekauft!', `${player.username} bought ${entry.item.title} for J€ ${entry.askingPrice}.`, `${player.username} hat ${entry.item.title} für J€ ${entry.askingPrice} gekauft.`, now);
@@ -214,19 +218,20 @@ export function tipStore(dataDir, user, payload, { now = Date.now() } = {}) {
   }), now);
 }
 export function customizeStore(dataDir, user, payload, { now = Date.now() } = {}) {
-  if (typeof payload?.name !== 'string' || payload.name.trim().length > 60 || typeof payload.motto !== 'string' || payload.motto.trim().length > 140 || typeof payload.gooseGuard !== 'boolean') fail('invalid_store_profile');
+  if (typeof payload?.name !== 'string' || payload.name.trim().length > 60 || typeof payload.motto !== 'string' || payload.motto.trim().length > 140 || typeof payload.gooseGuard !== 'boolean' || (payload.mischiefEnabled !== undefined && typeof payload.mischiefEnabled !== 'boolean')) fail('invalid_store_profile');
   return atomic(dataDir, user, (db, player) => receipt(db, player, payload, 'profile', now, id => {
     const shop = store(db, payload.shopId); if (shop.user_id !== player.id) fail('forbidden', 403);
     if (shop.goose_guard && !payload.gooseGuard) fail('guard_permanent', 409);
     const cost = payload.gooseGuard && !shop.goose_guard ? GOOSE_GUARD_COST : 0;
     if (cost && !db.prepare('UPDATE users SET tokens = tokens - ? WHERE id = ? AND tokens >= ?').run(cost, player.id, cost).changes) fail('insufficient_tokens', 409);
-    db.prepare('UPDATE businesses SET store_name = ?, store_motto = ?, goose_guard = ? WHERE id = ?').run(payload.name.trim(), payload.motto.trim(), Number(payload.gooseGuard), shop.id);
+    db.prepare('UPDATE businesses SET store_name = ?, store_motto = ?, goose_guard = ?, mischief_enabled = ? WHERE id = ?').run(payload.name.trim(), payload.motto.trim(), Number(payload.gooseGuard), payload.mischiefEnabled === undefined ? shop.mischief_enabled : Number(payload.mischiefEnabled), shop.id);
     return { id, amount: cost };
   }), now);
 }
 export function startStoreHeist(dataDir, user, payload, { now = Date.now(), draw = randomInt } = {}) {
   return atomic(dataDir, user, (db, player) => receipt(db, player, payload, 'heist', now, id => {
     const shop = store(db, payload.shopId); otherStore(shop, player);
+    if (!shop.mischief_enabled) fail('mischief_disabled',409);
     const last = db.prepare('SELECT created_at FROM store_heists WHERE user_id = ? ORDER BY created_at DESC LIMIT 1').get(player.id);
     const target = db.prepare('SELECT MAX(created_at) AS last FROM store_heists WHERE business_id = ?').get(shop.id).last;
     if ((last && now < last.created_at + HEIST_COOLDOWN) || (target !== null && now < target + STORE_HEIST_COOLDOWN)) fail('heist_cooldown', 409);
@@ -258,7 +263,10 @@ export function finishStoreHeist(dataDir, user, { heistId, moves } = {}, { now =
       WHERE s.inventory_id = ? AND s.business_id = ? AND s.sold_at IS NULL AND i.sold_at IS NULL AND i.user_id = ?`).get(attempt.inventory_id, shop.id, attempt.owner_id) && !inventoryIsLocked(db, attempt.inventory_id);
     const correct = JSON.stringify(moves) === attempt.sequence;
     const outcome = now >= attempt.expires_at ? 'expired' : !present ? 'gone' : !correct ? 'fumbled' : attempt.roll >= attempt.chance * 10000 ? 'caught' : 'stolen';
-    if (outcome === 'stolen') moveItem(db, shop, player, attempt.inventory_id);
+    if (outcome === 'stolen') {
+      moveItem(db, shop, player, attempt.inventory_id);
+      acquireItems(db,player.id,[attempt.inventory_id],attempt.fee,'mischief',now);
+    }
     const result = { id: attempt.id, outcome, fee: attempt.fee, inventoryId: outcome === 'stolen' ? attempt.inventory_id : null };
     db.prepare('UPDATE store_heists SET status = ?, result = ? WHERE id = ?').run(outcome, JSON.stringify(result), attempt.id);
     if (shop) notify(db, shop, `${attempt.id}:end`, outcome === 'stolen' ? 'A shelf item vanished!' : 'The store survived some mischief', outcome === 'stolen' ? 'Ein Artikel ist verschwunden!' : 'Der Laden hat den Unfug überstanden',
