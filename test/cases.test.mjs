@@ -4,7 +4,7 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { CASE_RETURN_TARGET, DAILY_REWARD_FLOOR, caseCatalog, caseRewards, dailyCaseWeights,
-  drawDailyCaseItem, loadCaseCatalog, drawItem, publicCaseCatalog, RARITIES, tokenValue } from '../src/cases.mjs';
+  drawDailyCaseItem, loadCaseCatalog, drawItem, publicCaseCatalog, RARITIES, tokenValue, CASE_ITEM_LIMIT } from '../src/cases.mjs';
 import { Accounts } from '../src/accounts.mjs';
 import { closeDataStore, upsertAuctions } from '../src/database.mjs';
 import { expectedItemValue } from '../src/economy-balance.mjs';
@@ -39,6 +39,24 @@ test('each themed case uses only its own category and excludes vehicle accessori
     assert.ok(box.items.every(item => item.auctionId < 9000));
     assert.equal(new Set(box.items.map(item => item.rarity)).size, 5);
   }
+});
+
+test('every sufficiently stocked case has 50 distinct finds across all five rarities', () => {
+  const abundant = themes.flatMap(([theme, title, category, price], index) => Array.from({ length: 80 }, (_, n) => ({
+    id: index * 1000 + n + 10000, title: `${title} ${index * 1000 + n + 10000}`, category,
+    currentBid: price * (n + 1), image: `/assets/${theme}.jpg`
+  })));
+  const catalog = caseCatalog(abundant, day);
+  assert.equal(CASE_ITEM_LIMIT, 50);
+  for (const box of catalog.cases) {
+    assert.equal(box.items.length, 50, box.id);
+    assert.equal(new Set(box.items.map(item => item.auctionId)).size, 50, box.id);
+    assert.equal(new Set(box.items.map(item => item.rarity)).size, 5, box.id);
+  }
+  assert.deepEqual(caseCatalog([...abundant].reverse(), day), catalog);
+  const thin = caseCatalog(stock.slice(0, 12), day).cases.find(box => box.id === 'cars');
+  assert.equal(thin.items.length, 12);
+  assert.equal(new Set(thin.items.map(item => item.auctionId)).size, 12);
 });
 
 test('sale values follow auction euros and case prices preserve the target return', () => {
@@ -135,6 +153,11 @@ test('editions are order-independent, rotate stock and prices, and expensive sto
   assert.notEqual(first.revision, next.revision);
   for (const box of first.cases) {
     const changed = next.cases.find(item => item.id === box.id);
+    // A thin category uses all available families; there is no stock to rotate out.
+    if (box.items.length < CASE_ITEM_LIMIT) {
+      assert.deepEqual(new Set(changed.items.map(item => item.auctionId)), new Set(box.items.map(item => item.auctionId)));
+      continue;
+    }
     assert.notDeepEqual(new Set(changed.items.map(item => item.auctionId)), new Set(box.items.map(item => item.auctionId)));
     const costs = new Set(Array.from({ length: 5 }, (_, n) => caseCatalog(stock, day + n * 86400000).cases.find(item => item.id === box.id).cost));
     assert.ok(costs.size > 1);

@@ -58,6 +58,19 @@ test('all five named cases stay available with empty or thin archives, with priv
   }
 });
 
+test('all five store cases expose 50 distinct possible contents without changing rarity odds', async t => {
+  const abundant = Array.from({ length: 80 }, (_, i) => ({
+    id: 10000 + i, title: `Laptop model ${10000 + i}`, category: 'Elektronik',
+    currentBid: (i + 1) * 100, image: '/favicon.png'
+  }));
+  const f = await fixture(t, abundant);
+  for (const [index, offer] of f.quote().cases.entries()) {
+    assert.equal(offer.items.length, 50, offer.id);
+    assert.equal(new Set(offer.items.map(item => item.auctionId)).size, 50);
+    assert.deepEqual(offer.dropChances.map(chance => chance.percent), STORE_CASES[index].weights.map(weight => weight / 100));
+  }
+});
+
 test('store prices use tier-weighted expected values and reject changed market quotes before charging', async t => {
   const f = await fixture(t), catalog = f.catalog(), neutral = f.quote();
   const mixed = catalog.cases.find(box => box.id === 'fundkiste');

@@ -24,7 +24,8 @@ export const CASES = [
   { id: 'collectibles', name: 'Collector Case', nameDe: 'Sammler-Kiste', category: 'collectibles', badge: 'RARE' }
 ];
 const hash = value => createHash('sha256').update(JSON.stringify(value)).digest('hex');
-const CONFIG = hash({ version: 3, cases: CASES, rarities: RARITIES, weights: CASE_WEIGHTS, returnTarget: CASE_RETURN_TARGET });
+export const CASE_ITEM_LIMIT = 50;
+const CONFIG = hash({ version: 4, itemLimit: CASE_ITEM_LIMIT, cases: CASES, rarities: RARITIES, weights: CASE_WEIGHTS, returnTarget: CASE_RETURN_TARGET });
 const DAY_MS = 86400000;
 export const rotationDate = (now = Date.now()) => new Date(now).toISOString().slice(0, 10);
 export const tokenValue = price => Math.max(1, Math.round(price));
@@ -69,7 +70,7 @@ function tierSizes(length) {
 // caps, and deterministic per-tier offsets. Case editions keep their theme
 // predicate; palette event editions pass a market-category eligibility. This
 // is the single rarity algorithm — do not fork it.
-export function buildEditionItems(definition, families, dayIndex, eligible = null) {
+export function buildEditionItems(definition, families, dayIndex, eligible = null, itemLimit = null) {
   const predicate = eligible || (item => matchesTheme(item, definition.category));
   let stock = families.map(family => family.filter(predicate)).filter(family => family.length).map(family => {
     const auction = family[dayIndex % family.length];
@@ -81,10 +82,22 @@ export function buildEditionItems(definition, families, dayIndex, eligible = nul
   if (definition.category === 'premium' && stock.length >= 8) stock = stock.slice(Math.floor(stock.length * .35));
   const caps = [8, 6, 5, 3, 2], selected = [];
   if (stock.length >= 5) {
+    const sizes = tierSizes(stock.length);
+    let counts;
+    if (itemLimit !== null) {
+      const target = Math.min(itemLimit, stock.length), desired = tierSizes(target);
+      counts = desired.map((count, tier) => Math.min(count, sizes[tier]));
+      // Fill shortages from tiers with spare families; odds remain tier-based.
+      while (counts.reduce((sum, count) => sum + count, 0) < target) {
+        const tier = sizes.map((size, tier) => ({ tier, spare: size - counts[tier] }))
+          .sort((a, b) => b.spare - a.spare || a.tier - b.tier)[0].tier;
+        counts[tier]++;
+      }
+    }
     let start = 0;
-    tierSizes(stock.length).forEach((size, tier) => {
+    sizes.forEach((size, tier) => {
       const pool = stock.slice(start, start + size); start += size;
-      const count = Math.min(caps[tier], size === 1 ? 1 : Math.min(size - 1, Math.ceil(size * .65)));
+      const count = counts?.[tier] ?? Math.min(caps[tier], size === 1 ? 1 : Math.min(size - 1, Math.ceil(size * .65)));
       const offset = (dayIndex + parseInt(hash([definition.id, tier]).slice(0, 8), 16)) % size;
       for (let i = 0; i < count; i++) {
         const { rank, ...item } = pool[(offset + i) % size];
@@ -96,7 +109,7 @@ export function buildEditionItems(definition, families, dayIndex, eligible = nul
 }
 
 function edition(definition, families, dayIndex) {
-  const items = buildEditionItems(definition, families, dayIndex);
+  const items = buildEditionItems(definition, families, dayIndex, null, CASE_ITEM_LIMIT);
   const available = items.length >= 5;
   const expectedValue = available ? expectedItemValue(items, CASE_WEIGHTS) : 0;
   const cost = available ? Math.max(1, Math.ceil(expectedValue / CASE_RETURN_TARGET)) : 0;
