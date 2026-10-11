@@ -13,7 +13,8 @@ Player-facing currency is **J€ (Justiz€)**. Existing persisted and API field
 as `tokens` and `estimatedValueTokens` retain their names for data compatibility;
 they are implementation details and are never shown as the currency name.
 Persisted market effects influence current item estimates and the demand of
-newly initialized NPC buyers. Automatic news publication is dormant.
+NPC buyers. Their interest and original ceilings persist; future bids recheck
+live prices and shared demand. Automatic news publication is dormant.
 
 - `/auctions`: active lots, candidate pools, level/affordability information,
   bidding, and **My bids** (active participation plus won lots until the winner

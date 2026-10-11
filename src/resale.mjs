@@ -9,6 +9,7 @@ import { estimatedValueTokens, marketIndexes, marketCategoryForItem } from './ma
 import { pushNotification } from './notifications.mjs';
 import { sealedPaletteInventoryIds } from './palette-auctions.mjs';
 import { proxyMinimum, resolveProxyBid } from './proxy-bids.mjs';
+import { npcDemand } from './npc-demand.mjs';
 import { auctionEndAfterBid } from './auction-timing.mjs';
 
 // Player resale auctions: eBay-like listings of one or more identical items.
@@ -166,6 +167,7 @@ function serializeListing(db, row, { bids = false, now = Date.now(), indexes = m
       rarity: item.rarity, businessType: businessTypeForItem(item), marketCategory: marketCategoryForItem(item),
       ...(item.businessCategory ? { businessCategory: item.businessCategory } : {}) },
     estimatedValueTokens: estimatedValueTokens(item, indexes) * quantity,
+    npcDemand: item.kind === 'case' ? null : npcDemand(db, item, now, row.id).level,
     currentBidderId: row.current_bidder_id,
     startPrice: row.start_price, bidIncrement: resaleBidIncrement(row.start_price), currentBid: row.current_bid, bidCount,
     status: row.status, startedAt: row.started_at, endsAt: row.ends_at,

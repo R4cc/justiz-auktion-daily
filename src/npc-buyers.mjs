@@ -8,6 +8,7 @@ import { bundleReferencePricing } from './palette-definitions.mjs';
 import { AccountError } from './errors.mjs';
 export { NPC_BUYERS, SPECIAL_NPC_BUYERS } from './npc-roster.mjs';
 import { NPC_BUYERS } from './npc-roster.mjs';
+import { npcAudienceKey, npcDemand } from './npc-demand.mjs';
 
 export const NPC_BALANCE = 1_000_000_000;
 export const NPC_COHORT_SIZE = 16;
@@ -78,11 +79,14 @@ export function tickNpcBuyers(dataDir, { now = Date.now(), unit = deterministicU
       (SELECT 1 FROM resale_npc_interest n WHERE n.auction_id = a.id) ORDER BY a.started_at, a.id LIMIT 200`).all(now);
     const insert = db.prepare(`INSERT OR IGNORE INTO resale_npc_interest
       (auction_id, npc_id, max_bid, next_bid_at, created_at, active) VALUES (?, ?, ?, ?, ?, ?)`);
-    for (const row of auctions) for (const npc of npcCohort(row.id)) {
+    for (const row of auctions) {
       const item = JSON.parse(row.item);
-      const value = npcValuation(item, indexes, npc, row.id, unit, Math.max(1, row.quantity));
-      const bulkDiscount = Math.max(.75, 1 - Math.log2(Math.max(1, row.quantity)) * .04);
-      insert.run(row.id, npc.id, Math.max(1, Math.floor(value.maxBid * bulkDiscount)), now + npc.delaySeconds * 1000, now, Number(value.interested));
+      const audience = npcAudienceKey(item, now);
+      for (const npc of npcCohort(audience)) {
+        const value = npcValuation(item, indexes, npc, audience, unit, Math.max(1, row.quantity));
+        const bulkDiscount = Math.max(.75, 1 - Math.log2(Math.max(1, row.quantity)) * .04);
+        insert.run(row.id, npc.id, Math.max(1, Math.floor(value.maxBid * bulkDiscount)), now + npc.delaySeconds * 1000, now, Number(value.interested));
+      }
     }
     db.prepare(`UPDATE resale_npc_interest SET active = 0 WHERE active = 1 AND auction_id IN
       (SELECT id FROM resale_auctions WHERE status != 'active' OR ends_at <= ?)`).run(now);
@@ -90,7 +94,8 @@ export function tickNpcBuyers(dataDir, { now = Date.now(), unit = deterministicU
       (SELECT a.id FROM resale_auctions a JOIN inventory i ON i.id = a.inventory_id
         WHERE json_extract(i.item, '$.kind') = 'case')`).run();
   }));
-  const due = withDatabase(dataDir, db => db.prepare(`SELECT n.*, a.current_bid, a.current_bidder_id, a.start_price, a.ends_at
+  const due = withDatabase(dataDir, db => db.prepare(`SELECT n.*, a.current_bid, a.current_bidder_id, a.start_price, a.ends_at, i.item,
+    (SELECT COUNT(*) FROM resale_auction_items ai WHERE ai.auction_id = a.id) AS quantity
     FROM resale_npc_interest n JOIN resale_auctions a ON a.id = n.auction_id
     JOIN inventory i ON i.id = a.inventory_id
     WHERE n.active = 1 AND n.next_bid_at <= ? AND a.status = 'active'
@@ -98,23 +103,37 @@ export function tickNpcBuyers(dataDir, { now = Date.now(), unit = deterministicU
       AND COALESCE(json_extract(i.item, '$.kind'), '') != 'case'
     ORDER BY n.next_bid_at, n.auction_id, n.npc_id LIMIT 1000`).all(now, now));
   const touched = new Set();
+  const demandCache = new Map();
+  const liveIndexes = withDatabase(dataDir, db => marketIndexes(db, now));
   let bids = 0;
   for (const interest of due) {
     if (touched.has(interest.auction_id)) continue;
     const npc = NPC_BUYERS.find(entry => entry.id === interest.npc_id);
     if (!npc) continue;
+    // Recheck current prices and shared demand before committing another bid.
+    // Existing bids/escrow remain intact; a price drop never refunds or rewrites a bid.
+    const item = JSON.parse(interest.item), quantity = Math.max(1, interest.quantity);
+    if (!demandCache.has(interest.auction_id)) demandCache.set(interest.auction_id,
+      withDatabase(dataDir, db => npcDemand(db, item, now, interest.auction_id).multiplier));
+    const value = npcValuation(item, liveIndexes, npc, npcAudienceKey(item, interest.created_at), unit, quantity);
+    const bulkDiscount = Math.max(.75, 1 - Math.log2(quantity) * .04);
+    const liveCeiling = Math.max(1, Math.floor(Math.min(interest.max_bid, value.maxBid * bulkDiscount)
+      * demandCache.get(interest.auction_id)));
+    interest.max_bid = liveCeiling;
     const minimum = interest.current_bid === null ? interest.start_price : interest.current_bid + resaleBidIncrement(interest.start_price);
     const lastMinuteDelay = Math.round(10_000 + npc.patience * 20_000 + (1 - npc.aggressiveness) * 10_000);
     const delay = interest.ends_at - now <= 120_000 ? lastMinuteDelay : npc.delaySeconds * 1000;
     if (minimum > interest.max_bid) {
-      withDatabase(dataDir, db => db.prepare('UPDATE resale_npc_interest SET active = 0 WHERE auction_id = ? AND npc_id = ?')
-        .run(interest.auction_id, npc.id));
+      // Demand may recover as purchases age or rival bids settle; do not permanently
+      // disable an otherwise interested buyer merely because demand is low now.
+      withDatabase(dataDir, db => db.prepare('UPDATE resale_npc_interest SET next_bid_at = ? WHERE auction_id = ? AND npc_id = ?')
+        .run(now + delay, interest.auction_id, npc.id));
       continue;
     }
     if (interest.current_bidder_id !== npc.id) {
       try {
         placeBid(dataDir, npc, interest.auction_id, npcBidAmount(interest, npc, now, unit), { now });
-        bids++; touched.add(interest.auction_id);
+        bids++; touched.add(interest.auction_id); demandCache.clear();
         withDatabase(dataDir, db => db.prepare('UPDATE resale_npc_interest SET last_bid_at = ? WHERE auction_id = ? AND npc_id = ?')
           .run(now, interest.auction_id, npc.id));
       } catch (error) {
