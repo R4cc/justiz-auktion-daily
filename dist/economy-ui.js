@@ -116,7 +116,8 @@ window.economyUi = (() => {
         owner && economyFlags.resales ? api.myArchivedResaleBids() : null,
         economyFlags.paletteAuctions ? api.paletteAuctions(100) : null,
         owner && economyFlags.paletteAuctions ? api.myPaletteAuctions(100) : null,
-        owner && economyFlags.palettes ? accountApi('stock-palettes') : null
+        owner && economyFlags.palettes ? accountApi('stock-palettes') : null,
+        window.marketTrendUi?.load(visit)
       ]);
       if ((economyFlags.resales && !lots) || (economyFlags.paletteAuctions && !palettes)) throw new Error(t('Auctions could not be loaded. Please retry.', 'Auktionen konnten nicht geladen werden. Bitte erneut versuchen.'));
       next = { lots: lots?.listings || [], mine: mine?.listings || [], bids: bids?.listings || [],
@@ -191,6 +192,11 @@ window.economyUi = (() => {
     return `<div class="economy-bid"><strong>${justizEuro(lot.currentBid ?? (primary ? lot.reserve : lot.startPrice))}</strong><span>${lot.currentBid === null ? t('Starting bid', 'Startgebot') : lot.status === 'active' ? t('Current bid', 'Aktuelles Gebot') : t('Final bid', 'Letztes Gebot')}</span></div>
       <p>${lot.bidCount} ${lot.bidCount === 1 ? t('bid', 'Gebot') : t('bids', 'Gebote')} · ${countdown(lot.endsAt)}</p>`;
   }
+  function lotMarketCategory(lot,primary) {
+    if(!primary)return lot.item.kind==='case'?null:lot.item.marketCategory;
+    const categories=lot.allowedMarketCategories||[];
+    return categories.length===1?categories[0]:null;
+  }
   function lotCard(lot, primary, view = '') {
     const image = primary ? null : lot.item.image;
     const participation = primary ? (data.paletteMine || data.mine || []).find(entry => entry.id === lot.id)
@@ -229,7 +235,7 @@ window.economyUi = (() => {
     const cancellable = view === 'mine-live' && lot.status === 'active' && !lot.bidCount;
     return `<article class="economy-lot${borderState}" data-economy="${primary ? 'primary' : 'resale'}" data-id="${esc(lot.id)}" role="button" tabindex="0" aria-label="${esc(`${cardAction}: ${displayTitle}`)}"><div class="economy-lot-image">${primary ? paletteArtwork(lot) : image ? `<img src="${esc(image)}" alt="" loading="lazy">` : stockLotArtwork(lot) || '<span aria-hidden="true">◇</span>'}
       ${primary ? '' : `<span class="economy-badge">${lot.item.kind === 'case' ? t('Sealed case', 'Versiegelte Kiste') : esc(categoryName(lot.item.marketCategory))}</span><span class="auction-state-badge">${resaleState}</span>`}</div>
-      <div class="economy-lot-body"><h2>${esc(displayTitle)}</h2>
+      <div class="economy-lot-body"><h2>${esc(displayTitle)}</h2>${window.marketTrendUi?.markup(lotMarketCategory(lot,primary))||''}
       ${primary ? `<div class="palette-seal" aria-hidden="true"><span>01 ◇</span><span>02 ◇</span><span>03 ◇</span></div>`
         : `${ownListing ? '' : `<p>${t('Seller', 'Verkäufer')}: ${esc(lot.sellerUsername)}</p>`}<p>${t('Market estimate', 'Marktschätzung')}: ${justizEuro(lot.estimatedValueTokens)}</p>`}
       ${bidFacts(lot, primary)}
@@ -420,7 +426,7 @@ window.economyUi = (() => {
     const wonLinks = owned.map(item=>`<p><a class="primary-button" href="/inventory?focus=${encodeURIComponent(item.id)}" data-page>${t('Manage your winning find','Gewonnenen Fund verwalten')} →</a>${item.businessType&&!item.listed&&!item.storeId?`<a class="secondary-button" href="/inventory?focus=${encodeURIComponent(item.id)}&action=stock" data-page>${t('Stock a compatible store','In passenden Laden einräumen')} →</a>`:''}</p>`).join('');
     const winAction = wonLinks || (primary && lot.revealAvailable ? `<div class="auction-win-panel"><h3>${t('Won palette', 'Gewonnene Palette')}</h3><div class="palette-seal" aria-hidden="true"><span>01 ◇</span><span>02 ◇</span><span>03 ◇</span></div><button class="primary-button" data-economy="reveal" data-id="${esc(lot.id)}">${lot.stockOffer?t('Reveal stock','Stock aufdecken'):t('Reveal three finds', 'Drei Funde aufdecken')} →</button></div>` : bidForm(lot, primary));
     openDialog(`<div class="auction-room"><section class="auction-room-media" aria-label="${primary ? t('Sealed palette illustration', 'Illustration der versiegelten Palette') : t('Auction pictures', 'Auktionsbilder')}">${auctionMedia(lot, primary)}</section>
-      <section class="auction-room-story"><p class="eyebrow">${primary ? lot.stockOffer?t('SEALED · STOCK PALETTE','VERSIEGELT · WARENPALETTE'):t('SEALED · THREE FINDS', 'VERSIEGELT · DREI FUNDE') : t('AUCTION HOUSE', 'AUKTIONSHAUS')}</p><h2 id="economy-dialog-title" tabindex="-1">${esc(title)}</h2>
+      <section class="auction-room-story"><p class="eyebrow">${primary ? lot.stockOffer?t('SEALED · STOCK PALETTE','VERSIEGELT · WARENPALETTE'):t('SEALED · THREE FINDS', 'VERSIEGELT · DREI FUNDE') : t('AUCTION HOUSE', 'AUKTIONSHAUS')}</p><h2 id="economy-dialog-title" tabindex="-1">${esc(title)}</h2>${window.marketTrendUi?.markup(lotMarketCategory(lot,primary))||''}
       ${primary ? `<p class="auction-room-meta">${t('Required level', 'Benötigtes Level')} <strong>${lot.requiredLevel}</strong><br>${esc((lot.allowedMarketCategories || []).map(categoryName).join(' · ') || categoryName(null))}</p>${auctionContents(lot)}` : `<p class="auction-room-meta">${t('Seller', 'Verkäufer')}: <strong>${esc(lot.sellerUsername)}</strong><br>${t('Quantity', 'Anzahl')}: <strong>${lot.quantity}</strong><br>${lot.item.kind === 'case' ? t('Sealed case · one item from any category', 'Versiegelte Kiste · ein Gegenstand aus jeder Kategorie') : `${t('Historical real-auction value', 'Historischer Wert der echten Auktion')}: <strong>${euro(lot.item.price * lot.quantity)}</strong>`}<br>${t('Estimated market value', 'Geschätzter Marktwert')}: <strong>${justizEuro(lot.estimatedValueTokens)}</strong>${lot.npcDemand?`<br>${t('NPC demand','NPC-Nachfrage')}: <strong>${npcDemandLabel(lot.npcDemand)}</strong>`:''}${economyFlags.market&&lot.item.marketCategory?`<br><a href="/market?category=${encodeURIComponent(lot.item.marketCategory)}" data-page>${t('Market Trends','Markttrends')} ↗</a>`:''}</p>`}
       </section><aside class="auction-room-bidding"><header><p class="eyebrow">${lot.status==='active'?t('LIVE AUCTION','LIVE-AUKTION'):t('AUCTION OUTCOME','AUKTIONSERGEBNIS')}</p><h3>${t('Bid room', 'Bietraum')}</h3></header><div data-live-facts>${bidFacts(lot, primary)}</div>
       <ol class="auction-chat" data-live-history role="log" aria-label="${t('Bid history', 'Gebotsverlauf')}">${bidHistory(lot.bids)}</ol><div class="auction-bid-dock">${winAction}</div></aside></div>`);

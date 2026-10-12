@@ -42,6 +42,17 @@ live prices and shared demand. Automatic news publication is dormant.
 - `/shop`: permanent named mystery-case store with improving rarity odds at higher prices.
   Purchases add sealed cases to inventory. Daily gameplay is otherwise unchanged.
 
+Auction House and inventory cards share a compact category-price badge: an
+up/down arrow, one-decimal percentage and **24h**. This is a rolling daily return
+`(current category index / index 24 hours ago - 1) × 100`, including the same
+market effects and adjustments as valuations. It does not measure inventory
+quantity or deviation from neutral 100. The existing market-state endpoint adds
+`changePercent24h`; new or unactivated markets return null, shown as **— · 24h**.
+Cases and mixed-category palettes omit the indicator. The badge also appears in
+item/bid details. One shared market read supplies all categories during existing
+page loads and Auction House refreshes; disabled or unavailable market data hides
+it without blocking inventory or auctions.
+
 The authored frontend is vanilla JS in `dist/`. `economy.js` owns data helpers;
 `economy-ui.js` owns new views and dialogs; `account.js` owns authentication,
 routing, inventory and the shared `spinCaseReel` animation. Existing cards,

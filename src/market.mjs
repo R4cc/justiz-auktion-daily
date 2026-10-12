@@ -459,7 +459,7 @@ export function marketState(dataDir, { now = Date.now() } = {}) {
       const rows = new Map(db.prepare('SELECT * FROM market_categories').all().map(row => [row.category, row]));
       const categories = MARKET_CATEGORIES.filter(({ id }) => rows.has(id)).map(({ id, name, nameDe }) => {
         const row = rows.get(id);
-        return { category: id, name, nameDe, baseIndex: row.base_index, currentIndex: roundIndex(row.current_index * marketMultiplierAt(db, id, now)), updatedAt: row.updated_at };
+        return { category: id, name, nameDe, baseIndex: row.base_index, currentIndex: roundIndex(row.current_index * marketMultiplierAt(db, id, now)), updatedAt: row.updated_at, changePercent24h: null };
       });
       return { updatedAt: categories.reduce((latest, c) => c.updatedAt > latest ? c.updatedAt : latest, '') || null, categories };
     }
@@ -473,9 +473,13 @@ export function marketState(dataDir, { now = Date.now() } = {}) {
       const row = rows.get(id);
       const currentIndex = roundIndex(row.current_index);
       const previous = computeCategoryIndex(db, id, Math.max(activation, now - 3600_000));
+      // A full rolling day, using the same live index as item valuations.
+      // A new market has no 24h return yet; never label a shorter period 24h.
+      const previousDay = now - 86400_000 >= activation ? computeCategoryIndex(db, id, now - 86400_000) : null;
       return { category: id, name, nameDe, baseIndex: row.base_index, currentIndex, updatedAt: row.updated_at,
         change1h: roundIndex(row.current_index - previous),
-        changePercent1h: previous > 0 ? roundIndex((row.current_index / previous - 1) * 100) : 0 };
+        changePercent1h: previous > 0 ? roundIndex((row.current_index / previous - 1) * 100) : 0,
+        changePercent24h: previousDay > 0 ? roundIndex((row.current_index / previousDay - 1) * 100) : null };
     });
     return { updatedAt, categories };
   });

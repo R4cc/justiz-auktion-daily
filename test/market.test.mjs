@@ -234,3 +234,22 @@ test('intraday activation preserves earlier quotes and never invents pre-activat
   const history = marketHistory(dir, 'electronics', { now: day + 2 * 3600_000, range: '1m' });
   assert.ok(history.every(p => Date.parse(p.capturedAt) >= day + 3600_000));
 });
+
+
+test('24-hour returns use the same rolling category indexes as valuations and wait for a full day', async t => {
+  const dir=await fixture(t);
+  assert.ok(marketState(dir,{now:day}).categories.every(category=>category.changePercent24h===null));
+  tickMarketDrift(dir,{now:day});
+  assert.ok(marketState(dir,{now:day+86400_000-1}).categories.every(category=>category.changePercent24h===null));
+  const at=day+86400_000+17*60000;
+  tickMarketDrift(dir,{now:at});
+  const current=withDatabase(dir,db=>marketIndexes(db,at)),previous=withDatabase(dir,db=>marketIndexes(db,at-86400_000));
+  const state=marketState(dir,{now:at});
+  for(const category of state.categories){
+    assert.equal(category.changePercent24h,Math.round((current[category.category]/previous[category.category]-1)*10000)/100);
+    const daily=marketHistory(dir,category.category,{now:at,range:'1d'});
+    assert.equal(daily.at(-1).capturedAt,new Date(at-86400_000).toISOString());
+    assert.equal(daily[0].indexValue,category.currentIndex);
+  }
+  closeDataStore(dir);assert.deepEqual(marketState(dir,{now:at}),state);
+});

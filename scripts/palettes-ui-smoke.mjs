@@ -10,6 +10,7 @@ import { createEconomyApi } from '../src/economy-api.mjs';
 import { closeDataStore, upsertAuctions } from '../src/database.mjs';
 import { buyBusiness } from '../src/businesses.mjs';
 import { featureFlags } from '../src/features.mjs';
+import { tickMarketDrift } from '../src/market.mjs';
 
 const runtime = process.env.PLAYWRIGHT_MODULE || '/home/lxadm/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules/playwright/index.mjs';
 const { chromium } = await import(runtime);
@@ -23,6 +24,7 @@ const accounts = new Accounts(dir, { flags }), token = await accounts.login({ us
 accounts.db(db => db.prepare('UPDATE users SET tokens=1000000, xp=36100 WHERE id=?').run(owner.id));
 const varieties=['Riesling','Merlot','Cabernet','Chardonnay','Pinot','Bordeaux','Barolo','Rioja','Malbec','Chianti'];
 upsertAuctions(dir,varieties.map((name,index)=>({id:82000+index,title:name+' Wine',category:'Getränke',finalPrice:10*(index+1)**2,image:'/assets/makita.jpg'})));
+tickMarketDrift(dir,{now:Date.now()-48*3600_000});tickMarketDrift(dir);
 const shop=buyBusiness(dir,owner,'wine','popup').shop;
 const economy = createEconomyApi({ dataDir: dir, json, flags, accounts });
 const server = createServer(async (req, res) => {
@@ -48,10 +50,10 @@ try {
   const language=async lang=>{await page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))));const toggle=page.locator('[data-action="sidebar"]'),mobile=await toggle.isVisible();if(mobile&&await toggle.getAttribute('aria-expanded')!=='true')await toggle.click();await page.locator('#language-select').selectOption(lang);if(mobile&&await toggle.getAttribute('aria-expanded')==='true')await toggle.click();};
   const overflow=async label=>assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1),label+' overflow');
   await page.goto(base+'/auction-house');await page.waitForSelector('.economy-lot .stock-palette-art');assert.equal(await page.locator('.site-nav a[href="/palettes"]').count(),0);assert.equal(await page.locator('.house-palettes-card,[data-palette-buy]').count(),0);
-  const board=await page.evaluate(async()=>await(await fetch('/api/palette-auctions')).json()),lot=board.auctions.find(a=>a.stockOffer?.id==='wine-standard');assert.ok(lot);assert.equal(lot.quantity,24);assert.ok(board.auctions.some(a=>a.stockOffer?.id==='wine-budget'));assert.ok(board.auctions.some(a=>a.stockOffer?.id==='wine-premium'));
+  const board=await page.evaluate(async()=>await(await fetch('/api/palette-auctions')).json()),lot=board.auctions.find(a=>a.stockOffer?.id==='wine-standard');assert.ok(lot);assert.equal(lot.quantity,24);assert.match(await page.locator(`[data-economy="primary"][data-id="${lot.id}"] [data-market-trend="wine"]`).innerText(),/%.*24h/s);assert.ok(board.auctions.some(a=>a.stockOffer?.id==='wine-budget'));assert.ok(board.auctions.some(a=>a.stockOffer?.id==='wine-premium'));
   for(const width of [1440,1024,768,600,390,320]){await page.setViewportSize({width,height:1000});for(const lang of ['en','de']){
     await language(lang);await overflow(`${width} ${lang}`);assert.ok(await page.locator('.economy-lot').evaluateAll(cards=>cards.every(el=>el.scrollWidth<=el.clientWidth+1)),`${width} ${lang} lot overflow`);
-    await page.locator(`[data-economy="primary"][data-id="${lot.id}"]`).click();await page.waitForSelector('.economy-dialog[open]');assert.equal(await page.locator('[data-economy-form="primary"]').count(),1);await page.locator('.auction-room-contents summary').click();await overflow('room '+width+' '+lang);
+    await page.locator(`[data-economy="primary"][data-id="${lot.id}"]`).click();await page.waitForSelector('.economy-dialog[open]');assert.equal(await page.locator('.auction-room [data-market-trend="wine"]').count(),1);assert.equal(await page.locator('[data-economy-form="primary"]').count(),1);await page.locator('.auction-room-contents summary').click();await overflow('room '+width+' '+lang);
     if([1440,390].includes(width))await page.locator('.economy-dialog[open]').screenshot({path:`/tmp/jg-palette-auction-${width}-${lang}.png`});
     await page.locator('[data-economy="close"]').click();
   }}
@@ -72,5 +74,5 @@ try {
   // Existing paid palettes remain discoverable from winnings and old opening links.
   await page.goto(base+'/auction-house?view=bids');await page.waitForSelector(`a[href="/auction-house?open-palette=${legacy.id}"]`);await page.goto(base+'/palettes?open='+legacy.id);await page.waitForSelector('.palette-reveal-screen');assert.equal(new URL(page.url()).pathname,'/auction-house');assert.equal(accounts.inventory(owner,{includeStores:true}).length,30);await page.locator('[data-palette-finish]').click();await page.waitForSelector('.inventory-grid');
   const denied=await page.evaluate(async()=>{const r=await fetch('/api/account/stock-palettes/buy',{method:'POST',headers:{'content-type':'application/json','x-requested-with':'JUSTIZGUESSR'},body:JSON.stringify({offerId:'wine-budget',requestId:'blocked-palette-client-0001',allowLegacyPurchase:true})});return r.status;});assert.equal(denied,404);
-  assert.deepEqual(errors,[]);console.log('Auction palette UI passed: normal Auction House only, no shop/sidebar/buy action, budget and premium lots, retained art/icons, real bidding/outbid refunds/proxy settlement, unchanged item-then-quantity reveal, reload idempotency, inventory and Quick Restock, old purchase preservation and URL redirects, blocked instant purchase, EN/DE 1440–320px with no overflow or JS errors.');
+  assert.deepEqual(errors,[]);console.log('Auction palette UI passed: shared real rolling-24h category trends on cards and bid rooms; normal Auction House only, no shop/sidebar/buy action, budget and premium lots, retained art/icons, real bidding/outbid refunds/proxy settlement, unchanged item-then-quantity reveal, reload idempotency, inventory and Quick Restock, old purchase preservation and URL redirects, blocked instant purchase, EN/DE 1440–320px with no overflow or JS errors.');
 }finally{await browser.close();await new Promise(resolve=>server.close(resolve));closeDataStore(dir);await rm(dir,{recursive:true,force:true});}

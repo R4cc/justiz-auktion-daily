@@ -386,7 +386,7 @@ async function navigateAccountPage(path, push = true) {
       const catalog = await accountApi('cases'); if (visit !== accountVisit) return; updateAccountCatalog(catalog);
     }
     if (path === '/inventory' && account) {
-      const [result, stores] = await Promise.all([accountApi('inventory?includeStores=1'), economyFlags.businesses ? accountApi('businesses') : null]); if (visit !== accountVisit || account?.id !== owner) return; accountItems = result.items; traderStores = stores?.shops || [];
+      const [result, stores] = await Promise.all([accountApi('inventory?includeStores=1'), economyFlags.businesses ? accountApi('businesses') : null, window.marketTrendUi?.load(visit)]); if (visit !== accountVisit || account?.id !== owner) return; accountItems = result.items; traderStores = stores?.shops || [];
       await window.netWorthUi?.load(visit); if (visit !== accountVisit || account?.id !== owner) return;
       const focus = new URLSearchParams(location.search).get('focus');
       if (focus) { const query = new URLSearchParams(location.search); for (const key of ['state','category','rarity']) query.delete(key); history.replaceState({},'', '/inventory?'+query); accountInventoryPage = Math.max(0,Math.floor(groupedInventory(accountItems).findIndex(group=>group.copies.some(item=>item.id===focus))/24)); }

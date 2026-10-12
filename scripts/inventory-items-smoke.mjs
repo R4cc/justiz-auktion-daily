@@ -58,9 +58,16 @@ try {
   const go=async path=>{await page.goto(base+path);await page.waitForSelector('.inventory-card-trigger');};
   const open=async id=>{await page.locator(`[data-inventory-card="${id}"]`).click({position:{x:25,y:65}});await page.waitForSelector('.inventory-item-dialog[open]');};
   const close=async()=>{await page.locator('[data-inventory-close]').click();await page.waitForFunction(()=>!document.querySelector('.inventory-item-dialog').open);};
-  const language=async lang=>{const hidden=!(await page.locator('#language-select').isVisible());if(hidden)await page.locator('[data-action="sidebar"]').click();await page.locator('#language-select').selectOption(lang);if(hidden)await page.keyboard.press('Escape');};
-  await go('/inventory?focus=gallery-item');assert.equal(await page.locator('.inventory-grid details,.inventory-grid .trader-item-facts,.inventory-grid .trader-item-actions').count(),0);
-  await open('gallery-item');assert.equal(await page.locator('.inventory-item-dialog details[open]').count(),0);assert.equal(await page.locator('#inventory-item-title').innerText(),longTitle);
+  const language=async lang=>{await page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))));const toggle=page.locator('[data-action="sidebar"]'),mobile=await toggle.isVisible();if(mobile&&await toggle.getAttribute('aria-expanded')!=='true')await toggle.click();await page.locator('#language-select').selectOption(lang);if(mobile&&await toggle.getAttribute('aria-expanded')==='true')await toggle.click();};
+  // Stable category-return fixtures exercise positive, negative, flat and
+  // unavailable chips without changing this listing/valuation regression.
+  await page.route('**/api/market',async route=>{const response=await route.fetch(),payload=await response.json();payload.categories=payload.categories.map(category=>({...category,changePercent24h:({wine:4.2,electronics:-2.6,tools:0})[category.category]??null}));await route.fulfill({response,json:payload});});
+  await go('/inventory?focus=gallery-item');
+  assert.match(await page.locator('[data-inventory-card="gallery-item"] [data-market-trend="tools"]').innerText(),/0\.0%.*24h/s);
+  assert.equal(await page.locator('.sealed-case-item [data-market-trend]').count(),0);
+  assert.match(await page.locator('.inventory-grid [data-market-trend="tools"]').first().getAttribute('title'),/last 24 hours/);
+  assert.equal(await page.locator('.inventory-grid details,.inventory-grid .trader-item-facts,.inventory-grid .trader-item-actions').count(),0);
+  await open('gallery-item');assert.equal(await page.locator('.inventory-item-dialog [data-market-trend="tools"]').count(),1);assert.equal(await page.locator('.inventory-item-dialog details[open]').count(),0);assert.equal(await page.locator('#inventory-item-title').innerText(),longTitle);
   await page.locator('[data-inventory-image="1"]').click();assert.equal(await page.locator('.inventory-detail-image > img').getAttribute('src'),'/assets/hilti.jpg');
   await page.locator('[data-item-section="about"] > summary').click();assert.equal(await page.locator('[data-item-section="about"] img').count(),0);assert.equal(await page.evaluate(()=>window.bad),undefined);
   await page.keyboard.press('Escape');await page.waitForFunction(()=>!document.querySelector('.inventory-item-dialog').open);assert.equal(await page.locator('[data-inventory-detail="gallery-item"]').evaluate(el=>el===document.activeElement),true);
@@ -77,7 +84,7 @@ try {
   await page.setViewportSize({width:1440,height:1000});await language('en');
   const readItems=()=>accounts.inventory(owner,{includeStores:true});
   // Quick list one copy once, in place; preserve all filters and shelved stock.
-  await go('/inventory?state=available&category=wine&rarity=common&worth=all');const wineId=await page.locator('.inventory-card-trigger').first().getAttribute('data-inventory-detail');
+  await go('/inventory?state=available&category=wine&rarity=common&worth=all');assert.match(await page.locator('.inventory-grid [data-market-trend="wine"]').first().innerText(),/↗.*\+4\.2%.*24h/s);const wineId=await page.locator('.inventory-card-trigger').first().getAttribute('data-inventory-detail');
   const before=accounts.db(db=>db.prepare('SELECT COUNT(*) AS n FROM resale_auctions').get().n);
   await page.route('**/api/account/resale/listings',async route=>{const response=await route.fetch();await new Promise(resolve=>setTimeout(resolve,200));await route.fulfill({response});});
   await page.locator('.inventory-quick-list[data-economy="quick-list"]').first().dblclick();await page.waitForFunction(()=>accountItems.filter(item=>item.listed&&item.marketCategory==='wine').length===2);
@@ -90,6 +97,8 @@ try {
   await go('/inventory?category=electronics&state=available');const techId=await page.locator('.inventory-find:has(.inventory-copy-count) .inventory-card-trigger').first().getAttribute('data-inventory-detail');await open(techId);await page.locator('.inventory-item-dialog [data-economy="list"]').click();await page.waitForSelector('form[data-economy-form="list"]');assert.equal(await page.locator('.inventory-item-dialog').evaluate(el=>el.open),false);assert.equal(await page.locator('input[name="quantity"]').inputValue(),'2');await page.locator('.economy-dialog [data-economy="close"]').click();
   // A transient write failure leaves the item usable, and a stale second tab
   // cannot create another listing or leave a false available state behind.
+  await go('/inventory?category=electronics');assert.match(await page.locator('.inventory-grid [data-market-trend="electronics"]').first().innerText(),/↘.*-2\.6%.*24h/s);
+  await go('/inventory?category=books_media');assert.match(await page.locator('.inventory-grid [data-market-trend="books_media"]').first().innerText(),/—.*24h/s);
   await go('/inventory?focus=gallery-item');const quick=page.locator('[data-inventory-card="gallery-item"] [data-economy="quick-list"]');
   await page.route('**/api/account/resale/listings',route=>route.fulfill({status:503,json:{error:'unavailable'}}),{times:1});await quick.click();await page.waitForFunction(()=>document.querySelector('[data-inventory-card="gallery-item"] [data-economy="quick-list"]')?.disabled===false);assert.equal(readItems().find(item=>item.id==='gallery-item').listed,false);
   listItem(dir,owner,{inventoryId:'gallery-item',startPrice:98,endsAt:new Date(Date.now()+900000).toISOString()});
@@ -100,10 +109,12 @@ try {
   // Existing action links still reach stock selection from the details handoff.
   await go('/inventory?focus=wine-0&action=stock');await page.waitForSelector('[data-trader="stock-confirm"]');assert.equal(await page.locator('.inventory-item-dialog').evaluate(el=>el.open),false);await page.locator('[data-trader="close"]').click();
   // Sealed cases stay sealed in details and can be opened via their normal flow.
-  await go('/inventory?category=cases');const caseId=await page.locator('.inventory-card-trigger').first().getAttribute('data-inventory-detail');await open(caseId);assert.equal(await page.locator('.inventory-detail-sections [data-item-section="about"]').count(),0);assert.equal(await page.locator('.inventory-item-dialog .inventory-case-art').count(),1);
+  await go('/inventory?category=cases');assert.equal(await page.locator('.sealed-case-item [data-market-trend]').count(),0);const caseId=await page.locator('.inventory-card-trigger').first().getAttribute('data-inventory-detail');await open(caseId);assert.equal(await page.locator('.inventory-detail-sections [data-item-section="about"]').count(),0);assert.equal(await page.locator('.inventory-item-dialog .inventory-case-art').count(),1);
   await page.locator('.inventory-item-dialog [data-account="open-inventory-case"]').click();await page.waitForSelector('.case-unboxed',{timeout:15000});assert.equal(await page.locator('.inventory-item-dialog').evaluate(el=>el.open),false);assert.equal(readItems().filter(item=>item.kind==='case').length,1);await page.locator('[data-account="close-reveal"]').first().click();
   // Navigation closes the details; legacy feature-off selling remains usable.
   await go('/inventory?focus=gallery-item');await open('gallery-item');await page.evaluate(()=>navigateAccountPage('/leaderboard'));await page.waitForSelector('.leaderboard-page');assert.equal(await page.locator('.inventory-item-dialog').evaluate(el=>el.open),false);
   await go('/inventory?focus=tool-0');await page.evaluate(()=>{economyFlags.resales=false;renderInventory();});assert.equal(await page.locator('.inventory-grid [data-economy="quick-list"]').count(),0);await open('tool-0');assert.equal(await page.locator('.inventory-item-dialog [data-account="sell"]').count(),1);await close();
-  assert.deepEqual(errors,[]);console.log('Inventory item UI passed: compact cards; whole-card/keyboard details; collapsed sections and gallery; escaped copy; one-copy quick listing with price/duration, duplicate-click protection, in-place filters and shelf preservation; modal state refresh; transient failure and stale-tab recovery; advanced listing; listed/shelved states, unstock and deep-link stock; sealed case opening; navigation cleanup; legacy selling; EN/DE at 1440/1024/768/600/390/320px; no overflow or JS errors.');
+  await page.evaluate(()=>{economyFlags.market=false;renderInventory();});assert.equal(await page.locator('.inventory-grid [data-market-trend]').count(),0);
+  await page.unroute('**/api/market');await page.route('**/api/market',route=>route.fulfill({status:503,json:{error:'unavailable'}}),{times:1});await go('/inventory?focus=gallery-item');assert.equal(await page.locator('.inventory-grid [data-market-trend]').count(),0);assert.ok(await page.locator('.inventory-card-trigger').count()>0);
+  assert.deepEqual(errors,[]);console.log('Inventory item UI passed: compact shared 24h category chips, positive/negative/flat/unavailable states, no sealed-case trend; compact cards; whole-card/keyboard details; collapsed sections and gallery; escaped copy; one-copy quick listing with price/duration, duplicate-click protection, in-place filters and shelf preservation; modal state refresh; transient failure and stale-tab recovery; advanced listing; listed/shelved states, unstock and deep-link stock; sealed case opening; navigation cleanup; legacy selling; EN/DE at 1440/1024/768/600/390/320px; no overflow or JS errors.');
 }finally{await browser.close();await new Promise(resolve=>server.close(resolve));closeDataStore(dir);await rm(dir,{recursive:true,force:true});}

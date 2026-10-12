@@ -53,7 +53,7 @@
 .inventory-detail-tags .inventory-state { margin:0;font-size:.65rem; }
 .inventory-detail-main h2 { font-size:clamp(23px,3vw,32px);letter-spacing:-.05em;line-height:1.24;margin:12px 0 23px;overflow-wrap:anywhere; }
 .inventory-detail-value { display:grid;gap:8px; }
-.inventory-detail-value > span { color:var(--muted);font-size:.68rem; }
+.inventory-detail-value > span:not(.item-market-trend) { color:var(--muted);font-size:.68rem; }
 .inventory-detail-value > strong { font:700 1.7rem 'DM Mono',monospace;letter-spacing:-.07em;overflow-wrap:anywhere; }
 .inventory-detail-value > small { color:var(--muted);font-size:.62rem;line-height:1.65; }
 .inventory-detail-actions { display:grid;gap:10px;margin:22px 0; }
