@@ -2,7 +2,77 @@ window.businessUi = (() => {
   const esc = accountEscape;
   let dashboard = null, timer = null, request = 0, busy = false;
   let restockReturnFocus = null, restockShopId = null, restockGroups = [], restockSignature = null;
-  let editorShopId = null, editorReturnFocus = null;
+  let editorShopId = null, editorReturnFocus = null, quickJob = null;
+  const quickDialog = document.createElement('dialog');
+  quickDialog.className = 'business-quick-dialog'; quickDialog.setAttribute('aria-labelledby', 'quick-restock-title'); document.body.append(quickDialog);
+  const businessSurface = () => ['/businesses', '/stores'].includes(currentAccountPage);
+  const ownedShop = id => dashboard?.shops.find(shop => shop.id === id);
+  function quickRestockMarkup(id) {
+    const shop = ownedShop(id); if (!shop) return '';
+    const space = Math.max(0, shop.capacity - shop.stock.length), available = dashboard.inventory.filter(item => item.type === shop.type).length;
+    const label = !space ? t('Shelves full', 'Regale voll') : !available ? t('No matching inventory', 'Keine passenden Waren') : t('Quick restock', 'Schnell auffüllen');
+    return `<button class="business-quick-button" type="button" data-business="quick-restock" data-shop="${esc(id)}" ${!space || !available || quickJob ? 'disabled' : ''}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m13 2-8 12h6l-1 8 9-12h-6l1-8Z"/></svg>${label}</button>`;
+  }
+  function focusRestockControl(id) {
+    const selector = `[data-shop="${CSS.escape(id)}"]`;
+    const button = accountContent.querySelector(`[data-business="quick-restock"]${selector}:not(:disabled)`) || accountContent.querySelector(`[data-business="open-restock"]${selector}`) || accountContent.querySelector(`[data-business="open-edit"]${selector}`) || accountContent.querySelector(`a[href="/stores?shop=${encodeURIComponent(id)}"]`);
+    button?.focus({preventScroll:true});
+  }
+  function cancelQuickRestock(repaint = true) {
+    if (!quickJob || quickJob.phase === 'saving') return;
+    const job = quickJob; job.cancelled = true; clearInterval(job.interval); clearTimeout(job.timeout); job.resolve?.(false);
+    quickJob = null; busy = false; quickDialog.close();
+    if (repaint && job.visit === accountVisit) { render(); focusRestockControl(job.shopId); }
+  }
+  function paintQuickProgress(job) {
+    if (quickJob !== job || !quickDialog.open) return;
+    const fraction = Math.min(.95, (performance.now() - job.started) / job.duration);
+    const progress = quickDialog.querySelector('progress'); progress.value = Math.round(fraction * 100);
+    quickDialog.querySelector('[data-quick-percent]').textContent = `${progress.value}%`;
+    quickDialog.querySelector('[data-quick-stage]').textContent = job.phase === 'saving' ? t('Placing items on the shelves…', 'Artikel werden eingeräumt …') : fraction < .35 ? t('Finding compatible items…', 'Passende Artikel werden gesucht …') : fraction < .7 ? t('Choosing a varied assortment…', 'Ein vielfältiges Sortiment wird zusammengestellt …') : t('Preparing your shelves…', 'Deine Regale werden vorbereitet …');
+  }
+  async function quickRestock(button) {
+    if (busy || quickJob || !account || !ownedShop(button.dataset.shop)) return;
+    const job = { shopId: button.dataset.shop, owner: account.id, visit: accountVisit, phase: 'preparing', cancelled: false, duration: 6500 };
+    quickJob = job; busy = true;
+    try {
+      await refresh(job.visit, false);
+      if (job.cancelled || quickJob !== job || job.visit !== accountVisit || job.owner !== account?.id) return;
+      const shop = ownedShop(job.shopId), available = dashboard.inventory.filter(item => item.type === shop?.type).length;
+      if (!shop || shop.stock.length >= shop.capacity || !available) throw new Error(!available ? t('No compatible items in your inventory. Find stock in the Auction House.', 'Keine passenden Artikel in deinem Inventar. Finde Waren im Auktionshaus.') : t('These shelves are already full.', 'Diese Regale sind bereits voll.'));
+      job.started = performance.now(); job.phase = 'packing';
+      quickDialog.innerHTML = `<div class="business-quick-content"><span class="quick-restock-emblem" aria-hidden="true">↻</span><p class="eyebrow">${esc(shop.name || typeName(shop.type))}</p><h2 id="quick-restock-title">${t('Restocking your store', 'Dein Laden wird aufgefüllt')}</h2><p>${t('A varied selection from your inventory, fitted to your free shelf space.', 'Eine vielfältige Auswahl aus deinem Inventar, passend zu deinen freien Regalplätzen.')}</p><div class="quick-restock-status"><span data-quick-stage role="status" aria-live="polite"></span><strong data-quick-percent>0%</strong></div><progress max="100" value="0" aria-label="${t('Restock progress', 'Fortschritt beim Auffüllen')}"></progress><button class="secondary-button" type="button" data-business="cancel-quick">${t('Cancel', 'Abbrechen')}</button></div>`;
+      quickDialog.showModal(); quickDialog.querySelector('button').focus(); paintQuickProgress(job);
+      const ready = await new Promise(resolve => { job.resolve = resolve; job.interval = setInterval(() => paintQuickProgress(job), 100); job.timeout = setTimeout(() => resolve(true), job.duration); });
+      clearInterval(job.interval); clearTimeout(job.timeout);
+      if (!ready || job.cancelled || quickJob !== job || job.visit !== accountVisit || job.owner !== account?.id) return;
+      // Re-read at completion: shelf capacity and unlocked inventory may have
+      // changed in another tab while the presentation was running.
+      job.phase = 'saving'; quickDialog.querySelector('button').disabled = true; paintQuickProgress(job);
+      await refresh(job.visit, false);
+      if (quickJob !== job || job.visit !== accountVisit || job.owner !== account?.id) return;
+      const current = ownedShop(job.shopId);
+      if (!current) throw new Error(accountError('business_not_found'));
+      const groups = groupedRestockItems(dashboard.inventory.filter(item => item.type === current.type));
+      const counts = autoRestockCounts(groups, current.stock.map(entry => entry.item.title), Math.max(0, current.capacity - current.stock.length));
+      const inventoryIds = groups.flatMap((group, index) => group.items.slice(0, counts[index]).map(item => item.id));
+      if (!inventoryIds.length) throw new Error(t('No free shelf space or compatible inventory remains.', 'Es sind keine freien Regalplätze oder passenden Waren mehr verfügbar.'));
+      const result = await accountApi('businesses/stock', { shopId: job.shopId, inventoryIds });
+      if (job.visit !== accountVisit || job.owner !== account?.id) return;
+      if (result.user) updateAccount(result.user);
+      dashboard.shops = dashboard.shops.map(shop => shop.id === job.shopId ? result.shop : shop);
+      dashboard.inventory = dashboard.inventory.filter(item => !inventoryIds.includes(item.id));
+      quickDialog.querySelector('progress').value = 100; quickDialog.querySelector('[data-quick-percent]').textContent = '100%';
+      await refresh(job.visit, false);
+      if (job.visit === accountVisit && job.owner === account?.id) showToast(t(`${inventoryIds.length} items added to your shelves.`, `${inventoryIds.length} Artikel in deine Regale eingeräumt.`));
+    } catch (error) { if (job.visit === accountVisit && job.owner === account?.id) showToast(error.message); }
+    finally {
+      clearInterval(job.interval); clearTimeout(job.timeout);
+      if (quickJob === job) { quickJob = null; busy = false; quickDialog.close(); if (job.visit === accountVisit) { render(); focusRestockControl(job.shopId); } }
+    }
+  }
+  quickDialog.addEventListener('cancel', event => { event.preventDefault(); cancelQuickRestock(); });
+  quickDialog.addEventListener('click', event => { if (event.target === quickDialog) cancelQuickRestock(); });
   const editorDialog = document.createElement('dialog');
   editorDialog.className = 'business-editor-dialog'; editorDialog.setAttribute('aria-labelledby', 'business-editor-title'); document.body.append(editorDialog);
   const restockDialog = document.createElement('dialog');
@@ -44,6 +114,7 @@ window.businessUi = (() => {
     if (repaint && !busy && !restockDialog.open && !document.activeElement?.closest('[data-business-margin-form], [data-store-profile]')) render();
   }
   function stop() {
+    if (quickJob) { quickJob.phase = 'cancelled'; cancelQuickRestock(false); }
     clearInterval(timer); timer = null; request++; dashboard = null;
     editorShopId = null; editorReturnFocus = null; editorDialog.close();
     restockReturnFocus = null; restockShopId = null; restockSignature = null; if (restockDialog.open) restockDialog.close();
@@ -61,7 +132,7 @@ window.businessUi = (() => {
   }
   function shopCard(shop) {
     const filled = Math.min(100, Math.round(shop.stock.length / shop.capacity * 100));
-    return `<article class="business-shop business-type-${esc(shop.type)}"><div class="business-card-art"><div class="business-card-badges"><span>${esc(sizeName(shop.size))}</span><span class="business-card-state${!shop.stock.length ? ' is-empty' : ''}"><i aria-hidden="true"></i>${shop.stock.length ? t('Open for business', 'Laden geöffnet') : t('Needs stock', 'Waren fehlen')}</span></div>${storefrontArt(shop.type)}</div><div class="business-card-body"><p class="business-card-category">${esc(typeName(shop.type))}</p>${shop.location ? `<a class="business-card-address" href="/town?plot=${encodeURIComponent(shop.location.plotId)}" data-page>${shop.location.districtNumber}. ${esc(shop.location.districtName)} · ${esc(shop.location.streetName)} ↗</a>` : ''}<h2>${esc(shop.name || typeName(shop.type))}</h2>${shop.motto?`<p class="business-card-motto">${esc(shop.motto)}</p>`:''}<dl class="business-card-stats"><div><dt>${t('Revenue today', 'Umsatz heute')}</dt><dd>${justizEuro(shop.revenueToday)}</dd></div><div><dt>${t('Sales today', 'Verkäufe heute')}</dt><dd>${number(shop.salesToday)}</dd></div></dl><div class="business-card-stock"><div><span>${t('On the shelves', 'In den Regalen')}</span><strong>${number(shop.stock.length)} <span>/ ${number(shop.capacity)}</span></strong></div><progress value="${shop.stock.length}" max="${shop.capacity}" aria-label="${esc(t('Shelf capacity used', 'Belegte Regalplätze'))}">${filled}%</progress></div><div class="business-card-details"><span>${number(shop.profitMargin)}% ${t('markup', 'Aufschlag')}</span>${shop.gooseGuard ? `<span>${t('Goose protected', 'Wachgans im Dienst')}</span>` : `<span>${number(shop.visitors)} ${t('visitors', 'Besucher')}</span>`}</div>${!shop.stock.length?`<p><a href="/auction-house?stock=${encodeURIComponent(shop.type)}" data-page>${t('Find stock for this store','Waren für diesen Laden finden')} →</a> · <a href="/inventory?category=${({cars:'vehicles',toys:'collectibles'})[shop.type]||shop.type}" data-page>${t('Stock from inventory','Aus Inventar einräumen')} →</a></p>`:''}<div class="business-card-actions"><button class="business-edit-button" type="button" data-business="open-edit" data-shop="${esc(shop.id)}" aria-label="${esc(t('Edit store', 'Laden bearbeiten'))}: ${esc(shop.name || typeName(shop.type))}">${editIcon()}${t('Edit store', 'Laden bearbeiten')}</button><a href="/stores?shop=${encodeURIComponent(shop.id)}" data-page>${t('Visit', 'Besuchen')} <span aria-hidden="true">↗</span></a></div></div></article>`;
+    return `<article class="business-shop business-type-${esc(shop.type)}"><div class="business-card-art"><div class="business-card-badges"><span>${esc(sizeName(shop.size))}</span><span class="business-card-state${!shop.stock.length ? ' is-empty' : ''}"><i aria-hidden="true"></i>${shop.stock.length ? t('Open for business', 'Laden geöffnet') : t('Needs stock', 'Waren fehlen')}</span></div>${storefrontArt(shop.type)}</div><div class="business-card-body"><p class="business-card-category">${esc(typeName(shop.type))}</p>${shop.location ? `<a class="business-card-address" href="/town?plot=${encodeURIComponent(shop.location.plotId)}" data-page>${shop.location.districtNumber}. ${esc(shop.location.districtName)} · ${esc(shop.location.streetName)} ↗</a>` : ''}<h2>${esc(shop.name || typeName(shop.type))}</h2>${shop.motto?`<p class="business-card-motto">${esc(shop.motto)}</p>`:''}<dl class="business-card-stats"><div><dt>${t('Revenue today', 'Umsatz heute')}</dt><dd>${justizEuro(shop.revenueToday)}</dd></div><div><dt>${t('Sales today', 'Verkäufe heute')}</dt><dd>${number(shop.salesToday)}</dd></div></dl><div class="business-card-stock"><div><span>${t('On the shelves', 'In den Regalen')}</span><strong>${number(shop.stock.length)} <span>/ ${number(shop.capacity)}</span></strong></div><progress value="${shop.stock.length}" max="${shop.capacity}" aria-label="${esc(t('Shelf capacity used', 'Belegte Regalplätze'))}">${filled}%</progress></div><div class="business-card-details"><span>${number(shop.profitMargin)}% ${t('markup', 'Aufschlag')}</span>${shop.gooseGuard ? `<span>${t('Goose protected', 'Wachgans im Dienst')}</span>` : `<span>${number(shop.visitors)} ${t('visitors', 'Besucher')}</span>`}</div>${quickRestockMarkup(shop.id)}<div class="business-card-actions"><button class="business-edit-button" type="button" data-business="open-edit" data-shop="${esc(shop.id)}" aria-label="${esc(t('Edit store', 'Laden bearbeiten'))}: ${esc(shop.name || typeName(shop.type))}">${editIcon()}${t('Edit store', 'Laden bearbeiten')}</button><a href="/stores?shop=${encodeURIComponent(shop.id)}" data-page>${t('Open store', 'Laden öffnen')} <span aria-hidden="true">→</span></a></div></div></article>`;
   }
   function shopsView() {
     if (!account) return `<section class="business-guest"><h1 tabindex="-1">${t('Your stores', 'Deine Läden')}</h1><a class="primary-button" href="/login" data-page>${t('Log in to get started', 'Anmelden und loslegen')}</a></section>`;
@@ -69,9 +140,29 @@ window.businessUi = (() => {
     const total = key => shops.reduce((sum, shop) => sum + shop[key], 0);
     return `<div class="business-portfolio"><header class="business-hero"><div><h1 tabindex="-1">${t('Your stores', 'Deine Läden')}</h1><a href="/town" data-page>${t('Town map', 'Stadtplan')} <span aria-hidden="true">↗</span></a></div><div class="business-hero-account"><span class="business-location-count">${shops.length} / ${max} ${t('locations', 'Standorte')}</span><div class="business-location-dots" aria-hidden="true">${Array.from({length:max},(_,n)=>`<span class="${n < shops.length ? 'is-owned' : ''}">${String(n+1).padStart(2,'0')}</span>`).join('')}</div><small>${t('Available to invest', 'Zum Investieren verfügbar')}</small><strong>${justizEuro(account.tokens)}</strong></div></header><dl class="business-portfolio-stats"><div><dt>${t('Revenue today', 'Umsatz heute')}</dt><dd>${justizEuro(total('revenueToday'))}</dd></div><div><dt>${t('Items on shelves', 'Artikel im Regal')}</dt><dd>${number(shops.reduce((sum, shop) => sum + shop.stock.length, 0))}</dd></div><div><dt>${t('Sales today', 'Verkäufe heute')}</dt><dd>${number(total('salesToday'))}</dd></div></dl><section class="business-owned"><div class="business-portfolio-heading"><div><h2>${t('Stores', 'Läden')}</h2></div><button class="business-new-button" type="button" data-business="open-buy" ${canBuy ? '' : 'disabled'}><span aria-hidden="true">＋</span>${canBuy ? t('Open a store', 'Laden eröffnen') : t('All locations filled', 'Alle Standorte belegt')}</button></div><div class="business-shop-grid">${shops.map(shopCard).join('')}${canBuy ? `<button class="business-add-card" type="button" data-business="open-buy"><span class="business-add-icon" aria-hidden="true">＋</span><strong>${t('Open a store','Laden eröffnen')}</strong><b>${t('Choose location', 'Standort wählen')} <span aria-hidden="true">→</span></b></button>` : ''}</div></section></div>`;
   }
+  function shelfGroups(stock) {
+    const groups = new Map();
+    for (const entry of stock) {
+      const key = JSON.stringify([entry.item.title, entry.item.image || null, entry.askingPrice, entry.referencePrice]);
+      if (!groups.has(key)) groups.set(key, { ...entry, quantity: 0 });
+      groups.get(key).quantity++;
+    }
+    return [...groups.values()];
+  }
+  function ownerView(store) {
+    const shop = ownedShop(store.id); if (!shop) return pageHeading(t('Loading your store…', 'Dein Laden wird geladen …'));
+    const available = dashboard.inventory.filter(item => item.type === shop.type).length, space = Math.max(0, shop.capacity - shop.stock.length);
+    return `<div class="store-owner-page business-type-${esc(shop.type)}"><a class="store-owner-back" href="/businesses" data-page>← ${t('Your stores', 'Deine Läden')}</a>
+      <header class="store-owner-hero"><div class="store-owner-identity"><p class="eyebrow">${t('YOUR STORE', 'DEIN LADEN')} · ${esc(typeName(shop.type))}</p><h1 tabindex="-1">${esc(shop.name || typeName(shop.type))}</h1>${shop.motto ? `<p class="store-owner-motto">${esc(shop.motto)}</p>` : ''}<div class="store-owner-meta"><span>${esc(sizeName(shop.size))}</span><span>${store.rating === null ? t('No reviews yet', 'Noch keine Bewertungen') : `★ ${number(store.rating, 1)} / 5`}</span>${shop.gooseGuard ? `<span>${t('Goose guard active', 'Wachgans aktiv')}</span>` : ''}</div>${shop.location ? `<a class="store-owner-address" href="/town?plot=${encodeURIComponent(shop.location.plotId)}" data-page>${shop.location.districtNumber}. ${esc(shop.location.districtName)} · ${esc(shop.location.streetName)} ↗</a>` : ''}</div><div class="store-owner-art" aria-hidden="true">${storefrontArt(shop.type)}</div></header>
+      <div class="store-owner-actions">${quickRestockMarkup(shop.id)}<button class="secondary-button" type="button" data-business="open-restock" data-shop="${esc(shop.id)}">${t('Manage stock', 'Warenbestand verwalten')}</button><button class="secondary-button" type="button" data-business="open-edit" data-shop="${esc(shop.id)}">${editIcon()}${t('Store settings', 'Ladeneinstellungen')}</button></div>
+      <dl class="store-owner-stats"><div><dt>${t('Revenue today', 'Umsatz heute')}</dt><dd>${justizEuro(shop.revenueToday)}</dd></div><div><dt>${t('Sales today', 'Verkäufe heute')}</dt><dd>${number(shop.salesToday)}</dd></div><div><dt>${t('Markup', 'Aufschlag')}</dt><dd>${number(shop.profitMargin)}%</dd></div><div><dt>${t('Free shelf spaces', 'Freie Regalplätze')}</dt><dd>${number(space)} <small>/ ${number(shop.capacity)}</small></dd></div></dl>
+      <div class="store-owner-workspace"><section class="store-owner-shelves" aria-labelledby="owner-shelves-title"><div class="store-owner-section-heading"><div><p class="eyebrow">${t('YOUR ASSORTMENT', 'DEIN SORTIMENT')}</p><h2 id="owner-shelves-title">${t('On the shelves', 'In den Regalen')}</h2></div><span>${number(shop.stock.length)} / ${number(shop.capacity)}</span></div>
+        ${shop.stock.length ? `<ul class="store-owner-stock-list">${shelfGroups(shop.stock).map(entry => `<li><div class="store-owner-item-art">${entry.item.image ? `<img src="${esc(entry.item.image)}" alt="" loading="lazy">` : typeIcon(shop.type)}</div><div class="store-owner-item-copy"><strong>${esc(entry.item.title)}${entry.quantity > 1 ? `<span class="store-owner-quantity">×${number(entry.quantity)}</span>` : ''}</strong><small>${t('Market estimate', 'Marktschätzung')} ${justizEuro(entry.referencePrice)}</small></div><div class="store-owner-item-price"><small>${t('Shelf price', 'Regalpreis')}</small><strong>${justizEuro(entry.askingPrice)}</strong></div><button class="store-owner-remove" type="button" data-business="unstock" data-shop="${esc(shop.id)}" data-item="${esc(entry.id)}" aria-label="${esc(t('Return to inventory', 'Zurück ins Inventar'))}: ${esc(entry.item.title)}">${entry.quantity > 1 ? t('Remove one', 'Einen entfernen') : t('Remove', 'Entfernen')}</button></li>`).join('')}</ul>` : `<div class="store-owner-empty">${typeIcon(shop.type)}<h3>${t('Your shelves are ready for their first finds.', 'Deine Regale warten auf die ersten Funde.')}</h3><p>${available ? t('Use Quick Restock to add matching items from your inventory.', 'Räume passende Artikel aus deinem Inventar mit Schnell auffüllen ein.') : t('Win compatible stock in the Auction House, then restock here.', 'Ersteigere passende Waren im Auktionshaus und räume sie hier ein.')}</p></div>`}</section>
+      <aside class="store-owner-supply"><p class="eyebrow">${t('RESTOCK PLAN', 'NACHFÜLLPLAN')}</p><h2>${t('Keep your store moving', 'Halte deinen Laden in Schwung')}</h2><div class="store-owner-capacity"><span>${t('Shelf space used', 'Belegte Regalplätze')}</span><strong>${number(shop.stock.length)} / ${number(shop.capacity)}</strong><progress value="${shop.stock.length}" max="${shop.capacity}" aria-label="${t('Shelf capacity used', 'Belegte Regalplätze')}"></progress></div><dl><div><dt>${t('Matching inventory', 'Passende Waren im Inventar')}</dt><dd>${number(available)}</dd></div><div><dt>${t('Ready to restock', 'Zum Auffüllen bereit')}</dt><dd>${number(Math.min(space, available))}</dd></div></dl><p>${t('Quick Restock picks a varied mix from your inventory and fills only free spaces. No J€ is spent.', 'Schnell auffüllen wählt eine vielfältige Mischung aus deinem Inventar und belegt nur freie Plätze. Es kostet keine J€.')}</p><a href="/auction-house?stock=${encodeURIComponent(shop.type)}" data-page>${t('Find compatible stock', 'Passende Waren finden')} <span aria-hidden="true">↗</span></a></aside></div></div>`;
+  }
   function renderEditor(draft = null) {
     const shop = dashboard?.shops.find(entry => entry.id === editorShopId); if (!shop) return;
-    editorDialog.innerHTML = `<header class="business-editor-header"><span class="business-editor-icon business-type-${esc(shop.type)}">${typeIcon(shop.type)}</span><div><p class="eyebrow">${esc(typeName(shop.type))} · ${esc(sizeName(shop.size))}</p><h2 id="business-editor-title" data-editor-title>${esc(shop.name || typeName(shop.type))}</h2></div><button class="dialog-close" type="button" data-business="close-edit" aria-label="${t('Close', 'Schließen')}">×</button></header><div class="business-editor-content"><div><section class="business-editor-section"><h3>${t('Store details', 'Ladendetails')}</h3><form class="store-profile-form" data-store-profile data-shop="${esc(shop.id)}"><label>${t('Store name', 'Ladenname')}<input name="storeName" maxlength="60" value="${esc(draft?.name ?? shop.name ?? '')}" placeholder="${esc(typeName(shop.type))}"></label><label>${t('Tagline', 'Ladenspruch')}<input name="motto" maxlength="140" value="${esc(draft?.motto ?? shop.motto ?? '')}"></label><label class="store-guard-choice"><input name="mischiefEnabled" type="checkbox" ${draft?.mischief ?? shop.mischiefEnabled ? 'checked' : ''}><span>${t('Allow player mischief · optional theft game. Existing attempts finish even after disabling.','Spielerunfug erlauben · optionales Diebstahlspiel. Begonnene Versuche enden auch nach dem Abschalten.')}</span></label><label class="store-guard-choice"><input name="gooseGuard" type="checkbox" ${shop.gooseGuard || draft?.guard ? 'checked' : ''} ${shop.gooseGuard ? 'disabled' : ''}><span data-editor-guard>${shop.gooseGuard ? t('Goose guard active', 'Wachgans aktiv') : t('Hire a goose guard · J€250 once · halves theft chance', 'Wachgans einstellen · einmalig J€250 · halbiert Diebstahlchance')}</span></label><button type="submit" class="business-edit-button">${t('Save storefront', 'Ladenauftritt speichern')}</button><p class="account-error" role="alert"></p></form></section><section class="business-editor-section"><h3>${t('Pricing', 'Preise')}</h3><form class="business-margin" data-business-margin-form data-shop="${esc(shop.id)}"><label>${t('Markup over market estimate', 'Aufschlag auf Marktschätzung')}<span><input name="profitMargin" type="number" min="0" max="100" step="1" value="${draft?.margin ?? shop.profitMargin}" inputmode="numeric" required> %</span></label><button class="secondary-button" type="submit">${t('Save markup', 'Aufschlag speichern')}</button><p>${t('Higher markups and expensive items reduce turnover. Markup is not your profit.', 'Höhere Aufschläge und teure Waren senken den Absatz. Aufschlag ist nicht dein Gewinn.')}</p><p class="account-error" role="alert"></p></form></section></div><div><section class="business-editor-section business-editor-shelves"><span class="business-editor-shelf-art business-type-${esc(shop.type)}">${storefrontArt(shop.type)}</span><h3>${t('Stock', 'Warenbestand')}</h3><p data-editor-stock></p><button class="business-edit-button" type="button" data-business="open-restock" data-shop="${esc(shop.id)}">${t('Manage stock', 'Warenbestand verwalten')} <span aria-hidden="true">→</span></button><a href="/auction-house?stock=${encodeURIComponent(shop.type)}" data-page>${t('Find compatible stock', 'Passende Waren finden')} ↗</a></section><section class="business-editor-section"><h3>${t('Store statistics', 'Ladenstatistik')}</h3>${shop.location ? `<p>${shop.location.districtNumber}. ${esc(shop.location.districtName)} · ${esc(shop.location.streetName)}<br>${number(shop.location.trafficMultiplier,2)}× ${t('foot traffic','Laufkundschaft')} · ${number(shop.location.theftMultiplier,2)}× ${t('theft odds','Diebstahlchance')}</p><a href="/town?plot=${encodeURIComponent(shop.location.plotId)}" data-page>${t('View on town map','Auf dem Stadtplan ansehen')} ↗</a>` : ''}<dl class="business-editor-stats" data-editor-stats></dl><a class="business-editor-visit" href="/stores?shop=${encodeURIComponent(shop.id)}" data-page>${t('Visit your storefront', 'Deinen Laden besuchen')} <span aria-hidden="true">↗</span></a></section></div></div>`;
+    editorDialog.innerHTML = `<header class="business-editor-header"><span class="business-editor-icon business-type-${esc(shop.type)}">${typeIcon(shop.type)}</span><div><p class="eyebrow">${esc(typeName(shop.type))} · ${esc(sizeName(shop.size))}</p><h2 id="business-editor-title" data-editor-title>${esc(shop.name || typeName(shop.type))}</h2></div><button class="dialog-close" type="button" data-business="close-edit" aria-label="${t('Close', 'Schließen')}">×</button></header><div class="business-editor-content"><div><section class="business-editor-section"><h3>${t('Store details', 'Ladendetails')}</h3><form class="store-profile-form" data-store-profile data-shop="${esc(shop.id)}"><label>${t('Store name', 'Ladenname')}<input name="storeName" maxlength="60" value="${esc(draft?.name ?? shop.name ?? '')}" placeholder="${esc(typeName(shop.type))}"></label><label>${t('Tagline', 'Ladenspruch')}<input name="motto" maxlength="140" value="${esc(draft?.motto ?? shop.motto ?? '')}"></label><label class="store-guard-choice"><input name="mischiefEnabled" type="checkbox" ${draft?.mischief ?? shop.mischiefEnabled ? 'checked' : ''}><span>${t('Allow player mischief · optional theft game. Existing attempts finish even after disabling.','Spielerunfug erlauben · optionales Diebstahlspiel. Begonnene Versuche enden auch nach dem Abschalten.')}</span></label><label class="store-guard-choice"><input name="gooseGuard" type="checkbox" ${shop.gooseGuard || draft?.guard ? 'checked' : ''} ${shop.gooseGuard ? 'disabled' : ''}><span data-editor-guard>${shop.gooseGuard ? t('Goose guard active', 'Wachgans aktiv') : t('Hire a goose guard · J€250 once · halves theft chance', 'Wachgans einstellen · einmalig J€250 · halbiert Diebstahlchance')}</span></label><button type="submit" class="business-edit-button">${t('Save storefront', 'Ladenauftritt speichern')}</button><p class="account-error" role="alert"></p></form></section><section class="business-editor-section"><h3>${t('Pricing', 'Preise')}</h3><form class="business-margin" data-business-margin-form data-shop="${esc(shop.id)}"><label>${t('Markup over market estimate', 'Aufschlag auf Marktschätzung')}<span><input name="profitMargin" type="number" min="0" max="100" step="1" value="${draft?.margin ?? shop.profitMargin}" inputmode="numeric" required> %</span></label><button class="secondary-button" type="submit">${t('Save markup', 'Aufschlag speichern')}</button><p>${t('Higher markups and expensive items reduce turnover. Markup is not your profit.', 'Höhere Aufschläge und teure Waren senken den Absatz. Aufschlag ist nicht dein Gewinn.')}</p><p class="account-error" role="alert"></p></form></section></div><div><section class="business-editor-section business-editor-shelves"><span class="business-editor-shelf-art business-type-${esc(shop.type)}">${storefrontArt(shop.type)}</span><h3>${t('Stock', 'Warenbestand')}</h3><p data-editor-stock></p><button class="business-edit-button" type="button" data-business="open-restock" data-shop="${esc(shop.id)}">${t('Manage stock', 'Warenbestand verwalten')} <span aria-hidden="true">→</span></button><a href="/auction-house?stock=${encodeURIComponent(shop.type)}" data-page>${t('Find compatible stock', 'Passende Waren finden')} ↗</a></section><section class="business-editor-section"><h3>${t('Store statistics', 'Ladenstatistik')}</h3>${shop.location ? `<p>${shop.location.districtNumber}. ${esc(shop.location.districtName)} · ${esc(shop.location.streetName)}<br>${number(shop.location.trafficMultiplier,2)}× ${t('foot traffic','Laufkundschaft')} · ${number(shop.location.theftMultiplier,2)}× ${t('theft odds','Diebstahlchance')}</p><a href="/town?plot=${encodeURIComponent(shop.location.plotId)}" data-page>${t('View on town map','Auf dem Stadtplan ansehen')} ↗</a>` : ''}<dl class="business-editor-stats" data-editor-stats></dl></section></div></div>`;
     syncEditor();
   }
   function syncEditor() {
@@ -184,20 +275,23 @@ window.businessUi = (() => {
   restockDialog.addEventListener('close', () => {
     const shopId = restockShopId;
     restockShopId = null; restockGroups = []; restockSignature = null;
-    if (shopId && currentAccountPage === '/businesses') render();
-    const focus = shopId ? accountContent.querySelector(`[data-business="open-restock"][data-shop="${CSS.escape(shopId)}"]`) : null;
+    if (shopId && businessSurface()) render();
+    const focus = editorDialog.open && restockReturnFocus?.isConnected ? restockReturnFocus : shopId ? accountContent.querySelector(`[data-business="open-restock"][data-shop="${CSS.escape(shopId)}"]`) : null;
     if (focus || restockReturnFocus?.isConnected) (focus || restockReturnFocus).focus({ preventScroll: true });
     restockReturnFocus = null;
   });
   restockDialog.addEventListener('click', event => { if (event.target === restockDialog) restockDialog.close(); });
   function render() {
+    if (currentAccountPage === '/stores') { window.storeUi.render(); return; }
     if (currentAccountPage !== '/businesses') return;
     accountContent.innerHTML = economyOverviewMarkup() + traderMilestonesMarkup() + shopsView();
     if (editorDialog.open) syncEditor();
     window.storeUi.showEvents();
   }
   document.addEventListener('click', async event => {
-    const button = event.target.closest('[data-business]'); if (!button || currentAccountPage !== '/businesses') return;
+    const button = event.target.closest('[data-business]'); if (!button || !businessSurface()) return;
+    if (button.dataset.business === 'cancel-quick') { cancelQuickRestock(); return; }
+    if (button.dataset.business === 'quick-restock') { await quickRestock(button); return; }
     if (button.dataset.business === 'open-edit') { openEditor(button); return; }
     if (button.dataset.business === 'close-edit') { editorDialog.close(); return; }
     if (button.dataset.business === 'open-buy') { openTownMap(button); return; }
@@ -234,7 +328,7 @@ window.businessUi = (() => {
   });
   document.addEventListener('submit', async event => {
     const form = event.target;
-    if (currentAccountPage === '/businesses' && form.matches('[data-business-margin-form]')) {
+    if (businessSurface() && form.matches('[data-business-margin-form]')) {
       event.preventDefault();
       if (busy) return;
       const input = form.elements.profitMargin, profitMargin = Number(input.value);
@@ -254,7 +348,7 @@ window.businessUi = (() => {
       finally { busy = false; if (button.isConnected) button.disabled = false; if (visit === accountVisit) render(); }
       return;
     }
-    if (currentAccountPage !== '/businesses' || form.id !== 'business-restock-form') return;
+    if (!businessSurface() || form.id !== 'business-restock-form') return;
     event.preventDefault();
     if (busy) return;
     const quantities = [...form.querySelectorAll('input[name="quantity"]')].map(input => Number(input.value));
@@ -286,15 +380,16 @@ window.businessUi = (() => {
     }
   });
   document.addEventListener('jg:language', () => {
-    if (currentAccountPage === '/businesses') render();
+    if (businessSurface()) render();
     if (editorDialog.open && !editorDialog.querySelector('button[type="submit"]:disabled')) {
       const form = editorDialog.querySelector('[data-store-profile]');
       renderEditor({name:form.elements.storeName.value,motto:form.elements.motto.value,guard:form.elements.gooseGuard.checked,mischief:form.elements.mischiefEnabled.checked,margin:editorDialog.querySelector('[name="profitMargin"]').value});
     }
+    if (quickJob && quickDialog.open) paintQuickProgress(quickJob);
     if (restockDialog.open) {
       const quantities = [...restockDialog.querySelectorAll('input[name="quantity"]')].map(input => Number(input.value));
       renderRestockDialog(quantities);
     }
   });
-  return { load, stop, render, refresh };
+  return { load, stop, render, refresh, ownerView, ownedShop, quickRestockMarkup, isInteracting: () => busy || editorDialog.open || restockDialog.open || quickDialog.open };
 })();

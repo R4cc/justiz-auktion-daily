@@ -47,7 +47,7 @@ test('store cards lead with daily results and edit actions; complete controls re
     stock: [{ id: 'unit-1', item: { title: 'Puzzle' }, referencePrice: 120, askingPrice: 174 }] };
   const context = vm.createContext({ dashboard: { inventory: [], shops: [shop] }, editorShopId: shop.id,
     esc: String, t: en => en, number: String, justizEuro: value => `J€ ${value}`,
-    typeName: () => 'Toy store', sizeName: () => 'Small shop', storefrontArt: () => '', editIcon: () => '', typeIcon: () => '' });
+    quickRestockMarkup: () => '', typeName: () => 'Toy store', sizeName: () => 'Small shop', storefrontArt: () => '', editIcon: () => '', typeIcon: () => '' });
   vm.runInContext(`${cardSource}\nthis.shopCard = shopCard;`, context);
   const markup = context.shopCard(shop);
   for (const label of ['Sales today', 'Revenue today']) assert.match(markup, new RegExp(`<dt>${label}</dt>`));

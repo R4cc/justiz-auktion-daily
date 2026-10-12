@@ -1876,3 +1876,115 @@ body { padding-left: var(--sidebar-width); }
   .trader-links { align-items:flex-start; }
   .trader-progress .secondary-button { width:100%; }
 }
+
+/* Owned storefront: one place to manage shelves, pricing and identity. */
+.business-quick-button { display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 44px; margin: 0; padding: 12px 16px; border: 1px solid var(--ink); border-radius: 7px; background: var(--ink); color: #fffaf0; font-size: .78rem; font-weight: 800; line-height: 1.4; cursor: pointer; }
+.business-quick-button svg { flex: none; width: 19px; height: 19px; }
+.business-quick-button:hover:not(:disabled) { background: #295747; }
+.business-quick-button:disabled { border-color: var(--line); background: #e9eddf; color: var(--muted); cursor: default; }
+.business-card-body > .business-quick-button { width: 100%; margin: 0 0 14px; }
+.store-card-link { display: block; color: inherit; text-decoration: none; }
+.store-card-quick { padding: 0 20px 20px; }
+.store-card-quick .business-quick-button { width: 100%; }
+.store-owner-back { color: var(--ink); display: inline-flex; align-items: center; min-height: 44px; margin-bottom: 14px; font-size: .8rem; font-weight: 700; text-underline-offset: 4px; }
+.store-owner-hero { display: grid; grid-template-columns: minmax(0, 1fr) 280px; align-items: center; gap: 24px; padding: 26px 30px; border: 1px solid var(--line); border-radius: 16px; background: #fffdf7; }
+.store-owner-identity { min-width: 0; }
+.store-owner-identity .eyebrow { margin: 0 0 10px; color: var(--choice-accent); font-size: .65rem; line-height: 1.5; }
+.store-owner-identity h1 { margin: 0; font-size: clamp(30px, 3.6vw, 46px); line-height: 1.15; letter-spacing: -.05em; overflow-wrap: anywhere; }
+.store-owner-motto { margin: 12px 0; color: var(--muted); font-size: .9rem; line-height: 1.6; overflow-wrap: anywhere; }
+.store-owner-meta { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 16px; }
+.store-owner-meta > span { padding: 6px 9px; border: 1px solid var(--line); border-radius: 5px; background: var(--choice-tint); color: var(--choice-accent); font-size: .65rem; font-weight: 700; }
+.store-owner-address { color: var(--choice-accent); display: inline-block; margin-top: 14px; font-size: .72rem; line-height: 1.6; text-underline-offset: 3px; }
+.store-owner-art { padding: 10px 0; border-radius: 12px; background: var(--choice-tint); }
+.store-owner-art .business-card-scene { max-width: 100%; }
+.store-owner-actions { display: flex; flex-wrap: wrap; gap: 10px; padding: 20px 0; }
+.store-owner-actions .secondary-button { display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 44px; margin: 0; padding: 12px 16px; font-size: .78rem; }
+.store-owner-stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); margin: 0 0 24px; padding: 22px 0; border-radius: 12px; background: var(--ink); color: #fffaf0; }
+.store-owner-stats > div { min-width: 0; padding: 0 24px; border-left: 1px solid #ffffff26; }
+.store-owner-stats > div:first-child { border-left: 0; }
+.store-owner-stats dt { color: #d1dccb; font-size: .68rem; line-height: 1.5; }
+.store-owner-stats dd { margin: 9px 0 0; font: 500 clamp(20px, 2vw, 28px) 'DM Mono', monospace; overflow-wrap: anywhere; }
+.store-owner-stats dd small { color: #d1dccb; font-size: .7rem; }
+.store-owner-workspace { display: grid; grid-template-columns: minmax(0, 1fr) 280px; align-items: start; gap: 22px; }
+.store-owner-shelves { min-width: 0; border: 1px solid var(--line); border-radius: 12px; background: #fffdf7; overflow: hidden; }
+.store-owner-section-heading { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 22px; border-bottom: 1px solid var(--line); }
+.store-owner-section-heading .eyebrow { margin: 0 0 6px; font-size: .6rem; color: var(--muted); }
+.store-owner-section-heading h2 { margin: 0; font-size: 1.25rem; letter-spacing: -.03em; }
+.store-owner-section-heading > span { flex: none; font: .75rem 'DM Mono', monospace; color: var(--muted); }
+.store-owner-stock-list { max-height: min(65dvh, 600px); overflow-y: auto; overscroll-behavior: contain; padding: 0 22px; margin: 0; list-style: none; }
+.store-owner-stock-list > li { display: grid; grid-template-columns: 52px minmax(0, 1fr) auto; align-items: center; gap: 12px; padding: 18px 0; border-bottom: 1px solid var(--line); }
+.store-owner-stock-list > li:last-child { border-bottom: 0; }
+.store-owner-item-art { display: grid; place-items: center; width: 52px; height: 52px; border: 1px solid var(--line); border-radius: 6px; background: var(--paper); color: var(--choice-accent); overflow: hidden; }
+.store-owner-item-art img { width: 100%; height: 100%; object-fit: contain; }
+.store-owner-item-art svg { width: 32px; height: 32px; }
+.store-owner-item-copy { display: grid; gap: 6px; min-width: 0; }
+.store-owner-item-copy strong { font-size: .8rem; line-height: 1.4; overflow-wrap: anywhere; }
+.store-owner-quantity { display: inline-block; margin-left: 8px; padding: 3px 6px; border-radius: 4px; background: var(--choice-tint); color: var(--choice-accent); font: .65rem 'DM Mono', monospace; }
+.store-owner-item-copy small, .store-owner-item-price small { color: var(--muted); font-size: .65rem; line-height: 1.4; }
+.store-owner-item-price { display: grid; gap: 6px; text-align: right; }
+.store-owner-item-price strong { font: 500 .8rem 'DM Mono', monospace; }
+.store-owner-remove { grid-column: 2 / 4; justify-self: start; min-height: 44px; padding: 4px 0; border: 0; background: transparent; color: var(--muted); text-decoration: underline; text-underline-offset: 3px; font-size: .65rem; cursor: pointer; }
+.store-owner-empty { display: grid; justify-items: center; padding: 40px 24px; text-align: center; }
+.store-owner-empty > svg { width: 48px; height: 48px; margin-bottom: 18px; color: var(--choice-accent); }
+.store-owner-empty h3 { max-width: 340px; margin: 0; font-size: 1.1rem; line-height: 1.4; }
+.store-owner-empty p { max-width: 340px; margin: 12px 0 0; font-size: .78rem; line-height: 1.7; color: var(--muted); }
+.store-owner-supply { min-width: 0; padding: 24px; border: 1px solid var(--line); border-radius: 12px; background: var(--choice-tint); }
+.store-owner-supply > .eyebrow { margin: 0 0 10px; color: var(--choice-accent); font-size: .6rem; }
+.store-owner-supply h2 { margin: 0; font-size: 1.2rem; line-height: 1.3; letter-spacing: -.03em; }
+.store-owner-capacity { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 10px; margin: 22px 0; font-size: .67rem; }
+.store-owner-capacity strong { font-family: 'DM Mono', monospace; }
+.store-owner-capacity progress { grid-column: 1 / -1; width: 100%; height: 8px; border: 0; border-radius: 6px; overflow: hidden; accent-color: var(--choice-accent); }
+.store-owner-capacity progress::-webkit-progress-bar { background: #ffffff99; }
+.store-owner-capacity progress::-webkit-progress-value { background: var(--choice-accent); }
+.store-owner-capacity progress::-moz-progress-bar { background: var(--choice-accent); }
+.store-owner-supply dl { margin: 0; padding: 14px 0; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
+.store-owner-supply dl > div { display: flex; justify-content: space-between; gap: 12px; margin: 8px 0; font-size: .72rem; }
+.store-owner-supply dd { margin: 0; font-family: 'DM Mono', monospace; }
+.store-owner-supply > p:not(.eyebrow) { font-size: .72rem; line-height: 1.7; color: var(--muted); }
+.store-owner-supply > a { color: var(--ink); display: inline-flex; gap: 8px; align-items: center; min-height: 44px; font-size: .72rem; font-weight: 800; text-underline-offset: 4px; }
+.store-owner-reviews { margin: 24px 0; padding: 20px 24px; border: 1px solid var(--line); border-radius: 12px; background: #fffdf7; }
+.store-owner-reviews > summary { cursor: pointer; font-size: .85rem; font-weight: 800; }
+.store-owner-reviews summary > span { display: inline-grid; place-items: center; min-width: 25px; height: 25px; margin-left: 8px; border-radius: 5px; background: var(--paper); color: var(--muted); font: .7rem 'DM Mono', monospace; }
+.store-owner-reviews .store-review-list { margin-top: 18px; font-size: .8rem; }
+.business-quick-dialog { width: min(440px, calc(100vw - 24px)); max-height: calc(100dvh - 24px); padding: 0; overflow: auto; border: 1px solid var(--ink); border-radius: 18px; background: var(--paper); color: var(--ink); }
+.business-quick-dialog::backdrop { background: #0c211dcc; }
+.business-quick-content { padding: 32px; text-align: center; }
+.quick-restock-emblem { display: inline-grid; place-items: center; width: 64px; height: 64px; margin-bottom: 18px; border: 1px solid var(--line); border-radius: 16px; background: #e7edda; color: var(--ink); font-size: 40px; }
+.business-quick-content .eyebrow { margin: 0 0 10px; font-size: .65rem; line-height: 1.5; overflow-wrap: anywhere; }
+.business-quick-content h2 { margin: 0; font-size: 1.6rem; line-height: 1.2; letter-spacing: -.04em; }
+.business-quick-content > p:not(.eyebrow) { margin: 14px 0 26px; color: var(--muted); font-size: .8rem; line-height: 1.7; }
+.quick-restock-status { display: flex; justify-content: space-between; align-items: center; gap: 12px; min-height: 36px; font-size: .68rem; text-align: left; }
+.quick-restock-status strong { flex: none; font: .75rem 'DM Mono', monospace; }
+.business-quick-content progress { display: block; width: 100%; height: 12px; margin: 12px 0 24px; border: 0; border-radius: 8px; overflow: hidden; appearance: none; background: #e0e6d5; accent-color: var(--ink); }
+.business-quick-content progress::-webkit-progress-bar { background: #e0e6d5; }
+.business-quick-content progress::-webkit-progress-value { background: var(--ink); }
+.business-quick-content progress::-moz-progress-bar { background: var(--ink); }
+.business-quick-content > button { margin: 0; min-height: 44px; width: 100%; }
+@media (max-width: 950px) {
+  .store-owner-hero { grid-template-columns: minmax(0, 1fr) 200px; gap: 16px; padding: 24px; }
+  .store-owner-workspace { grid-template-columns: minmax(0, 1fr); }
+  .store-owner-supply { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 12px 24px; }
+  .store-owner-supply > .eyebrow { grid-column: 1 / -1; }
+  .store-owner-supply .store-owner-capacity { margin: 0; align-content: center; }
+  .store-owner-supply dl { grid-column: 2; grid-row: 3 / 5; align-self: start; }
+  .store-owner-supply > p:not(.eyebrow), .store-owner-supply > a { grid-column: 1; }
+}
+@media (max-width: 600px) {
+  .store-owner-hero { display: block; padding: 22px; }
+  .store-owner-art { display: none; }
+  .store-owner-identity h1 { font-size: 30px; }
+  .store-owner-actions { display: grid; grid-template-columns: minmax(0, 1fr); }
+  .store-owner-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 22px 0; padding: 20px 0; }
+  .store-owner-stats > div { padding: 0 18px; }
+  .store-owner-stats > div:nth-child(3) { border-left: 0; }
+  .store-owner-stats dd { font-size: 20px; }
+  .store-owner-supply { display: block; }
+  .store-owner-supply .store-owner-capacity { margin: 20px 0; }
+  .store-owner-stock-list, .store-owner-section-heading { padding-left: 16px; padding-right: 16px; }
+  .store-owner-stock-list > li { grid-template-columns: 42px minmax(0, 1fr); gap: 10px; }
+  .store-owner-item-art { width: 42px; height: 42px; }
+  .store-owner-item-price { grid-column: 2; text-align: left; }
+  .store-owner-remove { grid-column: 2; min-height: 44px; }
+  .store-owner-reviews { padding: 18px; }
+  .business-quick-content { padding: 24px; }
+}
