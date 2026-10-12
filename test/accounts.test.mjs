@@ -719,6 +719,7 @@ test('password reset over HTTP gates the whole account behind one forced passwor
   const tempProfile = await (await fetch(base + 'me', { headers: { cookie: tempCookie } })).json();
   assert.equal(tempProfile.user.mustChangePassword, true);
   assert.equal((await fetch(base + 'inventory', { headers: { cookie: tempCookie } })).status, 403);
+  assert.equal((await fetch(base + 'net-worth', { headers: { cookie: tempCookie } })).status, 403);
   assert.equal((await (await post('codes', { count: 1 }, tempCookie)).json()).error, 'password_change_required');
   assert.equal((await post('password/change', { currentPassword: 'wrong-wrong-wrong', newPassword: 'brand-new-password-456' }, tempCookie)).status, 403);
   const changed = await post('password/change', { currentPassword: reset.reset.temporaryPassword, newPassword: 'brand-new-password-456' }, tempCookie);

@@ -1,3 +1,4 @@
+import { captureNetWorth } from './net-worth.mjs';
 import { createHash } from 'node:crypto';
 import { featureFlags } from './features.mjs';
 import { loadPaletteCatalog } from './palette-definitions.mjs';
@@ -73,6 +74,7 @@ export function tickEconomy(dataDir, { now = Date.now(), flags = featureFlags() 
     run('paletteBuyers', () => tickPaletteBuyers(dataDir, { now }));
   }
   if (flags.businesses) run('businesses', () => tickBusinesses(dataDir, { now }));
+  if (flags.market || flags.resales || flags.paletteAuctions || flags.businesses) run('netWorth', () => captureNetWorth(dataDir, { now }));
   return { ...result, failures };
 }
 

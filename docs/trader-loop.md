@@ -14,6 +14,10 @@ Private profiles expose available `tokens`, `heldInBids`, `inventoryMarketValue`
 
 Realized trading profit includes tracked paid item sales only. Shop investment, operating events and mischief fees are separate from that measure. Revenue and markup over market estimate are never described as profit. Collection prestige continues to rank held collection value; the independent Daily leaderboard ranks completed Daily scores.
 
+Inventory also shows private net worth with 1-day, 1-week, 30-day and all-time views. Total wealth combines available J€, funds held in current winning proxy bids, every unsold owned item at its current market estimate, unopened won palettes at their public winning price, and owned stores at their current opening cost (including location). Listed finds and store stock count once through inventory. Sealed palette reward values remain hidden until reveal. These are estimated asset values, not sale proceeds.
+
+`net_worth_snapshots` stores real observations from the start of tracking; there is no historical backfill. Profile activity retains the latest observation per minute, and the economy runtime samples human accounts at five-minute intervals, including offline players. The authenticated `/api/account/net-worth?range=1d|1w|1m|all` endpoint returns only the caller's history, bounded display points, and the current component totals. Range changes preserve inventory filters. Resetting the economy clears the old wealth history along with the old assets.
+
 ## Progress and risk
 
 Complete Daily → manage a find → complete a sale → reinvest. Milestones are persistent, non-blocking, and award no additional currency. Guidance follows outstanding listings or store stock and offers trading alternatives when stock, funds or plots are unavailable. Purchasing a store shows price, remaining spending money and compatible owned stock; restocking links carry the store category into Auction House.

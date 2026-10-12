@@ -14,6 +14,7 @@ import { marketCategoryForItem } from './market.mjs';
 import { awardXp, ensureXpSchema } from './xp.mjs';
 import { featureFlags } from './features.mjs';
 import { estimatedValueTokens, marketIndexes } from './market.mjs';
+import { recordNetWorth, currentNetWorth } from './net-worth.mjs';
 import { progressionForXp } from './progression.mjs';
 import { ensureNotificationSchema, pushNotification } from './notifications.mjs';
 import { ensureBusinessSchema, businessTypeForItem } from './businesses.mjs';
@@ -347,7 +348,7 @@ export class Accounts {
         'business_sales', 'business_stock', 'businesses', 'town_plots', 'wholesale_bids', 'wholesale_auctions',
         'primary_palette_bids', 'primary_palette_rewards', 'primary_palette_auctions',
         'daily_rewards', 'daily_case_rewards', 'xp_events', 'case_openings', 'case_purchases', 'case_stock', 'sealed_cases', 'inventory', 'account_games',
-        'user_token_grants', 'token_grants', 'account_notifications']) {
+        'user_token_grants', 'token_grants', 'account_notifications', 'net_worth_snapshots']) {
         if (hasTable(table)) db.prepare(`DELETE FROM ${table}`).run();
       }
       // NPCs are runtime-owned and are recreated with their full configured
@@ -445,6 +446,7 @@ export class Accounts {
         const shelved=db.prepare('SELECT 1 FROM business_stock WHERE inventory_id=? AND sold_at IS NULL').get(item.id);
         traderStock[shelved?'inStores':locked.has(item.id)?'listed':'available']++;
       }
+      recordNetWorth(db, user.id, { now: this.now() });
       // Progression derives from the freshly read users.xp through the shared
       // curve — no level arithmetic lives in this class.
       return { ...publicRow, mustChangePassword: Boolean(must_change_password),
@@ -464,8 +466,8 @@ export class Accounts {
       ORDER BY rowid DESC LIMIT 1`).get(userId, day(this.now()));
     const run = game ? JSON.parse(game.payload) : null;
     const indexes = marketIndexes(db, this.now());
-    const inventoryMarketValue = db.prepare(`SELECT item FROM inventory WHERE user_id = ? AND sold_at IS NULL`)
-      .all(userId).reduce((total, row) => total + estimatedValueTokens(currentItemValue(JSON.parse(row.item)), indexes), 0);
+    const wealth = currentNetWorth(db, userId, { now: this.now(), indexes });
+    const inventoryMarketValue = wealth.items + wealth.sealedPalettes;
     const hasTable = name => Boolean(db.prepare(`SELECT 1 FROM sqlite_schema WHERE type = 'table' AND name = ?`).get(name));
     let activeBids = 0;
     if (hasTable('primary_palette_auctions') && hasTable('primary_palette_bids')) {

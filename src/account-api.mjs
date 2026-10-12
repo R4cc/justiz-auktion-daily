@@ -1,3 +1,4 @@
+import { netWorthHistory } from './net-worth.mjs';
 import { checkStoreEvents, acknowledgeStoreEvents } from './store-events.mjs';
 import { Accounts, AccountError } from './accounts.mjs';
 import { adminMarketDashboard, adjustAdminMarket } from './admin-economy.mjs';
@@ -95,6 +96,7 @@ export async function createAccountApi({ dataDir, dailyPayload, json, env = proc
           // other surface waits until a real password is set.
           if (user.must_change_password && route !== 'me') throw new AccountError('password_change_required', 403);
           if (route === 'inventory') json(response, 200, { items: accounts.inventory(user, {includeStores:url.searchParams.get('includeStores')==='1'}) });
+          else if (route === 'net-worth') json(response, 200, netWorthHistory(dataDir, user, { range: url.searchParams.get('range') || '1d' }));
           else if (route === 'notifications') json(response, 200, notificationsForUser(dataDir, user.id));
           else if (route === 'resale/listings' && flags.resales) json(response, 200, { listings: listingsByUser(dataDir, user.id) });
           else if (route === 'resale/bids' && flags.resales) json(response, 200, { listings: listingsBidOnByUser(dataDir, user.id) });

@@ -270,6 +270,7 @@ function giftToast(gifts) {
 }
 function updateAccount(user, progressionOptions) {
   account = user;
+  window.netWorthUi?.accountChanged();
   updatePersistentProgression(user, progressionOptions);
   if (user?.gifts?.length) showToast(giftToast(user.gifts));
   updateNavigation();
@@ -290,6 +291,7 @@ function showGamePage() {
   caseReveal.close(); auctionReveal.close();
   if (typeof traderStockDialog !== 'undefined') traderStockDialog.close();
   document.querySelector('.daily-case-dialog')?.close();
+  window.netWorthUi?.stop();
   window.economyUi?.stop();
   window.businessUi?.stop();
   window.storeUi?.stop();
@@ -310,6 +312,7 @@ async function navigateAccountPage(path, push = true) {
   caseReveal.close(); auctionReveal.close();
   if (typeof traderStockDialog !== 'undefined') traderStockDialog.close();
   document.querySelector('.daily-case-dialog')?.close();
+  window.netWorthUi?.stop();
   window.economyUi?.stop();
   window.businessUi?.stop();
   window.storeUi?.stop();
@@ -353,6 +356,7 @@ async function navigateAccountPage(path, push = true) {
     }
     if (path === '/inventory' && account) {
       const [result, stores] = await Promise.all([accountApi('inventory?includeStores=1'), economyFlags.businesses ? accountApi('businesses') : null]); if (visit !== accountVisit || account?.id !== owner) return; accountItems = result.items; traderStores = stores?.shops || [];
+      await window.netWorthUi?.load(visit); if (visit !== accountVisit || account?.id !== owner) return;
       const focus = new URLSearchParams(location.search).get('focus');
       if (focus) { const query = new URLSearchParams(location.search); for (const key of ['state','category','rarity']) query.delete(key); history.replaceState({},'', '/inventory?'+query); accountInventoryPage = Math.max(0,Math.floor(groupedInventory(accountItems).findIndex(group=>group.copies.some(item=>item.id===focus))/24)); }
     }
@@ -498,8 +502,9 @@ function renderInventory() {
   const items=accountItems.filter(item=>(status==='all'||status==='cases'&&item.kind==='case'||status==='listed'&&item.listed||status==='stores'&&item.storeId||status==='available'&&!item.listed&&!item.storeId)&&(category==='all'||inventoryCategory(item)===category)&&(rarity==='all'||(item.rarity||item.caseTier)===rarity));
   const filtered=groupedInventory(items), categories=[...new Set(accountItems.map(inventoryCategory))].sort();
   accountInventoryPage=Math.min(accountInventoryPage,Math.max(0,Math.ceil(filtered.length/24)-1));
-  accountContent.innerHTML+=inventoryCategorySummary(accountItems, category)+`<div class="inventory-filters"><label>${t('State','Status')}<select data-inventory-filter="state">${[['all',t('All finds','Alle Funde')],['available',t('Available','Verfügbar')],['cases',t('Cases','Kisten')],['listed',t('Listed','Angeboten')],['stores',t('In stores','In Läden')]].map(([id,label])=>`<option value="${id}" ${status===id?'selected':''}>${label}</option>`).join('')}</select></label><label>${t('Category','Kategorie')}<select data-inventory-filter="category"><option value="all">${t('All','Alle')}</option>${categories.map(id=>`<option value="${accountEscape(id)}" ${category===id?'selected':''}>${inventoryCategoryLabel(id)}</option>`).join('')}</select></label><label>${t('Rarity','Seltenheit')}<select data-inventory-filter="rarity"><option value="all">${t('All','Alle')}</option>${accountCatalog.rarities.map(entry=>`<option value="${entry.id}" ${rarity===entry.id?'selected':''}>${rarityLabel(entry.id)}</option>`).join('')}</select></label><a href="/auction-house" data-page>${t('Browse auctions','Auktionen ansehen')} →</a></div>
+  accountContent.innerHTML+=(window.netWorthUi?.markup() || '')+inventoryCategorySummary(accountItems, category)+`<div class="inventory-filters"><label>${t('State','Status')}<select data-inventory-filter="state">${[['all',t('All finds','Alle Funde')],['available',t('Available','Verfügbar')],['cases',t('Cases','Kisten')],['listed',t('Listed','Angeboten')],['stores',t('In stores','In Läden')]].map(([id,label])=>`<option value="${id}" ${status===id?'selected':''}>${label}</option>`).join('')}</select></label><label>${t('Category','Kategorie')}<select data-inventory-filter="category"><option value="all">${t('All','Alle')}</option>${categories.map(id=>`<option value="${accountEscape(id)}" ${category===id?'selected':''}>${inventoryCategoryLabel(id)}</option>`).join('')}</select></label><label>${t('Rarity','Seltenheit')}<select data-inventory-filter="rarity"><option value="all">${t('All','Alle')}</option>${accountCatalog.rarities.map(entry=>`<option value="${entry.id}" ${rarity===entry.id?'selected':''}>${rarityLabel(entry.id)}</option>`).join('')}</select></label><a href="/auction-house" data-page>${t('Browse auctions','Auktionen ansehen')} →</a></div>
     ${filtered.length?`<div class="inventory-grid">${filtered.slice(accountInventoryPage*24,(accountInventoryPage+1)*24).map(item=>itemCard(item)).join('')}</div><div class="inventory-pages"><button data-account="page" data-step="-1" ${accountInventoryPage?'':'disabled'}>← ${t('Previous','Zurück')}</button><span>${accountInventoryPage+1}/${Math.ceil(filtered.length/24)}</span><button data-account="page" data-step="1" ${(accountInventoryPage+1)*24>=filtered.length?'disabled':''}>${t('Next','Weiter')} →</button></div>`:`<div class="collection-empty"><h2>${t('Your next find belongs here.','Hier wartet dein nächster Fund.')}</h2><p>${accountItems.length?t('No finds match these filters. Try All finds.','Keine Funde passen zu diesen Filtern. Wähle Alle Funde.'):t('Complete Daily for trading money and a sealed case.','Schließe Daily ab, um Handelskapital und eine versiegelte Kiste zu erhalten.')}</p><a href="${accountItems.length?'/inventory':'/'}" data-page class="primary-button">${accountItems.length?t('Clear filters','Filter entfernen'):t('Play Daily','Daily spielen')} →</a></div>`}`;
+  window.netWorthUi?.wire();
 }
 function dailyFriendLabel(daily) {
   if (daily.status === 'completed') return `${number(daily.score)} / ${number(5000)} ${t('pts', 'Pkt')}`;
