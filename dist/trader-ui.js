@@ -71,9 +71,21 @@ document.addEventListener('click',async event=>{
   }catch(error){if(visit===accountVisit&&account?.id===owner){if(traderStockDialog.open)traderStockDialog.querySelector('.account-error').textContent=error.message;else showToast(error.message);}}
   finally{traderBusy=false;if(button.isConnected)button.disabled=false;}
 });
-document.addEventListener('change',event=>{
-  const key=event.target.dataset.inventoryFilter;if(!key)return;
-  const query=new URLSearchParams(location.search);query.set(key,event.target.value);query.delete('focus');
-  history.replaceState({},'', '/inventory?'+query);accountInventoryPage=0;renderInventory();
-  accountContent.querySelector(`[data-inventory-filter="${key}"]`)?.focus({preventScroll:true});
+function applyInventoryFilter(key, value, categoryCard = false) {
+  if (currentAccountPage !== '/inventory' || !['state', 'category', 'rarity'].includes(key)) return;
+  const query = new URLSearchParams(location.search);
+  if (value === 'all') query.delete(key); else query.set(key, value);
+  query.delete('focus');
+  history.replaceState({}, '', '/inventory' + (query.size ? '?' + query : ''));
+  accountInventoryPage = 0; renderInventory();
+  const target = categoryCard ? `[data-inventory-category="${CSS.escape(value)}"]` : `[data-inventory-filter="${key}"]`;
+  accountContent.querySelector(target)?.focus({preventScroll:true});
+}
+document.addEventListener('click', event => {
+  const card = event.target.closest('[data-inventory-category]');
+  if (card) applyInventoryFilter('category', card.dataset.inventoryCategory, true);
+});
+document.addEventListener('change', event => {
+  const key = event.target.dataset.inventoryFilter;
+  if (key) applyInventoryFilter(key, event.target.value);
 });

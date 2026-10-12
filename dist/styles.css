@@ -2153,3 +2153,37 @@ body { padding-left: var(--sidebar-width); }
   .leaderboard-page .leaderboard-table td.leaderboard-daily-score { font-size: .65rem; }
   .leaderboard-daily-score > span, .leaderboard-daily-score small { font-size: .55rem; }
 }
+
+/* Inventory category totals count copies before any list filters. */
+.inventory-summary { margin: 24px 0 28px; }
+.inventory-summary-heading { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: baseline; gap: 8px 20px; margin-bottom: 14px; }
+.inventory-summary-heading h2 { margin: 0; font-size: 1.2rem; letter-spacing: -.03em; }
+.inventory-summary-heading p { margin: 0; color: var(--muted); font-size: .7rem; line-height: 1.6; }
+.inventory-category-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 190px), 1fr)); gap: 12px; }
+.inventory-category-card { --category-accent: #416351; --category-tint: #e6eddc; position: relative; display: flex; align-items: center; gap: 12px; min-width: 0; min-height: 92px; padding: 17px 30px 17px 16px; border: 1px solid var(--line); border-radius: 12px; background: #fffdf7; color: var(--ink); text-align: left; box-shadow: 0 3px 0 #183e3608; cursor: pointer; }
+.inventory-category-card:hover { border-color: var(--category-accent); background: var(--category-tint); }
+.inventory-category-card[aria-pressed="true"] { border-color: var(--category-accent); background: var(--category-tint); box-shadow: inset 0 0 0 1px var(--category-accent), 0 3px 0 #183e3608; }
+.inventory-category-card:focus-visible { outline: 3px solid var(--red); outline-offset: 3px; }
+.inventory-category-icon { display: grid; place-items: center; flex: none; width: 42px; height: 42px; border: 1px solid #ffffff99; border-radius: 11px; background: var(--category-tint); color: var(--category-accent); }
+.inventory-category-icon svg { width: 26px; height: 26px; }
+.inventory-category-copy { display: grid; gap: 5px; min-width: 0; }
+.inventory-category-copy > strong { font: 500 23px/1.2 'DM Mono', monospace; letter-spacing: -.04em; overflow-wrap: anywhere; }
+.inventory-category-copy small { color: var(--muted); font: 500 9px 'DM Mono', monospace; letter-spacing: 0; }
+.inventory-category-copy > span { font-size: .72rem; font-weight: 800; line-height: 1.4; overflow-wrap: anywhere; }
+.inventory-category-check { position: absolute; top: 12px; right: 12px; color: var(--category-accent); font-size: .8rem; visibility: hidden; }
+.inventory-category-card[aria-pressed="true"] .inventory-category-check { visibility: visible; }
+.inventory-category-wine { --category-accent: #8b4257; --category-tint: #f1e3e8; }
+.inventory-category-cases, .inventory-category-luxury_goods { --category-accent: #916621; --category-tint: #f5e9c5; }
+.inventory-category-electronics, .inventory-category-tools { --category-accent: #285f75; --category-tint: #e3edf1; }
+.inventory-category-vehicles, .inventory-category-bicycles { --category-accent: #435951; --category-tint: #e5ebe6; }
+.inventory-category-collectibles, .inventory-category-watches_jewelry { --category-accent: #785086; --category-tint: #ede4f0; }
+@media (max-width: 600px) {
+  .inventory-category-cards { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 9px; }
+  .inventory-category-card { align-items: flex-start; gap: 9px; padding: 15px 10px; }
+  .inventory-category-icon { width: 31px; height: 31px; border-radius: 8px; }
+  .inventory-category-icon svg { width: 21px; height: 21px; }
+  .inventory-category-copy > strong { font-size: 20px; }
+  .inventory-category-copy small { display: block; margin-top: 2px; }
+  .inventory-category-copy > span { font-size: .66rem; }
+  .inventory-category-check { top: 7px; right: 7px; font-size: .65rem; }
+}

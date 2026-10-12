@@ -460,14 +460,45 @@ function groupedInventory(items) {
   }
   return [...groups.values()];
 }
+function inventoryCategory(item) {
+  return item.kind === 'case' ? 'cases' : item.marketCategory || 'other';
+}
+function inventoryCategoryLabel(id) {
+  return id === 'all' ? t('All finds', 'Alle Funde') : id === 'cases' ? t('Sealed cases', 'Versiegelte Kisten') : traderCategoryLabel(id);
+}
+function inventoryCategorySummary(items, selected) {
+  const counts = new Map();
+  // Count raw inventory rows, before grouping copies or applying filters.
+  for (const item of items) { const id = inventoryCategory(item); counts.set(id, (counts.get(id) || 0) + 1); }
+  const icons = {
+    all: '<rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/>',
+    wine: '<path d="M14 3h5v5l2 3v9h-9v-9l2-3V3ZM13 13h7M3 4h6v5a3 3 0 0 1-6 0V4Zm3 8v7m-3 2h6"/>',
+    electronics: '<rect x="3" y="4" width="18" height="13" rx="2"/><path d="M8 21h8m-4-4v4M7 8h5m-5 4h10"/>',
+    vehicles: '<path d="m4 10 2-6h12l2 6M3 10h18v8H3v-8Zm2 8v3h3v-3m8 0v3h3v-3M6 14h3m6 0h3"/>',
+    cases: '<path d="m3 7 9-4 9 4v10l-9 4-9-4V7Zm0 0 9 4 9-4m-9 4v10M7 5l10 4v5"/>',
+    collectibles: '<path d="m12 3 3 6 6 1-4 5 1 6-6-3-6 3 1-6-4-5 6-1 3-6Z"/>',
+    watches_jewelry: '<circle cx="12" cy="12" r="6"/><path d="M9 6V2h6v4m-6 12v4h6v-4m-3-9v3l2 2"/>',
+    tools: '<path d="m14 5 5 5M3 21l9-9M14 3a6 6 0 0 0-7 7l-4 4a3 3 0 0 0 7 7l4-4a6 6 0 0 0 7-7l-4 4-4-4 4-4Z"/>',
+    household: '<path d="m3 11 9-8 9 8M5 9v12h14V9M9 21v-8h6v8"/>',
+    luxury_goods: '<path d="m3 8 4-5h10l4 5-9 13L3 8Zm0 0h18M7 3l5 18 5-18"/>',
+    bicycles: '<circle cx="5" cy="17" r="4"/><circle cx="19" cy="17" r="4"/><path d="m5 17 4-8 5 8H5m0-11h5m5-3h3l1 14M9 9h9"/>',
+    books_media: '<path d="M3 4c4-1 7 0 9 2 2-2 5-3 9-2v16c-4-1-7 0-9 2-2-2-5-3-9-2V4Zm9 2v16"/>',
+    fashion: '<path d="M10 6a2 2 0 1 1 4 0c0 2-2 2-2 4L3 17v3h18v-3l-9-7"/>',
+    cosmetics: '<rect x="6" y="9" width="12" height="12" rx="2"/><path d="M9 9V5h6v4m-3-4V2h6m-8 12h4"/>',
+    sport_leisure: '<path d="M8 12h8M3 8v8m3-10v12m12-12v12m3-10v8"/>',
+    other: '<path d="m3 7 9-4 9 4-9 4-9-4Zm0 5 9 4 9-4M3 17l9 4 9-4"/>'
+  };
+  const categories = [['all', items.length], ...[...counts].sort(([a], [b]) => a.localeCompare(b))];
+  return `<section class="inventory-summary" aria-labelledby="inventory-summary-title"><div class="inventory-summary-heading"><h2 id="inventory-summary-title">${t('Your finds by category', 'Deine Funde nach Kategorie')}</h2><p>${t('Total items, including listed finds and store stock.', 'Alle Artikel, einschließlich angebotener Funde und Ladenbestand.')}</p></div><div class="inventory-category-cards" role="group" aria-label="${t('Filter inventory by category', 'Inventar nach Kategorie filtern')}">${categories.map(([id, count]) => `<button class="inventory-category-card inventory-category-${accountEscape(id)}" type="button" data-inventory-category="${accountEscape(id)}" aria-pressed="${selected === id}" aria-label="${inventoryCategoryLabel(id)}: ${number(count)} ${count === 1 ? t('item', 'Artikel') : t('items', 'Artikel')}"><span class="inventory-category-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">${icons[id] || icons.other}</svg></span><span class="inventory-category-copy"><strong>${number(count)} <small>${count === 1 ? t('item', 'Artikel') : t('items', 'Artikel')}</small></strong><span>${inventoryCategoryLabel(id)}</span></span><span class="inventory-category-check" aria-hidden="true">✓</span></button>`).join('')}</div></section>`;
+}
 function renderInventory() {
   accountContent.innerHTML=pageHeading(t('Inventory','Inventar'),t('Keep a find, auction it, or put it on a compatible store shelf.','Behalte einen Fund, versteigere ihn oder räume ihn in einen passenden Laden ein.'))+economyOverviewMarkup()+traderMilestonesMarkup();
   if(!account){accountContent.innerHTML+=loginNotice('inventory');return;}
   const query=new URLSearchParams(location.search), status=query.get('state')||'all', category=query.get('category')||'all', rarity=query.get('rarity')||'all';
-  const items=accountItems.filter(item=>(status==='all'||status==='cases'&&item.kind==='case'||status==='listed'&&item.listed||status==='stores'&&item.storeId||status==='available'&&!item.listed&&!item.storeId)&&(category==='all'||item.marketCategory===category)&&(rarity==='all'||(item.rarity||item.caseTier)===rarity));
-  const filtered=groupedInventory(items), categories=[...new Set(accountItems.map(item=>item.marketCategory).filter(Boolean))].sort();
+  const items=accountItems.filter(item=>(status==='all'||status==='cases'&&item.kind==='case'||status==='listed'&&item.listed||status==='stores'&&item.storeId||status==='available'&&!item.listed&&!item.storeId)&&(category==='all'||inventoryCategory(item)===category)&&(rarity==='all'||(item.rarity||item.caseTier)===rarity));
+  const filtered=groupedInventory(items), categories=[...new Set(accountItems.map(inventoryCategory))].sort();
   accountInventoryPage=Math.min(accountInventoryPage,Math.max(0,Math.ceil(filtered.length/24)-1));
-  accountContent.innerHTML+=`<div class="inventory-filters"><label>${t('State','Status')}<select data-inventory-filter="state">${[['all',t('All finds','Alle Funde')],['available',t('Available','Verfügbar')],['cases',t('Cases','Kisten')],['listed',t('Listed','Angeboten')],['stores',t('In stores','In Läden')]].map(([id,label])=>`<option value="${id}" ${status===id?'selected':''}>${label}</option>`).join('')}</select></label><label>${t('Category','Kategorie')}<select data-inventory-filter="category"><option value="all">${t('All','Alle')}</option>${categories.map(id=>`<option value="${accountEscape(id)}" ${category===id?'selected':''}>${traderCategoryLabel(id)}</option>`).join('')}</select></label><label>${t('Rarity','Seltenheit')}<select data-inventory-filter="rarity"><option value="all">${t('All','Alle')}</option>${accountCatalog.rarities.map(entry=>`<option value="${entry.id}" ${rarity===entry.id?'selected':''}>${rarityLabel(entry.id)}</option>`).join('')}</select></label><a href="/auction-house" data-page>${t('Browse auctions','Auktionen ansehen')} →</a></div>
+  accountContent.innerHTML+=inventoryCategorySummary(accountItems, category)+`<div class="inventory-filters"><label>${t('State','Status')}<select data-inventory-filter="state">${[['all',t('All finds','Alle Funde')],['available',t('Available','Verfügbar')],['cases',t('Cases','Kisten')],['listed',t('Listed','Angeboten')],['stores',t('In stores','In Läden')]].map(([id,label])=>`<option value="${id}" ${status===id?'selected':''}>${label}</option>`).join('')}</select></label><label>${t('Category','Kategorie')}<select data-inventory-filter="category"><option value="all">${t('All','Alle')}</option>${categories.map(id=>`<option value="${accountEscape(id)}" ${category===id?'selected':''}>${inventoryCategoryLabel(id)}</option>`).join('')}</select></label><label>${t('Rarity','Seltenheit')}<select data-inventory-filter="rarity"><option value="all">${t('All','Alle')}</option>${accountCatalog.rarities.map(entry=>`<option value="${entry.id}" ${rarity===entry.id?'selected':''}>${rarityLabel(entry.id)}</option>`).join('')}</select></label><a href="/auction-house" data-page>${t('Browse auctions','Auktionen ansehen')} →</a></div>
     ${filtered.length?`<div class="inventory-grid">${filtered.slice(accountInventoryPage*24,(accountInventoryPage+1)*24).map(item=>itemCard(item)).join('')}</div><div class="inventory-pages"><button data-account="page" data-step="-1" ${accountInventoryPage?'':'disabled'}>← ${t('Previous','Zurück')}</button><span>${accountInventoryPage+1}/${Math.ceil(filtered.length/24)}</span><button data-account="page" data-step="1" ${(accountInventoryPage+1)*24>=filtered.length?'disabled':''}>${t('Next','Weiter')} →</button></div>`:`<div class="collection-empty"><h2>${t('Your next find belongs here.','Hier wartet dein nächster Fund.')}</h2><p>${accountItems.length?t('No finds match these filters. Try All finds.','Keine Funde passen zu diesen Filtern. Wähle Alle Funde.'):t('Complete Daily for trading money and a sealed case.','Schließe Daily ab, um Handelskapital und eine versiegelte Kiste zu erhalten.')}</p><a href="${accountItems.length?'/inventory':'/'}" data-page class="primary-button">${accountItems.length?t('Clear filters','Filter entfernen'):t('Play Daily','Daily spielen')} →</a></div>`}`;
 }
 function dailyFriendLabel(daily) {
