@@ -466,6 +466,26 @@ cannot purchase another location.
 
 ## Vienna town map
 
+The town UI opens in Shops view. Storefronts have distinct type icons/colours,
+readable shop/owner labels and gold markers for the player's own shops. A compact
+neighbour list keeps full names and owners visible, including on mobile. Yours
+and a district dropdown narrow the map and list. Both shop pins and list entries
+visit the existing store route in one click.
+
+Open a store reveals available plot markers and a location list. Selecting a
+plot opens a focused purchase dialog with store type, capacity and price;
+location multipliers and stock advice stay in a collapsed Location details
+section. No plot is selected or purchase shown by default. Explicit free-plot
+links still open that plot; occupied-plot links focus its district/location.
+The map fits sparse towns to the viewport, expanding internally when needed to
+keep crowded shop/owner labels readable. Polling preserves map position and
+pauses during purchase/filter/map/list interaction. The existing server controls
+prices, levels, capacity, ownership/privacy and store limits.
+
+`scripts/town-ui-smoke.mjs` covers shops/owners, own/district filters, direct
+visits, guest masking, empty/full maps, a real purchase, deep links, cancel and
+navigation cleanup, and EN/DE at 1440–320px with a fully occupied 25-shop town.
+
 `GET /api/town` is public when businesses are enabled. It returns six district
 definitions, three street types, the 25 persistent plots and availability, fixed
 sizes, category prices and occupied storefront summaries. Guest owner names are

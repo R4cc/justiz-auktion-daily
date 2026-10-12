@@ -1,98 +1,98 @@
 window.townUi = (() => {
-  const esc=accountEscape, typeLabels={wine:['Wine store','Weinhandlung'],toys:['Toy store','Spielwarenladen'],electronics:['Electronics store','Elektronikladen'],cars:['Car dealership','Autohaus']};
-  const sizeLabels={popup:['Street pop-up','Straßenstand'],tiny:['Small shop','Kleiner Laden'],medium:['Medium shop','Mittlerer Laden'],large:['Large shop','Großer Laden']};
-  const artwork=window.townArtwork, sizes={popup:'XS',tiny:'S',medium:'M',large:'L'};
-  let data=null,timer=null,request=0,selected=null,district=null,storeType='wine',busy=false;
-  const desktop=matchMedia('(min-width:1100px) and (min-height:700px)');
-  const mapObserver=new ResizeObserver(entries=>{
-    for(const {target} of entries){
-      if(!target.isConnected||!data||currentAccountPage!=='/town')continue;
-      const {width,height}=target.getBoundingClientRect();
-      if(!width||!height)return;
-      target.style.setProperty('--town-upright',desktop.matches?width*730/(height*860):1);
-      if(!desktop.matches)return;
-      // Keep text at 10px while the buildings and hit areas fit the viewport.
-      let pinWidth=86,pinHeight=78;
-      for(let n=0;n<data.plots.length;n++)for(let m=n+1;m<data.plots.length;m++){
-        const a=artwork.position(data.plots[n],data.districts,true),b=artwork.position(data.plots[m],data.districts,true);
-        const dx=Math.abs(a.x-b.x)*width/860,dy=Math.abs(a.y-b.y)*height/730;
-        if(dx<90&&dy<82){if(dx/90>dy/82)pinWidth=Math.min(pinWidth,dx-4);else pinHeight=Math.min(pinHeight,dy-4);}
-      }
-      target.style.setProperty('--town-pin-width',`${Math.max(44,pinWidth)}px`);
-      target.style.setProperty('--town-pin-height',`${Math.max(44,pinHeight)}px`);
-    }
-  });
-  const typeName=id=>typeLabels[id]?t(...typeLabels[id]):id, sizeName=id=>sizeLabels[id]?t(...sizeLabels[id]):id;
-  function stop(){mapObserver.disconnect();clearInterval(timer);timer=null;request++;data=null;busy=false;}
+  const esc=accountEscape,art=window.townArtwork;
+  const types={wine:['Wine store','Weinhandlung'],toys:['Toy store','Spielwarenladen'],electronics:['Electronics store','Elektronikladen'],cars:['Car dealership','Autohaus']};
+  const sizes={popup:['Street pop-up','Straßenstand'],tiny:['Small shop','Kleiner Laden'],medium:['Medium shop','Mittlerer Laden'],large:['Large shop','Großer Laden']};
+  const typeName=id=>types[id]?t(...types[id]):id,sizeName=id=>sizes[id]?t(...sizes[id]):id;
+  let data=null,timer=null,request=0,district=null,selected=null,view='shops',storeType='wine',busy=false,openOnLoad=false,returnFocus=null;
+  const dialog=document.createElement('dialog');dialog.className='town-purchase-dialog';dialog.setAttribute('aria-labelledby','town-purchase-title');document.body.append(dialog);
+  const mapObserver=new ResizeObserver(entries=>{for(const {target} of entries)if(target.isConnected&&currentAccountPage==='/town'&&data)fitMap(target);});
+  function stop(){mapObserver.disconnect();clearInterval(timer);timer=null;request++;data=null;busy=false;openOnLoad=false;dialog.close();returnFocus=null;}
   async function refresh(visit,repaint=true){
     const current=++request,owner=account?.id,response=await fetch('/api/town',{headers:{accept:'application/json'}}),result=await response.json();
     if(!response.ok)throw Error(accountError(result.error));
-    if(visit!==accountVisit||request!==current||owner!==account?.id)return;
-    data=result;
-    if(district&&!data.districts.some(area=>area.id===district))district=null;
-    if(!data.plots.some(plot=>plot.id===selected))selected=data.plots.find(plot=>!plot.occupied)?.id||null;
+    if(visit!==accountVisit||current!==request||owner!==account?.id)return;
+    data=result;if(district&&!data.districts.some(area=>area.id===district))district=null;
+    if(selected&&!data.plots.some(plot=>plot.id===selected))selected=null;
     if(repaint)render();
   }
   async function load(visit){
-    await economyReady;
-    if(!economyFlags.businesses){data={disabled:true};return;}
-    const query=new URLSearchParams(location.search);selected=query.get('plot');district=query.get('district');storeType='wine';
+    await economyReady;if(!economyFlags.businesses){data={disabled:true};return;}
+    const query=new URLSearchParams(location.search);district=query.get('district');selected=query.get('plot');view='shops';storeType='wine';
     await refresh(visit,false);if(visit!==accountVisit)return;
-    timer=setInterval(()=>{if(!document.hidden&&!busy&&!document.activeElement?.closest('.town-purchase'))refresh(visit).catch(()=>{});},30000);
+    const plot=data.plots.find(plot=>plot.id===selected);
+    if(plot){district=plot.districtId;if(!plot.occupied){view='open';openOnLoad=true;}}
+    timer=setInterval(()=>{if(!document.hidden&&!busy&&!dialog.open&&!document.activeElement?.closest('.town-toolbar,.town-neighbours,.town-map-scroll'))refresh(visit).catch(()=>{});},30000);
   }
-  function mapPrice(cost){return desktop.matches&&cost>=1000?`${number(cost/1000,Number.isInteger(cost/1000)?0:1)}k`:justizEuro(cost);}
-  function mapArtwork(){return artwork.render(data,district,esc,desktop.matches);}
+  function bounds(){const area=data.districts.find(area=>area.id===district);return area?[area.bounds[0]-22,area.bounds[1]-22,area.bounds[2]+44,area.bounds[3]+44]:[0,0,860,730];}
+  function visiblePlots(){return data.plots.filter(plot=>(!district||plot.districtId===district)&&(view==='open'||plot.business&&(view!=='mine'||plot.business.own)));}
+  function point(plot){const [x,y,w,h]=bounds(),p=art.position(plot,data.districts);return {x:(p.x-x)/w*100,y:(p.y-y)/h*100};}
+  function fitMap(map){
+    const canvas=map.querySelector('.town-canvas');if(!canvas)return;
+    const baseWidth=Math.max(180,map.clientWidth-120),baseHeight=Math.max(240,map.clientHeight-120),plots=visiblePlots();let scale=1;
+    // Grow a crowded board rather than shrink owner names. Sparse districts
+    // fit the viewport; only dense ones need panning. The 60px edge keeps
+    // labels away from the clipped map boundary.
+    for(let n=0;n<plots.length;n++)for(let m=n+1;m<plots.length;m++){
+      const a=point(plots[n]),b=point(plots[m]),dx=Math.abs(a.x-b.x)/100*baseWidth,dy=Math.abs(a.y-b.y)/100*baseHeight;
+      const width=((plots[n].business?146:56)+(plots[m].business?146:56))/2,height=((plots[n].business?128:56)+(plots[m].business?128:56))/2;
+      const required=Math.min(dx?width/dx:Infinity,dy?height/dy:Infinity);
+      if(Number.isFinite(required))scale=Math.max(scale,required);
+    }
+    canvas.style.width=Math.ceil(baseWidth*scale+120)+'px';canvas.style.height=Math.ceil(baseHeight*scale+120)+'px';
+  }
+  function ownerLine(business){return `<span class="town-owner-line"><span class="town-owner-avatar" aria-hidden="true">${esc([...business.owner][0]?.toLocaleUpperCase(uiLocale())||'?')}</span><strong>@${esc(business.owner)}</strong>${business.own?`<span class="town-own-tag">${t('Your store','Dein Laden')}</span>`:''}</span>`;}
   function mapPin(plot){
-    const business=plot.business,point=artwork.position(plot,data.districts,desktop.matches),position=`left:${point.x/860*100}%;top:${point.y/730*100}%`,muted=district&&plot.districtId!==district?' is-muted':'';
-    const levelLocked=Boolean(account)&&(data.playerLevel??account.progression?.level??1)<(plot.requiredLevel||1);
-    const type=business?.type||(levelLocked?'lock':'plus'),state=business?'is-occupied':plot.occupied?'is-unavailable':'is-free';
-    const body=`<span class="town-pin-building">${artwork.storefront()}<span class="town-shop-icon">${artwork.icon(plot.occupied&&!business?'lock':type)}</span></span>`;
-    if(business)return `<a class="town-pin ${state} town-sells-${esc(business.type)}${business.own?' is-own':''}${selected===plot.id?' is-selected':''}${muted}" style="${position}" href="/stores?shop=${encodeURIComponent(business.id)}" data-page title="${esc(business.name||typeName(business.type))} · ${esc(typeName(business.type))} · @${esc(business.owner)} · ${esc(plot.streetName)}" aria-label="${esc(t('Visit','Besuchen'))}: ${esc(business.name||typeName(business.type))}, ${esc(typeName(business.type))}, ${esc(t('Owner','Besitzer'))}: ${esc(business.owner)}, ${esc(plot.districtName)}">${body}<span class="town-pin-info"><strong>${esc(business.name||typeName(business.type))}</strong><span class="town-pin-owner">${business.own?`${t('you','du')} · `:''}@${esc(business.owner)}</span></span></a>`;
-    if(plot.occupied)return `<span class="town-pin ${state}${muted}" style="${position}" title="${t('Plot reserved','Grundstück reserviert')}">${body}<span class="town-pin-info"><strong>${t('Reserved','Reserviert')}</strong><small>${sizes[plot.size]}</small></span></span>`;
-    return `<button class="town-pin ${state}${selected===plot.id?' is-selected':''}${muted}" style="${position}" type="button" data-town-plot="${esc(plot.id)}" title="${esc(plot.streetName)} · ${esc(sizeName(plot.size))} · Level ${plot.requiredLevel||1} · ${justizEuro(plot.costs[storeType])}" aria-label="${esc(t('Available shop','Freier Laden'))}: ${esc(plot.streetName)}, ${esc(sizeName(plot.size))}, ${esc(plot.districtName)}, ${justizEuro(plot.costs[storeType])}" aria-pressed="${selected===plot.id}">${body}<span class="town-pin-info"><strong>${levelLocked?t(`Level ${plot.requiredLevel}`,`Level ${plot.requiredLevel}`):desktop.matches?t('Open shop','Eröffnen'):t('Open a shop','Laden eröffnen')}</strong><small>${sizes[plot.size]} · ${mapPrice(plot.costs[storeType])}</small></span></button>`;
+    const business=plot.business,p=point(plot),style=`left:calc(${p.x}% + ${60-p.x*1.2}px);top:calc(${p.y}% + ${60-p.y*1.2}px)`;
+    if(business)return `<a class="town-pin is-shop town-sells-${esc(business.type)}${business.own?' is-own':''}${view==='open'?' is-neighbour':''}${selected===plot.id?' is-selected':''}" style="${style}" href="/stores?shop=${encodeURIComponent(business.id)}" data-page data-town-store="${esc(plot.id)}" title="${esc(business.name||typeName(business.type))} · @${esc(business.owner)}" aria-label="${esc(t('Visit','Besuchen'))}: ${esc(business.name||typeName(business.type))}, ${esc(typeName(business.type))}, ${esc(t('Owner','Besitzer'))}: ${esc(business.owner)}"><span class="town-pin-building">${art.storefront()}<span class="town-shop-icon">${art.icon(business.type)}</span>${business.own?`<span class="town-pin-own" aria-hidden="true">${t('YOURS','DEINS')}</span>`:''}</span><span class="town-pin-info"><strong>${esc(business.name||typeName(business.type))}</strong><span class="town-pin-owner">@${esc(business.owner)}</span></span></a>`;
+    if(plot.occupied)return `<span class="town-pin is-reserved" style="${style}" title="${t('Reserved plot','Reserviertes Grundstück')}">${art.icon('lock')}</span>`;
+    const locked=account&&(data.playerLevel??1)<plot.requiredLevel;
+    return `<button type="button" class="town-pin is-free${selected===plot.id?' is-selected':''}" style="${style}" data-town-plot="${esc(plot.id)}" aria-label="${esc(t('Open a store','Laden eröffnen'))}: ${esc(plot.streetName)}, ${esc(sizeName(plot.size))}, ${esc(plot.districtName)}${locked?', '+t('Requires level','Benötigt Level')+' '+plot.requiredLevel:''}" title="${esc(plot.streetName)} · ${esc(sizeName(plot.size))}">${art.icon(locked?'lock':'plus')}</button>`;
   }
-  function plotPanel(){
-    const plot=data.plots.find(entry=>entry.id===selected),area=data.districts.find(entry=>entry.id===(plot?.districtId||district));
-    if(!plot)return `<aside class="town-plot-panel"><p class="eyebrow">${t('ALL LOCATIONS TAKEN','ALLE STANDORTE BELEGT')}</p><h2>${t('The town is full.','Die Stadt ist voll.')}</h2><p>${t('All plots have owners. Keep trading in the Auction House, or visit neighbouring stores.','Alle Grundstücke sind belegt. Handle im Auktionshaus weiter oder besuche benachbarte Läden.')}</p><a class="secondary-button" href="/auction-house" data-page>${t('Keep trading','Weiterhandeln')} →</a></aside>`;
-    if(plot.occupied)return `<aside class="town-plot-panel"><p class="eyebrow">${area.number}. ${esc(area.name)}</p><h2>${esc(plot.streetName)}</h2><span class="town-size-badge">${esc(sizeName(plot.size))} · ${sizes[plot.size]}</span>${plot.business?`<div class="town-panel-category town-sells-${esc(plot.business.type)}">${artwork.icon(plot.business.type)}${esc(typeName(plot.business.type))}</div><h3>${esc(plot.business.name||typeName(plot.business.type))}</h3><p>${t('Owner','Besitzer')}: ${esc(plot.business.owner)} · ${plot.business.stockCount} ${t('items on shelves','Waren im Regal')}</p><a href="/stores?shop=${encodeURIComponent(plot.business.id)}" data-page class="business-edit-button">${t('Visit store','Laden besuchen')} ↗</a>`:`<p>${t('This plot is reserved. Choose an available + plot to open a store.','Dieses Grundstück ist reserviert. Wähle ein freies +-Grundstück zum Eröffnen.')}</p>`}</aside>`;
-    const cost=plot.costs[storeType],capacity=storeType==='cars'?plot.carCapacity:plot.capacity,capped=data.myStoreCount>=data.maxStores,requiredLevel=plot.requiredLevel||1,levelLocked=Boolean(account)&&(data.playerLevel??account.progression?.level??1)<requiredLevel;
-    return `<aside class="town-plot-panel"><p class="eyebrow">${area.number}. ${esc(area.name)}</p><h2>${esc(plot.streetName)}</h2><span class="town-size-badge">${esc(sizeName(plot.size))} · ${sizes[plot.size]}</span><dl class="town-plot-facts"><div><dt>${t('Required level','Benötigtes Level')}</dt><dd>${requiredLevel}</dd></div><div><dt>${t('Street','Straße')}</dt><dd>${esc(t(plot.streetNameEn,plot.streetNameDe))}</dd></div><div><dt>${t('Foot traffic','Laufkundschaft')}</dt><dd>${number(plot.trafficMultiplier,2)}×</dd></div><div><dt>${t('Theft fine','Diebstahlbußgeld')}</dt><dd>${number(Math.max(1,1/plot.theftMultiplier),2)}×</dd></div><div><dt>${t('Location price','Standortpreis')}</dt><dd>${number(plot.priceMultiplier,2)}×</dd></div></dl><form class="town-purchase"><fieldset><legend>${t('What will you open?','Was möchtest du eröffnen?')}</legend><div class="town-type-grid">${data.types.map(type=>`<label class="town-type-choice${storeType===type.id?' is-selected':''}"><input type="radio" name="type" value="${type.id}" ${storeType===type.id?'checked':''}><span>${artwork.icon(type.id)}</span>${esc(typeName(type.id))}</label>`).join('')}</div></fieldset><div class="town-buy-summary"><span>${capacity} ${t('shelf spaces','Regalplätze')}</span><strong>${justizEuro(cost)}</strong></div>${account?`<p>${account.tokens>=cost?t('Spending money after purchase','Guthaben nach dem Kauf'):t('Additional J€ needed','Zusätzlich benötigte J€')}: <strong>${justizEuro(Math.abs(account.tokens-cost))}</strong><br>${t('Compatible stock you own','Passende Waren in deinem Inventar')}: ${data.compatibleStock?.[storeType]||0}. ${t('Keep spending money for stock; an empty store cannot sell.','Behalte Guthaben für Waren; ein leerer Laden kann nichts verkaufen.')}</p>`:''}${!account?`<a href="/login" class="business-edit-button" data-page>${t('Sign in to open here','Anmelden und hier eröffnen')}</a>`:`<button class="business-edit-button" type="submit" ${busy||capped||levelLocked||account.tokens<cost?'disabled':''}>${busy?t('Opening…','Wird eröffnet …'):capped?t('Your 3 locations are filled','Deine 3 Standorte sind belegt'):levelLocked?t(`Requires level ${requiredLevel}`,`Benötigt Level ${requiredLevel}`):account.tokens<cost?t('Not enough J€','Nicht genug J€'):t('Open store here','Hier einen Laden eröffnen')}</button>`}<p class="account-error" role="alert"></p></form>${account&&(account.tokens<cost||capped||levelLocked)?`<p>${capped?t("Your three-store limit is reached. You can continue trading without another store.","Dein Limit von drei Läden ist erreicht. Du kannst ohne weiteren Laden weiterhandeln."):levelLocked?t("Choose a smaller store, or earn XP through Daily and trading to unlock this size.","Wähle einen kleineren Laden oder verdiene XP mit Daily und Handel, um diese Größe freizuschalten."):t("Choose a cheaper plot or earn capital with Daily. You can keep trading without a store.","Wähle ein günstigeres Grundstück oder verdiene mit Daily Handelskapital. Du kannst ohne Laden weiterhandeln.")} <a href="/" data-page>Daily →</a> <a href="/auction-house" data-page>${t("Auction House","Auktionshaus")} →</a></p>`:""}<small class="town-fixed-note">${t('One plot, one store. Size is fixed; street type changes visitor traffic.','Ein Grundstück, ein Laden. Die Größe ist fest; der Straßentyp beeinflusst die Laufkundschaft.')}</small></aside>`;
+  function storeList(places){
+    if(view==='open')return `<header><h2>${t('Choose a location','Standort wählen')}</h2><span>${places.filter(plot=>!plot.occupied).length}</span></header><div class="town-place-list">${places.filter(plot=>!plot.occupied).map(plot=>`<button type="button" class="town-location-row" data-town-plot="${esc(plot.id)}"><span class="town-location-icon">${art.icon('plus')}</span><span><strong>${esc(plot.streetName)}</strong><small>${esc(sizeName(plot.size))} · ${esc(plot.districtName)}</small></span><span aria-hidden="true">→</span></button>`).join('')||`<p class="town-empty">${t('No open plots here. Try another district.','Hier gibt es keine freien Grundstücke. Wähle einen anderen Bezirk.')}</p>`}</div>`;
+    return `<header><h2>${view==='mine'?t('Your stores','Deine Läden'):t('Meet the neighbours','Lerne die Nachbarn kennen')}</h2><span>${places.length}</span></header><div class="town-place-list">${places.map(plot=>{const business=plot.business;return `<a class="town-store-row town-sells-${esc(business.type)}${business.own?' is-own':''}${selected===plot.id?' is-selected':''}" href="/stores?shop=${encodeURIComponent(business.id)}" data-page><span class="town-store-symbol">${art.icon(business.type)}</span><span class="town-store-copy"><small>${esc(typeName(business.type))}</small><strong class="town-store-name">${esc(business.name||typeName(business.type))}</strong>${ownerLine(business)}</span><span aria-hidden="true">↗</span></a>`;}).join('')||`<div class="town-empty"><p>${view==='mine'?t('Your first address is waiting.','Dein erster Standort wartet.'):t('No shops here yet.','Hier gibt es noch keine Läden.')}</p><button type="button" class="secondary-button" data-town-view="open">${t('Open a store','Laden eröffnen')} →</button></div>`}</div>`;
   }
   function render(){
     if(currentAccountPage!=='/town'||!data)return;
     if(data.disabled){accountContent.innerHTML=pageHeading(t('Town map is unavailable.','Stadtplan ist nicht verfügbar.'));return;}
-    const previousMap=accountContent.querySelector('.town-map-scroll'),scroll=previousMap?.scrollLeft||0,neighboursOpen=accountContent.querySelector('.town-business-list')?.open;
-    // Keep every plot tappable even when an older save needs extra locations.
-    let mapWidth=1040;
-    for(let n=0;n<data.plots.length;n++)for(let m=n+1;m<data.plots.length;m++){const a=artwork.position(data.plots[n],data.districts),b=artwork.position(data.plots[m],data.districts);mapWidth=Math.max(mapWidth,860*Math.min(90/Math.abs(a.x-b.x),80/Math.abs(a.y-b.y)));}
-    const places=data.plots.filter(plot=>plot.business&&(!district||plot.districtId===district));
-    accountContent.innerHTML=`<div class="town-page"><header class="town-heading"><div><h1 tabindex="-1">${t('Town map','Stadtplan')}</h1></div><a href="/stores" data-page class="secondary-button">${t('Visit stores','Läden besuchen')} ↗</a><a href="/businesses" data-page class="secondary-button">${t('Your businesses','Deine Läden')} ↗</a></header><nav class="town-district-tabs" aria-label="${t('Districts','Bezirke')}"><button type="button" data-town-district="" aria-pressed="${!district}">${t('All of Vienna','Ganz Wien')}</button>${data.districts.map(entry=>`<button type="button" data-town-district="${entry.id}" aria-pressed="${district===entry.id}">${entry.number}. ${esc(entry.name)}</button>`).join('')}</nav><div class="town-layout"><section class="town-map-shell" aria-label="${t('Business plots','Ladengrundstücke')}"><div class="town-map-legend"><span><i class="is-free"></i>${data.available} ${t('available','frei')}</span><span><i class="is-occupied"></i>${data.total-data.available} ${t('occupied','belegt')}</span>${account?`<span><i class="is-own"></i>${t('Your store','Dein Laden')}</span>`:''}</div><div class="town-map-key"><span>${artwork.icon('wine')}${typeName('wine')}</span><span>${artwork.icon('toys')}${typeName('toys')}</span><span>${artwork.icon('electronics')}${typeName('electronics')}</span><span>${artwork.icon('cars')}${typeName('cars')}</span><span class="town-deco-key">▧ ${t('Homes & landmarks','Häuser & Sehenswürdigkeiten')}</span></div><div class="town-map-scroll" tabindex="0" aria-label="${t('Map; scroll horizontally on small screens','Karte; auf kleinen Bildschirmen seitlich scrollen')}"><div class="town-canvas" style="min-width:${Math.ceil(mapWidth)}px">${mapArtwork()}${data.plots.map(mapPin).join('')}</div></div><p class="town-map-hint">${t('Click a store to visit. Select a + plot to open a business. Swipe the map sideways on mobile.','Klicke auf einen Laden zum Besuchen. Wähle ein +-Grundstück zum Eröffnen. Auf dem Handy die Karte seitlich wischen.')}</p></section><div class="town-details">${plotPanel()}<details class="town-business-list"><summary>${t('Around the neighbourhood','In der Nachbarschaft')}</summary><div>${places.length?places.map(plot=>`<a class="town-store-link" href="/stores?shop=${encodeURIComponent(plot.business.id)}" data-page><span class="town-store-symbol">${artwork.icon(plot.business.type)}</span><div><strong>${esc(plot.business.name||typeName(plot.business.type))}</strong><small>${esc(plot.business.owner)} · ${esc(plot.districtName)} · ${esc(plot.streetName)}</small></div><span aria-hidden="true">↗</span></a>`).join(''):`<p class="collection-empty">${t('No stores in this district.','Keine Läden in diesem Bezirk.')}</p>`}</div></details></div></div><p class="town-game-note">${t('A simplified Vienna-inspired game map. District traits are playful stereotypes, not real-world crime statistics.','Ein vereinfachter, von Wien inspirierter Spielplan. Die Bezirksmerkmale sind spielerische Klischees, keine echten Kriminalitätsstatistiken.')}</p></div>`;
-    accountContent.querySelector('.town-business-list').open=Boolean(neighboursOpen);
-    mapObserver.disconnect();mapObserver.observe(accountContent.querySelector('.town-canvas'));
-    accountContent.querySelector('.town-map-scroll').scrollLeft=scroll;
-    if(!previousMap)centerPlot(selected);
+    const oldMap=accountContent.querySelector('.town-map-scroll'),scroll=oldMap?{x:oldMap.scrollLeft,y:oldMap.scrollTop}:null;
+    const places=visiblePlots();
+    const title=district?data.districts.find(area=>area.id===district).name:t('Vienna','Wien');
+    accountContent.innerHTML=`<div class="town-page"><header class="town-heading"><div><p class="eyebrow">${t('YOUR NEIGHBOURHOOD','DEINE NACHBARSCHAFT')}</p><h1 tabindex="-1">${t('Town map','Stadtplan')}</h1></div><a class="town-manage-link" href="/businesses" data-page>${t('Manage your stores','Deine Läden verwalten')} ↗</a></header><div class="town-toolbar"><div class="town-view-switch" role="group" aria-label="${t('Map view','Kartenansicht')}">${[['shops',t('Shops','Läden')],...(account?[['mine',t('Yours','Deine')]]:[]),['open',t('Open a store','Laden eröffnen')]].map(([id,label])=>`<button type="button" data-town-view="${id}" aria-pressed="${view===id}">${label}</button>`).join('')}</div><label class="town-district-filter"><span>${t('District','Bezirk')}</span><select data-town-district><option value="">${t('All of Vienna','Ganz Wien')}</option>${data.districts.map(area=>`<option value="${esc(area.id)}" ${district===area.id?'selected':''}>${area.number}. ${esc(area.name)}</option>`).join('')}</select></label></div><div class="town-layout"><section class="town-map-shell" aria-label="${t('Town map','Stadtplan')}"><header class="town-map-heading"><strong>${esc(title)}</strong><span>${view==='open'?t('Pick a + to choose a location','Wähle ein + für deinen Standort'):t('Pick a shop to visit','Wähle einen Laden zum Besuchen')}</span></header><div class="town-map-scroll" tabindex="0" aria-label="${t('Map; scroll to explore','Karte; zum Erkunden scrollen')}"><div class="town-canvas" >${art.render(data,district,esc,false,bounds())}${places.map(mapPin).join('')}</div></div><footer class="town-map-footer"><span>${t('Scroll or swipe to explore','Scrollen oder wischen zum Erkunden')}</span>${account?`<span class="town-own-key">● ${t('Your stores','Deine Läden')}</span>`:''}</footer></section><aside class="town-neighbours" aria-label="${t('Stores and owners','Läden und Besitzer')}">${storeList(places)}</aside></div></div>`;
+    const map=accountContent.querySelector('.town-map-scroll');fitMap(map);mapObserver.disconnect();mapObserver.observe(map);if(scroll){map.scrollLeft=scroll.x;map.scrollTop=scroll.y;}else centerPlot(selected||places.find(plot=>plot.business?.own)?.id||places.find(plot=>plot.business)?.id);
+    if(openOnLoad){openOnLoad=false;openPurchase(selected);}
   }
-  function centerPlot(id){const plot=data.plots.find(entry=>entry.id===id),map=accountContent.querySelector('.town-map-scroll'),canvas=accountContent.querySelector('.town-canvas');if(plot&&map&&canvas)map.scrollLeft=artwork.position(plot,data.districts).x/860*canvas.clientWidth-map.clientWidth/2;}
+  function centerPlot(id){const plot=data?.plots.find(plot=>plot.id===id),map=accountContent.querySelector('.town-map-scroll'),canvas=accountContent.querySelector('.town-canvas');if(plot&&map&&canvas){const p=point(plot);map.scrollLeft=(canvas.clientWidth-120)*p.x/100+60-map.clientWidth/2;map.scrollTop=(canvas.clientHeight-120)*p.y/100+60-map.clientHeight/2;}}
+  function purchaseMarkup(){
+    const plot=data.plots.find(plot=>plot.id===selected);if(!plot||plot.occupied)return '';
+    const cost=plot.costs[storeType],capacity=storeType==='cars'?plot.carCapacity:plot.capacity,capped=data.myStoreCount>=data.maxStores,locked=account&&(data.playerLevel??1)<plot.requiredLevel;
+    return `<div class="town-purchase-content"><button type="button" class="dialog-close" data-town-close aria-label="${t('Close','Schließen')}">×</button><p class="eyebrow">${t('A NEW ADDRESS','EIN NEUER STANDORT')} · ${esc(plot.districtName)}</p><h2 id="town-purchase-title" tabindex="-1">${esc(plot.streetName)}</h2><p class="town-location-size">${esc(sizeName(plot.size))}</p><form class="town-purchase"><fieldset><legend>${t('What will you open?','Was möchtest du eröffnen?')}</legend><div class="town-type-grid">${data.types.map(type=>`<label class="town-type-choice${storeType===type.id?' is-selected':''}"><input type="radio" name="type" value="${type.id}" ${storeType===type.id?'checked':''} ${busy?'disabled':''}>${art.icon(type.id)}<span>${esc(typeName(type.id))}</span></label>`).join('')}</div></fieldset><div class="town-buy-summary"><span>${capacity} ${t('shelf spaces','Regalplätze')}</span><strong>${justizEuro(cost)}</strong></div>${account?`<p class="town-purchase-note">${capped?t('Your store limit is reached.','Dein Ladenlimit ist erreicht.'):locked?t(`Requires level ${plot.requiredLevel}.`,`Benötigt Level ${plot.requiredLevel}.`):account.tokens<cost?t(`You need ${justizEuro(cost-account.tokens)} more.`,`Dir fehlen noch ${justizEuro(cost-account.tokens)}.`):t(`Balance after purchase: ${justizEuro(account.tokens-cost)}.`,`Guthaben nach dem Kauf: ${justizEuro(account.tokens-cost)}.`)}</p><button type="submit" class="primary-button" ${busy||capped||locked||account.tokens<cost?'disabled':''}>${busy?t('Opening…','Wird eröffnet …'):t('Open store here','Hier einen Laden eröffnen')} →</button>`:`<a href="/login" data-page class="primary-button">${t('Sign in to open here','Anmelden und hier eröffnen')} →</a>`}<p class="account-error" role="alert"></p></form><details class="town-location-details"><summary>${t('Location details','Standortdetails')}</summary><dl><div><dt>${t('Required level','Benötigtes Level')}</dt><dd>${plot.requiredLevel}</dd></div><div><dt>${t('Foot traffic','Laufkundschaft')}</dt><dd>${number(plot.trafficMultiplier,2)}×</dd></div><div><dt>${t('Location price','Standortpreis')}</dt><dd>${number(plot.priceMultiplier,2)}×</dd></div><div><dt>${t('Theft fine','Diebstahlbußgeld')}</dt><dd>${number(Math.max(1,1/plot.theftMultiplier),2)}×</dd></div><div><dt>${t('Compatible inventory','Passendes Inventar')}</dt><dd>${data.compatibleStock?.[storeType]||0}</dd></div></dl><p>${t('One plot, one store. Its size stays fixed. Keep some money for stock.','Ein Grundstück, ein Laden. Die Größe bleibt fest. Behalte etwas Guthaben für Waren.')}</p></details></div>`;
+  }
+  function paintPurchase(){const expanded=dialog.querySelector('.town-location-details')?.open;dialog.innerHTML=purchaseMarkup();if(expanded&&dialog.querySelector('details'))dialog.querySelector('details').open=true;}
+  function openPurchase(id,button=null){const plot=data.plots.find(plot=>plot.id===id);if(!plot||plot.occupied)return;selected=id;returnFocus=button;centerPlot(id);paintPurchase();if(!dialog.open)dialog.showModal();dialog.querySelector('h2')?.focus({preventScroll:true});}
+  dialog.addEventListener('close',()=>{if(currentAccountPage!=='/town')return;(returnFocus?.isConnected?returnFocus:accountContent.querySelector('[data-town-view="open"]'))?.focus({preventScroll:true});returnFocus=null;});
   document.addEventListener('click',event=>{
-    if(currentAccountPage!=='/town'||!data||busy)return;
-    const plot=event.target.closest('[data-town-plot]'),area=event.target.closest('[data-town-district]');
-    if(plot){selected=plot.dataset.townPlot;render();accountContent.querySelector(`[data-town-plot="${CSS.escape(selected)}"]`)?.focus({preventScroll:true});}
-    if(area){district=area.dataset.townDistrict||null;if(district){const plots=data.plots.filter(entry=>entry.districtId===district);selected=(plots.find(entry=>!entry.occupied)||plots[0])?.id||null;}render();centerPlot(selected);accountContent.querySelector(`[data-town-district="${CSS.escape(district||'')}"]`)?.focus({preventScroll:true});}
+    if(currentAccountPage!=='/town'||!data)return;
+    if(event.target.closest('[data-town-close]')){dialog.close();return;}
+    if(busy)return;
+    const mode=event.target.closest('[data-town-view]'),plot=event.target.closest('[data-town-plot]');
+    if(mode){view=mode.dataset.townView;selected=null;render();centerPlot(visiblePlots().find(plot=>view==='open'?!plot.occupied:plot.business?.own)?.id||visiblePlots()[0]?.id);accountContent.querySelector(`[data-town-view="${view}"]`)?.focus({preventScroll:true});}
+    if(plot)openPurchase(plot.dataset.townPlot,plot);
   });
-  document.addEventListener('change',event=>{if(currentAccountPage==='/town'&&event.target.matches('.town-purchase [name="type"]')){storeType=event.target.value;render();accountContent.querySelector(`.town-purchase [value="${storeType}"]`)?.focus({preventScroll:true});}});
+  document.addEventListener('change',event=>{
+    if(currentAccountPage!=='/town'||!data||busy)return;
+    if(event.target.matches('[data-town-district]')){district=event.target.value||null;selected=null;const query=new URLSearchParams(location.search);query.delete('plot');district?query.set('district',district):query.delete('district');history.replaceState({},'','/town'+(query.size?'?'+query:''));render();centerPlot(visiblePlots()[0]?.id);accountContent.querySelector('[data-town-district]').focus({preventScroll:true});}
+    if(event.target.matches('.town-purchase [name="type"]')){storeType=event.target.value;paintPurchase();dialog.querySelector(`[value="${storeType}"]`)?.focus({preventScroll:true});}
+  });
   document.addEventListener('submit',async event=>{
     if(currentAccountPage!=='/town'||!event.target.matches('.town-purchase'))return;
     event.preventDefault();if(busy||!account)return;
-    const plot=data.plots.find(entry=>entry.id===selected);if(!plot||plot.occupied)return;
-    const visit=accountVisit,owner=account.id,type=storeType;busy=true;render();
-    try{
-      const result=await accountApi('businesses/buy',{plotId:plot.id,type});
-      if(visit!==accountVisit||account?.id!==owner)return;
-      updateAccount(result.user);await navigateAccountPage('/businesses');showToast(t('Your new address is ready.','Dein neuer Standort ist bereit.'));
-    }catch(error){if(visit===accountVisit&&account?.id===owner){await refresh(visit,false).catch(()=>{});busy=false;render();accountContent.querySelector('.town-purchase .account-error')?.append(document.createTextNode(error.message));if(!accountContent.querySelector('.town-purchase'))showToast(error.message);}}
+    const plot=data.plots.find(plot=>plot.id===selected);if(!plot||plot.occupied)return;
+    const visit=accountVisit,owner=account.id,type=storeType;busy=true;paintPurchase();
+    try{const result=await accountApi('businesses/buy',{plotId:plot.id,type});if(visit!==accountVisit||owner!==account?.id)return;updateAccount(result.user);await navigateAccountPage('/businesses');showToast(t('Your new address is ready.','Dein neuer Standort ist bereit.'));}
+    catch(error){if(visit===accountVisit&&owner===account?.id){await refresh(visit,false).catch(()=>{});busy=false;render();if(!purchaseMarkup()){dialog.close();showToast(error.message);}else{paintPurchase();dialog.querySelector('.account-error').textContent=error.message;}}}
     finally{if(visit===accountVisit)busy=false;}
   });
-  desktop.addEventListener('change',()=>{if(currentAccountPage==='/town')render();});
-  document.addEventListener('jg:language',()=>{if(currentAccountPage==='/town')render();});
+  document.addEventListener('jg:language',()=>{if(currentAccountPage==='/town'){render();if(dialog.open)paintPurchase();}});
   return {load,stop,render};
 })();

@@ -43,7 +43,7 @@ window.townArtwork = (() => {
     for(let cy=y+54;cy<y+h-12;cy+=27)for(let cx=x+25;cx<x+w-20;cx+=24)candidates.push({x:cx,y:cy});
     const scenery=[];
     for(const point of candidates) {
-      if(scenery.length>=20||Math.abs(point.y-streetY)<18||positions.some(p=>Math.abs(p.x-point.x)<43&&Math.abs(p.y-point.y)<45)||scenery.some(p=>Math.abs(p.x-point.x)<22&&Math.abs(p.y-point.y)<24))continue;
+      if(scenery.length>=7||Math.abs(point.y-streetY)<18||positions.some(p=>Math.abs(p.x-point.x)<43&&Math.abs(p.y-point.y)<45)||scenery.some(p=>Math.abs(p.x-point.x)<22&&Math.abs(p.y-point.y)<24))continue;
       scenery.push(point);
     }
     const street=local.find(plot=>plot.streetType==='main')?.streetName;
@@ -56,13 +56,13 @@ window.townArtwork = (() => {
       <text class="town-district-label" x="${x+17}" y="${y+29}" fill="${area.color}" font-family="Manrope,sans-serif" font-size="${w<200?13:16}" font-weight="800">${area.number}. ${esc(area.name)}</text>
       ${street?`<text class="town-street-label" x="${x+w/2}" y="${streetY+3}" text-anchor="middle" fill="#776e60" font-family="Manrope,sans-serif" font-size="7" font-weight="600" paint-order="stroke" stroke="#fcfaf1" stroke-width="3">${esc(street)}</text>`:''}`;
   }
-  function render(data, district, esc, compact=false) {
-    return `<svg viewBox="0 0 860 730" preserveAspectRatio="none" class="town-map-art" aria-hidden="true"><defs><pattern id="town-grid" width="25" height="25" patternUnits="userSpaceOnUse"><path d="M25 0H0v25" fill="none" stroke="#183e36" stroke-opacity=".025"/></pattern></defs><rect width="860" height="730" fill="#f0eddf"/><rect width="860" height="730" fill="url(#town-grid)"/>
+  function render(data, district, esc, compact=false, bounds=[0,0,860,730]) {
+    return `<svg viewBox="${bounds.join(' ')}" preserveAspectRatio="none" class="town-map-art" aria-hidden="true"><defs><pattern id="town-grid" width="25" height="25" patternUnits="userSpaceOnUse"><path d="M25 0H0v25" fill="none" stroke="#183e36" stroke-opacity=".025"/></pattern></defs><rect width="860" height="730" fill="#f0eddf"/><rect width="860" height="730" fill="url(#town-grid)"/>
       <path d="M20 260Q70 215 130 245V460H20Z" fill="#d7e1c7"/>
       ${road('M148 255H535V445H327V465M430 445V453M535 306H545M162 465V480M325 578H296',true)}
       <path d="M575-20C580 80 560 160 540 240S528 390 600 430 695 540 828 760" stroke="#b8d7d2" stroke-width="22" fill="none"/><path d="M575-20C580 80 560 160 540 240S528 390 600 430 695 540 828 760" stroke="#8cb7b4" stroke-width="1.5" fill="none"/>
       <path d="M535 292H551" stroke="#a79d86" stroke-width="15"/><path d="M535 292H551" stroke="#f4ecd7" stroke-width="11"/>
-      ${data.districts.map(area=>`<g class="town-district-scene" opacity="${!district||area.id===district?1:.35}">${districtScene(area,data.plots,esc,compact)}</g>`).join('')}
+      ${data.districts.filter(area=>!district||area.id===district).map(area=>`<g class="town-district-scene" opacity="${!district||area.id===district?1:.35}">${districtScene(area,data.plots,esc,compact)}</g>`).join('')}
       <g class="town-landmark" transform="translate(83 350)"><g class="town-upright"><path d="M-25 5h50v28h-50Z" fill="#e0d1aa" stroke="#a59573"/><path d="m-29 5 29-15L29 5Z" fill="#ba9977"/><path d="M-18 13h4m8 0h4m8 0h4m8 0h4M-18 23h4m8 0h4m8 0h4m8 0h4" stroke="#a49c7d" stroke-width="4"/><path d="M-4 33V19h8v14" fill="#a49c7d"/><text y="49" text-anchor="middle" font-family="Manrope,sans-serif" font-size="8" fill="#6c795e">SCHÖNBRUNN</text></g></g>
       ${[[-18,-20],[22,-17],[-25,65],[25,70],[-37,105],[28,122]].map(([x,y])=>tree(83+x,350+y,true)).join('')}
       <g class="town-landmark" transform="translate(800 175)" fill="none" stroke="#a79577"><g class="town-upright"><circle r="19" stroke-width="2"/><path d="M0-19V19m-19-19h38m-32-13 26 26m0-26-26 26M-12 32 0 0l12 32"/><circle r="3" fill="#a79577"/><text y="45" text-anchor="middle" font-family="Manrope,sans-serif" font-size="8" fill="#776e60" stroke="none">PRATER</text></g></g>

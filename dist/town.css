@@ -1,0 +1,87 @@
+/* Shops and owners first; plot economics appear only after choosing a location. */
+.town-page { max-width:1500px;margin:0 auto; }
+.town-heading { display:flex;justify-content:space-between;align-items:center;gap:20px;margin-bottom:24px; }
+.town-heading .eyebrow { color:var(--red);font-size:.62rem;letter-spacing:.13em;margin:0 0 8px; }
+.town-heading h1 { font-size:clamp(2rem,4vw,3rem);letter-spacing:-.055em;line-height:1.1;margin:0; }
+.town-manage-link { color:var(--muted);font-size:.73rem;font-weight:700;text-underline-offset:4px; }
+.town-toolbar { display:flex;align-items:center;justify-content:space-between;gap:16px;margin-bottom:18px; }
+.town-view-switch { display:flex;gap:4px;background:#e9e8da;padding:4px;border:1px solid var(--line);border-radius:10px; }
+.town-view-switch button { min-height:44px;padding:10px 15px;border:0;border-radius:7px;background:transparent;color:#526356;font-size:.7rem;font-weight:800; }
+.town-view-switch button[aria-pressed="true"] { background:var(--ink);color:#fff9e9;box-shadow:0 2px 0 #183e3617; }
+.town-district-filter { display:flex;align-items:center;gap:10px;min-width:0;color:var(--muted);font-size:.68rem; }
+.town-district-filter select { min-height:44px;max-width:100%;min-width:0;border:1px solid var(--line);border-radius:7px;background:#fffaf0;padding:9px 30px 9px 12px;font:600 .7rem 'Manrope',sans-serif;color:var(--ink); }
+.town-layout { display:grid;grid-template-columns:minmax(0,1fr) 310px;gap:18px;align-items:start; }
+.town-map-shell { min-width:0;overflow:hidden;border:1px solid #b7c3b1;border-radius:16px;background:#f0eddf; }
+.town-map-heading { display:flex;justify-content:space-between;align-items:center;gap:12px;padding:17px 18px;background:#faf8ee;border-bottom:1px solid var(--line); }
+.town-map-heading strong { font-size:.84rem; }.town-map-heading>span { color:var(--muted);font-size:.66rem; }
+.town-map-scroll { height:clamp(390px,65dvh,660px);overflow:auto;overscroll-behavior:contain;scrollbar-width:thin;scrollbar-color:#adbfa5 #eceadd; }
+.town-canvas { position:relative;min-width:100%;min-height:100%; }
+.town-map-art { position:absolute;inset:60px;display:block;width:calc(100% - 120px);height:calc(100% - 120px); }
+.town-map-art .town-street-label { display:none; }.town-map-art .town-deco-building { opacity:.45; }.town-map-art .town-landmark { opacity:.65; }
+.town-map-footer { display:flex;flex-wrap:wrap;justify-content:space-between;gap:10px;background:#faf8ee;padding:12px 18px;border-top:1px solid var(--line);font-size:.61rem;color:var(--muted); }
+.town-own-key { color:#69702d;font-weight:800; }
+.town-pin { --shop-color:#944858;--shop-roof:#997461;position:absolute;transform:translate(-50%,-50%);color:var(--ink);text-decoration:none; }
+.town-pin.is-shop {width:132px;display:flex;flex-direction:column;align-items:center;isolation:isolate; }
+.town-pin-building { position:relative;display:block;width:92px;height:63px;flex:none; }
+.town-store-building { width:100%;height:100%;display:block; }
+.town-product-icon { width:23px;height:23px;display:block;flex:none; }
+.town-shop-icon { position:absolute;bottom:5px;left:10px;display:grid;place-items:center;width:29px;height:29px;border:1px solid #183e3635;border-radius:8px;background:#fffaf0;color:var(--shop-color); }
+.town-shop-icon .town-product-icon { width:21px;height:21px; }
+.town-pin-info { display:flex;flex-direction:column;align-items:center;gap:5px;width:100%;padding:8px 6px;border:1px solid #bac9b5;border-radius:8px;background:#fffaf0;box-shadow:0 3px 0 #183e3610; }
+.town-pin-info>strong { display:block;max-width:100%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font:800 12px/1.3 'Manrope',sans-serif; }
+.town-pin-owner { display:block;max-width:100%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font:700 12px/1.3 'Manrope',sans-serif;color:var(--shop-color); }
+.town-pin.is-own .town-pin-info { border:2px solid #b49745;background:#fff2c6; }
+.town-pin-own { position:absolute;top:0;right:-12px;font:800 9px 'DM Mono',monospace;background:#f2d06d;color:#4c431f;border:1px solid #b49745;border-radius:5px;padding:4px 5px; }
+.town-pin.is-neighbour { opacity:.5; }.town-pin:hover { z-index:2; }.town-pin.is-shop:hover .town-pin-info { border-color:var(--shop-color);background:#fffdf5; }
+.town-pin.is-selected { outline:3px solid var(--red);outline-offset:5px;border-radius:8px; }
+.town-pin.is-free,.town-pin.is-reserved { display:grid;place-items:center;width:44px;height:44px;padding:0;border:1px dashed #8da384;border-radius:12px;background:#fffaf0db; }
+.town-pin.is-free { color:#476547;cursor:pointer; }.town-pin.is-free:hover { background:#dfebd6;border-style:solid; }
+.town-pin.is-reserved { color:#8b9485;border-style:solid;background:#e3e4d8; }
+.town-sells-wine { --shop-color:#944858;--shop-roof:#997461; }
+.town-sells-toys { --shop-color:#806017;--shop-roof:#aa8566; }
+.town-sells-electronics { --shop-color:#347884;--shop-roof:#7e8c84; }
+.town-sells-cars { --shop-color:#666994;--shop-roof:#7f8391; }
+.town-neighbours { min-width:0;border:1px solid var(--line);border-radius:14px;background:#fffaf0;overflow:hidden; }
+.town-neighbours>header { display:flex;align-items:center;justify-content:space-between;gap:12px;padding:18px;border-bottom:1px solid var(--line); }
+.town-neighbours h2 { font-size:.87rem;margin:0;letter-spacing:-.02em; }.town-neighbours>header>span { font:600 .67rem 'DM Mono',monospace;color:var(--muted); }
+.town-place-list { max-height:660px;overflow:auto;scrollbar-width:thin; }
+.town-store-row,.town-location-row { display:flex;align-items:flex-start;gap:12px;width:100%;min-width:0;border:0;border-bottom:1px solid var(--line);padding:18px 15px;background:transparent;text-decoration:none;text-align:left;color:var(--ink); }
+.town-store-row:last-child,.town-location-row:last-child { border-bottom:0; }
+.town-store-row:hover,.town-location-row:hover { background:#eef1e3; }.town-store-row.is-own { background:#fff4d5; }
+.town-store-symbol,.town-location-icon { display:grid;place-items:center;flex:none;width:36px;height:36px;border:1px solid #d4dacf;border-radius:9px;background:#ebeee3;color:var(--shop-color,var(--ink)); }
+.town-store-copy,.town-location-row>span:nth-child(2) { min-width:0;flex:1; }
+.town-store-copy>small { display:block;font-size:.56rem;text-transform:uppercase;letter-spacing:.07em;color:var(--shop-color);margin:0 0 5px; }
+.town-store-name { display:block;overflow-wrap:anywhere;font-size:.8rem;line-height:1.4; }
+.town-owner-line { display:flex;align-items:center;flex-wrap:wrap;gap:6px;margin-top:10px;min-width:0; }
+.town-owner-avatar { flex:none;display:grid;place-items:center;width:23px;height:23px;border-radius:50%;background:var(--ink);color:#fff9e9;font:700 .6rem 'Manrope',sans-serif; }
+.town-owner-line>strong { font-size:.7rem;overflow-wrap:anywhere;max-width:calc(100% - 29px); }
+.town-own-tag { font-size:.55rem;font-weight:800;color:#70602e; }
+.town-store-row>span:last-child,.town-location-row>span:last-child { font-size:.85rem;flex:none; }
+.town-location-row { cursor:pointer;align-items:center; }
+.town-location-row strong { display:block;font-size:.76rem;overflow-wrap:anywhere;line-height:1.4; }
+.town-location-row small { display:block;color:var(--muted);font-size:.61rem;line-height:1.5;margin-top:5px; }
+.town-empty { padding:24px 18px;color:var(--muted);font-size:.74rem;line-height:1.6; }.town-empty p { margin:0 0 15px; }
+.town-empty .secondary-button { font-size:.7rem;min-height:44px; }
+.town-purchase-dialog { width:min(550px,calc(100% - 28px));max-height:calc(100dvh - 28px);padding:0;border:1px solid var(--line);border-radius:16px;background:var(--paper);color:var(--ink);overflow:auto; }
+.town-purchase-dialog .dialog-close { width:44px;height:44px;min-height:44px; }
+.town-purchase-dialog::backdrop { background:#10271dcc;backdrop-filter:blur(2px); }
+.town-purchase-content { position:relative;padding:28px; }
+.town-purchase-content>.eyebrow { padding-right:35px;font-size:.59rem;color:var(--red);line-height:1.5; }
+.town-purchase-content h2 { font-size:1.5rem;padding-right:30px;overflow-wrap:anywhere;margin:12px 0 8px; }
+.town-location-size { margin:0 0 24px;color:var(--muted);font-size:.74rem; }
+.town-purchase fieldset { min-width:0;border:0;padding:0;margin:0; }.town-purchase legend { font-size:.75rem;font-weight:800;margin-bottom:12px; }
+.town-type-grid { display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:9px; }
+.town-type-choice { display:flex;align-items:center;gap:8px;position:relative;min-height:56px;padding:12px 10px;border:1px solid var(--line);border-radius:8px;font-size:.66rem;line-height:1.4;cursor:pointer; }
+.town-type-choice input { position:absolute;width:1px;height:1px;opacity:0; }.town-type-choice.is-selected { background:#e5ecd9;border-color:#7d9874; }
+.town-type-choice input:disabled~* { opacity:.5; }.town-type-choice:focus-within { outline:2px solid var(--ink);outline-offset:2px; }
+.town-buy-summary { display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;border-top:1px solid var(--line);padding-top:20px;margin-top:20px; }
+.town-buy-summary>span { color:var(--muted);font-size:.7rem; }.town-buy-summary>strong { font:600 1.25rem 'DM Mono',monospace; }
+.town-purchase-note { font-size:.7rem;color:var(--muted);line-height:1.6; }.town-purchase .primary-button { display:block;width:100%;min-height:48px;margin:18px 0 0;text-align:center;font-size:.74rem; }
+.town-purchase .account-error { font-size:.7rem;line-height:1.5; }.town-purchase .account-error:empty { display:none; }
+.town-location-details { border-top:1px solid var(--line);margin-top:22px;padding-top:14px;color:var(--muted);font-size:.7rem;line-height:1.6; }
+.town-location-details summary { cursor:pointer;min-height:32px;font-weight:800;color:var(--ink); }
+.town-location-details dl { display:grid;gap:8px;margin:12px 0; }.town-location-details dl>div { display:flex;justify-content:space-between;gap:20px; }.town-location-details dd { margin:0;font-weight:800;color:var(--ink); }
+.town-pin:focus-visible,.town-view-switch button:focus-visible,.town-store-row:focus-visible,.town-location-row:focus-visible,.town-map-scroll:focus-visible { outline:3px solid #bf6b33;outline-offset:3px; }
+@media(min-width:1500px){.account-page:has(.town-page){max-width:1500px}}
+@media(max-width:1100px){.town-layout{grid-template-columns:minmax(0,1fr)}.town-place-list{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));max-height:none}.town-store-row,.town-location-row{border-bottom:1px solid var(--line)}.town-map-scroll{height:520px}}
+@media(max-width:600px){.town-heading{align-items:flex-start;gap:12px;margin-bottom:20px}.town-heading h1{font-size:2rem}.town-manage-link{max-width:100px;line-height:1.5;font-size:.62rem}.town-heading .eyebrow{font-size:.52rem}.town-toolbar{display:grid;gap:10px}.town-view-switch{width:100%}.town-view-switch button{flex:1;padding:8px 5px;font-size:.64rem}.town-district-filter{justify-content:space-between}.town-district-filter select{width:70%}.town-map-heading{padding:13px 12px;align-items:flex-start}.town-map-heading>span{max-width:160px;line-height:1.5;text-align:right}.town-map-scroll{height:430px}.town-map-footer{padding:11px 12px;font-size:.55rem}.town-place-list{grid-template-columns:minmax(0,1fr)}.town-purchase-content{padding:22px 18px}.town-purchase-content h2{font-size:1.25rem}.town-type-choice{font-size:.63rem;padding:10px 8px}}
