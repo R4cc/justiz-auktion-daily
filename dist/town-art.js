@@ -57,7 +57,7 @@ window.townArtwork = (() => {
       ${street?`<text class="town-street-label" x="${x+w/2}" y="${streetY+3}" text-anchor="middle" fill="#776e60" font-family="Manrope,sans-serif" font-size="7" font-weight="600" paint-order="stroke" stroke="#fcfaf1" stroke-width="3">${esc(street)}</text>`:''}`;
   }
   function render(data, district, esc, compact=false, bounds=[0,0,860,730]) {
-    return `<svg viewBox="${bounds.join(' ')}" preserveAspectRatio="none" class="town-map-art" aria-hidden="true"><defs><pattern id="town-grid" width="25" height="25" patternUnits="userSpaceOnUse"><path d="M25 0H0v25" fill="none" stroke="#183e36" stroke-opacity=".025"/></pattern></defs><rect width="860" height="730" fill="#f0eddf"/><rect width="860" height="730" fill="url(#town-grid)"/>
+    return `<svg viewBox="${bounds.join(' ')}" preserveAspectRatio="xMidYMid meet" class="town-map-art" aria-hidden="true"><defs><pattern id="town-grid" width="25" height="25" patternUnits="userSpaceOnUse"><path d="M25 0H0v25" fill="none" stroke="#183e36" stroke-opacity=".025"/></pattern></defs><rect width="860" height="730" fill="#f0eddf"/><rect width="860" height="730" fill="url(#town-grid)"/>
       <path d="M20 260Q70 215 130 245V460H20Z" fill="#d7e1c7"/>
       ${road('M148 255H535V445H327V465M430 445V453M535 306H545M162 465V480M325 578H296',true)}
       <path d="M575-20C580 80 560 160 540 240S528 390 600 430 695 540 828 760" stroke="#b8d7d2" stroke-width="22" fill="none"/><path d="M575-20C580 80 560 160 540 240S528 390 600 430 695 540 828 760" stroke="#8cb7b4" stroke-width="1.5" fill="none"/>

@@ -5,6 +5,7 @@ window.townUi = (() => {
   const typeName=id=>types[id]?t(...types[id]):id,sizeName=id=>sizes[id]?t(...sizes[id]):id;
   let data=null,timer=null,request=0,district=null,selected=null,view='shops',storeType='wine',busy=false,openOnLoad=false,returnFocus=null;
   const dialog=document.createElement('dialog');dialog.className='town-purchase-dialog';dialog.setAttribute('aria-labelledby','town-purchase-title');document.body.append(dialog);
+  const mapLayouts=new WeakMap();
   const mapObserver=new ResizeObserver(entries=>{for(const {target} of entries)if(target.isConnected&&currentAccountPage==='/town'&&data)fitMap(target);});
   function stop(){mapObserver.disconnect();clearInterval(timer);timer=null;request++;data=null;busy=false;openOnLoad=false;dialog.close();returnFocus=null;}
   async function refresh(visit,repaint=true){
@@ -27,22 +28,31 @@ window.townUi = (() => {
   function visiblePlots(){return data.plots.filter(plot=>(!district||plot.districtId===district)&&(view==='open'||plot.business&&(view!=='mine'||plot.business.own)));}
   function point(plot){const [x,y,w,h]=bounds(),p=art.position(plot,data.districts);return {x:(p.x-x)/w*100,y:(p.y-y)/h*100};}
   function fitMap(map){
-    const canvas=map.querySelector('.town-canvas');if(!canvas)return;
-    const baseWidth=Math.max(180,map.clientWidth-120),baseHeight=Math.max(240,map.clientHeight-120),plots=visiblePlots();let scale=1;
-    // Grow a crowded board rather than shrink owner names. Sparse districts
-    // fit the viewport; only dense ones need panning. The 60px edge keeps
-    // labels away from the clipped map boundary.
+    const canvas=map.querySelector('.town-canvas'),world=map.querySelector('.town-map-world');if(!canvas||!world||!map.clientWidth||!map.clientHeight)return;
+    const previous=mapLayouts.get(map),viewportWidth=map.clientWidth,viewportHeight=map.clientHeight;
+    if(previous?.viewportWidth===viewportWidth&&previous?.viewportHeight===viewportHeight)return;
+    const center=previous?{x:(map.scrollLeft+previous.viewportWidth/2-previous.left)/previous.width,y:(map.scrollTop+previous.viewportHeight/2-previous.top)/previous.height}:null;
+    const [,,width,height]=bounds(),plots=visiblePlots();
+    let scale=Math.min(Math.max(180,viewportWidth-120)/width,Math.max(240,viewportHeight-120)/height);
+    // One uniform projection keeps the SVG scenery and HTML shop markers in
+    // the same coordinates at any aspect ratio. Expand crowded maps to retain
+    // readable, unscaled owner labels and room to pan.
     for(let n=0;n<plots.length;n++)for(let m=n+1;m<plots.length;m++){
-      const a=point(plots[n]),b=point(plots[m]),dx=Math.abs(a.x-b.x)/100*baseWidth,dy=Math.abs(a.y-b.y)/100*baseHeight;
-      const width=((plots[n].business?146:56)+(plots[m].business?146:56))/2,height=((plots[n].business?128:56)+(plots[m].business?128:56))/2;
-      const required=Math.min(dx?width/dx:Infinity,dy?height/dy:Infinity);
+      const a=point(plots[n]),b=point(plots[m]),dx=Math.abs(a.x-b.x)/100*width,dy=Math.abs(a.y-b.y)/100*height;
+      const labelWidth=((plots[n].business?146:56)+(plots[m].business?146:56))/2,labelHeight=((plots[n].business?128:56)+(plots[m].business?128:56))/2;
+      const required=Math.min(dx?labelWidth/dx:Infinity,dy?labelHeight/dy:Infinity);
       if(Number.isFinite(required))scale=Math.max(scale,required);
     }
-    canvas.style.width=Math.ceil(baseWidth*scale+120)+'px';canvas.style.height=Math.ceil(baseHeight*scale+120)+'px';
+    const worldWidth=width*scale,worldHeight=height*scale,canvasWidth=Math.max(viewportWidth,Math.ceil(worldWidth+120)),canvasHeight=Math.max(viewportHeight,Math.ceil(worldHeight+120));
+    const left=(canvasWidth-worldWidth)/2,top=(canvasHeight-worldHeight)/2;
+    canvas.style.width=canvasWidth+'px';canvas.style.height=canvasHeight+'px';
+    world.style.width=worldWidth+'px';world.style.height=worldHeight+'px';world.style.left=left+'px';world.style.top=top+'px';
+    mapLayouts.set(map,{viewportWidth,viewportHeight,width:worldWidth,height:worldHeight,left,top});
+    if(center){map.scrollLeft=left+center.x*worldWidth-viewportWidth/2;map.scrollTop=top+center.y*worldHeight-viewportHeight/2;}
   }
   function ownerLine(business){return `<span class="town-owner-line"><span class="town-owner-avatar" aria-hidden="true">${esc([...business.owner][0]?.toLocaleUpperCase(uiLocale())||'?')}</span><strong>@${esc(business.owner)}</strong>${business.own?`<span class="town-own-tag">${t('Your store','Dein Laden')}</span>`:''}</span>`;}
   function mapPin(plot){
-    const business=plot.business,p=point(plot),style=`left:calc(${p.x}% + ${60-p.x*1.2}px);top:calc(${p.y}% + ${60-p.y*1.2}px)`;
+    const business=plot.business,p=point(plot),style=`left:${p.x}%;top:${p.y}%`;
     if(business)return `<a class="town-pin is-shop town-sells-${esc(business.type)}${business.own?' is-own':''}${view==='open'?' is-neighbour':''}${selected===plot.id?' is-selected':''}" style="${style}" href="/stores?shop=${encodeURIComponent(business.id)}" data-page data-town-store="${esc(plot.id)}" title="${esc(business.name||typeName(business.type))} · @${esc(business.owner)}" aria-label="${esc(t('Visit','Besuchen'))}: ${esc(business.name||typeName(business.type))}, ${esc(typeName(business.type))}, ${esc(t('Owner','Besitzer'))}: ${esc(business.owner)}"><span class="town-pin-building">${art.storefront()}<span class="town-shop-icon">${art.icon(business.type)}</span>${business.own?`<span class="town-pin-own" aria-hidden="true">${t('YOURS','DEINS')}</span>`:''}</span><span class="town-pin-info"><strong>${esc(business.name||typeName(business.type))}</strong><span class="town-pin-owner">@${esc(business.owner)}</span></span></a>`;
     if(plot.occupied)return `<span class="town-pin is-reserved" style="${style}" title="${t('Reserved plot','Reserviertes Grundstück')}">${art.icon('lock')}</span>`;
     const locked=account&&(data.playerLevel??1)<plot.requiredLevel;
@@ -58,11 +68,11 @@ window.townUi = (() => {
     const oldMap=accountContent.querySelector('.town-map-scroll'),scroll=oldMap?{x:oldMap.scrollLeft,y:oldMap.scrollTop}:null;
     const places=visiblePlots();
     const title=district?data.districts.find(area=>area.id===district).name:t('Vienna','Wien');
-    accountContent.innerHTML=`<div class="town-page"><header class="town-heading"><div><p class="eyebrow">${t('YOUR NEIGHBOURHOOD','DEINE NACHBARSCHAFT')}</p><h1 tabindex="-1">${t('Town map','Stadtplan')}</h1></div><a class="town-manage-link" href="/businesses" data-page>${t('Manage your stores','Deine Läden verwalten')} ↗</a></header><div class="town-toolbar"><div class="town-view-switch" role="group" aria-label="${t('Map view','Kartenansicht')}">${[['shops',t('Shops','Läden')],...(account?[['mine',t('Yours','Deine')]]:[]),['open',t('Open a store','Laden eröffnen')]].map(([id,label])=>`<button type="button" data-town-view="${id}" aria-pressed="${view===id}">${label}</button>`).join('')}</div><label class="town-district-filter"><span>${t('District','Bezirk')}</span><select data-town-district><option value="">${t('All of Vienna','Ganz Wien')}</option>${data.districts.map(area=>`<option value="${esc(area.id)}" ${district===area.id?'selected':''}>${area.number}. ${esc(area.name)}</option>`).join('')}</select></label></div><div class="town-layout"><section class="town-map-shell" aria-label="${t('Town map','Stadtplan')}"><header class="town-map-heading"><strong>${esc(title)}</strong><span>${view==='open'?t('Pick a + to choose a location','Wähle ein + für deinen Standort'):t('Pick a shop to visit','Wähle einen Laden zum Besuchen')}</span></header><div class="town-map-scroll" tabindex="0" aria-label="${t('Map; scroll to explore','Karte; zum Erkunden scrollen')}"><div class="town-canvas" >${art.render(data,district,esc,false,bounds())}${places.map(mapPin).join('')}</div></div><footer class="town-map-footer"><span>${t('Scroll or swipe to explore','Scrollen oder wischen zum Erkunden')}</span>${account?`<span class="town-own-key">● ${t('Your stores','Deine Läden')}</span>`:''}</footer></section><aside class="town-neighbours" aria-label="${t('Stores and owners','Läden und Besitzer')}">${storeList(places)}</aside></div></div>`;
+    accountContent.innerHTML=`<div class="town-page"><header class="town-heading"><div><p class="eyebrow">${t('YOUR NEIGHBOURHOOD','DEINE NACHBARSCHAFT')}</p><h1 tabindex="-1">${t('Town map','Stadtplan')}</h1></div><a class="town-manage-link" href="/businesses" data-page>${t('Manage your stores','Deine Läden verwalten')} ↗</a></header><div class="town-toolbar"><div class="town-view-switch" role="group" aria-label="${t('Map view','Kartenansicht')}">${[['shops',t('Shops','Läden')],...(account?[['mine',t('Yours','Deine')]]:[]),['open',t('Open a store','Laden eröffnen')]].map(([id,label])=>`<button type="button" data-town-view="${id}" aria-pressed="${view===id}">${label}</button>`).join('')}</div><label class="town-district-filter"><span>${t('District','Bezirk')}</span><select data-town-district><option value="">${t('All of Vienna','Ganz Wien')}</option>${data.districts.map(area=>`<option value="${esc(area.id)}" ${district===area.id?'selected':''}>${area.number}. ${esc(area.name)}</option>`).join('')}</select></label></div><div class="town-layout"><section class="town-map-shell" aria-label="${t('Town map','Stadtplan')}"><header class="town-map-heading"><strong>${esc(title)}</strong><span>${view==='open'?t('Pick a + to choose a location','Wähle ein + für deinen Standort'):t('Pick a shop to visit','Wähle einen Laden zum Besuchen')}</span></header><div class="town-map-scroll" tabindex="0" aria-label="${t('Map; scroll to explore','Karte; zum Erkunden scrollen')}"><div class="town-canvas"><div class="town-map-world">${art.render(data,district,esc,false,bounds())}${places.map(mapPin).join('')}</div></div></div><footer class="town-map-footer"><span>${t('Scroll or swipe to explore','Scrollen oder wischen zum Erkunden')}</span>${account?`<span class="town-own-key">● ${t('Your stores','Deine Läden')}</span>`:''}</footer></section><aside class="town-neighbours" aria-label="${t('Stores and owners','Läden und Besitzer')}">${storeList(places)}</aside></div></div>`;
     const map=accountContent.querySelector('.town-map-scroll');fitMap(map);mapObserver.disconnect();mapObserver.observe(map);if(scroll){map.scrollLeft=scroll.x;map.scrollTop=scroll.y;}else centerPlot(selected||places.find(plot=>plot.business?.own)?.id||places.find(plot=>plot.business)?.id);
     if(openOnLoad){openOnLoad=false;openPurchase(selected);}
   }
-  function centerPlot(id){const plot=data?.plots.find(plot=>plot.id===id),map=accountContent.querySelector('.town-map-scroll'),canvas=accountContent.querySelector('.town-canvas');if(plot&&map&&canvas){const p=point(plot);map.scrollLeft=(canvas.clientWidth-120)*p.x/100+60-map.clientWidth/2;map.scrollTop=(canvas.clientHeight-120)*p.y/100+60-map.clientHeight/2;}}
+  function centerPlot(id){const plot=data?.plots.find(plot=>plot.id===id),map=accountContent.querySelector('.town-map-scroll'),world=map?.querySelector('.town-map-world');if(plot&&map&&world){const p=point(plot);map.scrollLeft=world.offsetLeft+world.clientWidth*p.x/100-map.clientWidth/2;map.scrollTop=world.offsetTop+world.clientHeight*p.y/100-map.clientHeight/2;}}
   function purchaseMarkup(){
     const plot=data.plots.find(plot=>plot.id===selected);if(!plot||plot.occupied)return '';
     const cost=plot.costs[storeType],capacity=storeType==='cars'?plot.carCapacity:plot.capacity,capped=data.myStoreCount>=data.maxStores,locked=account&&(data.playerLevel??1)<plot.requiredLevel;
