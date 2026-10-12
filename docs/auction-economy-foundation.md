@@ -245,6 +245,13 @@ item again; old sold shelf rows migrate once. Reviews require a saved purchase
 receipt and have one editable row per customer/store. Visits and each reaction
 count once per player/store/UTC day. Reactions are cosmetic. Tips transfer J€.
 
+The theft confirmation shows the target, a short win/loss explanation and a free
+start button. Detailed rules and penalties are collapsed under Rules & consequences.
+Shelves, confirmation and active hands show a broad rounded fine estimate, rather
+than the exact quote. The domain still freezes and enforces the actual fine; a
+caught result shows the real financial receipt. Changing language updates both
+confirmation and active hands.
+
 Theft uses a free, uniformly shuffled 52-card blackjack hand with hit/stand,
 soft-17 standing, standard aces and two-card naturals. Wins transfer stock;
 pushes end without theft or a fine; losses incur a frozen fine of at least
