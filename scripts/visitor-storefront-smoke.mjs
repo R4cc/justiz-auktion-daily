@@ -1,0 +1,57 @@
+// Visitor UI regression with real one-item purchases and isolated store stock.
+import assert from 'node:assert/strict';
+import { createServer } from 'node:http';
+import { readFile,mkdtemp,rm } from 'node:fs/promises';
+import { fileURLToPath } from 'node:url';
+import path from 'node:path';
+import { Accounts } from '../src/accounts.mjs';
+import { createAccountApi } from '../src/account-api.mjs';
+import { createEconomyApi } from '../src/economy-api.mjs';
+import { closeDataStore,upsertAuctions } from '../src/database.mjs';
+import { buyBusiness,stockBusiness } from '../src/businesses.mjs';
+import { customizeStore,visitStore } from '../src/storefronts.mjs';
+import { featureFlags } from '../src/features.mjs';
+const {chromium}=await import(process.env.PLAYWRIGHT_MODULE||'/home/lxadm/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules/playwright/index.mjs');
+const root=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..'),dir=await mkdtemp('/tmp/jg-visitor-storefront-');
+const env={ADMIN_USERNAME:'admin',ADMIN_PASSWORD:'visitor-browser-password',COOKIE_SECURE:'false'},flags=featureFlags(env),now=Date.now();
+const json=(res,status,value)=>{res.writeHead(status,{'content-type':'application/json'});res.end(JSON.stringify(value));};
+const seed=JSON.parse(await readFile(path.join(root,'seed/auctions.json'),'utf8'));upsertAuctions(dir,seed.auctions);
+const api=await createAccountApi({dataDir:dir,json,env,flags,dailyPayload:async()=>({auctions:seed.auctions.slice(0,5)})}),accounts=new Accounts(dir,{flags});
+const token=await accounts.login({username:'admin',password:env.ADMIN_PASSWORD}),buyer=accounts.user(token);
+const types=['wine','toys','electronics','cars'],shops=[];
+accounts.db(db=>{db.prepare('UPDATE users SET tokens=100000 WHERE id=?').run(buyer.id);for(const [n,type] of types.entries())db.prepare("INSERT INTO users(id,username,password_hash,tokens,xp,created_at) VALUES(?,?,'disabled',1000000,36100,?)").run('seller-'+n,type==='wine'?'Wine_owner_with_a_long_name':type+'_owner',now);});
+for(const [n,type] of types.entries()){
+ const owner={id:'seller-'+n},shop=buyBusiness(dir,owner,type,'popup',{now}).shop;shops.push(shop);
+ const entries=type==='wine'?[['wine-0','Wachau Riesling',100,'rare'],['wine-1','Wachau Riesling',100,'rare'],['wine-2','Wachau Riesling',100,'rare'],['wine-premium','Wachau Riesling',200,'legendary']]:[[type+'-0',type==='toys'?'Wooden puzzle':type==='cars'?'Compact city car':'Large television',100,'common']];
+ accounts.db(db=>{for(const [id,title,price,rarity] of entries)db.prepare('INSERT INTO inventory(id,user_id,item,created_at) VALUES(?,?,?,?)').run(id,owner.id,JSON.stringify({title,price,rarity,businessCategory:type,marketCategory:type==='toys'?'collectibles':type==='cars'?'vehicles':type,image:type==='electronics'?'/assets/tv.jpg':null}),now);});
+ stockBusiness(dir,owner,shop.id,entries.map(([id])=>id),{now});
+ customizeStore(dir,owner,{shopId:shop.id,name:type==='wine'?'The Cork & Crown <img src=x>':type+' treasures',motto:'Small treasures. Bigger stories.',gooseGuard:type==='wine',requestId:'visitor-profile-'+type+'-0001'},{now});
+}
+const empty=buyBusiness(dir,{id:'seller-0'},'wine','popup',{now}).shop;
+// Freeze only this fixture's passive NPC ticks, while real buyer transactions run.
+accounts.db(db=>db.prepare('UPDATE businesses SET last_tick_at=?').run(now+86400000));
+const ownerToken=accounts.atomic(db=>accounts.session(db,'seller-0')),economy=createEconomyApi({dataDir:dir,json,flags,accounts});
+const server=createServer(async(req,res)=>{try{const url=new URL(req.url,'http://localhost');if(await api(req,res,url)||economy(req,res,url))return;if(url.pathname.startsWith('/api/'))return json(res,404,{error:'not_found'});const filename=url.pathname==='/'||!path.extname(url.pathname)?'/index.html':url.pathname,buf=await readFile(path.join(root,'dist',filename));res.writeHead(200,{'content-type':filename.endsWith('.js')?'text/javascript':filename.endsWith('.css')?'text/css':'text/html'});res.end(buf);}catch(error){json(res,500,{error:error.message});}});
+await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));const base=`http://127.0.0.1:${server.address().port}`;
+const browser=await chromium.launch({executablePath:process.env.CHROMIUM_PATH||'/home/lxadm/.cache/ms-playwright/chromium_headless_shell-1243/chrome-headless-shell-linux64/chrome-headless-shell',headless:true,args:['--no-sandbox']});
+try{
+ const context=await browser.newContext({viewport:{width:1440,height:1000}}),page=await context.newPage(),errors=[];page.on('pageerror',error=>errors.push(error.message));await context.addCookies([{name:'jg_session',value:token,url:base}]);
+ const go=async shop=>{await page.goto(base+'/stores?shop='+shop.id);await page.waitForSelector('.visitor-storefront');};
+ const language=async lang=>{await page.evaluate(lang=>{const select=document.querySelector('#language-select');select.value=lang;select.dispatchEvent(new Event('change',{bubbles:true}));},lang);};
+ const fits=async label=>{assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1),label+' page overflow');assert.ok(await page.locator('.visitor-hero,.visitor-stock-card,.visitor-reaction-buttons,.visitor-review-compose').evaluateAll(nodes=>nodes.every(el=>el.scrollWidth<=el.clientWidth+1)),label+' component overflow');};
+ const saleCount=()=>accounts.db(db=>db.prepare('SELECT COUNT(*) n FROM business_sales WHERE business_id=?').get(shops[0].id).n),balance=()=>accounts.profile(buyer).tokens;
+ await go(shops[0]);assert.equal(await page.locator('.visitor-stock-card').count(),2);assert.match(await page.locator('.visitor-stock-quantity').first().innerText(),/×3/);assert.match(await page.locator('.visitor-section-heading').first().innerText(),/4 items/);assert.equal(await page.locator('.visitor-hero img').count(),0);assert.match(await page.locator('.visitor-hero h1').innerText(),/<img src=x>/);assert.equal(await page.locator('.visitor-guard').count(),1);assert.equal(await page.locator('.visitor-review-compose').count(),0);
+ const before=balance();await page.locator('[data-store="buy"]').first().dblclick();await page.waitForFunction(()=>document.querySelector('.visitor-stock-quantity')?.textContent.includes('×2'));assert.equal(saleCount(),1);assert.equal(accounts.inventory(buyer).length,1);assert.equal(balance(),before-accounts.db(db=>db.prepare('SELECT price FROM business_sales WHERE business_id=?').get(shops[0].id).price));assert.equal(await page.locator('[data-store="buy"]').first().evaluate(el=>el===document.activeElement),true);
+ await page.locator('.visitor-review-compose summary').click();await page.locator('.store-review-form textarea').fill('Lovely little store.');await page.locator('.store-review-form input[value="4"]').check({force:true});
+ await page.locator('[data-store="react"][data-reaction="applause"]').click();await page.waitForFunction(()=>document.querySelector('[data-reaction="applause"]')?.getAttribute('aria-pressed')==='true');assert.equal(await page.locator('[data-reaction="applause"]').isDisabled(),true);assert.equal(await page.locator('.store-review-form textarea').inputValue(),'Lovely little store.');assert.equal(await page.locator('.store-review-form input[value="4"]').isChecked(),true);
+ await page.locator('.store-review-form button[type="submit"]').click();await page.waitForSelector('.store-review-card.is-player');assert.equal(visitStore(dir,buyer,shops[0].id).store.reviewCount,1);assert.equal(await page.locator('[data-store="heist"]').first().isDisabled(),false);assert.equal(await page.locator('.visitor-rating-link').evaluate(el=>getComputedStyle(el).color),'rgb(230, 239, 220)');
+ await page.locator('[data-store="heist"]').first().click();await page.waitForSelector('.store-heist-dialog[open]');const risk=await page.locator('.blackjack-risk strong').innerText(),fine=visitStore(dir,buyer,shops[0].id).store.stock[0].theft.fine;assert.ok(!risk.includes('J€ '+fine));assert.equal(await page.locator('.blackjack-details').evaluate(el=>el.open),false);await page.locator('[data-store="close-heist"]').first().click();
+ // An owner price change invalidates the cached quote without spending money.
+ accounts.db(db=>db.prepare('UPDATE businesses SET profit_margin=40 WHERE id=?').run(shops[0].id));const cash=balance();await page.locator('[data-store="buy"]').first().click();await page.waitForFunction(()=>document.querySelector('#store-stock-title')===document.activeElement);assert.equal(saleCount(),1);assert.equal(balance(),cash);await page.locator('[data-store="buy"]').first().click();await page.waitForFunction(()=>document.querySelector('.visitor-stock-quantity')?.textContent.includes('×1'));assert.equal(saleCount(),2);assert.equal(accounts.inventory(buyer).length,2);
+ for(const shop of shops){await go(shop);assert.equal(await page.locator('.visitor-hero .town-product-icon').first().getAttribute('data-product-icon'),shop.type);for(const width of [3840,1440,1024,768,390,320]){await page.setViewportSize({width,height:width===3840?2160:1000});for(const lang of ['en','de']){await language(lang);await fits(shop.type+' '+width+' '+lang);if(shop.type==='wine'&&[1440,390].includes(width)){await page.locator('[data-notification="dismiss"]').evaluateAll(nodes=>nodes.forEach(node=>node.click()));await page.screenshot({path:`/tmp/jg-visitor-${width}-${lang}.png`,fullPage:true});}}}}
+ accounts.db(db=>db.prepare('UPDATE users SET tokens=0 WHERE id=?').run(buyer.id));await go(shops[0]);assert.equal(await page.locator('[data-store="buy"]').first().isDisabled(),true);assert.equal(await page.locator('[data-store="heist"]').first().isDisabled(),false);assert.equal(await page.locator('.visitor-rating-link').evaluate(el=>getComputedStyle(el).color),'rgb(230, 239, 220)');assert.ok(await page.locator('.visitor-balance-hint').count()>0);
+ await go(empty);await page.waitForSelector('.visitor-empty');assert.equal(await page.locator('.visitor-stock-card').count(),0);await fits('empty 320');
+ const guest=await browser.newContext({viewport:{width:320,height:1000}}),anonymous=await guest.newPage();anonymous.on('pageerror',error=>errors.push(error.message));await anonymous.goto(base+'/stores?shop='+shops[0].id);await anonymous.waitForSelector('.visitor-login');assert.equal(await anonymous.locator('.visitor-review-compose').count(),0);assert.equal(await anonymous.locator('[data-store="buy"]').first().isDisabled(),true);assert.equal(await anonymous.locator('[data-store="heist"]').first().isDisabled(),true);assert.ok(!(await anonymous.locator('.visitor-owner').innerText()).includes('Wine_owner_with_a_long_name'));await guest.close();
+ await context.addCookies([{name:'jg_session',value:ownerToken,url:base}]);await page.goto(base+'/stores?shop='+shops[0].id);await page.waitForSelector('.store-owner-reviews summary');assert.equal(await page.locator('.visitor-storefront').count(),0);assert.deepEqual(errors,[]);
+ console.log('Visitor storefront passed: all 4 shop types, escaped identity, exact grouped quantities without combining rarity/price variants, real single-copy buys and double-click protection, focus, stale-price recovery, review draft/save and reactions, compact theft preflight, zero-cash theft, guest privacy, empty shelves and owner scope; EN/DE 3840–320px without overflow.');
+}finally{await browser.close();await new Promise(resolve=>server.close(resolve));closeDataStore(dir);await rm(dir,{recursive:true,force:true});}
