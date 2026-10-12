@@ -8,7 +8,7 @@ A price-guessing and trading game based on public listings from [Justiz-Auktion]
 - **Free play and Higher or Lower:** Practice your guesses or build a streak.
 - **Auction House:** Bid on items, stock bundles and mystery pallets, or list your own finds.
 - **Cases and inventory:** Open mystery cases, collect items, auction them or stock a compatible store.
-- **Stores and Town:** Open a shop, set prices and sell to players and simulated customers. Try red-or-black theft at other players’ stores; security-weighted odds and paid attempt fees make repeated stealing lose value on average.
+- **Stores and Town:** Open a shop, set prices and sell to players and simulated customers. Steal through fair blackjack at other players’ stores: no upfront cost, a fine if caught, inventory seizure if cash runs out, and escalating jail time if the fine cannot be covered.
 - **Market Trends:** Follow changing item values and NPC demand to guide your trades.
 - **Progress and friends:** Earn XP, level up, track trading profit and compare Daily scores and collections.
 - **English and German:** Play on desktop or mobile. Guests can start guessing immediately; accounts unlock rewards and trading.

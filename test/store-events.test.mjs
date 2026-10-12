@@ -7,7 +7,7 @@ import { Accounts } from '../src/accounts.mjs';
 import { closeDataStore } from '../src/database.mjs';
 import { buyBusiness, stockBusiness, businessDashboard, unstockBusiness } from '../src/businesses.mjs';
 import { checkStoreEvents, acknowledgeStoreEvents, STORE_EVENT_INTERVAL, STORE_EVENTS, ensureStoreEventSchema } from '../src/store-events.mjs';
-import { visitStore, buyStoreItem, startStoreHeist, finishStoreHeist } from '../src/storefronts.mjs';
+import { visitStore, buyStoreItem, startStoreHeist, actStoreHeist } from '../src/storefronts.mjs';
 const now = Date.parse('2026-10-08T12:30:00Z'), due = now + STORE_EVENT_INTERVAL;
 async function fixture(t) {
   const dir = await mkdtemp(join(tmpdir(), 'jg-store-events-')), accounts = new Accounts(dir, { now: () => now });
@@ -91,12 +91,12 @@ test('cosmetic heists preserve guarded shelves and live player purchases',async 
   assert.equal(run(f,3,0).type,'heist');assert.equal(f.query('SELECT * FROM inventory WHERE sold_at IS NULL').length,9);
   const g=await fixture(t);g.accounts.db(db=>db.prepare('UPDATE businesses SET mischief_enabled=1').run());
   buyStoreItem(g.dir,g.rival,{shopId:g.shop.id,inventoryId:'wine-0',expectedPrice:120,requestId:'event-purchase-0001'},{now});
-  const attempt=startStoreHeist(g.dir,g.rival,{shopId:g.shop.id,inventoryId:'wine-1',expectedPrice:120,expectedFee:97,expectedChance:29,choice:'red',requestId:'event-heist-start-001'},{now,draw:()=>0});
+  const attempt=startStoreHeist(g.dir,g.rival,{shopId:g.shop.id,inventoryId:'wine-1',expectedPrice:120,expectedFine:400,requestId:'event-heist-start-001'},{now,draw:max=>max-1});
   assert.equal(run(g,0).itemsLost,0);
   assert.equal(g.query("SELECT user_id, sold_at FROM inventory WHERE id='wine-0'")[0].user_id,g.rival.id);
   assert.equal(g.query("SELECT sold_at FROM inventory WHERE id='wine-0'")[0].sold_at,null);
-  const ended=finishStoreHeist(g.dir,g.rival,{heistId:attempt.id,moves:[0,0,0,0,0,0]},{now:due});
-  assert.equal(ended.outcome,'expired');
+  const ended=actStoreHeist(g.dir,g.rival,{heistId:attempt.id,action:'stand',turn:0,requestId:'expired-event-hand-0001'},{now:due});
+  assert.equal(ended.outcome,'caught');
 });
 test('event failures roll back stock, money, check, sale history and modal result; live authority and economy reset apply',async t=>{
   const f=await fixture(t);f.accounts.db(db=>db.prepare("UPDATE users SET tokens=? WHERE id='owner'").run(Number.MAX_SAFE_INTEGER));

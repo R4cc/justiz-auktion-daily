@@ -10,7 +10,8 @@ import { createEconomyApi } from '../src/economy-api.mjs';
 import { closeDataStore, upsertAuctions } from '../src/database.mjs';
 import { buyBusiness, stockBusiness } from '../src/businesses.mjs';
 import { recordNetWorth } from '../src/net-worth.mjs';
-import { listItem } from '../src/resale.mjs';
+import { imposeFine } from '../src/justice.mjs';
+import { listItem, placeBid } from '../src/resale.mjs';
 import { loadCaseStoreCatalog, quoteCaseStore } from '../src/case-store.mjs';
 import { marketIndexes } from '../src/market.mjs';
 import { featureFlags } from '../src/features.mjs';
@@ -72,7 +73,7 @@ try {
   for(const range of ['1d','1w','1m','all']){
     await page.locator(`[data-worth-range="${range}"]`).click();await page.waitForSelector('.net-worth-chart[aria-busy="false"]');
     const payload=await read(range);assert.ok(payload.points.length>1&&payload.points.length<=403);
-    assert.equal(payload.current.total,payload.current.cash+payload.current.heldBids+payload.current.items+payload.current.businesses+payload.current.sealedPalettes);
+    assert.equal(payload.current.total,payload.current.cash+payload.current.heldBids+payload.current.items+payload.current.businesses+payload.current.sealedPalettes-payload.current.fineDebt);
     assert.equal(payload.current.businesses,1000);assert.equal(await page.locator(`[data-worth-range="${range}"]`).getAttribute('aria-pressed'),'true');
     assert.equal(await page.locator('.worth-breakdown > div').count(),4);
     const expected=await page.evaluate(value=>justizEuro(value),payload.current.total);assert.equal(await page.locator('.worth-summary > strong').innerText(),expected);
@@ -106,6 +107,15 @@ try {
   // No invented past points: the first observation is a dot, including zero wealth.
   accounts.db(db=>{db.prepare('DELETE FROM net_worth_snapshots WHERE user_id=?').run(owner.id);db.prepare('UPDATE inventory SET sold_at=? WHERE user_id=?').run(Date.now(),owner.id);db.prepare('DELETE FROM business_stock').run();db.prepare('DELETE FROM businesses').run();db.prepare('UPDATE users SET tokens=0 WHERE id=?').run(owner.id);});
   await page.goto(base+'/inventory?worth=all');await page.waitForSelector('[data-worth-plot]');assert.equal(await page.locator('.worth-line').count(),0);assert.equal(await page.locator('.worth-latest').count(),1);assert.equal((await read('all')).points.length,1);
+  // Bidder-backed assets can leave collectible debt and negative net worth.
+  addItem('debt-backed-item','wine','Protected bidder stock');
+  accounts.db(db=>db.prepare("INSERT INTO users(id,username,password_hash,tokens,created_at) VALUES ('debt-bidder','debt-bidder','disabled',1000,?)").run(Date.now()));
+  const backed=listItem(dir,owner,{inventoryId:'debt-backed-item',startPrice:20,endsAt:new Date(Date.now()+3600000).toISOString()});placeBid(dir,{id:'debt-bidder'},backed.id,100);
+  accounts.db(db=>{recordNetWorth(db,owner.id,{now:Date.now()-60000});imposeFine(db,owner.id,400,Date.now());});
+  await page.goto(base+'/inventory?worth=all');await page.waitForSelector('[data-worth-plot]');
+  const debt=await read('all');assert.equal(debt.current.fineDebt,400);assert.equal(debt.current.total,-370);assert.equal(await page.locator('.worth-breakdown > div').count(),5);
+  assert.ok(await page.locator('.worth-line').evaluate(el=>Array.from(el.points).every(point=>point.y>=18&&point.y<=214)));
+  await page.screenshot({path:'/tmp/jg-net-worth-debt.png',fullPage:true});
   assert.deepEqual(errors,[]);
-  console.log('Net worth UI passed: authenticated private history; exact components; all four ranges; bounded real observations; keyboard/pointer inspection; preserved filters and refresh; stale-response rejection; account-change refresh; contained failures/retry; first-point and zero-wealth views; EN/DE at 1440/1024/768/600/390/320px; no overflow or JS errors.');
+  console.log('Net worth UI passed: authenticated private history; exact components; all four ranges; bounded real observations; keyboard/pointer inspection; preserved filters and refresh; stale-response rejection; account-change refresh; contained failures/retry; first-point, zero-wealth and negative-debt views; EN/DE at 1440/1024/768/600/390/320px; no overflow or JS errors.');
 }finally{await browser.close();await new Promise(resolve=>server.close(resolve));closeDataStore(dir);await rm(dir,{recursive:true,force:true});}

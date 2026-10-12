@@ -9,16 +9,19 @@ import { pushNotification } from './notifications.mjs';
 import { maskUsername } from './username-privacy.mjs';
 import { recordSale, acquireItems } from './trader.mjs';
 import { ECONOMY_BALANCE } from './economy-balance.mjs';
+import { dealBlackjack, playBlackjack, publicBlackjack } from './blackjack.mjs';
+import { ensureJusticeSchema, assertPlayerFree, imposeFine, collectFine } from './justice.mjs';
 
 export const GOOSE_GUARD_COST = 250;
 export const HEIST_COOLDOWN = 30 * 60000;
 export const STORE_HEIST_COOLDOWN = 5 * 60000;
-export const HEIST_DURATION = 65000;
+export const HEIST_DURATION = 10 * 60000;
 const fail = (code, status = 400) => { throw new AccountError(code, status); };
 const date = now => new Date(now).toISOString().slice(0, 10);
 
 export function ensureStoreSchema(db) {
   ensureBusinessSchema(db);
+  ensureJusticeSchema(db);
   db.exec(`CREATE TABLE IF NOT EXISTS store_receipts (
     id TEXT PRIMARY KEY, user_id TEXT NOT NULL REFERENCES users(id), request_id TEXT NOT NULL,
     business_id TEXT NOT NULL REFERENCES businesses(id), action TEXT NOT NULL,
@@ -52,11 +55,13 @@ export function ensureStoreSchema(db) {
   if (!db.prepare('PRAGMA table_info(store_heists)').all().some(column => column.name === 'choice')) {
     db.exec("ALTER TABLE store_heists ADD COLUMN choice TEXT CHECK(choice IN ('red', 'black'))");
   }
+  if (!db.prepare('PRAGMA table_info(store_heists)').all().some(column => column.name === 'blackjack')) db.exec("ALTER TABLE store_heists ADD COLUMN blackjack TEXT");
 }
 
-function actor(db, user) {
+function actor(db, user, now = Date.now()) {
   const row = db.prepare('SELECT id, username, tokens FROM users WHERE id = ? AND npc = 0 AND banned = 0 AND must_change_password = 0').get(user?.id || '');
   if (!row) fail('login_required', 401);
+  assertPlayerFree(db,row.id,now);
   return row;
 }
 function store(db, shopId) {
@@ -80,7 +85,7 @@ function notify(db, shop, key, titleEn, titleDe, bodyEn, bodyDe, now) {
 }
 function atomic(dataDir, user, fn, now) {
   return withDatabase(dataDir, db => transaction(db, () => {
-    ensureStoreSchema(db); const player = actor(db, user); marketIndexes(db, now);
+    ensureStoreSchema(db); const player = actor(db, user, now); marketIndexes(db, now);
     return fn(db, player);
   }));
 }
@@ -110,8 +115,8 @@ function moveItem(db, shop, player, inventoryId) {
   if (!db.prepare('UPDATE inventory SET user_id = ? WHERE id = ? AND user_id = ? AND sold_at IS NULL').run(player.id, inventoryId, shop.user_id).changes) fail('stock_conflict', 409);
 }
 export function theftQuote(referencePrice, gooseGuard, locationMultiplier = 1) {
-  const chancePercent = Math.min(75, Math.max(gooseGuard ? 2 : 5, Math.floor(35 / (1 + referencePrice / 500) * locationMultiplier * (gooseGuard ? .5 : 1))));
-  return { fee: Math.max(5, Math.ceil(referencePrice * chancePercent / 100 / ECONOMY_BALANCE.theftExpectedReturn)), chancePercent };
+  const fine = Math.max(20, Math.ceil(referencePrice * ECONOMY_BALANCE.theftFineMultiplier * (gooseGuard ? 2 : 1) * Math.max(1, 1 / locationMultiplier)));
+  return { fine, rules: 'single-deck-s17' };
 }
 function publicCard(db, shop, viewer) {
   const rating = db.prepare(`SELECT COUNT(*) AS count, AVG(r.stars) AS average FROM store_reviews r
@@ -124,6 +129,7 @@ function publicCard(db, shop, viewer) {
 }
 function serializeHeist(row, now) {
   if (!row) return null;
+  if (row.blackjack) return { id:row.id, outcome:row.status, fine:row.fee, expiresAt:row.expires_at, blackjack:publicBlackjack(JSON.parse(row.blackjack)), ...(row.result ? JSON.parse(row.result) : {}) };
   if (row.status !== 'active') return { id: row.id, ...JSON.parse(row.result) };
   if (now >= row.expires_at) return { id: row.id, outcome: 'expired', fee: row.fee, choice: row.choice || 'red' };
   return { id: row.id, outcome: 'active', choice: row.choice || 'red', chancePercent: row.chance, fee: row.fee,
@@ -151,7 +157,7 @@ export function listStores(dataDir, viewer = null, { now = Date.now(), query = '
 export function visitStore(dataDir, viewer, shopId, { now = Date.now() } = {}) {
   return withDatabase(dataDir, db => transaction(db, () => {
     ensureStoreSchema(db); marketIndexes(db, now); const shop = store(db, shopId); advanceShop(db, shop, now);
-    const player = viewer ? actor(db, viewer) : null;
+    const player = viewer ? actor(db, viewer, now) : null;
     const own = player?.id === shop.user_id;
     const rows = db.prepare(`SELECT r.stars, r.comment, r.updated_at AS updatedAt, u.username FROM store_reviews r
       JOIN users u ON u.id = r.user_id WHERE r.business_id = ? AND u.banned = 0 ORDER BY r.updated_at DESC, r.user_id LIMIT 30`).all(shop.id);
@@ -235,26 +241,81 @@ export function customizeStore(dataDir, user, payload, { now = Date.now() } = {}
 export function startStoreHeist(dataDir, user, payload, { now = Date.now(), draw = randomInt } = {}) {
   return atomic(dataDir, user, (db, player) => receipt(db, player, payload, 'heist', now, id => {
     const shop = store(db, payload.shopId); otherStore(shop, player);
-    if (!['red', 'black'].includes(payload.choice)) fail('invalid_heist_choice');
+    if (assertPlayerFree(db,player.id,now).fineDue) fail('unpaid_fine',409);
     const last = db.prepare('SELECT created_at FROM store_heists WHERE user_id = ? ORDER BY created_at DESC LIMIT 1').get(player.id);
     const target = db.prepare('SELECT MAX(created_at) AS last FROM store_heists WHERE business_id = ?').get(shop.id).last;
     if ((last && now < last.created_at + HEIST_COOLDOWN) || (target !== null && now < target + STORE_HEIST_COOLDOWN)) fail('heist_cooldown', 409);
+    if (db.prepare("SELECT 1 FROM store_heists WHERE user_id=? AND status='active'").get(player.id)) fail('heist_active',409);
     const entry = shelf(db, shop, payload.inventoryId, now);
     if (payload.expectedPrice !== entry.askingPrice) fail('store_price_changed', 409);
     const quote = theftQuote(entry.referencePrice, shop.goose_guard, plotLocation(db, shop.plot_id)?.theftMultiplier ?? 1);
-    if (payload.expectedFee !== quote.fee || payload.expectedChance !== quote.chancePercent) fail('store_risk_changed', 409);
-    transferMoney(db, player.id, shop.user_id, quote.fee);
-    // Charge a disclosed attempt fee once. The owner keeps it even if the
-    // player closes the animation, so no escrow can be stranded on disconnect.
-    // Fix the weighted color result once; animation and retries cannot reroll it.
-    db.prepare(`INSERT INTO store_heists (id, user_id, business_id, owner_id, inventory_id, sequence, roll, chance, fee, created_at, ready_at, expires_at, choice)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(id, player.id, shop.id, shop.user_id, entry.id, '[]', draw(1000000), quote.chancePercent, quote.fee, now, now, now + HEIST_DURATION, payload.choice);
-    notify(db, shop, `${id}:start`, 'A suspicious customer paid the mischief fee', 'Ein verdächtiger Kunde hat die Unfuggebühr bezahlt',
-      `${player.username} paid J€ ${quote.fee} and is eyeing ${entry.item.title}.`, `${player.username} hat J€ ${quote.fee} bezahlt und schielt auf ${entry.item.title}.`, now);
-    return { id, amount: quote.fee };
+    if (payload.expectedFine !== quote.fine) fail('store_risk_changed', 409);
+    const game = dealBlackjack(draw);
+    db.prepare(`INSERT INTO store_heists (id,user_id,business_id,owner_id,inventory_id,sequence,roll,chance,fee,created_at,ready_at,expires_at,blackjack)
+      VALUES (?,?,?,?,?,'[]',0,0,?,?,?,?,?)`).run(id,player.id,shop.id,shop.user_id,entry.id,quote.fine,now,now,now+HEIST_DURATION,JSON.stringify(game));
+    if (game.outcome !== 'active') settleBlackjack(db,player,db.prepare('SELECT * FROM store_heists WHERE id=?').get(id),game,now);
+    return { id, amount:0, heist:serializeHeist(db.prepare('SELECT * FROM store_heists WHERE id=?').get(id),now) };
   }), now);
 }
-export function finishStoreHeist(dataDir, user, { heistId } = {}, { now = Date.now() } = {}) {
+function settleBlackjack(db,player,attempt,game,now) {
+  const shop = db.prepare(`SELECT b.*,u.banned FROM businesses b JOIN users u ON u.id=b.user_id WHERE b.id=?`).get(attempt.business_id);
+  if (shop) advanceShop(db,shop,now);
+  const present = shop && !shop.banned && db.prepare(`SELECT 1 FROM business_stock s JOIN inventory i ON i.id=s.inventory_id
+    WHERE s.business_id=? AND s.inventory_id=? AND s.sold_at IS NULL AND i.sold_at IS NULL AND i.user_id=?`).get(shop.id,attempt.inventory_id,attempt.owner_id) && !inventoryIsLocked(db,attempt.inventory_id);
+  const outcome = game.outcome === 'lose' ? 'caught' : game.outcome === 'push' ? 'push' : present ? 'stolen' : 'gone';
+  let consequence = null;
+  if (outcome === 'stolen') { moveItem(db,shop,player,attempt.inventory_id); acquireItems(db,player.id,[attempt.inventory_id],0,'mischief',now); }
+  if (outcome === 'caught') consequence = imposeFine(db,player.id,attempt.fee,now);
+  const result = { id:attempt.id,outcome,fine:attempt.fee,inventoryId:outcome==='stolen'?attempt.inventory_id:null,
+    blackjack:publicBlackjack(game),consequence,abandoned:game.abandoned||false };
+  db.prepare('UPDATE store_heists SET status=?,result=?,blackjack=? WHERE id=?').run(outcome,JSON.stringify(result),JSON.stringify(game),attempt.id);
+  if (shop) notify(db,shop,`${attempt.id}:end`,outcome==='stolen'?'A shelf item was stolen':'A theft attempt ended',outcome==='stolen'?'Ein Regalartikel wurde gestohlen':'Ein Diebstahlversuch endete',
+    `${player.username}: ${outcome==='stolen'?'check your shelves.':outcome==='caught'?'caught and fined. No stock was stolen.':'no stock was stolen.'}`,
+    `${player.username}: ${outcome==='stolen'?'Prüfe deine Regale.':outcome==='caught'?'erwischt und mit Bußgeld belegt. Keine Ware wurde gestohlen.':'Keine Ware wurde gestohlen.'}`,now);
+  return result;
+}
+export function actStoreHeist(dataDir,user,payload,{now=Date.now()}={}) {
+  return atomic(dataDir,user,(db,player)=>{
+    const attempt=db.prepare('SELECT * FROM store_heists WHERE id=? AND user_id=?').get(payload.heistId,player.id);
+    if (!attempt) fail('heist_not_found',404);
+    if (!attempt.blackjack) fail('legacy_heist',409);
+    return receipt(db,player,{...payload,shopId:attempt.business_id},'blackjack',now,()=>{
+      if (attempt.status!=='active') return JSON.parse(attempt.result);
+      const game=JSON.parse(attempt.blackjack);
+      if (now>=attempt.expires_at) { game.outcome='lose';game.abandoned=true;return settleBlackjack(db,player,attempt,game,now); }
+      if (!['hit','stand'].includes(payload.action)) fail('invalid_blackjack_action');
+      if (payload.turn!==game.turn) fail('blackjack_turn_changed',409);
+      playBlackjack(game,payload.action);
+      if (game.outcome!=='active') return settleBlackjack(db,player,attempt,game,now);
+      db.prepare('UPDATE store_heists SET blackjack=? WHERE id=?').run(JSON.stringify(game),attempt.id);
+      return {id:attempt.id,outcome:'active',fine:attempt.fee,expiresAt:attempt.expires_at,blackjack:publicBlackjack(game)};
+    });
+  },now);
+}
+export function settleExpiredPlayerHeists(db,userId,now) {
+  if (!db.prepare("SELECT 1 FROM sqlite_schema WHERE type='table' AND name='store_heists'").get()) return;
+  ensureStoreSchema(db);
+  for (const attempt of db.prepare("SELECT * FROM store_heists WHERE user_id=? AND status='active' AND blackjack IS NOT NULL AND expires_at<=?").all(userId,now)) {
+    const player=db.prepare('SELECT id,username FROM users WHERE id=?').get(userId),game=JSON.parse(attempt.blackjack);
+    game.outcome='lose';game.abandoned=true;settleBlackjack(db,player,attempt,game,now);
+  }
+}
+export function tickStoreJustice(dataDir,{now=Date.now()}={}) {
+  return withDatabase(dataDir,db=>transaction(db,()=>{
+    if (!db.prepare("SELECT 1 FROM sqlite_schema WHERE type='table' AND name='users'").get()) return {processed:0};
+    ensureStoreSchema(db);
+    const users=db.prepare(`SELECT id FROM users WHERE npc=0 AND (id IN (SELECT user_id FROM store_heists WHERE status='active' AND blackjack IS NOT NULL AND expires_at<=?)
+      OR id IN (SELECT user_id FROM player_justice WHERE fine_due>0))`).all(now);
+    for(const user of users) {settleExpiredPlayerHeists(db,user.id,now);collectFine(db,user.id,now);}
+    return {processed:users.length};
+  }));
+}
+export function finishStoreHeist(dataDir,user,payload,options={}) {
+  const legacy=withDatabase(dataDir,db=>{ensureStoreSchema(db);return db.prepare('SELECT blackjack FROM store_heists WHERE id=? AND user_id=?').get(payload.heistId,user.id);});
+  if (legacy?.blackjack) fail('blackjack_action_required',409);
+  return finishLegacyStoreHeist(dataDir,user,payload,options);
+}
+function finishLegacyStoreHeist(dataDir, user, { heistId } = {}, { now = Date.now() } = {}) {
   return atomic(dataDir, user, (db, player) => {
     const attempt = db.prepare('SELECT * FROM store_heists WHERE id = ? AND user_id = ?').get(typeof heistId === 'string' ? heistId : '', player.id);
     if (!attempt) fail('heist_not_found', 404);

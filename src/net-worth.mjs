@@ -37,9 +37,11 @@ export function currentNetWorth(db, userId, { now = Date.now(), indexes = market
     const size = SHOP_SIZES.find(entry => entry.id === shop.size), type = SHOP_TYPES.find(entry => entry.id === shop.type);
     if (size && type) businesses += Math.round(size.cost * type.costFactor * (plotLocation(db, shop.plot_id)?.priceMultiplier ?? 1));
   }
+  const fineDebt=hasTable(db,'player_justice') ? db.prepare('SELECT fine_due FROM player_justice WHERE user_id=?').get(userId)?.fine_due||0 : 0;
   const current = { cash: user.tokens, heldBids, items, businesses, sealedPalettes };
   current.total = Object.values(current).reduce((sum, value) => sum + value, 0);
-  if (Object.values(current).some(value => !Number.isSafeInteger(value) || value < 0)) throw new AccountError('token_balance_limit', 409);
+  current.total -= fineDebt; current.fineDebt=fineDebt;
+  if (Object.entries(current).some(([key,value]) => !Number.isSafeInteger(value) || (key!=='total' && value < 0))) throw new AccountError('token_balance_limit', 409);
   return current;
 }
 export function recordNetWorth(db, userId, { now = Date.now(), indexes } = {}) {

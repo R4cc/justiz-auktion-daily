@@ -1985,45 +1985,6 @@ body { padding-left: var(--sidebar-width); }
   .business-quick-content { padding: 24px; }
 }
 
-/* Player theft uses the shared opening reel with red and black pockets. */
-.store-heist-dialog { width: min(720px, calc(100vw - 24px)); max-width: 720px; border-color: #584044; background: #211b20; color: #fff5ed; }
-.roulette-content { padding: 32px; background: radial-gradient(ellipse at 50% 0, #54242d, transparent 65%), #211b20; }
-.roulette-content .dialog-close { color: #fff5ed; border-color: #ffffff55; }
-.roulette-content > .eyebrow { margin: 0 0 10px; color: #e8a4ac; font-size: .65rem; }
-.roulette-content h2 { margin: 0 0 16px; font-size: 1.8rem; letter-spacing: -.04em; }
-.roulette-content h3 { font-size: 1rem; }
-.roulette-content > p { font-size: .85rem; color: #e6d3d5; }
-.roulette-content .store-hint { color: #cbb9bc; font-size: .75rem; }
-.roulette-content .account-error { color: #ffbbc3; }
-.roulette-choices { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; margin: 24px 0; }
-.roulette-choice { display: flex; align-items: center; justify-content: center; gap: 12px; min-height: 78px; padding: 18px; border: 2px solid #ffffff33; border-radius: 12px; color: white; font-size: 1.1rem; font-weight: 800; }
-.roulette-red { background: #b32c40; }
-.roulette-black { background: #111217; }
-.roulette-choice > span { font-size: 1.7rem; }
-.roulette-choice[aria-pressed="true"] { border-color: #f7dfb2; box-shadow: 0 0 0 3px #f7dfb233; }
-.roulette-choice:focus-visible { outline: 3px solid #f7dfb2; outline-offset: 4px; }
-.roulette-quote { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; padding: 18px 0; border-top: 1px solid #ffffff22; border-bottom: 1px solid #ffffff22; }
-.roulette-quote dt { color: #cbb9bc; font-size: .75rem; }
-.roulette-quote dd { margin: 8px 0 0; font: 500 1.25rem 'DM Mono', monospace; overflow-wrap: anywhere; }
-.roulette-content .primary-button { min-height: 44px; margin: 12px 0 0; background: #f7dfb2; color: #321b20; border-color: #f7dfb2; }
-.roulette-content > .primary-button { width: 100%; }
-.roulette-content .primary-button:disabled { opacity: .45; cursor: default; }
-.roulette-content .secondary-button { min-height: 44px; color: #fff5ed; border-color: #ffffff55; }
-.roulette-content .secondary-button:hover { background: #ffffff15; }
-.roulette-window { height: 208px; border: 1px solid #ffffff33; border-radius: 12px; margin: 24px 0; background: #121216; }
-.roulette-window::after { background: linear-gradient(90deg, #111216ee, transparent 20%, transparent 80%, #111216ee); }
-.roulette-window .case-marker { background: #f7dfb2; }
-.roulette-card { display: grid; place-content: center; justify-items: center; flex: none; width: 144px; height: 174px; gap: 12px; border: 1px solid #ffffff33; border-radius: 10px; color: #fff5ed; }
-.roulette-card > span { font-size: 3rem; line-height: 1; }
-.roulette-card > strong { font-size: .9rem; }
-.roulette-window .is-pulled { box-shadow: inset 0 0 0 2px #f7dfb2, 0 0 24px #f7dfb255; }
-@media (max-width: 600px) {
-  .roulette-content { padding: 26px 18px 20px; }
-  .roulette-content h2 { font-size: 1.5rem; }
-  .roulette-choice { min-height: 68px; padding: 14px 10px; gap: 8px; }
-  .roulette-content .store-action-row { flex-direction: column; align-items: stretch; }
-}
-
 /* Player rankings: podium, personal standing and a readable score board. */
 .leaderboard-hero { display: flex; align-items: center; justify-content: space-between; gap: 24px; margin-bottom: 28px; }
 .leaderboard-hero > div { min-width: 0; }
@@ -2224,3 +2185,40 @@ body { padding-left: var(--sidebar-width); }
   .worth-breakdown { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px 12px; }
   .worth-breakdown dd { font-size: .8rem; }
 }
+
+/* A fair blackjack table and the consequences of a failed getaway. */
+.store-heist-dialog { max-width: 720px; width: calc(100% - 32px); }
+.blackjack-content { position: relative; }
+.blackjack-content h2 { margin-top: 8px; }
+.blackjack-risk { display:flex;flex-wrap:wrap;justify-content:space-between;gap:12px;padding:16px;background:#f4dfd6;border:1px solid #c37960;border-radius:12px;margin:16px 0; }
+.blackjack-warning { padding-left:16px;border-left:3px solid #b44c31; }
+.blackjack-table { background:radial-gradient(ellipse at top,#285e4c,#123c31);border:5px solid #9b7950;border-radius:18px;padding:22px;color:#f9f1dc;margin:20px 0;box-shadow:inset 0 0 40px #0c292d88; }
+.blackjack-table section + section { margin-top:22px;border-top:1px solid #ead8a13d;padding-top:20px; }
+.blackjack-table h3 { display:flex;gap:16px;align-items:center;margin:0 0 12px; }
+.blackjack-table h3 span { border:1px solid #e4cf9670;border-radius:999px;padding:4px 12px;font:700 18px 'DM Mono',monospace; }
+.blackjack-hand { display:flex;gap:10px;flex-wrap:wrap; }
+.blackjack-card { width:66px;height:94px;flex-shrink:0;background:#fffbef;color:#183e37;border:1px solid #d1c7ad;border-radius:7px;padding:7px;display:flex;flex-direction:column;justify-content:space-between;box-shadow:0 3px 6px #0005;animation:blackjack-deal .24s ease-out; }
+.blackjack-card strong,.blackjack-card small { font:700 14px 'DM Mono',monospace; }
+.blackjack-card small { align-self:flex-end;transform:rotate(180deg); }
+.blackjack-card > span { align-self:center;font-size:28px;line-height:1; }
+.blackjack-card.is-red { color:#ab352f; }
+.blackjack-card.is-hidden { border:3px solid #fff6dd;background:repeating-linear-gradient(45deg,#802d33,#802d33 4px,#9f4248 4px,#9f4248 8px);justify-content:center;color:#fff6dd; }
+.blackjack-card.is-hidden span { font-size:18px;font-weight:800; }
+.blackjack-actions { display:flex;flex-wrap:wrap;gap:12px; }
+.blackjack-actions button { flex:1;min-height:48px; }
+.blackjack-status { font-weight:700; }
+.blackjack-consequence { background:#faf0e4;border:1px solid #c9a780;border-radius:12px;padding:16px; }
+.blackjack-consequence ul,.justice-receipt ul { max-height:180px;overflow:auto;overflow-wrap:anywhere; }
+.justice-dialog { width:calc(100% - 32px);max-width:620px;max-height:calc(100dvh - 32px);border:2px solid #29463e;border-radius:18px;background:#f8f3e7;padding:0; }
+.justice-dialog::backdrop { background:#0b201ef0;backdrop-filter:blur(6px); }
+.justice-content { padding:28px; }
+.justice-content h1 { font-size:clamp(24px,5vw,38px);margin:12px 0; }
+.justice-bars { height:92px;background:repeating-linear-gradient(90deg,#314b43 0,#314b43 10px,#172f29 10px,#172f29 44px);border:8px solid #48594a;display:grid;place-items:center;border-radius:8px; }
+.justice-bars span { background:#f1dfaf;padding:8px 14px;color:#173f33;font-weight:800;border-radius:50%; }
+.justice-countdown { display:block;font:700 clamp(28px,8vw,48px) 'DM Mono',monospace;color:#a33828;margin:20px 0; }
+.justice-receipt { border-top:1px solid #d0c8b5;border-bottom:1px solid #d0c8b5;margin:20px 0;padding:8px 0; }
+.justice-actions { display:flex;flex-wrap:wrap;gap:12px; }
+.justice-notice { position:fixed;bottom:16px;left:50%;transform:translateX(-50%);z-index:100;width:min(90%,700px);background:#f7e3c1;border:1px solid #b97438;border-radius:12px;padding:16px;box-shadow:0 6px 20px #1a352b2b; }
+@keyframes blackjack-deal { from {opacity:0;transform:translateY(-10px) rotate(-4deg);} to {opacity:1;transform:none;} }
+@media(max-width:600px){.blackjack-table{padding:14px;border-width:3px}.blackjack-card{width:54px;height:80px}.blackjack-hand{gap:7px}.justice-content{padding:18px}.blackjack-actions button{flex-basis:100%}}
+@media(prefers-reduced-motion:reduce){.blackjack-card{animation:none}}

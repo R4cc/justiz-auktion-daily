@@ -258,7 +258,7 @@ support remains 1 minute–30 days.
 `storefronts.mjs` shares the business shelf pricing and hourly NPC settlement.
 Public directory/detail responses allowlist merchandise and storefront fields;
 guests see masked usernames. Only the current player sees their review, reaction
-state or paid roulette attempt. The hidden roll is never serialized.
+state or blackjack attempt. Deck order and the dealer's hole card stay private.
 
 Shelf purchases debit the buyer, credit the owner, remove the shelf row and
 transfer the existing inventory row within one transaction. Independent
@@ -267,20 +267,22 @@ item again; old sold shelf rows migrate once. Reviews require a saved purchase
 receipt and have one editable row per customer/store. Visits and each reaction
 count once per player/store/UTC day. Reactions are cosmetic. Tips transfer J€.
 
-Red-or-black theft starts with a disclosed fee paid to the owner, including on
-failure or abandonment. Fee = `max(5, ceil(referenceValue * chancePercent / 100 / .30))`.
-Chance is `min(75, max(5, floor(35 / (1 + referenceValue / 500) * districtTheftMultiplier)))%`;
-a goose guard applies a 0.5 factor before flooring, with a 2% minimum, and costs
-J€250 once. Both picks have the same displayed, security-weighted chance. The
-server stores the choice and hidden roll once at payment. New attempts can settle
-immediately; the shared case-opening animation shows the fixed red/black result.
-A 65-second unclaimed-attempt expiry, 30-minute actor cooldown and 5-minute store
-cooldown remain. No direction sequence or skill input is required. Only the first
-terminal result counts; retries return it unchanged. Stock is not reserved before
-settlement; sale/removal/banning makes it unavailable and prevents transfer. No
-escrow remains when a player disconnects. Successful theft transfers an existing
-item and is not recorded as a sale. Legacy paid attempts retain their frozen
-fees, rolls and original ready times.
+Theft uses a free, uniformly shuffled 52-card blackjack hand with hit/stand,
+soft-17 standing, standard aces and two-card naturals. Wins transfer stock;
+pushes end without theft or a fine; losses incur a frozen fine of at least
+4× market value. Guards double fines and district security increases fines,
+without altering the cards. Turns and action receipts prevent duplicate draws.
+Unfinished hands are caught after ten minutes even when the player is offline.
+
+The bailiff collects cash, then inventory at current market estimates, returning
+excess liquidation value. Unbid listings can be cancelled and stocked items
+seized; bidder-backed listings and hidden palette rewards stay protected while
+outstanding debt waits for assets. Debt blocks new theft. If no inventory remains,
+unpaid debt converts to persisted jail: 5, 15, 45 minutes, increasing threefold
+up to 24 hours. The application and authenticated APIs lock until server release.
+Session status, logout and password access remain available. Net worth subtracts
+outstanding fines. Thirty-minute player and five-minute store cooldowns remain.
+Legacy paid attempts preserve their frozen fees, rolls and ready times.
 
 Public `GET /api/stores?query=&type=&offset=0&limit=24` returns
 `{stores,total,offset,limit}` (limit capped at 48). `GET /api/stores/:id` returns
@@ -480,18 +482,18 @@ is rejected. Legacy `{type,size}` clients receive a vacant matching plot. Plot
 allocation and payment share a transaction and a unique business-plot index,
 so competing claims never charge the losing request. The three-store cap applies.
 
-| District | Purchase price | Player theft odds |
+| District | Purchase price | Player theft fine factor |
 | --- | --- | --- |
-| Innere Stadt | 2× | 0.8× |
+| Innere Stadt | 2× | 1.25× |
 | Leopoldstadt | 1× | 1× |
 | Neubau | 1.3× | 1× |
-| Favoriten | 0.85× | 1.8× |
-| Hietzing | 1.7× | 0.65× |
-| Döbling | 1.5× | 0.75× |
+| Favoriten | 0.85× | 1× |
+| Hietzing | 1.7× | 1.54× |
+| Döbling | 1.5× | 1.33× |
 
 Shopping streets draw 1.5× normal visitors, side streets 1× and residential lanes
-0.65×. These factors apply to the shared hourly simulation; paid theft attempts
-freeze the district-adjusted chance. District names and approximate placement
+0.65×. These factors apply to the shared hourly simulation; blackjack theft attempts
+freeze the district-adjusted fine. Card odds remain unchanged. District names and approximate placement
 follow [Vienna's official district overview](https://www.wien.gv.at/politik/bezirke);
 the map, addresses and economic/crime traits are fictional and schematic.
 

@@ -82,15 +82,25 @@ test('public storefronts and player interactions use feature flags, sessions, CS
   assert.equal((await post(base, 'stores/react', { shopId: shop.id, reaction: 'bell' }, winnerCookie)).status, 200);
   assert.ok((await view(winnerCookie)).stock[0].theft);
   assert.equal((await post(base, 'businesses/profile', {shopId:shop.id,name:'API shop',motto:'',gooseGuard:false,mischiefEnabled:true,requestId:'enable-mischief-http-001'}, ownerCookie)).status, 200);
-  const start = await post(base, 'stores/heist/start', { ...payload, inventoryId: 'http-wine-1', expectedFee: 97, expectedChance: 29, choice: 'black', requestId: 'store-http-heist-000001' }, winnerCookie);
+  const start = await post(base, 'stores/heist/start', { ...payload, inventoryId: 'http-wine-1', expectedFine:400, requestId: 'store-http-heist-000001' }, winnerCookie);
   assert.equal(start.status, 200);
-  const { store: { heist } } = await start.json();
-  assert.equal(heist.choice, 'black'); assert.ok(!('sequence' in heist)); assert.ok(!('roll' in heist));
+  const { heist } = await start.json();
+  assert.ok(!('sequence' in heist)); assert.ok(!('roll' in heist)); assert.ok(!('deck' in heist.blackjack));
   assert.equal((await view('')).heist, null);
-  assert.equal((await post(base, 'stores/heist/finish', { heistId: heist.id, choice:'red', won:true }, ownerCookie)).status, 404);
-  accounts.db(db => db.prepare('UPDATE store_heists SET ready_at = ?, roll = 0 WHERE id = ?').run(time - 1, heist.id));
-  const finish = await post(base, 'stores/heist/finish', { heistId: heist.id, moves: heist.sequence }, winnerCookie);
+  assert.equal((await post(base, 'stores/heist/action', { heistId: heist.id, action:'stand', turn:0,requestId:'foreign-blackjack-0001' }, ownerCookie)).status, 404);
+  accounts.db(db => db.prepare("UPDATE store_heists SET status='active',result=NULL,blackjack=? WHERE id=?").run(JSON.stringify({player:[9,8],dealer:[6,10],deck:[1,2,3,4,5],turn:0,outcome:'active'}),heist.id));
+  const finish = await post(base, 'stores/heist/action', { heistId: heist.id, action:'stand',turn:0,requestId:'http-blackjack-action-001' }, winnerCookie);
   assert.equal(finish.status, 200); assert.equal((await finish.json()).heist.outcome, 'stolen');
+  // Jail applies to every account/game route and authenticated public economy
+  // route, while session state, logout and password access stay available.
+  const player=accounts.user(winnerCookie.match(/jg_session=([a-f0-9]+)/)[1]);
+  accounts.db(db=>db.prepare('INSERT INTO player_justice(user_id,jailed_until,offences) VALUES (?,?,1) ON CONFLICT(user_id) DO UPDATE SET jailed_until=excluded.jailed_until').run(player.id,Date.now()+60000));
+  for(const route of ['/api/account/inventory','/api/account/net-worth','/api/account/cases','/api/account/leaderboard','/api/stores','/api/town','/api/market'])assert.equal((await fetch(base+route,{headers:{cookie:winnerCookie}})).status,423,route);
+  assert.equal((await post(base,'games/start',{mode:'daily'},winnerCookie)).status,423);
+  assert.equal((await fetch(base+'/api/account/me',{headers:{cookie:winnerCookie}})).status,200);
+  assert.equal((await fetch(base+'/api/account/me',{headers:{cookie:winnerCookie}}).then(r=>r.json())).user.justice.jailed,true);
+  accounts.db(db=>db.prepare('UPDATE player_justice SET jailed_until=? WHERE user_id=?').run(Date.now()-1,player.id));
+  assert.equal((await fetch(base+'/api/account/inventory',{headers:{cookie:winnerCookie}})).status,200);
   const hidden = createEconomyApi({ dataDir: dir, json: () => {}, flags: { ...featureFlags({}), businesses: false } });
   assert.equal(hidden({ method: 'GET' }, null, new URL('/api/stores', base)), false);
   assert.equal(hidden({ method: 'GET' }, null, new URL(`/api/stores/${shop.id}`, base)), false);

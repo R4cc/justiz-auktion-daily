@@ -1,3 +1,5 @@
+import { settleExpiredPlayerHeists } from './storefronts.mjs';
+import { ensureJusticeSchema, justiceStatus, collectFine } from './justice.mjs';
 import { randomBytes, randomInt, randomUUID, createHash, scrypt, timingSafeEqual } from 'node:crypto';
 import { promisify } from 'node:util';
 import { withDatabase, transaction } from './database.mjs';
@@ -172,6 +174,7 @@ export class Accounts {
       // the sell/list locking consistent for every database this class opens.
       ensureResaleSchema(db, this.now());
       ensureBusinessSchema(db, { now: this.now() });
+      ensureJusticeSchema(db);
       ensureNotificationSchema(db);
     });
   }
@@ -215,8 +218,13 @@ export class Accounts {
   }
   user(token) {
     if (!token || !/^[a-f0-9]{64}$/.test(token)) return null;
-    return this.db(db => db.prepare(`SELECT users.* FROM users JOIN account_sessions ON users.id = user_id
-      WHERE hash = ? AND expires > ? AND banned = 0 AND npc = 0`).get(digest(token), this.now())) || null;
+    return this.atomic(db => {
+      const row=db.prepare(`SELECT users.* FROM users JOIN account_sessions ON users.id=user_id
+        WHERE hash=? AND expires>? AND banned=0 AND npc=0`).get(digest(token),this.now());
+      if (!row) return null;
+      settleExpiredPlayerHeists(db,row.id,this.now()); collectFine(db,row.id,this.now());
+      return {...db.prepare('SELECT * FROM users WHERE id=?').get(row.id),justice:justiceStatus(db,row.id,this.now())};
+    });
   }
   logout(token) { this.db(db => db.prepare('DELETE FROM account_sessions WHERE hash = ?').run(digest(token || ''))); }
   async register({ username, password, code }) {
@@ -348,7 +356,7 @@ export class Accounts {
         'business_sales', 'business_stock', 'businesses', 'town_plots', 'wholesale_bids', 'wholesale_auctions',
         'primary_palette_bids', 'primary_palette_rewards', 'primary_palette_auctions',
         'daily_rewards', 'daily_case_rewards', 'xp_events', 'case_openings', 'case_purchases', 'case_stock', 'sealed_cases', 'inventory', 'account_games',
-        'user_token_grants', 'token_grants', 'account_notifications', 'net_worth_snapshots']) {
+        'user_token_grants', 'token_grants', 'account_notifications', 'net_worth_snapshots', 'justice_seizures', 'player_justice']) {
         if (hasTable(table)) db.prepare(`DELETE FROM ${table}`).run();
       }
       // NPCs are runtime-owned and are recreated with their full configured
@@ -419,7 +427,8 @@ export class Accounts {
     });
   }
   profile(user) {
-    return this.db(db => {
+    return this.atomic(db => {
+      settleExpiredPlayerHeists(db,user.id,this.now()); collectFine(db,user.id,this.now());
       const row = db.prepare('SELECT id, username, admin, tokens, xp, created_at, grants_seen_at, must_change_password FROM users WHERE id = ?').get(user.id);
       const rewardsByMode = Object.fromEntries(db.prepare(`SELECT r.earned, r.mode, g.complete FROM daily_rewards r
         JOIN account_games g ON r.run_id = g.id WHERE r.user_id = ? AND r.date = ?`)
@@ -449,7 +458,7 @@ export class Accounts {
       recordNetWorth(db, user.id, { now: this.now() });
       // Progression derives from the freshly read users.xp through the shared
       // curve — no level arithmetic lives in this class.
-      return { ...publicRow, mustChangePassword: Boolean(must_change_password),
+      return { ...publicRow, justice:justiceStatus(db,user.id,this.now()), mustChangePassword: Boolean(must_change_password),
         progression: progressionForXp(xp), ...this.summary(db, user.id), heldInBids, traderStock,
         ...tradingTotals(db,user.id), traderMilestones: traderProgress(db,user.id,this.now()),
         admin: Boolean(row.admin), reward: reward || null, rewardsByMode, gifts, date: day(this.now()) };

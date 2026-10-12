@@ -24,13 +24,15 @@ export function createEconomyApi({ dataDir, json, flags = featureFlags(), accoun
   // them in full, everyone else gets the censored prefix.
   const sessionUser = request => {
     sessionAccounts ||= new Accounts(dataDir, { flags });
-    const token = request.headers.cookie?.split(';').map(part => part.trim()).find(part => part.startsWith('jg_session='))?.slice(11);
+    const token = request.headers?.cookie?.split(';').map(part => part.trim()).find(part => part.startsWith('jg_session='))?.slice(11);
     return sessionAccounts.user(token);
   };
   const signedIn = request => Boolean(sessionUser(request));
   return (request, response, url) => {
-    if (request.method !== 'GET' || !url.pathname.startsWith('/api/')) return false;
+    if (request.method !== 'GET' || !url.pathname.startsWith('/api/') || url.pathname.startsWith('/api/account/')) return false;
     try {
+      const player=request.headers?.cookie?.includes('jg_session=') ? sessionUser(request) : null;
+      if (player?.justice?.jailed && url.pathname!=='/api/features') { const error=new AccountError('player_jailed',423); error.justice=player.justice; throw error; }
       if (url.pathname === '/api/features') {
         json(response, 200, { features: Object.fromEntries(Object.keys(featureFlags({})).map(key => [key, Boolean(flags[key])])) });
         return true;
@@ -96,7 +98,7 @@ export function createEconomyApi({ dataDir, json, flags = featureFlags(), accoun
         return true;
       }
     } catch (error) {
-      if (error instanceof AccountError) json(response, error.status, { error: error.message });
+      if (error instanceof AccountError) json(response, error.status, { error: error.message, ...(error.justice ? {justice:error.justice} : {}) });
       else { console.error('Economy API failed'); json(response, 500, { error: 'internal_error' }); }
       return true;
     }

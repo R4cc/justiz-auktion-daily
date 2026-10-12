@@ -53,7 +53,7 @@ function accountError(code) {
     invalid_market_adjustment: t('Choose a valid percentage change.', 'Wähle eine gültige prozentuale Änderung.'),
     own_store: t('Choose another player’s store for this action.', 'Wähle für diese Aktion den Laden eines anderen Spielers.'),
     store_price_changed: t('The shelf price changed. Refresh the store and try again.', 'Der Regalpreis hat sich geändert. Lade den Laden neu und versuche es erneut.'),
-    store_risk_changed: t('The theft fee or odds changed. Check the updated offer before starting.', 'Die Diebstahlgebühr oder Chance hat sich geändert. Prüfe das aktualisierte Angebot vor dem Start.'),
+    store_risk_changed: t('The theft fine changed. Check the updated amount before starting.', 'Das Diebstahlbußgeld hat sich geändert. Prüfe den aktualisierten Betrag vor dem Start.'),
     stock_not_found: t('This item has left the shelf. Refresh the store.', 'Dieser Artikel ist nicht mehr im Regal. Lade den Laden neu.'),
     purchase_required: t('Buy something here before leaving a review.', 'Kaufe hier etwas, bevor du eine Bewertung abgibst.'),
     invalid_store_review: t('Choose 1–5 stars and keep your review under 240 characters.', 'Wähle 1–5 Sterne und schreibe höchstens 240 Zeichen.'),
@@ -71,7 +71,6 @@ function accountError(code) {
     store_limit_reached: t('You can own at most 3 stores.', 'Du kannst höchstens 3 Läden besitzen.'),
     invalid_store_events: t('Could not dismiss store events. Try again.', 'Ladenereignisse konnten nicht geschlossen werden. Versuche es erneut.'),
     business_not_found: t('This store is no longer available.', 'Dieser Laden ist nicht mehr verfügbar.'),
-    invalid_heist_moves: t('Repeat all six arrows before finishing.', 'Wiederhole alle sechs Pfeile, bevor du abschließt.'),
     insufficient_tokens: t('You do not have enough J€.', 'Du hast nicht genug J€.'),
     case_out_of_stock: t('This case is sold out globally. Check the next refill time.', 'Diese Kiste ist weltweit ausverkauft. Prüfe den nächsten Auffülltermin.'),
     try_later: t('Too many attempts. Try again later.', 'Zu viele Versuche. Versuche es später erneut.'),
@@ -101,7 +100,11 @@ function accountError(code) {
     item_listed: t('This item is listed in a resale auction.', 'Dieser Gegenstand ist in einer Verkaufsauktion gelistet.'),
     quantity_unavailable: t('That many matching items are no longer available.', 'So viele passende Gegenstände sind nicht mehr verfügbar.'),
     item_sold: t('This item has already been sold.', 'Dieser Gegenstand wurde bereits verkauft.'),
-    invalid_heist_choice: t('Choose red or black before spinning.', 'Wähle vor dem Drehen Rot oder Schwarz.'),
+    invalid_blackjack_action:t('Choose Hit or Stand.','Wähle Ziehen oder Halten.'),
+    blackjack_turn_changed:t('Your hand changed in another tab. Reloading it.','Dein Blatt wurde in einem anderen Tab geändert. Es wird neu geladen.'),
+    player_jailed:t('Your account is locked until your jail sentence ends.','Dein Konto ist bis zum Ende der Haftstrafe gesperrt.'),
+    unpaid_fine:t('Pay your outstanding fine before attempting another theft.','Begleiche dein offenes Bußgeld vor einem weiteren Diebstahl.'),
+    heist_active:t('Finish your current theft attempt first.','Beende zuerst deinen laufenden Diebstahlversuch.'),
     invalid_listing: t('This listing is not valid. Check price and end time.', 'Diese Auktion ist ungültig. Prüfe Startpreis und Endzeit.'),
     auction_not_found: t('This auction is no longer available.', 'Diese Auktion ist nicht mehr verfügbar.'),
     auction_ended: t('This auction has ended.', 'Diese Auktion ist beendet.'),
@@ -122,7 +125,7 @@ async function accountApi(route, payload) {
     headers: { accept: 'application/json', ...(payload === undefined ? {} : { 'content-type': 'application/json', 'x-requested-with': 'JUSTIZGUESSR' }) },
     ...(payload === undefined ? {} : { body: JSON.stringify(payload) }) });
   const result = await response.json();
-  if (!response.ok) { const error = new Error(accountError(result.error)); error.code = result.error; throw error; }
+  if (!response.ok) { const error = new Error(accountError(result.error)); error.code = result.error; if(result.justice&&account){account.justice=result.justice;window.justiceUi?.sync(account);} throw error; }
   return result;
 }
 const seenSidebarEntries = new Set();
@@ -270,6 +273,7 @@ function giftToast(gifts) {
 }
 function updateAccount(user, progressionOptions) {
   account = user;
+  window.justiceUi?.sync(user);
   window.netWorthUi?.accountChanged();
   updatePersistentProgression(user, progressionOptions);
   if (user?.gifts?.length) showToast(giftToast(user.gifts));
@@ -288,6 +292,7 @@ const accountReady = Promise.all([accountApi('me'), catalogReady, economyReady])
   if (typeof renderStart === 'function' && state.view === 'start' && location.pathname === '/') renderStart();
 }).catch(() => {});
 function showGamePage() {
+  if(account?.justice?.jailed){window.justiceUi?.sync(account);return;}
   caseReveal.close(); auctionReveal.close();
   if (typeof traderStockDialog !== 'undefined') traderStockDialog.close();
   document.querySelector('.daily-case-dialog')?.close();
@@ -332,6 +337,7 @@ async function navigateAccountPage(path, push = true) {
     if (visit !== accountVisit) return;
     updateAccount(session.user);
     // Skip every page loader while a temporary password still needs replacing.
+    if (account?.justice?.jailed) {pageLoaded=true;window.justiceUi?.sync(account);return;}
     if (account?.mustChangePassword) {
       pageLoaded = true; renderAccountPage();
       accountContent.querySelector('h1')?.focus({ preventScroll: true });
@@ -397,7 +403,7 @@ function economyOverviewMarkup() {
     <div class="economy-overview-primary"><span>${t('AVAILABLE J€', 'VERFÜGBARE J€')}</span><strong>${justizEuro(account.tokens)}</strong></div>
     <div><span>${t('J€ HELD IN BIDS', 'J€ IN GEBOTEN')}</span><strong>${justizEuro(account.heldInBids || 0)}</strong></div>
     <div><span>${t('ESTIMATED STOCK VALUE', 'GESCHÄTZTER WARENWERT')}</span><strong>${justizEuro(account.inventoryMarketValue || 0)}</strong></div><div><span>${t('REALIZED TRADING PROFIT', 'REALISIERTER HANDELSGEWINN')}</span><strong>${justizEuro(account.realizedTradingProfit || 0)}</strong></div>
-  </section><p class="data-note">${t('Reward proceeds', 'Belohnungserlöse')}: ${justizEuro(account.rewardProceeds || 0)} · ${t('Sales with unknown cost', 'Verkäufe mit unbekannten Kosten')}: ${number(account.unknownCostSales || 0)}. ${t('Profit covers tracked item sales; store investment and mischief fees are separate. Estimates are not cash.', 'Gewinn umfasst erfasste Warenverkäufe; Ladeninvestitionen und Unfuggebühren sind separat. Schätzwerte sind kein Guthaben.')}</p>`;
+  </section><p class="data-note">${t('Reward proceeds', 'Belohnungserlöse')}: ${justizEuro(account.rewardProceeds || 0)} · ${t('Sales with unknown cost', 'Verkäufe mit unbekannten Kosten')}: ${number(account.unknownCostSales || 0)}. ${t('Profit covers tracked item sales; store investment and theft fines are separate. Estimates are not cash.', 'Gewinn umfasst erfasste Warenverkäufe; Ladeninvestitionen und Diebstahlbußgelder sind separat. Schätzwerte sind kein Guthaben.')}</p>`;
 }
 function loginNotice(subject) {
   return `<section class="collection-empty"><span aria-hidden="true">◇</span><h2>${t(`Log in to view your ${subject}.`, subject === 'inventory' ? 'Melde dich an, um dein Inventar zu sehen.' : 'Melde dich an, um dein Profil zu sehen.')}</h2><a class="primary-button" href="/login" data-page>${t('Log in', 'Anmelden')}</a></section>`;
@@ -406,6 +412,7 @@ function accountValueMarkup() {
   return `<div class="account-value"><span>${t('TOTAL ACCOUNT VALUE', 'GESAMTER KONTOWERT')}<strong>${euro(account.accountValueEur)}</strong></span>${infoTip(t(`Auction values of your collection (${account.itemCount} item${account.itemCount === 1 ? "" : "s"}). Justiz€ is not included in the euro value.`, `Auktionswerte deiner Sammlung (${account.itemCount} Lose). Justiz€ zählt nicht zum Eurowert.`), t('How account value is calculated', 'Berechnung des Kontowerts'))}</div>`;
 }
 function renderAccountPage() {
+  if (account?.justice?.jailed){window.justiceUi?.sync(account);return;}
   if (!pageLoaded || !currentAccountPage) return;
   if (caseOpening === accountVisit && currentAccountPage === '/shop') return;
   // A temporary password from an admin reset allows exactly one thing next.

@@ -17,7 +17,7 @@ import { archivedListingsBidOnByUser, cancelListing, listItem, listingsBidOnByUs
 import { maskLeaderboard } from './username-privacy.mjs';
 import { markNotificationsRead, notificationsForUser } from './notifications.mjs';
 import { businessDashboard, buyBusiness, setBusinessMargin, stockBusiness, unstockBusiness } from './businesses.mjs';
-import { buyStoreItem, customizeStore, finishStoreHeist, reactToStore, recordStoreVisit, reviewStore, startStoreHeist, tipStore, visitStore } from './storefronts.mjs';
+import { actStoreHeist, buyStoreItem, customizeStore, finishStoreHeist, reactToStore, recordStoreVisit, reviewStore, startStoreHeist, tipStore, visitStore } from './storefronts.mjs';
 
 const AUCTION_PAGE_SIZE = 25;
 
@@ -81,6 +81,7 @@ export async function createAccountApi({ dataDir, dailyPayload, json, env = proc
       const token = request.headers.cookie?.split(';').map(part => part.trim()).find(part => part.startsWith('jg_session='))?.slice(11);
       const user = accounts.user(token);
       const route = url.pathname.slice('/api/account/'.length);
+      if (user?.justice?.jailed && !['me','logout','login','password/change'].includes(route)) { const error=new AccountError('player_jailed',423); error.justice=user.justice; throw error; }
       if (request.method === 'GET') {
         if (route === 'me') json(response, 200, { user: user ? accounts.profile(user) : null });
         else if (route === 'case-store') json(response, 200, getStore());
@@ -200,8 +201,10 @@ export async function createAccountApi({ dataDir, dailyPayload, json, env = proc
       else if (flags.businesses && route === 'stores/tip') result = { receipt: tipStore(dataDir, user, payload), user: accounts.profile(user) };
       else if (flags.businesses && route === 'stores/heist/start') {
         const receipt = startStoreHeist(dataDir, user, payload);
-        result = { receipt, ...visitStore(dataDir, user, payload.shopId), user: accounts.profile(user) };
+        result = { receipt, heist:receipt.heist, user: accounts.profile(user) };
+        if (!result.user.justice.jailed) Object.assign(result,visitStore(dataDir,user,payload.shopId));
       }
+      else if (flags.businesses && route === 'stores/heist/action') result = { heist:actStoreHeist(dataDir,user,payload), user:accounts.profile(user) };
       else if (flags.businesses && route === 'stores/heist/finish') result = { heist: finishStoreHeist(dataDir, user, payload), user: accounts.profile(user) };
       else if (flags.paletteAuctions && route === 'admin/palette-auctions') {
         // Narrow test/operations surface for trusted lot creation. Only
@@ -240,7 +243,7 @@ export async function createAccountApi({ dataDir, dailyPayload, json, env = proc
       else throw new AccountError('not_found', 404);
       json(response, 200, result);
     } catch (error) {
-      if (error instanceof AccountError) json(response, error.status, { error: error.message });
+      if (error instanceof AccountError) json(response, error.status, { error: error.message, ...(error.justice ? {justice:error.justice} : {}) });
       else if (error.code === 'insufficient_variety') json(response, 503, { error: 'insufficient_variety' });
       else {
         console.error('Account API failed');

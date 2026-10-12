@@ -132,8 +132,8 @@ test('theft is available in every player store and legacy owner opt-out cannot b
   const profile={shopId:shop.id,name:'Trader store',motto:'',gooseGuard:false,mischiefEnabled:false,requestId:'legacy-mischief-test-001'};
   assert.throws(()=>customizeStore(f.dir,f.buyer,profile,{now}),/forbidden/);
   customizeStore(f.dir,f.seller,profile,{now});assert.ok(view().stock[0].theft);
-  const entry=view().stock[0],payload={shopId:shop.id,inventoryId:'wine',expectedPrice:entry.price,expectedFee:entry.theft.fee,expectedChance:entry.theft.chancePercent,choice:'red',requestId:'all-player-theft-001'};
-  const balance=f.accounts.profile(f.buyer).tokens;startStoreHeist(f.dir,f.buyer,payload,{now,draw:()=>0});assert.equal(f.accounts.profile(f.buyer).tokens,balance-entry.theft.fee);
+  const entry=view().stock[0],payload={shopId:shop.id,inventoryId:'wine',expectedPrice:entry.price,expectedFine:entry.theft.fine,requestId:'all-player-theft-001'};
+  const balance=f.accounts.profile(f.buyer).tokens;startStoreHeist(f.dir,f.buyer,payload,{now,draw:max=>max-1});assert.equal(f.accounts.profile(f.buyer).tokens,balance);
 });
 
 test('Daily scores rank appraisal skill independently of collection prestige',async t=>{

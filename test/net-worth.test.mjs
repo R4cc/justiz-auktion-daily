@@ -6,6 +6,7 @@ import { closeDataStore, upsertAuctions } from '../src/database.mjs';
 import { currentNetWorth, recordNetWorth, netWorthHistory, captureNetWorth } from '../src/net-worth.mjs';
 import { buyBusiness, stockBusiness } from '../src/businesses.mjs';
 import { listItem, placeBid } from '../src/resale.mjs';
+import { imposeFine } from '../src/justice.mjs';
 import { setMarketIndex } from '../src/market.mjs';
 import { loadPaletteCatalog } from '../src/palette-definitions.mjs';
 import { createPaletteAuction, bidOnPaletteAuction, settleDuePaletteAuctions, getPaletteAuctionRewards } from '../src/palette-auctions.mjs';
@@ -59,4 +60,16 @@ test('background capture includes offline humans, excludes NPCs and respects cad
   assert.throws(()=>netWorthHistory(f.dir,{id:'npc'},{now}),/login_required/);
   f.accounts.resetEconomy(f.user,'RESET ECONOMY');assert.equal(f.accounts.db(db=>db.prepare('SELECT COUNT(*) AS n FROM net_worth_snapshots').get().n),0);
   const data=netWorthHistory(f.dir,f.user,{now:now+6*minute});assert.equal(data.points.length,1);assert.equal(data.current.total,1000);assert.equal(data.trackedSince,now+6*minute);
+});
+
+test('bailiff waits on unopened palette rewards without revealing or seizing their secret values',async t=>{
+  const f=await fixture(t),edition=loadPaletteCatalog(f.dir,{now}).palettes.find(p=>p.id==='fundkiste');
+  const lot=createPaletteAuction(f.dir,{editionId:edition.editionId,requestId:'protected-palette-fine-001'},{now,random:()=>0});
+  bidOnPaletteAuction(f.dir,f.user,lot.id,lot.reserve,{now});settleDuePaletteAuctions(f.dir,{now:lot.endsAt+1});
+  f.accounts.db(db=>db.prepare('UPDATE users SET tokens=0 WHERE id=?').run(f.user.id));
+  const result=f.accounts.atomic(db=>imposeFine(db,f.user.id,2000,lot.endsAt+1));
+  assert.deepEqual(result.seized,[]);assert.equal(result.remainingFine,2000);assert.equal(result.jailedUntil,0);
+  const before=f.accounts.db(db=>currentNetWorth(db,f.user.id,{now:lot.endsAt+1}));assert.equal(before.items,0);assert.equal(before.fineDebt,2000);assert.equal(before.total,lot.reserve-2000);
+  f.accounts.db(db=>db.prepare("UPDATE inventory SET item=json_set(item,'$.price',1000000) WHERE user_id=?").run(f.user.id));
+  assert.deepEqual(f.accounts.db(db=>currentNetWorth(db,f.user.id,{now:lot.endsAt+1})),before);
 });
