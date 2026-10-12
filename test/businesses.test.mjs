@@ -485,9 +485,12 @@ test('business HTTP routes require sessions and stock lots appear through market
   const catalogue=await (await fetch(`${base}/api/stock-palettes`)).json();
   const offer=catalogue.offers.find(offer=>offer.id==='wine-budget');
   assert.ok(offer && offer.items.some(item=>auctionStock.some(auction=>auction.id===item.auctionId)));
-  const bought=await post('stock-palettes/buy',{offerId:offer.id,revision:catalogue.revision,requestId:'business-stock-palette-001'},cookie);
-  assert.equal(bought.status,200);const result=await bought.json();
-  assert.equal(result.user.tokens,2000-1000-offer.cost);
-  assert.equal(result.user.activeBids,0);
+  const {createStockPaletteAuction}=await import('../src/stock-palette-auctions.mjs');
+  const {bidOnPaletteAuction}=await import('../src/palette-auctions.mjs');
+  const at=Date.now(),auction=createStockPaletteAuction(dir,{offerId:offer.id,requestId:'business-stock-auction-001'},{now:at});
+  const bid=await post('palette-auctions/bid',{id:auction.id,amount:auction.reserve},cookie);
+  assert.equal(bid.status,200);const result=await bid.json();
+  assert.equal(result.user.tokens,2000-1000-auction.reserve);assert.equal(result.user.activeBids,1);
+  assert.equal((await post('stock-palettes/buy',{offerId:offer.id,revision:catalogue.revision,requestId:'removed-direct-purchase-001'},cookie)).status,404);
 
 });

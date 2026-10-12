@@ -1,3 +1,4 @@
+import { supplyStockPaletteAuctions } from './stock-palette-auctions.mjs';
 import { tickStoreJustice } from './storefronts.mjs';
 import { captureNetWorth } from './net-worth.mjs';
 import { createHash } from 'node:crypto';
@@ -66,8 +67,8 @@ export function tickEconomy(dataDir, { now = Date.now(), flags = featureFlags() 
   if (flags.market) run('marketDrift', () => tickMarketDrift(dataDir, { now }));
   if (flags.paletteAuctions) {
     run('primarySettlement', () => settleDuePaletteAuctions(dataDir, { now }));
-    // Existing palette bids settle normally; new stock is permanently sold on /palettes.
-    result.supply = { auctions: [], skipped: [] };
+    if(flags.palettes)run('supply',()=>supplyStockPaletteAuctions(dataDir,{now}));
+    else result.supply={auctions:[],skipped:[]};
   }
   if (flags.resales) {
     run('resaleSettlement', () => settleDueListings(dataDir, { now }));

@@ -105,7 +105,7 @@ test('public list and detail expose only the allowlisted auction representation'
   const second = await createLot(adminCookie, 'public-lot-00000002');
   assert.equal(first.status, 'active');
   const list = await (await fetch(`${base}/api/palette-auctions`)).json();
-  assert.deepEqual(new Set(list.auctions.map(auction => auction.id)), new Set([first.id, second.id]));
+  assert.deepEqual(new Set(list.auctions.filter(auction=>!auction.stockOffer).map(auction => auction.id)), new Set([first.id, second.id]));
   const detail = await (await fetch(`${base}/api/palette-auctions/${first.id}`)).json();
   assert.equal(detail.auction.id, first.id);
   assert.deepEqual(detail.auction.bids, []);
@@ -124,10 +124,10 @@ test('public list and detail expose only the allowlisted auction representation'
   // Query bounds follow the domain model: limit clamps to 1..200, offset is
   // a non-negative integer, invalid values fall back to the defaults.
   assert.equal((await (await fetch(`${base}/api/palette-auctions?limit=1`)).json()).auctions.length, 1);
-  assert.equal((await (await fetch(`${base}/api/palette-auctions?limit=0`)).json()).auctions.length, 2);
-  assert.equal((await (await fetch(`${base}/api/palette-auctions?limit=5000`)).json()).auctions.length, 2);
+  assert.equal((await (await fetch(`${base}/api/palette-auctions?limit=0`)).json()).auctions.length, list.auctions.length);
+  assert.equal((await (await fetch(`${base}/api/palette-auctions?limit=5000`)).json()).auctions.length, list.auctions.length);
   assert.equal((await (await fetch(`${base}/api/palette-auctions?limit=1&offset=1`)).json()).auctions.length, 1);
-  assert.equal((await (await fetch(`${base}/api/palette-auctions?limit=1&offset=9`)).json()).auctions.length, 0);
+  assert.equal((await (await fetch(`${base}/api/palette-auctions?limit=1&offset=999`)).json()).auctions.length, 0);
   // Unknown and malformed ids 404 safely (no 500 on bad percent-encoding).
   assert.equal((await fetch(`${base}/api/palette-auctions/missing`)).status, 404);
   assert.equal((await fetch(`${base}/api/palette-auctions/%E0%A4%A`)).status, 404);

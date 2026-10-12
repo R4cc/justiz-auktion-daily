@@ -13,7 +13,8 @@ import { AccountError } from './errors.mjs';
 import { justiceStatus, collectFine } from './justice.mjs';
 
 // Each palette contains exactly the advertised number of physical units.
-// The quantity split and three independent item draws are frozen at purchase.
+// Auction supply freezes quantity and supported Luck variants at creation.
+// The retained purchase domain below serves legacy receipts and fixtures.
 export const STOCK_PALETTE_TIERS = [
   { id: 'budget', name: 'Starter', nameDe: 'Starter', quantity: 6, weights: [8500,1200,250,49,1] },
   { id: 'standard', name: 'Warehouse', nameDe: 'Lager', quantity: 24, weights: [6500,2500,750,240,10] },
@@ -69,7 +70,7 @@ export function quantitySplits(quantity) {
   const unit=quantity/6;
   return [{quantities:[unit,unit,4*unit],weight:40},{quantities:[unit,2*unit,3*unit],weight:45},{quantities:[2*unit,2*unit,2*unit],weight:15}];
 }
-function quote(db,now,userId=null) {
+export function stockPaletteQuote(db,now,userId=null) {
   const luckPercent=skillEffects(db,userId).luckPercent;
   const indexes=marketIndexes(db,now), categoryPools=pools(db,now), date=rotationDate(now);
   const offers=categoryPools.flatMap(category=>{
@@ -89,7 +90,7 @@ function quote(db,now,userId=null) {
       for(const split of splits)for(const qty of split.quantities)chances.set(qty,(chances.get(qty)||0)+split.weight/3);
       return {id:category.id+'-'+tier.id,category:category.id,name:category.name,nameDe:category.nameDe,tier:tier.id,
         tierName:tier.name,tierNameDe:tier.nameDe,quantity:tier.quantity,rolls:3,cost,expectedMarket:expectedItemValue(category.items,weights,item=>estimatedValueTokens(item,indexes))*tier.quantity,luckPercent,
-        items:category.items,weights,quantitySplits:splits,
+        items:category.items,weights,quantitySplits:splits,acquisitionMode:'auction',purchasable:false,
         dropChances:RARITIES.map((rarity,index)=>({rarity:rarity.id,percent:weights[index]/total*100})),
         multiplierChances:[...chances].sort((a,b)=>a[0]-b[0]).map(([quantity,percent])=>({quantity,percent}))};
     }).filter(Boolean);
@@ -98,7 +99,7 @@ function quote(db,now,userId=null) {
     categories:categoryPools.map(({items,...category})=>({...category,available:items.length>0})),offers};
 }
 export function stockPaletteCatalog(dataDir,{now=Date.now(),userId=null}={}) {
-  return withDatabase(dataDir,db=>transaction(db,()=>quote(db,now,userId)));
+  return withDatabase(dataDir,db=>transaction(db,()=>stockPaletteQuote(db,now,userId)));
 }
 function player(db,user,now) {
   const row=db.prepare('SELECT * FROM users WHERE id=? AND npc=0 AND banned=0').get(user?.id);
@@ -114,13 +115,14 @@ function receipt(row) {
   const {items,weights,quantitySplits,...offer}=JSON.parse(row.offer);
   return {id:row.id,offer,cost:row.cost,createdAt:row.created_at,revealedAt:row.revealed_at};
 }
-export function buyStockPalette(dataDir,user,{offerId,requestId,revision},{now=Date.now(),random=randomInt}={}) {
+export function buyStockPalette(dataDir,user,{offerId,requestId,revision},{now=Date.now(),random=randomInt,allowLegacyPurchase=false}={}) {
+  if(!allowLegacyPurchase)fail('palette_auction_only',410);
   if(typeof requestId!=='string'||!/^[a-zA-Z0-9-]{16,80}$/.test(requestId))fail('invalid_request',400);
   return withDatabase(dataDir,db=>transaction(db,()=>{
     ensureStockPaletteSchema(db);player(db,user,now);
     const previous=db.prepare('SELECT * FROM stock_palette_purchases WHERE user_id=? AND request_id=?').get(user.id,requestId);
     if(previous){if(previous.offer_id!==offerId)fail('request_conflict');return receipt(previous);}
-    const catalog=quote(db,now,user.id),offer=catalog.offers.find(entry=>entry.id===offerId);
+    const catalog=stockPaletteQuote(db,now,user.id),offer=catalog.offers.find(entry=>entry.id===offerId);
     if(!offer)fail('invalid_palette',400);
     if(catalog.revision!==revision)fail('catalog_changed');
     if(!db.prepare('UPDATE users SET tokens=tokens-? WHERE id=? AND tokens>=?').run(offer.cost,user.id,offer.cost).changes)fail('insufficient_tokens');

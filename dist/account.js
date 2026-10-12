@@ -318,6 +318,15 @@ function showGamePage() {
 }
 async function navigateAccountPage(path, push = true) {
   const destination = new URL(path, location.origin);
+  if(!push&&!path.includes('?')&&destination.pathname===location.pathname)destination.search=location.search;
+  if(destination.pathname==='/palettes'){
+    if(destination.searchParams.has('open'))destination.searchParams.set('open-palette',destination.searchParams.get('open'));
+    if(destination.searchParams.has('auction'))destination.searchParams.set('reveal',destination.searchParams.get('auction'));
+    if(destination.searchParams.has('category'))destination.searchParams.set('stock',destination.searchParams.get('category'));
+    destination.searchParams.delete('open');destination.searchParams.delete('auction');destination.searchParams.delete('category');
+    destination.pathname='/auction-house';destination.searchParams.set('type','mystery');
+    if(!push)history.replaceState({},'',destination.pathname+destination.search);
+  }
   if (destination.pathname === '/auctions' || destination.pathname === '/marketplace') {
     if (destination.pathname === '/auctions' && !destination.searchParams.has('type')) destination.searchParams.set('type', 'mystery');
     destination.pathname = '/auction-house';
@@ -357,7 +366,9 @@ async function navigateAccountPage(path, push = true) {
       return;
     }
     const owner = account?.id;
-    if (window.economyUi?.isRoute(path)) {
+    const opening=path==='/auction-house'&&(new URLSearchParams(location.search).has('reveal')||new URLSearchParams(location.search).has('open-palette'));
+    if(opening){await window.paletteUi.load(visit);if(visit!==accountVisit)return;}
+    if (!opening && window.economyUi?.isRoute(path)) {
       await window.economyUi.load(path, visit);
       if (visit !== accountVisit) return;
     }
@@ -368,7 +379,6 @@ async function navigateAccountPage(path, push = true) {
     if (path === '/town') { await window.townUi.load(visit); if (visit !== accountVisit) return; }
     if (path === '/stores') { await window.storeUi.load(visit); if (visit !== accountVisit) return; }
     if(path === '/skills') { await window.skillsUi.load(visit); if(visit!==accountVisit)return; }
-    if(path === '/palettes') { await window.paletteUi.load(visit); if(visit!==accountVisit)return; }
     if (path === '/shop') {
       const store = await accountApi('case-store'); if (visit !== accountVisit) return; accountStore = store;
     }
@@ -434,12 +444,12 @@ function renderAccountPage() {
   if (caseOpening === accountVisit && currentAccountPage === '/shop') return;
   // A temporary password from an admin reset allows exactly one thing next.
   if (account?.mustChangePassword) { renderPasswordChange(); return; }
-  if (window.economyUi?.isRoute(currentAccountPage)) window.economyUi.render();
+  if(currentAccountPage==='/auction-house'&&window.paletteUi?.active())window.paletteUi.render();
+  else if (window.economyUi?.isRoute(currentAccountPage)) window.economyUi.render();
   else if (currentAccountPage === '/businesses') window.businessUi.render();
   else if (currentAccountPage === '/town') window.townUi.render();
   else if (currentAccountPage === '/stores') window.storeUi.render();
   else if (currentAccountPage === '/skills') window.skillsUi.render();
-  else if (currentAccountPage === '/palettes') window.paletteUi.render();
   else if (currentAccountPage === '/shop') renderShop();
   else if (currentAccountPage === '/inventory') renderInventory();
   else if (currentAccountPage === '/profile') renderProfile();

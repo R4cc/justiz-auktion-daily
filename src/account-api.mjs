@@ -1,6 +1,6 @@
 import { skillEffects } from './skill-effects.mjs';
 import { skillTree, upgradeSkill } from './skill-tree.mjs';
-import { buyStockPalette, revealStockPalette, stockPalettesByUser } from './stock-palettes.mjs';
+import { revealStockPalette, stockPalettesByUser } from './stock-palettes.mjs';
 import { netWorthHistory } from './net-worth.mjs';
 import { checkStoreEvents, acknowledgeStoreEvents } from './store-events.mjs';
 import { Accounts, AccountError } from './accounts.mjs';
@@ -172,7 +172,6 @@ export async function createAccountApi({ dataDir, dailyPayload, json, env = proc
         result = { user: accounts.profile(user) };
       }
       else if(route==='skills/upgrade') result={tree:upgradeSkill(dataDir,user,payload),user:accounts.profile(user)};
-      else if (route === 'stock-palettes/buy' && flags.palettes) result={palette:buyStockPalette(dataDir,user,payload),user:accounts.profile(user)};
       else if (route === 'stock-palettes/reveal' && flags.palettes) result={palette:revealStockPalette(dataDir,user,payload.id),user:accounts.profile(user)};
       else if (route === 'notifications/read') result = markNotificationsRead(dataDir, user.id, payload.ids);
       else if (route === 'admin/market/adjust') result = { adjustment: adjustAdminMarket(dataDir, user, payload), market: adminMarketDashboard(dataDir, user), user: accounts.profile(user) };

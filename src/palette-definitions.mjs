@@ -386,7 +386,8 @@ export function loadPaletteCatalog(dataDir, { now = Date.now() } = {}) {
   return withDatabase(dataDir, db => transaction(db, () => {
     ensureBaseEditions(db, legacy.rotationDate, now);
     const rows = db.prepare(`SELECT * FROM palette_editions
-      WHERE (event_id IS NOT NULL AND ends_at > ?) OR (event_id IS NULL AND rotation_date = ?)
+      WHERE ((event_id IS NOT NULL AND ends_at > ?) OR (event_id IS NULL AND rotation_date = ?))
+        AND COALESCE(json_extract(payload_json,'$.kind'),'') != 'stock'
       ORDER BY id`).all(now, legacy.rotationDate);
     const revision = createHash('sha256').update(JSON.stringify(rows.map(row => {
       const payload = JSON.parse(row.payload_json);

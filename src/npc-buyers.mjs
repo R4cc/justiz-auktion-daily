@@ -1,4 +1,4 @@
-import { ECONOMY_BALANCE, resaleBidIncrement } from './economy-balance.mjs';
+import { ECONOMY_BALANCE, resaleBidIncrement, expectedItemValue } from './economy-balance.mjs';
 import { createHash } from 'node:crypto';
 import { transaction, withDatabase } from './database.mjs';
 import { estimatedValueTokens, marketCategoryForItem, marketIndexes } from './market.mjs';
@@ -154,7 +154,8 @@ export function tickNpcBuyers(dataDir, { now = Date.now(), unit = deterministicU
 // interested buyers compete and hot markets lift bids above a frozen reserve.
 export function paletteBidCeiling(snapshot, indexes, npc, auctionId, unit = deterministicUnit) {
   const items = Array.isArray(snapshot?.items) ? snapshot.items : [];
-  const expected = bundleReferencePricing(items, item => indexes[item.marketCategory] ?? 100, snapshot.rewardCount ?? 3);
+  const expected = snapshot.stockOffer ? {et:expectedItemValue(items,snapshot.stockOffer.weights,item=>estimatedValueTokens(item,indexes))*snapshot.stockOffer.quantity}
+    : bundleReferencePricing(items, item => indexes[item.marketCategory] ?? 100, snapshot.rewardCount ?? 3);
   const preferred = (snapshot.allowedMarketCategories ?? []).some(category => npc.categories.includes(category));
   const variation = (unit(`${auctionId}:${npc.id}:palette-value`) - .5) * .06;
   const multiplier = Math.max(ECONOMY_BALANCE.npcPaletteMinimum, Math.min(ECONOMY_BALANCE.npcPaletteMaximum, .60 + npc.willingness * .16

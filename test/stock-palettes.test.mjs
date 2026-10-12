@@ -20,7 +20,7 @@ async function fixture(t,archive=paletteArchive){
   t.after(async()=>{closeDataStore(dir);await rm(dir,{recursive:true,force:true});});
   return {dir,accounts,user:{id:'buyer'},balance:()=>accounts.db(db=>db.prepare("SELECT tokens FROM users WHERE id='buyer'").get().tokens),count:()=>accounts.db(db=>db.prepare("SELECT count(*) n FROM inventory WHERE user_id='buyer'").get().n)};
 }
-function buy(f,id='wine-standard',requestId='palette-purchase-request-001',options={}){const catalog=stockPaletteCatalog(f.dir,{now});return buyStockPalette(f.dir,f.user,{offerId:id,revision:catalog.revision,requestId},{now,...options});}
+function buy(f,id='wine-standard',requestId='palette-purchase-request-001',options={}){const catalog=stockPaletteCatalog(f.dir,{now});return buyStockPalette(f.dir,f.user,{offerId:id,revision:catalog.revision,requestId},{now,allowLegacyPurchase:true,...options});}
 
 test('permanent budget and premium stock survive empty archives without fictional products',async t=>{
  const f=await fixture(t,[]);const catalog=stockPaletteCatalog(f.dir,{now});assert.ok(catalog.offers.length>=3);
@@ -54,7 +54,7 @@ test('daily pool is frozen while quote and revision follow the live market',asyn
  assert.deepEqual(stockPaletteCatalog(f.dir,{now}).offers,first.offers);
  setMarketIndex(f.dir,'wine',150,{now});const next=stockPaletteCatalog(f.dir,{now});
  assert.deepEqual(next.offers[0].items,first.offers[0].items);assert.notEqual(next.revision,first.revision);assert.ok(next.offers[0].cost>first.offers[0].cost);
- assert.throws(()=>buyStockPalette(f.dir,f.user,{offerId:'wine-standard',revision:first.revision,requestId:'palette-stale-quote-0001'},{now}),/catalog_changed/);
+ assert.throws(()=>buyStockPalette(f.dir,f.user,{offerId:'wine-standard',revision:first.revision,requestId:'palette-stale-quote-0001'},{now,allowLegacyPurchase:true}),/catalog_changed/);
  assert.equal(f.balance(),100000000);assert.equal(f.count(),0);
 });
 test('purchase retries do not charge or reroll; only the owner can reveal exactly 72 physical units',async t=>{
@@ -117,7 +117,7 @@ test('purchase and reveal reject banned, temporary-password and jailed players, 
  assert.equal(f.accounts.db(db=>db.prepare('SELECT count(*) n FROM stock_palette_purchases').get().n),0);
 });
 
-test('stock palette HTTP routes enforce flags, session, CSRF, owner privacy and idempotent purchase/reveal',async t=>{
+test('instant purchase HTTP route is removed; legacy purchases remain owner-only and reveal idempotently',async t=>{
  const {createServer}=await import('node:http');const {createAccountApi}=await import('../src/account-api.mjs');const {createEconomyApi}=await import('../src/economy-api.mjs');
  const f=await fixture(t),flags={palettes:true,market:true,resales:true,businesses:true,paletteAuctions:true};
  const json=(res,status,value)=>{res.writeHead(status,{'content-type':'application/json'});res.end(JSON.stringify(value));};
@@ -130,8 +130,8 @@ test('stock palette HTTP routes enforce flags, session, CSRF, owner privacy and 
  const catalogue=await(await fetch(base+'/api/stock-palettes')).json(),offer=catalogue.offers.find(entry=>entry.id==='wine-budget');
  const payload={offerId:offer.id,revision:catalogue.revision,requestId:'palette-http-request-001'};
  assert.equal((await post('stock-palettes/buy',payload,'')).status,401);assert.equal((await post('stock-palettes/buy',payload,tokens[0],false)).status,403);
- const response=await post('stock-palettes/buy',payload);assert.equal(response.status,200);const purchase=(await response.json()).palette;
- assert.equal('rewards' in purchase,false);assert.equal((await(await post('stock-palettes/buy',payload)).json()).palette.id,purchase.id);
+ const response=await post('stock-palettes/buy',payload);assert.equal(response.status,404);const purchase=buyStockPalette(f.dir,f.user,payload,{allowLegacyPurchase:true});
+ assert.equal('rewards' in purchase,false);assert.equal((await post('stock-palettes/buy',payload)).status,404);
  assert.equal((await post('stock-palettes/reveal',{id:purchase.id},tokens[1])).status,404);
  assert.equal((await fetch(base+'/api/account/stock-palettes')).status,401);
  assert.equal((await post('stock-palettes/reveal',{id:purchase.id},tokens[0],false)).status,403);

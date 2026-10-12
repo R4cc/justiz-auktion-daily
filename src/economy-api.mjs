@@ -1,6 +1,7 @@
 import { townMap } from './town-map.mjs';
 import { featureFlags } from './features.mjs';
 import { marketHistory, marketState } from './market.mjs';
+import { supplyStockPaletteAuctions } from './stock-palette-auctions.mjs';
 import { stockPaletteCatalog } from './stock-palettes.mjs';
 import { loadPaletteCatalog } from './palette-definitions.mjs';
 import { listPublishedNews } from './news.mjs';
@@ -77,6 +78,7 @@ export function createEconomyApi({ dataDir, json, flags = featureFlags(), accoun
         // Active primary lots only; the domain owns bounds and serialization
         // (its explicit public allowlist never includes hidden rewards or
         // reserved inventory ids).
+        if(flags.palettes)supplyStockPaletteAuctions(dataDir);
         json(response, 200, { auctions: listPaletteAuctions(dataDir, {
           limit: limited(url.searchParams.get('limit'), 50, 200),
           offset: Number(url.searchParams.get('offset')) || 0 }) });

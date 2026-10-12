@@ -79,15 +79,15 @@ test('paid case quotes show boosted odds at unchanged prices, real draws improve
 });
 test('stock palettes use owner luck in quote and frozen actual draws, without boosting quantity or prices',async t=>{
  const f=await fixture(t),base=stockPaletteCatalog(f.dir,{now,userId:'buyer'});
- const payload={offerId:'wine-standard',revision:base.revision,requestId:'before-skill-palette-0001'},old=buyStockPalette(f.dir,f.user,payload,{now});
+ const payload={offerId:'wine-standard',revision:base.revision,requestId:'before-skill-palette-0001'},old=buyStockPalette(f.dir,f.user,payload,{now,allowLegacyPurchase:true});
  const saved=f.accounts.db(db=>db.prepare('SELECT rewards FROM stock_palette_purchases WHERE id=?').get(old.id).rewards);
  for(let rank=1;rank<=3;rank++)f.upgrade('luck',rank);
  const lucky=stockPaletteCatalog(f.dir,{now,userId:'buyer'});assert.deepEqual(lucky.offers.map(o=>o.cost),base.offers.map(o=>o.cost));assert.notEqual(lucky.revision,base.revision);
  const a=base.offers.find(o=>o.id==='wine-standard'),b=lucky.offers.find(o=>o.id==='wine-standard');assert.deepEqual(b.weights,luckWeights(a.weights,7));assert.deepEqual(b.multiplierChances,a.multiplierChances);assert.ok(b.expectedMarket>a.expectedMarket);
  assert.equal(stockPaletteCatalog(f.dir,{now}).offers[0].luckPercent,0);
- const retried=buyStockPalette(f.dir,f.user,payload,{now});assert.equal(retried.id,old.id);assert.equal(f.accounts.db(db=>db.prepare('SELECT rewards FROM stock_palette_purchases WHERE id=?').get(old.id).rewards),saved);
- assert.throws(()=>buyStockPalette(f.dir,f.user,{...payload,requestId:'stale-skill-palette-0001'},{now}),/catalog_changed/);
- let randomMaxima=[];const bought=buyStockPalette(f.dir,f.user,{offerId:b.id,revision:lucky.revision,requestId:'after-skill-palette-0001'},{now,random:max=>{randomMaxima.push(max);return max-1;}});
+ const retried=buyStockPalette(f.dir,f.user,payload,{now,allowLegacyPurchase:true});assert.equal(retried.id,old.id);assert.equal(f.accounts.db(db=>db.prepare('SELECT rewards FROM stock_palette_purchases WHERE id=?').get(old.id).rewards),saved);
+ assert.throws(()=>buyStockPalette(f.dir,f.user,{...payload,requestId:'stale-skill-palette-0001'},{now,allowLegacyPurchase:true}),/catalog_changed/);
+ let randomMaxima=[];const bought=buyStockPalette(f.dir,f.user,{offerId:b.id,revision:lucky.revision,requestId:'after-skill-palette-0001'},{now,allowLegacyPurchase:true,random:max=>{randomMaxima.push(max);return max-1;}});
  assert.ok(randomMaxima.includes(b.weights.reduce((a,b)=>a+b,0)));const reveal=revealStockPalette(f.dir,f.user,bought.id,{now});assert.equal(reveal.offer.luckPercent,7);assert.equal(reveal.rewards.reduce((sum,r)=>sum+r.quantity,0),24);
 });
 test('security belongs to the store owner, applies across stores and validates live risk without changing the deck',async t=>{

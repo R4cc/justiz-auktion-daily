@@ -1,4 +1,6 @@
 import { randomInt, randomUUID } from 'node:crypto';
+import { skillEffects, luckWeights } from './skill-effects.mjs';
+import { expectedItemValue } from './economy-balance.mjs';
 import { acquireItems } from './trader.mjs';
 import { AccountError } from './errors.mjs';
 import { transaction, withDatabase } from './database.mjs';
@@ -81,7 +83,8 @@ export function ensurePaletteAuctionSchema(db, now = Date.now()) {
     public_snapshot_json TEXT NOT NULL CHECK(json_valid(public_snapshot_json))
   ) STRICT`);
   db.exec(`CREATE INDEX IF NOT EXISTS primary_palette_auctions_active
-    ON primary_palette_auctions(status, ends_at)`);
+    ON primary_palette_auctions(status, ends_at);
+    CREATE INDEX IF NOT EXISTS primary_palette_stock_offer ON primary_palette_auctions(json_extract(public_snapshot_json,'$.stockOffer.id'),started_at DESC)`);
   // Idempotent column migration: databases created before reveal tracking
   // learn the winner-side marker that closes the reveal presentation.
   const columns = db.prepare('PRAGMA table_info(primary_palette_auctions)').all().map(column => column.name);
@@ -111,9 +114,19 @@ export function ensurePaletteAuctionSchema(db, now = Date.now()) {
     db.exec('ALTER TABLE primary_palette_bids ADD COLUMN visible_amount INTEGER');
   }
   db.exec(`CREATE INDEX IF NOT EXISTS primary_palette_bids_auction ON primary_palette_bids(auction_id, id)`);
+  db.exec(`CREATE TABLE IF NOT EXISTS primary_palette_stock_draws (
+    auction_id TEXT PRIMARY KEY REFERENCES primary_palette_auctions(id),
+    draws TEXT NOT NULL CHECK(json_valid(draws)), rewards TEXT CHECK(rewards IS NULL OR json_valid(rewards))
+  ) STRICT;
+  CREATE TABLE IF NOT EXISTS primary_palette_stock_units (
+    auction_id TEXT NOT NULL REFERENCES primary_palette_auctions(id),
+    group_position INTEGER NOT NULL CHECK(group_position BETWEEN 0 AND 2),
+    inventory_id TEXT PRIMARY KEY
+  ) STRICT;
+  CREATE INDEX IF NOT EXISTS primary_palette_stock_units_auction ON primary_palette_stock_units(auction_id)`);
 }
 
-// Settlement mints the three finds into the winner's inventory immediately,
+// Settlement mints the advertised units into the winner's inventory immediately,
 // but they stay sealed until the winner's first reveal stamps revealed_at:
 // sealed ids stay out of every player-facing inventory read and out of
 // identity-matched disposal paths (sell-all sweeps, resale batch matching).
@@ -123,8 +136,11 @@ export function ensurePaletteAuctionSchema(db, now = Date.now()) {
 export function sealedPaletteInventoryIds(db) {
   if (!db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'primary_palette_auctions'").get()) return new Set();
   if (!db.prepare('PRAGMA table_info(primary_palette_auctions)').all().some(column => column.name === 'revealed_at')) return new Set();
-  return new Set(db.prepare(`SELECT r.inventory_id AS id FROM primary_palette_rewards r
-    JOIN primary_palette_auctions a ON a.id = r.auction_id WHERE a.revealed_at IS NULL`).all().map(row => row.id));
+  const ids = db.prepare(`SELECT r.inventory_id AS id FROM primary_palette_rewards r
+    JOIN primary_palette_auctions a ON a.id = r.auction_id WHERE a.revealed_at IS NULL`).all().map(row => row.id);
+  if(db.prepare("SELECT 1 FROM sqlite_schema WHERE type='table' AND name='primary_palette_stock_units'").get())
+    ids.push(...db.prepare(`SELECT r.inventory_id AS id FROM primary_palette_stock_units r JOIN primary_palette_auctions a ON a.id=r.auction_id WHERE a.revealed_at IS NULL`).all().map(row=>row.id));
+  return new Set(ids);
 }
 
 // The frozen public view of a lot. Explicit allowlist: the candidate pool is
@@ -142,7 +158,7 @@ function publicSnapshot(payload, auctionStory = payload.story) {
   };
 }
 
-function serializePublicAuction(db, row, { bids = false } = {}) {
+export function serializePublicAuction(db, row, { bids = false } = {}) {
   const snapshot = JSON.parse(row.public_snapshot_json);
   const bidCount = db.prepare('SELECT COUNT(*) AS count FROM primary_palette_bids WHERE auction_id = ?').get(row.id).count;
   return {
@@ -151,6 +167,7 @@ function serializePublicAuction(db, row, { bids = false } = {}) {
     kind: snapshot.kind, type: snapshot.type, story: snapshot.story,
     allowedMarketCategories: snapshot.allowedMarketCategories,
     rewardCount: snapshot.rewardCount, items: snapshot.items,
+    ...(snapshot.stockOffer ? {stockOffer:snapshot.stockOffer,quantity:snapshot.stockOffer.quantity} : {}),
     reserve: row.reserve, currentBid: row.current_bid, bidCount,
     bidIncrement: paletteBidIncrement(row.reserve),
     requiredLevel: row.required_level, status: row.status,
@@ -208,6 +225,7 @@ export function createPaletteAuction(dataDir, { editionId, requestId, endsAt }, 
     const edition = db.prepare('SELECT * FROM palette_editions WHERE id = ?').get(editionId);
     if (!edition) fail('palette_edition_not_found', 404);
     const payload = JSON.parse(edition.payload_json);
+    if (payload.kind==='stock')fail('palette_edition_unavailable',409);
     if (!payload.available || !Array.isArray(payload.items) || payload.items.length < 5) fail('palette_edition_unavailable', 409);
     if (now < edition.starts_at || now >= edition.ends_at) fail('palette_edition_inactive', 409);
     // Live lots run exactly one hour. Backfilled board lots keep the slot
@@ -330,6 +348,8 @@ function settleAuctionRow(db, row, now) {
   const winnerId = row.current_bidder_id;
   const winningBid = row.current_bid;
   if (winnerId === null) {
+    db.prepare('DELETE FROM primary_palette_stock_units WHERE auction_id=?').run(row.id);
+    db.prepare('DELETE FROM primary_palette_stock_draws WHERE auction_id=?').run(row.id);
     // No bids: the lot simply ends. No inventory, no token movement.
     db.prepare(`UPDATE primary_palette_auctions SET status = 'ended', closed_at = ?, winner_id = NULL,
       settled_at = ? WHERE id = ? AND settled_at IS NULL`).run(now, now, row.id);
@@ -340,6 +360,8 @@ function settleAuctionRow(db, row, now) {
   const winner = db.prepare('SELECT tokens FROM users WHERE id = ?').get(winnerId);
   if (!Number.isSafeInteger(held) || held < winningBid || !winner
     || !Number.isSafeInteger(winner.tokens + (held - winningBid))) fail('palette_auction_inconsistent', 500);
+  const publicOffer=JSON.parse(row.public_snapshot_json).stockOffer;
+  if(publicOffer) return settleStockPalette(db,row,publicOffer,winnerId,winningBid,held,now);
   const rewards = db.prepare(`SELECT position, inventory_id, item_json FROM primary_palette_rewards
     WHERE auction_id = ? ORDER BY position`).all(row.id);
   if (rewards.length !== 3 || rewards.some((reward, index) => reward.position !== index)) {
@@ -371,6 +393,33 @@ function settleAuctionRow(db, row, now) {
     bodyEn: `${snapshot.name} is ready to reveal.`, bodyDe: `${snapshot.nameDe || snapshot.name} kann jetzt aufgedeckt werden.`
   }, now);
   return db.prepare('SELECT * FROM primary_palette_auctions WHERE id = ?').get(row.id);
+}
+
+function settleStockPalette(db,row,offer,winnerId,winningBid,held,now) {
+  const stored=db.prepare('SELECT draws FROM primary_palette_stock_draws WHERE auction_id=?').get(row.id);
+  if(!stored) fail('palette_auction_inconsistent',500);
+  const draws=JSON.parse(stored.draws),units=db.prepare('SELECT group_position,inventory_id FROM primary_palette_stock_units WHERE auction_id=?').all(row.id);
+  const luckPercent=skillEffects(db,winnerId).luckPercent;
+  if(draws.length!==3 || units.length!==offer.quantity || draws.reduce((sum,draw)=>sum+draw.quantity,0)!==offer.quantity) fail('palette_auction_inconsistent',500);
+  const insert=db.prepare('INSERT INTO inventory (id,user_id,item,created_at) VALUES (?,?,?,?)');
+  const rewards=draws.map((draw,position)=>{
+    const inventoryIds=units.filter(unit=>unit.group_position===position).map(unit=>unit.inventory_id);
+    const original=draw.byLuck[String(luckPercent)];
+    if(!original || !Number.isFinite(original.price) || !Number.isSafeInteger(draw.quantity) || draw.quantity<1 || inventoryIds.length!==draw.quantity) fail('palette_auction_inconsistent',500);
+    const item={...original,paletteAuctionId:row.id,paletteEditionId:row.edition_id,rewardPosition:position,bundleCostTokens:winningBid,luckPercent};
+    for(const id of inventoryIds)insert.run(id,winnerId,JSON.stringify({...item,id}),now);
+    return {position,quantity:draw.quantity,inventoryIds,item};
+  });
+  acquireItems(db,winnerId,rewards.flatMap(reward=>reward.inventoryIds),winningBid,'purchase',now);
+  const weights=luckWeights(offer.weights,luckPercent);
+  const winningOffer={...offer,weights,luckPercent,expectedMarket:expectedItemValue(offer.items,weights,item=>item.referenceValue??item.price)*offer.quantity,
+    dropChances:RARITIES.map((rarity,index)=>({rarity:rarity.id,percent:weights[index]/weights.reduce((a,b)=>a+b,0)*100}))};
+  db.prepare('UPDATE primary_palette_stock_draws SET rewards=? WHERE auction_id=?').run(JSON.stringify({offer:winningOffer,rewards}),row.id);
+  if(held>winningBid)db.prepare('UPDATE users SET tokens=tokens+? WHERE id=?').run(held-winningBid,winnerId);
+  db.prepare("UPDATE primary_palette_auctions SET status='ended',closed_at=?,winner_id=?,settled_at=? WHERE id=? AND settled_at IS NULL").run(now,winnerId,now,row.id);
+  pushNotification(db,winnerId,{type:'won',sourceKey:`palette:won:${row.id}`,href:'/auction-house?view=bids',titleEn:'You won a Mystery Palette',titleDe:'Du hast eine Mystery-Palette gewonnen',
+    bodyEn:`${offer.quantity}× ${offer.name} is ready to reveal.`,bodyDe:`${offer.quantity}× ${offer.nameDe} ist zum Aufdecken bereit.`},now);
+  return db.prepare('SELECT * FROM primary_palette_auctions WHERE id=?').get(row.id);
 }
 
 export function settlePaletteAuction(dataDir, auctionId, { now = Date.now() } = {}) {
@@ -474,6 +523,12 @@ export function getPaletteAuctionRewards(dataDir, user, auctionId, { now = Date.
       .run(now, row.id);
     // The persisted first-reveal stamp keeps repeat responses byte-stable.
     const revealedAt = db.prepare('SELECT revealed_at FROM primary_palette_auctions WHERE id = ?').get(row.id).revealed_at;
+    if(JSON.parse(row.public_snapshot_json).stockOffer){
+      const stored=db.prepare('SELECT rewards FROM primary_palette_stock_draws WHERE auction_id=?').get(row.id);
+      if(!stored?.rewards)fail('palette_auction_inconsistent',500);
+      const {offer,rewards}=JSON.parse(stored.rewards);
+      return {auctionId:row.id,editionId:row.edition_id,winnerId:row.winner_id,settledAt:row.settled_at,revealedAt,bundleCostTokens:row.current_bid,offer,pool:offer.items,rewards};
+    }
     const rewards = db.prepare(`SELECT position, inventory_id, item_json FROM primary_palette_rewards
       WHERE auction_id = ? ORDER BY position`).all(row.id);
     if (rewards.length !== 3) fail('palette_auction_inconsistent', 500);

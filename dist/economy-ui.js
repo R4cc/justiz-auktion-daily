@@ -109,17 +109,18 @@ window.economyUi = (() => {
     const request = ++sequence, owner = account?.id;
     let next;
     if (path === '/auction-house') {
-      const [lots, mine, bids, archived, palettes, paletteMine] = await Promise.all([
+      const [lots, mine, bids, archived, palettes, paletteMine, oldPurchases] = await Promise.all([
         economyFlags.resales ? api.resales(200) : null,
         owner && economyFlags.resales ? api.myListings() : null,
         owner && economyFlags.resales ? api.myResaleBids() : null,
         owner && economyFlags.resales ? api.myArchivedResaleBids() : null,
         economyFlags.paletteAuctions ? api.paletteAuctions(100) : null,
-        owner && economyFlags.paletteAuctions ? api.myPaletteAuctions(100) : null
+        owner && economyFlags.paletteAuctions ? api.myPaletteAuctions(100) : null,
+        owner && economyFlags.palettes ? accountApi('stock-palettes') : null
       ]);
       if ((economyFlags.resales && !lots) || (economyFlags.paletteAuctions && !palettes)) throw new Error(t('Auctions could not be loaded. Please retry.', 'Auktionen konnten nicht geladen werden. Bitte erneut versuchen.'));
       next = { lots: lots?.listings || [], mine: mine?.listings || [], bids: bids?.listings || [],
-        archivedBids: archived?.listings || [], palettes: palettes?.auctions || [], paletteMine: paletteMine?.auctions || [] };
+        archivedBids: archived?.listings || [], palettes: palettes?.auctions || [], paletteMine: paletteMine?.auctions || [], oldPurchases:oldPurchases?.palettes||[] };
     } else if (path === '/auctions') {
       const [lots, mine] = await Promise.all([api.paletteAuctions(), owner ? api.myPaletteAuctions(100) : null]);
       if (!lots) throw new Error(t('Auctions are unavailable. Please retry.', 'Auktionen sind nicht verfügbar. Bitte erneut versuchen.'));
@@ -241,7 +242,7 @@ window.economyUi = (() => {
   const archiveToggle = count => `<button class="text-button archive-toggle" type="button" data-economy="archive" aria-expanded="${archiveOpen}">${archiveOpen ? t('Hide archived auctions', 'Archivierte Auktionen ausblenden') : t('Archived auctions', 'Archivierte Auktionen')} (${count})</button>`;
   function renderHouse() {
     const query = new URLSearchParams(location.search), filter = query.get('type') || 'all', stockType = query.get('stock'), palette = query.get('palette'), playersOnly = query.get('seller') === 'players';
-    const palettes = (data.palettes || []).filter(lot => !palette || lot.paletteId === palette);
+    const palettes = (data.palettes || []).filter(lot => (!palette || lot.paletteId === palette) && (!stockType || lot.stockOffer?.category===stockType));
     const accepts = lot => !stockType || lot.item.businessType === stockType || lot.item.businessCategory === stockType;
     const types = [['all',t('All lots','Alle Lose')],['items',t('Individual items','Einzelne Gegenstände')],['stock',t('Stock bundles','Warenpakete')],['mystery',t('Mystery pallets','Überraschungspaletten')]];
     const resaleType = lot => lot.item.kind === 'case' ? 'mystery' : lot.quantity > 1 ? 'stock' : 'items';
@@ -258,7 +259,6 @@ window.economyUi = (() => {
           <span class="house-card-copy"><span class="house-card-tag">${t('MARKET INTELLIGENCE', 'MARKTWISSEN')}</span><strong>${t('Stock Market', 'Aktienmarkt')}</strong><span class="house-card-description">${t('Follow demand. Find the moment to trade.', 'Verfolge die Nachfrage. Finde den Moment zum Handeln.')}</span><span class="house-card-action">${t('View the market', 'Markt ansehen')} <span aria-hidden="true">↗</span></span></span>
           <span class="house-card-art house-market-art" aria-hidden="true"><span class="house-market-badge">J€</span><svg viewBox="0 0 200 160" fill="none"><path class="house-chart-grid" d="M16 34h170M16 66h170M16 98h170M16 130h170M36 24v116m48-116v116m48-116v116m48-116v116"/><path class="house-chart-area" d="M16 118 48 97 76 108 106 69 136 80 180 32v108H16Z"/><path class="house-chart-line" d="m16 118 32-21 28 11 30-39 30 11 44-48m-26 0h26v26"/><circle class="house-chart-point" cx="106" cy="69" r="5"/></svg><span class="house-market-caption">${t('READ THE TRENDS', 'ERKENNE DIE TRENDS')}</span></span>
         </a>` : ''}
-        ${economyFlags.palettes ? `<a class="house-launch-card house-palettes-card" href="/palettes" data-page><span class="house-card-copy"><span class="house-card-tag">${t('BULK STOCK DROPS','WAREN-DROPS')}</span><strong>${t('Mystery palettes','Mystery-Paletten')}</strong><span class="house-card-description">${t('One category. Three pulls. Multiply your stock.','Eine Kategorie. Drei Drops. Vervielfache deine Waren.')}</span><span class="house-card-action">${t('Find store stock','Ladenwaren finden')} →</span></span><span class="house-card-art" aria-hidden="true">${window.paletteUi.art({category:'wine',quantity:24})}</span></a>` : ''}
       </nav>
     </section>` + economyOverviewMarkup() + `
       <nav class="economy-tabs marketplace-tabs" aria-label="${t('Auction House sections','Auktionshaus-Bereiche')}">${[['browse',t('Browse','Entdecken')],['bids',t('My bids','Meine Gebote')],['mine',t('My listings','Meine Angebote')]].map(([id,label])=>`<button data-economy="tab" data-id="${id}" aria-pressed="${tab===id}">${label}</button>`).join('')}</nav>`;
@@ -267,6 +267,7 @@ window.economyUi = (() => {
       accountContent.innerHTML += `<div class="marketplace-toolbar"><h2>${t('My listings','Meine Angebote')}</h2><a href="/inventory" data-page>${t('List a find','Fund anbieten')} →</a></div>` + cards((data.mine || []).map(lot=>lotCard(lot,false,lot.status==='active'?'mine-live':'mine-done')));
     } else if (tab === 'bids') {
       accountContent.innerHTML += `<h2>${t('My bids and winnings','Meine Gebote und Gewinne')}</h2>` + cards([
+        ...(data.oldPurchases||[]).map(purchase=>`<article class="economy-lot"><div class="economy-lot-image palette-auction-art is-${esc(purchase.offer.tier)}">${window.paletteUi.art(purchase.offer)}</div><div class="economy-lot-body"><h2>${purchase.offer.quantity}× ${esc(t(purchase.offer.name,purchase.offer.nameDe))}</h2><p>${t('Previously acquired palette · ready to reveal','Bereits erworbene Palette · bereit zum Aufdecken')}</p><a href="/auction-house?open-palette=${encodeURIComponent(purchase.id)}" data-page class="primary-button">${t('Reveal palette','Palette aufdecken')} →</a></div></article>`),
         ...(data.paletteMine || []).map(lot=>lotCard(lot,true)),
         ...(data.bids || []).map(lot=>lotCard(lot,false,'bid')),
         ...(data.archivedBids || []).map(lot=>lotCard(lot,false,'bid-done'))
@@ -274,7 +275,7 @@ window.economyUi = (() => {
     } else {
       accountContent.innerHTML += `<nav class="economy-tabs lot-filters" aria-label="${t('Lot types','Losarten')}">${types.map(([id,label])=>`<button data-economy="lot-type" data-id="${id}" aria-pressed="${filter===id}">${label}</button>`).join('')}</nav><nav class="economy-tabs lot-filters" aria-label="${t('Listing sellers','Anbieter')}">${[['all',t('All sellers','Alle Anbieter')],['players',t('Other player listings only','Nur Angebote anderer Spieler')]].map(([id,label])=>`<button data-economy="lot-seller" data-id="${id}" aria-pressed="${playersOnly===(id==='players')}">${label}</button>`).join('')}</nav>${stockType?`<p>${t('Stock for','Waren für')}: ${esc(categoryName(({cars:'vehicles',toys:'collectibles'})[stockType]||stockType))} <a href="/auction-house" data-page>${t('Clear filter','Filter entfernen')}</a></p>`:''}` + cards([
         ...(data.lots || []).filter(lot=>lot.sellerId!==account?.id && (!playersOnly || lot.sellerType === 'player') && matches(lot)).map(lot=>lotCard(lot,false,'other')),
-        ...((filter==='all'||filter==='mystery')&&!stockType&&!playersOnly ? palettes.map(lot=>lotCard(lot,true)) : [])
+        ...((filter==='all'||filter==='mystery'||filter==='stock')&&!playersOnly ? palettes.map(lot=>lotCard(lot,true)) : [])
       ]);
     }
   }
@@ -362,6 +363,7 @@ window.economyUi = (() => {
       <p class="auction-end-rule">${t('Bids in the final 10 seconds reset the countdown to 10 seconds.', 'Gebote in den letzten 10 Sekunden setzen den Countdown auf 10 Sekunden zurück.')}</p><p class="account-error" role="alert"></p></form>`;
   }
   function paletteArtwork(lot) {
+    if(lot.stockOffer&&window.paletteUi)return `<div class="palette-artwork palette-auction-art is-${esc(lot.stockOffer.tier)}">${window.paletteUi.art(lot.stockOffer)}</div>`;
     const themes = {
       cars: 'vehicles', 'electronics-smuggling': 'electronics', 'wine-tax-seizure': 'wine',
       schatzkiste: 'luxury', 'dealer-seizure': 'luxury', jewellery: 'luxury'
@@ -398,6 +400,7 @@ window.economyUi = (() => {
       ${images.length > 1 ? `<div class="auction-room-thumbs" role="group" aria-label="${primary ? t('Sealed palette illustration', 'Illustration der versiegelten Palette') : t('Auction pictures', 'Auktionsbilder')}">${images.map((item, index) => `<button type="button" data-economy="gallery" data-src="${esc(item.image)}" data-alt="${esc(item.title || '')}" aria-pressed="${index === 0}" aria-label="${esc(item.title || t('Auction picture', 'Auktionsbild'))}"><img src="${esc(item.image)}" alt=""></button>`).join('')}</div>` : ''}`;
   }
   function auctionContents(lot) {
+    if(lot.stockOffer)return `<div class="auction-room-contents"><p>${lot.stockOffer.quantity}× ${esc(t(lot.stockOffer.name,lot.stockOffer.nameDe))} · ${t('Three item and quantity rolls after winning','Drei Artikel- und Mengen-Auslosungen nach dem Gewinn')}</p>${window.paletteUi.odds(lot.stockOffer,{luckPreview:lot.status==='active'})}</div>`;
     return `<div class="auction-room-contents">${infoTip(t('The palette contains three mystery finds, revealed one by one after winning. Duplicates are possible.', 'Die Palette enthält drei geheime Funde, die nach dem Gewinn einzeln aufgedeckt werden. Doppelte Funde sind möglich.'), t('What is inside?', 'Was ist enthalten?'))}</div>`;
   }
   async function showLot(id, primary) {
@@ -415,9 +418,9 @@ window.economyUi = (() => {
     const owned = !primary && lot.winnerId === account?.id && lot.settledAt ? (await accountApi('inventory?includeStores=1')).items.filter(item=>item.id===lot.inventoryId) : [];
     if (request !== dialogSequence || visit !== accountVisit) return;
     const wonLinks = owned.map(item=>`<p><a class="primary-button" href="/inventory?focus=${encodeURIComponent(item.id)}" data-page>${t('Manage your winning find','Gewonnenen Fund verwalten')} →</a>${item.businessType&&!item.listed&&!item.storeId?`<a class="secondary-button" href="/inventory?focus=${encodeURIComponent(item.id)}&action=stock" data-page>${t('Stock a compatible store','In passenden Laden einräumen')} →</a>`:''}</p>`).join('');
-    const winAction = wonLinks || (primary && lot.revealAvailable ? `<div class="auction-win-panel"><h3>${t('Won palette', 'Gewonnene Palette')}</h3><div class="palette-seal" aria-hidden="true"><span>01 ◇</span><span>02 ◇</span><span>03 ◇</span></div><button class="primary-button" data-economy="reveal" data-id="${esc(lot.id)}">${t('Reveal three finds', 'Drei Funde aufdecken')} →</button></div>` : bidForm(lot, primary));
+    const winAction = wonLinks || (primary && lot.revealAvailable ? `<div class="auction-win-panel"><h3>${t('Won palette', 'Gewonnene Palette')}</h3><div class="palette-seal" aria-hidden="true"><span>01 ◇</span><span>02 ◇</span><span>03 ◇</span></div><button class="primary-button" data-economy="reveal" data-id="${esc(lot.id)}">${lot.stockOffer?t('Reveal stock','Stock aufdecken'):t('Reveal three finds', 'Drei Funde aufdecken')} →</button></div>` : bidForm(lot, primary));
     openDialog(`<div class="auction-room"><section class="auction-room-media" aria-label="${primary ? t('Sealed palette illustration', 'Illustration der versiegelten Palette') : t('Auction pictures', 'Auktionsbilder')}">${auctionMedia(lot, primary)}</section>
-      <section class="auction-room-story"><p class="eyebrow">${primary ? t('SEALED · THREE FINDS', 'VERSIEGELT · DREI FUNDE') : t('AUCTION HOUSE', 'AUKTIONSHAUS')}</p><h2 id="economy-dialog-title" tabindex="-1">${esc(title)}</h2>
+      <section class="auction-room-story"><p class="eyebrow">${primary ? lot.stockOffer?t('SEALED · STOCK PALETTE','VERSIEGELT · WARENPALETTE'):t('SEALED · THREE FINDS', 'VERSIEGELT · DREI FUNDE') : t('AUCTION HOUSE', 'AUKTIONSHAUS')}</p><h2 id="economy-dialog-title" tabindex="-1">${esc(title)}</h2>
       ${primary ? `<p class="auction-room-meta">${t('Required level', 'Benötigtes Level')} <strong>${lot.requiredLevel}</strong><br>${esc((lot.allowedMarketCategories || []).map(categoryName).join(' · ') || categoryName(null))}</p>${auctionContents(lot)}` : `<p class="auction-room-meta">${t('Seller', 'Verkäufer')}: <strong>${esc(lot.sellerUsername)}</strong><br>${t('Quantity', 'Anzahl')}: <strong>${lot.quantity}</strong><br>${lot.item.kind === 'case' ? t('Sealed case · one item from any category', 'Versiegelte Kiste · ein Gegenstand aus jeder Kategorie') : `${t('Historical real-auction value', 'Historischer Wert der echten Auktion')}: <strong>${euro(lot.item.price * lot.quantity)}</strong>`}<br>${t('Estimated market value', 'Geschätzter Marktwert')}: <strong>${justizEuro(lot.estimatedValueTokens)}</strong>${lot.npcDemand?`<br>${t('NPC demand','NPC-Nachfrage')}: <strong>${npcDemandLabel(lot.npcDemand)}</strong>`:''}${economyFlags.market&&lot.item.marketCategory?`<br><a href="/market?category=${encodeURIComponent(lot.item.marketCategory)}" data-page>${t('Market Trends','Markttrends')} ↗</a>`:''}</p>`}
       </section><aside class="auction-room-bidding"><header><p class="eyebrow">${lot.status==='active'?t('LIVE AUCTION','LIVE-AUKTION'):t('AUCTION OUTCOME','AUKTIONSERGEBNIS')}</p><h3>${t('Bid room', 'Bietraum')}</h3></header><div data-live-facts>${bidFacts(lot, primary)}</div>
       <ol class="auction-chat" data-live-history role="log" aria-label="${t('Bid history', 'Gebotsverlauf')}">${bidHistory(lot.bids)}</ol><div class="auction-bid-dock">${winAction}</div></aside></div>`);
@@ -436,7 +439,7 @@ window.economyUi = (() => {
       <p>${t('A listing with bids cannot be cancelled.', 'Angebote mit Geboten können nicht storniert werden.')}</p><p class="account-error" role="alert"></p><button class="primary-button" type="submit">${t('Start auction', 'Auktion starten')}</button></form>`);
   }
   async function startReveal(id) {
-    if(window.paletteUi && economyFlags.palettes){await navigateAccountPage('/palettes?auction='+encodeURIComponent(id));return;}
+    if(window.paletteUi){await navigateAccountPage('/auction-house?reveal='+encodeURIComponent(id));return;}
     const visit = accountVisit, owner = account?.id, request = ++dialogSequence;
     const [result, lot] = await Promise.all([api.paletteAuctionRewards(id), api.paletteAuction(id)]);
     if (visit !== accountVisit || owner !== account?.id || request !== dialogSequence) return;

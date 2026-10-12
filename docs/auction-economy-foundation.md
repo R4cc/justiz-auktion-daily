@@ -4,11 +4,11 @@ Status: **first playable auction economy**. The existing transactional auction,
 market, edition and progression domains are retained. All five economy flags
 default on; the Compose file passes them through explicitly. Explicit false values disable individual systems; an unset or empty variable enables it.
 
-Current stock supply is documented in [Stock palettes](stock-palettes.md). Automatic primary palette drops and supplier stock auctions have been replaced by permanent stock palette purchases. The older auction sections below describe retained settlement and compatibility behavior.
+Current stock supply is documented in [Stock palettes](stock-palettes.md). Automatic three-find primary drops and supplier stock auctions have been replaced by category stock palette auctions on the normal Auction House board. The older auction sections below describe retained settlement and compatibility behavior.
 
 ## Player loop and routes
 
-Daily → J€ and 150 XP → category stock palette purchase → three item/quantity rolls
+Daily → J€ and 150 XP → category stock palette bid and win → three item/quantity rolls
 → inventory → player resale marketplace → human/NPC buyers → seller J€ and XP.
 
 Player-facing currency is **J€ (Justiz€)**. Existing persisted and API fields such
@@ -18,7 +18,7 @@ Persisted market effects influence current item estimates and the demand of
 NPC buyers. Their interest and original ceilings persist; future bids recheck
 live prices and shared demand. Automatic news publication is dormant.
 
-- `/auctions`: active lots, candidate pools, level/affordability information,
+- `/auction-house`: active lots, candidate pools, level/affordability information,
   bidding, and **My bids** (active participation plus won lots until the winner
   reveals them). Finished participation — lost, expired and already-revealed
   lots — stays reachable behind the small **Archived auctions** disclosure.
@@ -71,10 +71,10 @@ contents and valuation remain unchanged.
 
 | Flag | Effect |
 | --- | --- |
-| `FEATURE_PALETTE_AUCTIONS` | Legacy primary reads, participation history, bid/reveal/admin-create and settlement |
+| `FEATURE_PALETTE_AUCTIONS` | Primary auction board, participation history, bid/reveal/admin-create and settlement |
 | `FEATURE_RESALES` | Resale routes/UI, NPC runtime, resale settlement, instant-sell rejection |
 | `FEATURE_MARKET` | Public market/history routes and Market UI |
-| `FEATURE_PALETTES` | Permanent stock palette catalog, purchase/reveal routes and Palettes UI; legacy edition catalog |
+| `FEATURE_PALETTES` | Category stock palette supply, read-only metadata and preserved old purchase reveals; legacy edition catalog |
 
 News is hard-disabled in normal feature discovery and runtime configuration;
 its backend tables and domain code remain dormant. Primary supply can persist/use
@@ -124,35 +124,9 @@ precedes runtime startup in `server.mjs`.
   trusted runtime path; NPC accounts stay rejected on every player-facing
   surface.
 
-Primary supply keeps **around ten concurrent lots on the board**. It creates one
-global lot per six-minute UTC bucket (one hour divided by the target of ten), so
-lot ends stay evenly staggered — every lot ends one full hour after its bucket,
-never after its creation moment. It loads/persists current base editions and
-considers only available frozen editions whose window fits the complete auction.
-A bucket-derived request ID prevents duplicates across ticks, restarts and
-concurrent runtimes; the current bucket and the previous nine are retried
-idempotently on every tick (a fresh or restarted system fills the whole board at
-once), and older buckets are never backfilled. At most ten automatically supplied
-palettes may be active at once, and at most two of them per edition.
+Current production supply calls `supplyStockPaletteAuctions`, keeping one active lot per available category/size on the ordinary board. Initial deadlines are staggered across an hour; replacements run a full hour. A receipt derived from offer, time bucket and previous lot prevents restart duplicates, while allowing an expired lot to be replaced in the same bucket. Lots retain frozen pools across midnight. Creation atomically snapshots reserve/reference values, quantity splits, reserved inventory IDs and exact variants for every supported Luck rank. See [Stock palettes](stock-palettes.md) for pricing, quantities and settlement.
 
-Every creation calls `createPaletteAuction`. A trusted `automaticSupply` option
-checks the global target and the per-edition concurrency cap under that domain's
-write transaction, preventing parallel schedulers from overfilling; a saturated
-edition is skipped so the window can fall through to another theme. Manual admin
-creation retains its existing behavior. Request ID is SHA-256 of
-`primary:<editionId>:<UTC-hour>`.
-The unique creation receipt prevents restart rerolls and repeated generation in
-the same slot. The next UTC-hour slot may replace an expired lot. Availability,
-spread validation, frozen reserve formula, weights, duration and 3 draws remain
-owned by the existing domain. Rewards still use cryptographic randomness.
-
-Each new lot also selects one story from a 100-case bilingual pool and freezes
-it in the public snapshot. The pool contains 90 general cases using invented
-people, places and organisations, plus 10 clearly labelled Austrian parody
-cases. Every theme has nine general cases and one parody, keeping the parody
-share at ten percent for category-specific palettes too. Selection is a stable
-hash of request ID, palette ID and definition version, so a creation replay or
-restart keeps the exact story. Bidder cameo names are never used in event copy.
+The older `supplyPaletteAuctions` and `createPaletteAuction` helpers remain for legacy compatibility and explicit manual auction creation. Their historical three-find reserve, story snapshots, weights and receipts stay valid for existing lots; they no longer supply the production stock board. The manual legacy helper rejects stock editions, which require the quantity-aware creator.
 
 ## Primary history and winner reveal
 
@@ -167,11 +141,13 @@ lots settle before serialization, allowing discovery without a background tick.
 The response has **no hidden reward data or reserved inventory IDs**.
 `getPaletteAuctionRewards` remains the only explicit reveal endpoint; only the
 recorded winner can retrieve the fixed snapshots after settlement. Admin is not
-a bypass. Settlement consumes the winning escrow and inserts exactly three
-reserved inventory rows atomically. Reads/retries never duplicate rewards.
+a bypass. Settlement consumes the winning escrow and inserts the advertised quantity of
+reserved inventory rows atomically (three for legacy lots). Stock groups retain
+the winner's frozen Luck variant and actual winning acquisition cost. Reads/retries
+never duplicate rewards.
 
-The winner reveals rewards sequentially through the shared legacy case reel.
-Only rarity cards appear during each spin. The server result is already fixed;
+The winner opens a full-screen item-then-quantity reel on the Auction House
+route. Legacy lots keep their three original single-item rewards. The server result is already fixed;
 client randomness decorates the reel and never selects an economic outcome.
 Reduced motion uses the existing timed stepped presentation. Closing/navigating
 invalidates the sequence. Reveal can be replayed safely. The summary shows three

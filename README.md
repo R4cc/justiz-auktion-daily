@@ -7,7 +7,7 @@ A price-guessing and trading game based on public listings from [Justiz-Auktion]
 - **Daily:** Guess five auction prices and earn J€ and a sealed reward case.
 - **Free play and Higher or Lower:** Practice your guesses or build a streak.
 - **Auction House:** Bid on player listings and cases, or auction your own finds.
-- **Mystery palettes:** Buy category stock in permanent 6/24/72-unit offers. Reveal three item and quantity rolls, then restock your stores from inventory.
+- **Mystery palettes:** Bid on category stock palettes in the Auction House, with 6/24/72-unit lots. Reveal three item and quantity rolls, then restock your stores from inventory.
 - **Cases and inventory:** Open mystery cases, collect items, auction them or stock a compatible store.
 - **Stores and Town:** Open a shop, set prices and sell to players and simulated customers. Steal through fair blackjack at other players’ stores: no upfront cost, a fine if caught, inventory seizure if cash runs out, and escalating jail time if the fine cannot be covered.
 - **Market Trends:** Follow changing item values and NPC demand to guide your trades.
