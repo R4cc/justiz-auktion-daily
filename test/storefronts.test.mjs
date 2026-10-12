@@ -8,7 +8,7 @@ import { closeDataStore } from '../src/database.mjs';
 import { buyBusiness, businessDashboard, stockBusiness, unstockBusiness } from '../src/businesses.mjs';
 import { adjustAdminMarket } from '../src/admin-economy.mjs';
 import { ensureStoreSchema, listStores, visitStore, recordStoreVisit, buyStoreItem, reviewStore, reactToStore, tipStore, customizeStore,
-  theftQuote, startStoreHeist, finishStoreHeist, actStoreHeist, tickStoreJustice, HEIST_DURATION, HEIST_COOLDOWN, STORE_HEIST_COOLDOWN } from '../src/storefronts.mjs';
+  playerCriminalRecord, theftQuote, startStoreHeist, finishStoreHeist, actStoreHeist, tickStoreJustice, HEIST_DURATION, HEIST_COOLDOWN, STORE_HEIST_COOLDOWN } from '../src/storefronts.mjs';
 
 const now = Date.parse('2026-10-08T12:30:00Z');
 async function fixture(t) {
@@ -259,4 +259,59 @@ test('winning transfer and fine collection failures roll back all consequences a
   g.accounts.db(db=>db.exec("CREATE TRIGGER fail_seize BEFORE UPDATE OF sold_at ON inventory BEGIN SELECT RAISE(ABORT,'seizure unavailable'); END"));
   assert.throws(()=>action(g,caught),/seizure unavailable/);assert.equal(g.view().heist.outcome,'active');assert.equal(g.accounts.profile(g.buyer).justice.offences,0);
   g.accounts.db(db=>db.exec('DROP TRIGGER fail_seize'));assert.equal(action(g,caught).outcome,'caught');
+});
+
+
+test('criminal record captures each caught attempt at settlement, exact fines and no duplicate on retries or collection',async t=>{
+ const f=await fixture(t),records=(user=f.buyer,options={})=>playerCriminalRecord(f.dir,user,{now,...options});
+ assert.equal(records().total,0);
+ const id=startStoreHeist(f.dir,f.buyer,f.payload(),{now,draw:success}).id;
+ assert.equal(records().total,0);setHand(f,id,{player:[2,3],dealer:[9,8]});
+ const at=now+6000;assert.equal(action(f,id,'stand',0,at).outcome,'caught');
+ const first=records();assert.equal(first.total,1);assert.equal(first.totalPenalties,400);
+ assert.deepEqual(first.records[0],{id,fine:400,attemptedAt:now,recordedAt:at,legacyFee:false,abandoned:false,crime:'attempted_theft'});
+ action(f,id,'stand',0,at);f.accounts.profile(f.buyer);f.accounts.profile(f.buyer);
+ assert.equal(records().total,1);assert.equal(f.balance(f.buyer),99600);assert.equal(records(f.owner).total,0);
+ closeDataStore(f.dir);assert.equal(records().records[0].recordedAt,at);
+ f.accounts.resetEconomy(f.owner,'RESET ECONOMY');assert.equal(records().total,0);
+});
+test('criminal record includes abandoned offenses once; non-criminal outcomes are excluded and fine rollback leaves no entry',async t=>{
+ const f=await fixture(t),id=startStoreHeist(f.dir,f.buyer,f.payload(),{now,draw:success}).id;
+ tickStoreJustice(f.dir,{now:now+HEIST_DURATION+60000});tickStoreJustice(f.dir,{now:now+HEIST_DURATION+120000});
+ const record=playerCriminalRecord(f.dir,f.buyer,{now:now+HEIST_DURATION+120000});
+ assert.equal(record.total,1);assert.equal(record.records[0].abandoned,true);assert.equal(record.records[0].recordedAt,now+HEIST_DURATION+60000);
+ for(const status of ['stolen','push','gone','expired','active']){
+  f.accounts.db(db=>db.prepare('UPDATE store_heists SET status=? WHERE id=?').run(status,id));
+  assert.equal(playerCriminalRecord(f.dir,f.buyer,{now}).total,0);
+ }
+ const g=await fixture(t),attempt=startStoreHeist(g.dir,g.buyer,g.payload(),{now,draw:success}).id;
+ setHand(g,attempt,{player:[2,3],dealer:[9,8]});
+ g.accounts.db(db=>db.exec("CREATE TRIGGER reject_fine BEFORE UPDATE OF tokens ON users BEGIN SELECT RAISE(ABORT,'fine_failed'); END"));
+ assert.throws(()=>action(g,attempt),/fine_failed/);
+ assert.equal(playerCriminalRecord(g.dir,g.buyer,{now}).total,0);
+ assert.equal(g.accounts.db(db=>db.prepare('SELECT settled_at FROM store_heists WHERE id=?').get(attempt).settled_at),null);
+});
+test('historical catch dates migrate from receipts; unknown timestamps stay unknown; history is fully pageable',async t=>{
+ const f=await fixture(t);
+ f.accounts.db(db=>{
+  db.exec('ALTER TABLE store_heists DROP COLUMN settled_at');
+  const insert=db.prepare(`INSERT INTO store_heists(id,user_id,business_id,owner_id,inventory_id,sequence,roll,chance,fee,created_at,ready_at,expires_at,status,result,blackjack)
+    VALUES(?,?,?,?,?,'[]',0,0,?,?,?,?, 'caught',?,?)`);
+  for(let n=0;n<13;n++)insert.run('historical-'+n,f.buyer.id,f.shop.id,f.owner.id,'wine-0',100+n,now+n,now+5000,now+HEIST_DURATION,
+    JSON.stringify({id:'historical-'+n,outcome:'caught',abandoned:n===1}),n===2?null:'{}');
+  db.prepare(`INSERT INTO store_receipts(id,user_id,request_id,business_id,action,payload,result,created_at)
+    VALUES('receipt',?,?,?,'blackjack','{}',?,?)`).run(f.buyer.id,'historical-catch-receipt',f.shop.id,JSON.stringify({id:'historical-0',outcome:'caught'}),now+6000);
+ });
+ const first=playerCriminalRecord(f.dir,f.buyer,{now}),second=playerCriminalRecord(f.dir,f.buyer,{offset:10,now});
+ assert.equal(first.total,13);assert.equal(first.records.length,10);assert.equal(first.hasMore,true);
+ assert.equal(second.records.length,3);assert.equal(second.hasMore,false);
+ const all=[...first.records,...second.records];assert.equal(new Set(all.map(r=>r.id)).size,13);
+ assert.equal(all[0].id,'historical-0');assert.equal(all.find(r=>r.id==='historical-1').recordedAt,null);
+ assert.equal(all.find(r=>r.id==='historical-0').recordedAt,now+6000);
+ assert.equal(all.find(r=>r.id==='historical-2').recordedAt,null);assert.equal(all.find(r=>r.id==='historical-2').legacyFee,true);
+ assert.equal(first.totalPenalties,all.reduce((sum,r)=>sum+r.fine,0));
+ assert.equal(playerCriminalRecord(f.dir,f.buyer,{offset:Infinity,limit:Infinity,now}).records.length,10);
+ assert.equal(playerCriminalRecord(f.dir,f.buyer,{limit:1000,now}).limit,50);
+ f.accounts.db(db=>db.prepare("UPDATE users SET banned=1 WHERE id='buyer'").run());
+ assert.throws(()=>playerCriminalRecord(f.dir,f.buyer,{now}),/login_required/);
 });

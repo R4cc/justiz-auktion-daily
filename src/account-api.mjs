@@ -20,7 +20,7 @@ import { archivedListingsBidOnByUser, cancelListing, listItem, listingsBidOnByUs
 import { maskLeaderboard } from './username-privacy.mjs';
 import { markNotificationsRead, notificationsForUser } from './notifications.mjs';
 import { businessDashboard, buyBusiness, setBusinessMargin, stockBusiness, unstockBusiness } from './businesses.mjs';
-import { actStoreHeist, buyStoreItem, customizeStore, finishStoreHeist, reactToStore, likeStoreReview, recordStoreVisit, reviewStore, startStoreHeist, tipStore, visitStore } from './storefronts.mjs';
+import { actStoreHeist, buyStoreItem, customizeStore, finishStoreHeist, reactToStore, likeStoreReview, recordStoreVisit, playerCriminalRecord, reviewStore, startStoreHeist, tipStore, visitStore } from './storefronts.mjs';
 
 const AUCTION_PAGE_SIZE = 25;
 
@@ -100,6 +100,7 @@ export async function createAccountApi({ dataDir, dailyPayload, json, env = proc
           // other surface waits until a real password is set.
           if (user.must_change_password && route !== 'me') throw new AccountError('password_change_required', 403);
           if (route === 'inventory') json(response, 200, { items: accounts.inventory(user, {includeStores:url.searchParams.get('includeStores')==='1'}) });
+          else if (route === 'criminal-record') json(response,200,playerCriminalRecord(dataDir,user,{offset:url.searchParams.get('offset') || 0,limit:url.searchParams.get('limit') || 10}));
           else if(route==='skills') json(response,200,skillTree(dataDir,user));
           else if (route === 'stock-palettes' && flags.palettes) json(response,200,{palettes:stockPalettesByUser(dataDir,user)});
           else if (route === 'net-worth') json(response, 200, netWorthHistory(dataDir, user, { range: url.searchParams.get('range') || '1d' }));

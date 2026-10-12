@@ -95,7 +95,7 @@ test('public storefronts and player interactions use feature flags, sessions, CS
   // route, while session state, logout and password access stay available.
   const player=accounts.user(winnerCookie.match(/jg_session=([a-f0-9]+)/)[1]);
   accounts.db(db=>db.prepare('INSERT INTO player_justice(user_id,jailed_until,offences) VALUES (?,?,1) ON CONFLICT(user_id) DO UPDATE SET jailed_until=excluded.jailed_until').run(player.id,Date.now()+60000));
-  for(const route of ['/api/account/inventory','/api/account/net-worth','/api/account/cases','/api/account/leaderboard','/api/stores','/api/town','/api/market'])assert.equal((await fetch(base+route,{headers:{cookie:winnerCookie}})).status,423,route);
+  for(const route of ['/api/account/inventory','/api/account/net-worth','/api/account/criminal-record','/api/account/cases','/api/account/leaderboard','/api/stores','/api/town','/api/market'])assert.equal((await fetch(base+route,{headers:{cookie:winnerCookie}})).status,423,route);
   assert.equal((await post(base,'games/start',{mode:'daily'},winnerCookie)).status,423);
   assert.equal((await fetch(base+'/api/account/me',{headers:{cookie:winnerCookie}})).status,200);
   assert.equal((await fetch(base+'/api/account/me',{headers:{cookie:winnerCookie}}).then(r=>r.json())).user.justice.jailed,true);

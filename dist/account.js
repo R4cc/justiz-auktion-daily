@@ -3,6 +3,7 @@ let accountStore = null;
 let caseStockRequest = 0;
 let accountSelectedStoreCase = 'lost-property';
 let account = null, accountCatalog = null, accountItems = [], accountCodes = [], freshCodes = [], freshPasswordReset = null;
+let accountCriminalRecord = { records:[],total:0,totalPenalties:0,hasMore:false };
 let accountFriends = { friends: [], date: '' }, accountAdmin = { playerCount: 0, users: [], grants: [], lastReset: null };
 let accountLeaderboard = { date: '', leaders: [] }, adminUserFilter = '';
 let adminActiveTab = 'market', adminMarketFilter = '';
@@ -281,6 +282,7 @@ function giftToast(gifts) {
     : t(`You were given ${justizEuro(total)} across ${gifts.length} gifts.`, `Du hast ${justizEuro(total)} aus ${gifts.length} Geschenken erhalten.`);
 }
 function updateAccount(user, progressionOptions) {
+  if (account?.id !== user?.id || progressionOptions?.reset) accountCriminalRecord = {records:[],total:0,totalPenalties:0,hasMore:false};
   account = user;
   window.inventoryItemUi?.accountChanged(user);
   window.justiceUi?.sync(user);
@@ -398,7 +400,8 @@ async function navigateAccountPage(path, push = true) {
       const result = await accountApi('leaderboard?view=' + (new URLSearchParams(location.search).get('view') === 'collection' ? 'collection' : 'daily')); if (visit !== accountVisit) return; accountLeaderboard = result;
     }
     if (path === '/profile' && account) {
-      const result = await accountApi('friends'); if (visit !== accountVisit || account?.id !== owner) return; accountFriends = result;
+      const [friends, record] = await Promise.all([accountApi('friends'),accountApi('criminal-record')]);
+      if (visit !== accountVisit || account?.id !== owner) return; accountFriends = friends; accountCriminalRecord = record;
     }
     if (path === '/admin' && account?.admin) {
       const auctionQuery = `admin/auctions?query=${encodeURIComponent(accountAuctions.query || '')}&page=${accountAuctions.page}`;
@@ -576,11 +579,19 @@ function rewardNote() {
     `Das Daily zahlt ${justizEuro(rewards.daily)}–${justizEuro(rewards.daily + (rewards.dailyScoreBonus || 0))} und eine Kiste. Higher or Lower zahlt separat bis zu ${justizEuro(rewards.higherLowerMax)}; bessere Serien zahlen die Differenz. Heute verdient: ${justizEuro(daily + higherLower)}. Reset um 00:00 UTC.`);
 }
 function rewardBanner() { return `<p class="reward-note">${accountEscape(rewardNote())}</p>`; }
+function criminalRecordMarkup() {
+  const record = accountCriminalRecord;
+  const rows = record.records.map(entry => {
+    const at = entry.recordedAt ?? entry.attemptedAt, date = new Date(at);
+    return `<li class="criminal-record-entry" tabindex="-1" data-offense="${accountEscape(entry.id)}"><div><strong>${t('Attempted theft', 'Versuchter Diebstahl')}</strong><p><time datetime="${date.toISOString()}">${date.toLocaleString(uiLocale(),{dateStyle:'medium',timeStyle:'short'})}</time>${entry.recordedAt === null ? ` · ${t('Attempt date; recording time unavailable', 'Versuchsdatum; Erfassungszeit unbekannt')}` : ''}${entry.abandoned ? ` · ${t('Abandoned attempt', 'Abgebrochener Versuch')}` : ''}</p></div><div class="criminal-record-fine"><span>${entry.legacyFee ? t('Mischief fee', 'Unfuggebühr') : t('Fine', 'Bußgeld')}</span><strong>${justizEuro(entry.fine)}</strong></div></li>`;
+  }).join('');
+  return `<section class="profile-criminal-record" aria-labelledby="criminal-record-title"><header><h2 id="criminal-record-title">${t('Criminal record', 'Strafregister')}</h2>${record.total ? `<p>${number(record.total)} ${t('recorded offenses', 'erfasste Vergehen')} · ${t('Total penalties', 'Strafen gesamt')}: ${justizEuro(record.totalPenalties)}</p>` : ''}</header>${rows ? `<ol class="criminal-record-list">${rows}</ol>${record.hasMore ? `<button type="button" class="secondary-button" data-account="criminal-record-more">${t('Show older offenses', 'Ältere Vergehen anzeigen')}</button>` : ''}` : `<p class="criminal-record-clear">${t('No recorded offenses.', 'Keine erfassten Vergehen.')}</p>`}</section>`;
+}
 function renderProfile() {
   accountContent.innerHTML = pageHeading(account ? accountEscape(account.username) : t('Profile', 'Profil'));
   if (!account) { accountContent.innerHTML += loginNotice('profile'); return; }
   accountContent.innerHTML += economyOverviewMarkup() + traderMilestonesMarkup() + `<p class="trader-links"><a href="/leaderboard?view=daily" data-page>${t('Daily scores', 'Daily-Ergebnisse')} →</a><a href="/leaderboard?view=collection" data-page>${t('Collection prestige', 'Sammlungsrangliste')} →</a></p>` + progressionMarkup(account.progression) + `<div class="profile-stats"><div><span>JUSTIZ€</span><strong>${justizEuro(account.tokens)}</strong></div><div><span>${t('TODAY’S DAILY', 'HEUTIGES DAILY')}</span><strong>${dailyFriendLabel(account.daily)}</strong></div><button class="secondary-button" data-account="logout">${t('Log out', 'Abmelden')}</button></div>${rewardBanner()}
-    <section class="profile-friends"><div class="friends-heading"><div><h2>${t('Friends', 'Freunde')}</h2><p>${t('Daily for', 'Daily vom')} ${accountFriends.date} · ${t('Resets at 00:00 UTC', 'Reset um 00:00 UTC')}</p></div><button data-account="refresh">${t('Refresh', 'Aktualisieren')}</button></div>${friendsMarkup()}</section>`;
+    ${criminalRecordMarkup()}<section class="profile-friends"><div class="friends-heading"><div><h2>${t('Friends', 'Freunde')}</h2><p>${t('Daily for', 'Daily vom')} ${accountFriends.date} · ${t('Resets at 00:00 UTC', 'Reset um 00:00 UTC')}</p></div><button data-account="refresh">${t('Refresh', 'Aktualisieren')}</button></div>${friendsMarkup()}</section>`;
 }
 function friendsMarkup() {
   const accepted = accountFriends.friends.filter(friend => friend.status === 'accepted');
@@ -995,6 +1006,14 @@ document.addEventListener('click', async event => {
   if (action === 'refresh') { await navigateAccountPage(currentAccountPage, false); return; }
   accountBusy = true; button.disabled = true;
   try {
+    if (action === 'criminal-record-more' && currentAccountPage === '/profile' && account) {
+      const owner = account.id, previous = accountCriminalRecord.records.length;
+      const result = await accountApi('criminal-record?offset='+previous);
+      if (visit === accountVisit && account?.id === owner) {
+        accountCriminalRecord = {...result,records:[...accountCriminalRecord.records,...result.records]};
+        renderProfile(); accountContent.querySelectorAll('.criminal-record-entry')[previous]?.focus({preventScroll:true});
+      }
+    }
     if (action === 'logout') {
       await accountApi('logout', {}); updateAccount(null); accountDailyRun = null; higherLowerRequest++; higherLowerRun = null;
       accountResult = null; freshCodes = []; freshPasswordReset = null; accountItems = []; accountCodes = []; accountFriends = { friends: [], date: '' };

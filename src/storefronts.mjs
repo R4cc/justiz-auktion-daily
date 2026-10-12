@@ -53,6 +53,16 @@ export function ensureStoreSchema(db) {
     db.exec("ALTER TABLE store_heists ADD COLUMN choice TEXT CHECK(choice IN ('red', 'black'))");
   }
   if (!db.prepare('PRAGMA table_info(store_heists)').all().some(column => column.name === 'blackjack')) db.exec("ALTER TABLE store_heists ADD COLUMN blackjack TEXT");
+  if (!db.prepare('PRAGMA table_info(store_heists)').all().some(column => column.name === 'settled_at')) {
+    db.exec('ALTER TABLE store_heists ADD COLUMN settled_at INTEGER');
+    // Historical catch receipts preserve the actual recording time. Expiry
+    // alone cannot establish when an offline attempt was processed.
+    db.exec(`UPDATE store_heists AS h SET settled_at=
+      (SELECT MIN(r.created_at) FROM store_receipts r WHERE r.user_id=h.user_id
+        AND json_extract(r.result,'$.id')=h.id AND
+        (json_extract(r.result,'$.outcome')='caught' OR json_extract(r.result,'$.heist.outcome')='caught'))
+      WHERE h.status='caught'`);
+  }
 }
 
 function actor(db, user, now = Date.now()) {
@@ -172,6 +182,22 @@ export function visitStore(dataDir, viewer, shopId, { now = Date.now() } = {}) {
       cooldownUntil, heist: lastHeist?.business_id === shop.id ? serializeHeist(lastHeist, now) : null } };
   }));
 }
+// Only caught attempts are recorded crimes. Successful, unresolved, tied and
+// cancelled attempts are excluded; collection of the same fine adds no record.
+export function playerCriminalRecord(dataDir, user, { offset = 0, limit = 10, now = Date.now() } = {}) {
+  return atomic(dataDir,user,(db,player) => {
+    const pageSize = Number.isSafeInteger(Number(limit)) ? Math.max(1,Math.min(50,Number(limit))) : 10;
+    const requested = Number(offset), start = Number.isSafeInteger(requested) ? Math.max(0,requested) : 0;
+    const summary = db.prepare(`SELECT COUNT(*) AS total,COALESCE(SUM(fee),0) AS totalPenalties
+      FROM store_heists WHERE user_id=? AND status='caught'`).get(player.id);
+    const records = db.prepare(`SELECT id,fee AS fine,created_at AS attemptedAt,settled_at AS recordedAt,
+      blackjack IS NULL AS legacyFee,COALESCE(json_extract(result,'$.abandoned'),0) AS abandoned
+      FROM store_heists WHERE user_id=? AND status='caught'
+      ORDER BY COALESCE(settled_at,created_at) DESC,id DESC LIMIT ? OFFSET ?`).all(player.id,pageSize,start)
+      .map(row => ({...row,crime:'attempted_theft',legacyFee:Boolean(row.legacyFee),abandoned:Boolean(row.abandoned)}));
+    return { ...summary,records,offset:start,limit:pageSize,hasMore:start+records.length<summary.total };
+  },now);
+}
 export function recordStoreVisit(dataDir, user, shopId, { now = Date.now() } = {}) {
   return atomic(dataDir, user, (db, player) => {
     const shop = store(db, shopId); if (shop.user_id !== player.id) db.prepare('INSERT OR IGNORE INTO store_visits VALUES (?, ?, ?, ?)').run(shop.id, player.id, date(now), now);
@@ -280,7 +306,7 @@ function settleBlackjack(db,player,attempt,game,now) {
   if (outcome === 'caught') consequence = imposeFine(db,player.id,attempt.fee,now);
   const result = { id:attempt.id,outcome,fine:attempt.fee,inventoryId:outcome==='stolen'?attempt.inventory_id:null,
     blackjack:publicBlackjack(game),consequence,abandoned:game.abandoned||false };
-  db.prepare('UPDATE store_heists SET status=?,result=?,blackjack=? WHERE id=?').run(outcome,JSON.stringify(result),JSON.stringify(game),attempt.id);
+  db.prepare('UPDATE store_heists SET status=?,result=?,blackjack=?,settled_at=? WHERE id=?').run(outcome,JSON.stringify(result),JSON.stringify(game),now,attempt.id);
   if (shop) notify(db,shop,`${attempt.id}:end`,outcome==='stolen'?'A shelf item was stolen':'A theft attempt ended',outcome==='stolen'?'Ein Regalartikel wurde gestohlen':'Ein Diebstahlversuch endete',
     `${player.username}: ${outcome==='stolen'?'check your shelves.':outcome==='caught'?'caught and fined. No stock was stolen.':'no stock was stolen.'}`,
     `${player.username}: ${outcome==='stolen'?'Prüfe deine Regale.':outcome==='caught'?'erwischt und mit Bußgeld belegt. Keine Ware wurde gestohlen.':'Keine Ware wurde gestohlen.'}`,now);
@@ -345,7 +371,7 @@ function finishLegacyStoreHeist(dataDir, user, { heistId } = {}, { now = Date.no
       acquireItems(db,player.id,[attempt.inventory_id],attempt.fee,'mischief',now);
     }
     const result = { id: attempt.id, outcome, choice, color, fee: attempt.fee, inventoryId: outcome === 'stolen' ? attempt.inventory_id : null };
-    db.prepare('UPDATE store_heists SET status = ?, result = ? WHERE id = ?').run(outcome, JSON.stringify(result), attempt.id);
+    db.prepare('UPDATE store_heists SET status = ?, result = ?, settled_at = ? WHERE id = ?').run(outcome, JSON.stringify(result), now, attempt.id);
     if (shop) notify(db, shop, `${attempt.id}:end`, outcome === 'stolen' ? 'A shelf item vanished!' : 'The store survived some mischief', outcome === 'stolen' ? 'Ein Artikel ist verschwunden!' : 'Der Laden hat den Unfug überstanden',
       `${player.username}: ${outcome === 'stolen' ? 'one item was stolen. Check your shelves.' : 'the attempt failed. Your mischief fee is safe.'}`,
       `${player.username}: ${outcome === 'stolen' ? 'Ein Artikel wurde gestohlen. Schau in deine Regale.' : 'Der Versuch ist gescheitert. Die Unfuggebühr bleibt bei dir.'}`, now);
