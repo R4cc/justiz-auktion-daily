@@ -1,3 +1,4 @@
+import { storeReviewList } from './store-reviews.mjs';
 import { skillEffects, weightedStoreRating } from './skill-effects.mjs';
 import { plotLocation } from './town-plots.mjs';
 import { randomInt, randomUUID } from 'node:crypto';
@@ -30,11 +31,6 @@ export function ensureStoreSchema(db) {
     UNIQUE(user_id, request_id)
   ) STRICT;
   CREATE INDEX IF NOT EXISTS store_receipts_shop ON store_receipts(business_id, action, user_id);
-  CREATE TABLE IF NOT EXISTS store_reviews (
-    business_id TEXT NOT NULL REFERENCES businesses(id), user_id TEXT NOT NULL REFERENCES users(id),
-    stars INTEGER NOT NULL CHECK(stars BETWEEN 1 AND 5), comment TEXT NOT NULL, updated_at INTEGER NOT NULL,
-    PRIMARY KEY(business_id, user_id)
-  ) STRICT;
   CREATE TABLE IF NOT EXISTS store_visits (
     business_id TEXT NOT NULL REFERENCES businesses(id), user_id TEXT NOT NULL REFERENCES users(id),
     day TEXT NOT NULL, created_at INTEGER NOT NULL, PRIMARY KEY(business_id, user_id, day)
@@ -160,8 +156,7 @@ export function visitStore(dataDir, viewer, shopId, { now = Date.now() } = {}) {
     ensureStoreSchema(db); marketIndexes(db, now); const shop = store(db, shopId); advanceShop(db, shop, now);
     const player = viewer ? actor(db, viewer, now) : null;
     const own = player?.id === shop.user_id;
-    const rows = db.prepare(`SELECT r.stars, r.comment, r.updated_at AS updatedAt, u.username FROM store_reviews r
-      JOIN users u ON u.id = r.user_id WHERE r.business_id = ? AND u.banned = 0 ORDER BY r.updated_at DESC, r.user_id LIMIT 30`).all(shop.id);
+    const rows = storeReviewList(db,shop.id,player?.id || '');
     const reactions = db.prepare('SELECT reaction, COUNT(*) AS count FROM store_reactions WHERE business_id = ? GROUP BY reaction').all(shop.id);
     const lastHeist = player ? db.prepare('SELECT * FROM store_heists WHERE user_id = ? ORDER BY created_at DESC, id DESC LIMIT 1').get(player.id) : null;
     const storeHeist = db.prepare('SELECT MAX(created_at) AS last FROM store_heists WHERE business_id = ?').get(shop.id).last;
@@ -203,11 +198,27 @@ export function reviewStore(dataDir, user, { shopId, stars, comment = '' } = {},
   return atomic(dataDir, user, (db, player) => {
     const shop = store(db, shopId); otherStore(shop, player);
     if (!db.prepare("SELECT 1 FROM store_receipts WHERE business_id = ? AND user_id = ? AND action = 'buy'").get(shop.id, player.id)) fail('purchase_required', 403);
+    const previous = db.prepare('SELECT stars,comment FROM store_reviews WHERE business_id=? AND user_id=?').get(shop.id,player.id);
+    if (previous && (previous.stars !== stars || previous.comment !== comment.trim())) {
+      db.prepare('DELETE FROM store_review_likes WHERE business_id=? AND reviewer_id=?').run(shop.id,player.id);
+    }
     db.prepare(`INSERT INTO store_reviews VALUES (?, ?, ?, ?, ?) ON CONFLICT(business_id, user_id)
       DO UPDATE SET stars = excluded.stars, comment = excluded.comment, updated_at = excluded.updated_at`).run(shop.id, player.id, stars, comment.trim(), now);
     notify(db, shop, `review:${player.id}:${shop.id}`, 'A verified customer left a review', 'Ein Käufer hat eine Bewertung hinterlassen', `${player.username} rated your store ${stars}/5.`, `${player.username} hat deinen Laden mit ${stars}/5 bewertet.`, now);
     return { reviewed: true };
   }, now);
+}
+export function likeStoreReview(dataDir, user, { shopId, reviewerId, liked } = {}, { now = Date.now() } = {}) {
+  if (typeof reviewerId !== 'string' || reviewerId.length > 100 || typeof liked !== 'boolean') fail('invalid_store_reaction');
+  return atomic(dataDir,user,(db,player) => {
+    const shop = store(db,shopId);
+    if (reviewerId === player.id) fail('own_review',409);
+    if (!db.prepare(`SELECT 1 FROM store_reviews r JOIN users u ON u.id=r.user_id
+      WHERE r.business_id=? AND r.user_id=? AND u.banned=0`).get(shop.id,reviewerId)) fail('review_not_found',404);
+    if (liked) db.prepare('INSERT OR IGNORE INTO store_review_likes VALUES(?,?,?,?)').run(shop.id,reviewerId,player.id,now);
+    else db.prepare('DELETE FROM store_review_likes WHERE business_id=? AND reviewer_id=? AND user_id=?').run(shop.id,reviewerId,player.id);
+    return { liked };
+  },now);
 }
 export function reactToStore(dataDir, user, { shopId, reaction } = {}, { now = Date.now() } = {}) {
   if (!['applause', 'joke', 'bell'].includes(reaction)) fail('invalid_store_reaction');

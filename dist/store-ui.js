@@ -99,16 +99,33 @@ window.storeUi = (() => {
   function reviewStars(stars) {
     return `<span class="store-review-stars" role="img" aria-label="${stars} ${t('out of 5 stars', 'von 5 Sternen')}">${[1,2,3,4,5].map(value => `<span aria-hidden="true" class="${value <= stars ? 'is-filled' : ''}">★</span>`).join('')}</span>`;
   }
+  function reviewCard(review) {
+    const voices = [null, ['Known voice', 'Bekannte Stimme'], ['Influential voice', 'Einflussreiche Stimme'], ['Leading voice', 'Meinungsführer']];
+    const comments = {
+      bargain: ['Great value. Very happy with my purchase!', 'Tolles Preis-Leistungs-Verhältnis. Mit meinem Kauf sehr zufrieden!'],
+      fair: ['A fair price. Happy with my purchase.', 'Ein fairer Preis. Mit meinem Kauf zufrieden.'],
+      price_high: ['Found what I wanted, but the price was too high.', 'Gefunden, was ich wollte, aber der Preis war zu hoch.']
+    };
+    const comment = review.npc && comments[review.feedback] ? t(...comments[review.feedback]) : review.comment;
+    const support = t('Influence attracts community support. Agreeing NPC shoppers and players can add likes.', 'Einfluss bringt Unterstützung aus der Community. Zustimmende NPC-Kunden und Spieler können Likes hinzufügen.');
+    const label = review.liked ? t('Unlike review', 'Like zurücknehmen') : t('Like review', 'Bewertung liken');
+    const content = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M7 10H3v11h4m0-11 5-7c1-1 3 0 2 3l-1 4h6c2 0 2 2 1 4l-2 6H7V10Z"/></svg><span>${number(review.likes)} ${t('likes', 'Likes')}</span>`;
+    return `<article class="store-review-card ${review.npc ? 'is-npc' : 'is-player'}" data-reviewer="${esc(review.reviewerId)}"><header><div class="store-review-author"><strong>${esc(review.username)}</strong>${review.npc ? `<span class="store-review-kind">${t('NPC customer', 'NPC-Kunde')}</span>` : voices[review.influenceRank] ? `<span class="store-review-influence">${t(...voices[review.influenceRank])}</span>` : ''}</div>${reviewStars(review.stars)}</header>${comment ? `<p>${esc(comment)}</p>` : ''}<footer><small>${review.npc ? t('Purchased here', 'Hier eingekauft') : t('Verified purchase', 'Bestätigter Kauf')} · ${new Date(review.updatedAt).toLocaleDateString(uiLocale())}</small>${review.canLike ? `<button type="button" class="store-review-like ${review.liked ? 'is-liked' : ''}" data-store="like-review" data-reviewer="${esc(review.reviewerId)}" aria-pressed="${review.liked}" aria-label="${esc(label)} · ${number(review.likes)} ${t('likes', 'Likes')}" title="${esc(support)}" ${busy ? 'disabled' : ''}>${content}</button>` : `<span class="store-review-like" title="${esc(support)}">${content}</span>`}</footer></article>`;
+  }
+  function reviewList(store) {
+    const players = store.reviews.filter(review => !review.npc), npcs = store.reviews.filter(review => review.npc);
+    return `<div class="store-review-list">${players.map(reviewCard).join('')}${npcs.length ? `<h3 class="store-npc-review-heading">${t('From NPC shoppers', 'Von NPC-Kunden')}</h3>${npcs.map(reviewCard).join('')}` : ''}${!players.length && !npcs.length ? `<p>${t('No reviews yet.', 'Noch keine Bewertungen.')}</p>` : ''}</div>`;
+  }
   function reviewForm(review) {
     return `<form class="store-review-form"><fieldset class="store-rating"><legend>${t('Your rating', 'Deine Bewertung')}</legend><div class="store-star-picker">${[1,2,3,4,5].map(stars => `<label class="store-star-option"><input type="radio" name="stars" value="${stars}" aria-label="${stars} ${stars === 1 ? t('star', 'Stern') : t('stars', 'Sterne')} / 5" ${review?.stars === stars ? 'checked' : ''} required><span class="store-star-symbol" aria-hidden="true">★</span></label>`).join('')}</div></fieldset><label>${t('Your review', 'Dein Bewertungstext')}<textarea name="comment" maxlength="240" rows="4" placeholder="${t('Tell others about your visit…', 'Erzähle anderen von deinem Besuch …')}">${esc(review?.comment || '')}</textarea><small class="store-hint">${t('Up to 240 characters.', 'Bis zu 240 Zeichen.')}</small></label><button class="primary-button" type="submit">${t('Save review', 'Bewertung speichern')}</button><p class="account-error" role="alert"></p></form>`;
   }
   function detail(store) {
-    if (store.own) return window.businessUi.ownerView(store) + `<details class="store-owner-reviews"><summary>${t('Customer reviews', 'Kundenbewertungen')} <span>${number(store.reviewCount)}</span></summary><div class="store-review-list">${store.reviews.length ? store.reviews.map(review => `<article><header><strong>${esc(review.username)}</strong>${reviewStars(review.stars)}</header><p>${esc(review.comment)}</p><small>${new Date(review.updatedAt).toLocaleDateString(uiLocale())}</small></article>`).join('') : `<p>${t('No reviews yet. Reviews appear after a customer buys from your store.', 'Noch keine Bewertungen. Sie erscheinen, sobald ein Kunde in deinem Laden gekauft hat.')}</p>`}</div></details>`;
+    if (store.own) return window.businessUi.ownerView(store) + `<details class="store-owner-reviews"><summary>${t('Customer reviews', 'Kundenbewertungen')} <span>${number(store.reviewCount)}</span></summary>${reviewList(store)}</details>`;
     const eligible = account && !store.own, review = store.myReview;
     return `<p><a href="/stores" data-page>← ${t('All stores', 'Alle Läden')}</a></p><header class="store-front store-type-${esc(store.type)}"><div class="store-awning" aria-hidden="true"><span>${esc(symbols[store.type])}</span></div><div><p class="eyebrow">${esc(typeName(store.type))} · ${esc(store.owner)}</p>${pageHeading(esc(storeTitle(store)))}${store.location ? `<p><a href="/town?plot=${encodeURIComponent(store.location.plotId)}" data-page>${store.location.districtNumber}. ${esc(store.location.districtName)} · ${esc(store.location.streetName)} ↗</a></p>` : ''}${store.motto?`<p>${esc(store.motto)}</p>`:''}<p>${rating(store)} · ${number(store.playerVisits)} ${t('player visits', 'Spielerbesuche')}</p>${store.gooseGuard ? `<p class="store-goose">${t('Goose guard active · doubles the theft fine', 'Wachgans aktiv · verdoppelt das Diebstahlbußgeld')}</p>` : ''}</div></header>
       ${!account ? `<p class="store-notice"><a href="/login" data-page>${t('Sign in', 'Anmelden')}</a> ${t('to buy, review or make mischief.', 'zum Kaufen, Bewerten oder Unfugmachen.')}</p>` : ''}
       <section class="store-shelves"><div class="section-title-row"><h2>${t('On the shelves', 'In den Regalen')}</h2><a href="/inventory" data-page>${t('Your inventory', 'Dein Inventar')}</a></div>${eligible && store.heist?.outcome === 'active' ? `<p><button class="secondary-button" data-store="resume">${t('Resume attempt', 'Versuch fortsetzen')}</button></p>` : ''}${eligible && Date.now() < store.cooldownUntil ? `<p class="store-hint">${t('Next theft attempt available after', 'Nächster Diebstahlversuch ab')} ${new Date(store.cooldownUntil).toLocaleTimeString(uiLocale(),{hour:'2-digit',minute:'2-digit'})}. ${t('One attempt per player every 30 minutes; one per store every 5 minutes.', 'Ein Versuch pro Spieler alle 30 Minuten; pro Laden alle 5 Minuten.')}</p>` : ''}<div class="store-shelf-grid">${store.stock.length ? store.stock.map(entry => shelfCard(entry, store)).join('') : `<p class="collection-empty">${t('No items in stock.', 'Keine Waren im Regal.')}</p>`}</div></section>
-      <section class="store-reviews"><h2>${t('Customer reviews', 'Kundenbewertungen')}</h2><p class="store-hint">${t('Only customers who bought an item here can review. One editable review per customer.', 'Nur Käufer dieses Ladens können bewerten. Eine bearbeitbare Bewertung pro Kunde.')}</p>${store.canReview ? reviewForm(review) : ''}<div class="store-review-list">${store.reviews.length ? store.reviews.map(review => `<article><header><strong>${esc(review.username)}</strong><span class="store-review-meta">${reviewStars(review.stars)}<span>${t('Verified purchase', 'Bestätigter Kauf')}</span></span></header><p>${esc(review.comment)}</p><small>${new Date(review.updatedAt).toLocaleDateString(uiLocale())}</small></article>`).join('') : `<p>${t('No reviews yet.', 'Noch keine Bewertungen.')}</p>`}</div></section>`;
+      <section class="store-reviews"><h2>${t('Customer reviews', 'Kundenbewertungen')}</h2><p class="store-hint">${t('Only customers who bought an item here can review. One editable review per customer.', 'Nur Käufer dieses Ladens können bewerten. Eine bearbeitbare Bewertung pro Kunde.')}</p>${store.canReview ? reviewForm(review) : ''}${reviewList(store)}</section>`;
   }
   function render() {
     if (currentAccountPage !== '/stores' || !data) return;
@@ -207,6 +224,14 @@ window.storeUi = (() => {
         const entry = store.stock.find(entry => entry.id === button.dataset.item); if (!entry) return;
         result = await mutate('stores/buy', { shopId: store.id, inventoryId: entry.id, expectedPrice: entry.price }, true);
       }
+      if (action === 'like-review') {
+        const review = store.reviews.find(review => review.reviewerId === button.dataset.reviewer);
+        if (!review?.canLike) return;
+        await mutate('stores/review/like', { shopId:store.id, reviewerId:review.reviewerId, liked:!review.liked });
+        if (visit !== accountVisit || owner !== account?.id) return;
+        await refresh(visit);
+        return;
+      }
       if (action === 'tip') result = await mutate('stores/tip', { shopId: store.id, amount: Number(button.dataset.amount) }, true);
       if (action === 'react') result = await mutate('stores/react', { shopId: store.id, reaction: button.dataset.reaction });
       if (visit !== accountVisit || owner !== account?.id) return;
@@ -222,7 +247,10 @@ window.storeUi = (() => {
           await refresh(visit).catch(() => {});
         }
       }
-    } finally { if (visit === accountVisit) { busy = false; if (button.isConnected) button.disabled = false; render(); } }
+    } finally { if (visit === accountVisit) {
+      busy = false; if (button.isConnected) button.disabled = false; render();
+      if (action === 'like-review') accountContent.querySelector(`.store-review-like[data-reviewer="${CSS.escape(button.dataset.reviewer)}"]`)?.focus({preventScroll:true});
+    } }
   });
   document.addEventListener('submit', async event => {
     const form = event.target;

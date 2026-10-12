@@ -7,10 +7,10 @@ import { bidOnPaletteAuction, ensurePaletteAuctionSchema, paletteBidIncrement } 
 import { bundleReferencePricing } from './palette-definitions.mjs';
 import { AccountError } from './errors.mjs';
 export { NPC_BUYERS, SPECIAL_NPC_BUYERS } from './npc-roster.mjs';
-import { NPC_BUYERS } from './npc-roster.mjs';
+import { NPC_BUYERS, ensureNpcBuyer } from './npc-roster.mjs';
+export { NPC_BALANCE } from './npc-roster.mjs';
 import { npcAudienceKey, npcDemand } from './npc-demand.mjs';
 
-export const NPC_BALANCE = 1_000_000_000;
 export const NPC_COHORT_SIZE = 16;
 export const PALETTE_SHOWUP_MS = 5 * 60_000;
 
@@ -37,10 +37,8 @@ export function seedNpcBuyers(dataDir, { now = Date.now() } = {}) {
     ensureResaleSchema(db, now); ensureNpcSchema(db);
     // Spaces are outside the human-registration username alphabet, so even
     // before seeding nobody can reserve a registry name. No password can log in.
-    const insert = db.prepare(`INSERT OR IGNORE INTO users
-      (id, username, password_hash, npc, tokens, created_at) VALUES (?, ?, 'disabled', 1, ?, ?)`);
     const existing = new Set(db.prepare('SELECT id FROM users WHERE npc = 1').all().map(row => row.id));
-    for (const npc of NPC_BUYERS) if (!existing.has(npc.id)) insert.run(npc.id, npc.username, NPC_BALANCE, now);
+    for (const npc of NPC_BUYERS) if (!existing.has(npc.id)) ensureNpcBuyer(db, npc, now);
   }));
 }
 

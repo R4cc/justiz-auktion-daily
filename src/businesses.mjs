@@ -1,3 +1,4 @@
+import { ensureReviewSchema, recordNpcStoreFeedback } from './store-reviews.mjs';
 import { businessTypeForItem } from './stock-compatibility.mjs';
 export { businessTypeForItem } from './stock-compatibility.mjs';
 import { ensureTownSchema, availableTownPlot, plotLocation } from './town-plots.mjs';
@@ -117,6 +118,7 @@ export function ensureBusinessSchema(db, { now = Date.now() } = {}) {
       db.prepare('UPDATE businesses SET traffic_popularity = ? WHERE id = ?').run(popularity, row.id);
     }
   }
+  ensureReviewSchema(db);
   ensureTownSchema(db, { now });
 }
 
@@ -200,6 +202,9 @@ export function advanceShop(db, row, now) {
       recordSale(db,row.user_id,[sold.id],salePrice,`npc:${sold.id}`,hour,row.id);
       if (!db.prepare('UPDATE inventory SET sold_at = ? WHERE id = ? AND sold_at IS NULL AND user_id = ?')
         .run(hour, sold.id, row.user_id).changes) fail('stock_conflict', 409);
+      recordNpcStoreFeedback(db,{ saleId:`npc:${sold.id}`, shopId:row.id,
+        category:marketCategoryForItem(sold.item) || marketCategory(row.type), paid:salePrice,
+        reference:referencePrice(db,sold.item,row.type,hour), now:hour });
       sales++; revenue += salePrice;
     }
   }

@@ -131,3 +131,11 @@ if (NPC_BUYERS.length !== 800 || new Set(NPC_BUYERS.map(npc => npc.id)).size !==
   || NPC_BUYERS.filter(npc => npc.region === 'at-de').length !== 640) {
   throw new Error('invalid_npc_roster');
 }
+
+export const NPC_BALANCE = 1_000_000_000;
+// Shared by auction bidders and point-of-sale customers. Never overwrite an
+// existing identity, balance or ban when materializing a shopper.
+export function ensureNpcBuyer(db, npc, now) {
+  db.prepare(`INSERT OR IGNORE INTO users (id,username,password_hash,npc,tokens,created_at)
+    VALUES (?,?,'disabled',1,?,?)`).run(npc.id,npc.username,NPC_BALANCE,now);
+}

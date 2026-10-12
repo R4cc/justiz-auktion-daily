@@ -20,7 +20,7 @@ import { archivedListingsBidOnByUser, cancelListing, listItem, listingsBidOnByUs
 import { maskLeaderboard } from './username-privacy.mjs';
 import { markNotificationsRead, notificationsForUser } from './notifications.mjs';
 import { businessDashboard, buyBusiness, setBusinessMargin, stockBusiness, unstockBusiness } from './businesses.mjs';
-import { actStoreHeist, buyStoreItem, customizeStore, finishStoreHeist, reactToStore, recordStoreVisit, reviewStore, startStoreHeist, tipStore, visitStore } from './storefronts.mjs';
+import { actStoreHeist, buyStoreItem, customizeStore, finishStoreHeist, reactToStore, likeStoreReview, recordStoreVisit, reviewStore, startStoreHeist, tipStore, visitStore } from './storefronts.mjs';
 
 const AUCTION_PAGE_SIZE = 25;
 
@@ -204,6 +204,7 @@ export async function createAccountApi({ dataDir, dailyPayload, json, env = proc
       else if (flags.businesses && route === 'stores/visit') result = recordStoreVisit(dataDir, user, payload.shopId);
       else if (flags.businesses && route === 'stores/buy') result = { receipt: buyStoreItem(dataDir, user, payload), user: accounts.profile(user) };
       else if (flags.businesses && route === 'stores/review') result = reviewStore(dataDir, user, payload);
+      else if (flags.businesses && route === 'stores/review/like') result = likeStoreReview(dataDir, user, payload);
       else if (flags.businesses && route === 'stores/react') result = reactToStore(dataDir, user, payload);
       else if (flags.businesses && route === 'stores/tip') result = { receipt: tipStore(dataDir, user, payload), user: accounts.profile(user) };
       else if (flags.businesses && route === 'stores/heist/start') {

@@ -1459,6 +1459,19 @@ body { padding-left: var(--sidebar-width); }
 .store-review-list header span, .store-review-list small { font-size: .75rem; color: var(--muted); }
 .store-review-list p { white-space: pre-wrap; overflow-wrap: anywhere; }
 .store-review-list { overflow-wrap: anywhere; }
+.store-review-author { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; min-width: 0; }
+.store-review-author strong { overflow-wrap: anywhere; }
+.store-review-author .store-review-influence { color: #80520e; background: #f8edce; border: 1px solid #e7d29a; border-radius: 20px; padding: .2rem .5rem; }
+.store-review-kind { color: var(--muted); }
+.store-review-card footer { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: .5rem; }
+.store-review-card footer small { flex: 1 1 140px; }
+.store-review-like { display: inline-flex; align-items: center; gap: .4rem; flex-shrink: 0; padding: .45rem .65rem; min-height: 44px; border: 1px solid var(--line); border-radius: 12px; color: var(--muted); background: var(--paper); font: inherit; font-size: .8rem; }
+button.store-review-like { cursor: pointer; }
+button.store-review-like:hover, .store-review-like.is-liked { color: var(--ink); border-color: var(--green); background: #e4f1e7; }
+.store-review-like:focus-visible { outline: 2px solid var(--green); outline-offset: 3px; }
+.store-npc-review-heading { margin: 1.4rem 0 .3rem; font-size: .85rem; color: var(--muted); }
+.store-review-card.is-npc p { font-size: .9rem; }
+
 .store-heist-dialog { max-width: 560px; width: calc(100% - 2rem); border: 1px solid var(--line); border-radius: 14px; padding: 0; color: var(--ink); background: var(--paper); max-height: 90dvh; overflow: auto; }
 .store-heist-dialog::backdrop { background: #0c211d99; }
 .store-heist-content { padding: 2rem; position: relative; }

@@ -357,7 +357,7 @@ export class Accounts {
       // same transaction that restores balances. Authentication/social tables,
       // registration codes, passwords, bans and account_sessions are untouched.
       for (const table of ['trader_sales', 'item_acquisitions', 'trader_milestones', 'resale_npc_interest', 'resale_bids', 'resale_auctions',
-        'store_events', 'store_event_checks', 'store_heists', 'store_reviews', 'store_visits', 'store_reactions', 'store_receipts',
+        'store_events', 'store_event_checks', 'store_heists', 'store_review_likes', 'store_npc_feedback', 'store_reviews', 'store_visits', 'store_reactions', 'store_receipts',
         'business_sales', 'business_stock', 'businesses', 'town_plots', 'wholesale_bids', 'wholesale_auctions',
         'primary_palette_mystery_stock', 'primary_palette_stock_units', 'primary_palette_stock_draws', 'primary_palette_bids', 'primary_palette_rewards', 'primary_palette_auctions', 'stock_palette_purchases', 'stock_palette_editions', 'skill_purchases', 'user_skills',
         'daily_rewards', 'daily_case_rewards', 'xp_events', 'case_openings', 'case_purchases', 'case_stock', 'sealed_cases', 'inventory', 'account_games',

@@ -11,6 +11,7 @@ A price-guessing and trading game based on public listings from [Justiz-Auktion]
 - **Cases and inventory:** Open mystery cases, collect items, auction them or stock a compatible store.
 - **Stores and Town:** Open a shop, set prices and sell to players and simulated customers. Steal through fair blackjack at other players’ stores: no upfront cost, a fine if caught, inventory seizure if cash runs out, and escalating jail time if the fine cannot be covered.
 - **Market Trends:** Follow changing item values and NPC demand to guide your trades.
+- **Store reviews:** Verified player reviews stay above NPC feedback. Influence gives a small community-support bonus to likes; other players and NPC shoppers can add one like each. NPCs review completed purchases against the price paid and their price sensitivity. Editing a review clears its earned likes.
 - **Skill tree:** One point per account level, including existing levels. Unlock luck, store security and review influence; future branches are coming soon.
 - **Progress and friends:** Earn XP, level up, track trading profit and compare Daily scores and collections.
 - **English and German:** Play on desktop or mobile. Guests can start guessing immediately; accounts unlock rewards and trading.
