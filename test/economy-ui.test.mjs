@@ -462,9 +462,9 @@ test('progression terminal state and active economy routes remain in syntax veri
   const terminal = vm.runInContext('progressionMarkup({level:20,xp:36100,nextLevelXp:null,progress:1})', context);
   assert.match(terminal, /Level 20 reached/); assert.doesNotMatch(terminal, /NaN/);
   const index = await readFile(new URL('../dist/index.html', import.meta.url), 'utf8');
-  for (const route of ['/', '/auction-house', '/inventory', '/businesses', '/town']) assert.ok(index.includes(`href="${route}"`));
+  for (const route of ['/', '/auction-house', '/market', '/inventory', '/businesses', '/town']) assert.ok(index.includes(`href="${route}"`));
   assert.ok(!index.includes('href="/news"'));
-  assert.doesNotMatch(index, /href="\/(auctions|marketplace|market|shop|leaderboard|stores)"/);
+  assert.doesNotMatch(index, /href="\/(auctions|marketplace|shop|leaderboard|stores)"/);
   assert.match(index, /id="nav-play-title"[\s\S]*href="\/"[\s\S]*id="nav-trading-title"[\s\S]*href="\/auction-house"[\s\S]*href="\/inventory"[\s\S]*id="nav-town-title"[\s\S]*href="\/businesses"[\s\S]*href="\/town"[\s\S]*id="nav-account-title"[\s\S]*id="header-auth"[\s\S]*href="\/admin"/);
   assert.match(index, /class="sidebar-toggle"[\s\S]*aria-controls="site-menu"[\s\S]*aria-expanded="false"/);
   assert.match(index, /id="notification-button"[\s\S]*class="notification-badge"[\s\S]*id="notification-panel"[\s\S]*id="notification-toasts"/);
@@ -561,6 +561,7 @@ test('Auction House player filter excludes owned, NPC and primary lots and prese
   const context = uiContext({ URLSearchParams, location: { search: '?seller=players&type=stock&stock=electronics' },
     account: { id: 'me' }, tab: 'browse', economyFlags: { market: true }, accountContent: { innerHTML: '' },
     t: en => en, esc: String, categoryName: String, pageHeading: String, economyOverviewMarkup: () => '',
+    caseArtwork: () => '<svg></svg>',
     traderMilestonesMarkup: () => { throw new Error('Auction House must not render milestone banner'); },
     lotCard: lot => `<article>${lot.id}</article>`, data: { palettes: [{ id: 'primary' }], lots: [
       { id: 'other', sellerId: 'other', sellerType: 'player', quantity: 2, item: { businessType: 'electronics' } },
@@ -574,7 +575,7 @@ test('Auction House player filter excludes owned, NPC and primary lots and prese
   let html = context.accountContent.innerHTML;
   assert.match(html, /<article>other<\/article>/);
   assert.doesNotMatch(html, /<article>(own|npc|primary|single|wine)<\/article>/);
-  assert.match(html, /class="house-case-store-card" href="\/shop"/);
+  assert.match(html, /class="house-launch-card house-case-store-card" href="\/shop"/);
   assert.match(html, /Mystery pallets/);
   assert.match(html, /data-economy="lot-seller" data-id="players" aria-pressed="true"/);
   context.location.search = '?seller=all';
