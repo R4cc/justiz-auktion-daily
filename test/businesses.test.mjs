@@ -484,10 +484,11 @@ test('business HTTP routes require sessions and stock lots appear through market
   assert.ok(margin.shop.buyChancePercent < shops.shops[0].buyChancePercent);
   const catalogue=await (await fetch(`${base}/api/stock-palettes`)).json();
   const offer=catalogue.offers.find(offer=>offer.id==='wine-budget');
-  assert.ok(offer && offer.items.some(item=>auctionStock.some(auction=>auction.id===item.auctionId)));
+  assert.ok(offer && !('items' in offer) && !('quantity' in offer));
   const {createStockPaletteAuction}=await import('../src/stock-palette-auctions.mjs');
   const {bidOnPaletteAuction}=await import('../src/palette-auctions.mjs');
   const at=Date.now(),auction=createStockPaletteAuction(dir,{offerId:offer.id,requestId:'business-stock-auction-001'},{now:at});
+  assert.ok(new Accounts(dir).db(db=>JSON.parse(db.prepare('SELECT offer FROM primary_palette_mystery_stock WHERE auction_id=?').get(auction.id).offer)).items.some(item=>auctionStock.some(stock=>stock.id===item.auctionId)));
   const bid=await post('palette-auctions/bid',{id:auction.id,amount:auction.reserve},cookie);
   assert.equal(bid.status,200);const result=await bid.json();
   assert.equal(result.user.tokens,2000-1000-auction.reserve);assert.equal(result.user.activeBids,1);

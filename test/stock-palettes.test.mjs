@@ -130,7 +130,7 @@ test('instant purchase HTTP route is removed; legacy purchases remain owner-only
  const catalogue=await(await fetch(base+'/api/stock-palettes')).json(),offer=catalogue.offers.find(entry=>entry.id==='wine-budget');
  const payload={offerId:offer.id,revision:catalogue.revision,requestId:'palette-http-request-001'};
  assert.equal((await post('stock-palettes/buy',payload,'')).status,401);assert.equal((await post('stock-palettes/buy',payload,tokens[0],false)).status,403);
- const response=await post('stock-palettes/buy',payload);assert.equal(response.status,404);const purchase=buyStockPalette(f.dir,f.user,payload,{allowLegacyPurchase:true});
+ const response=await post('stock-palettes/buy',payload);assert.equal(response.status,404);const purchase=buyStockPalette(f.dir,f.user,{...payload,revision:stockPaletteCatalog(f.dir).revision},{allowLegacyPurchase:true});
  assert.equal('rewards' in purchase,false);assert.equal((await post('stock-palettes/buy',payload)).status,404);
  assert.equal((await post('stock-palettes/reveal',{id:purchase.id},tokens[1])).status,404);
  assert.equal((await fetch(base+'/api/account/stock-palettes')).status,401);

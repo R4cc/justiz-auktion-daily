@@ -1,8 +1,7 @@
 import { townMap } from './town-map.mjs';
 import { featureFlags } from './features.mjs';
 import { marketHistory, marketState } from './market.mjs';
-import { supplyStockPaletteAuctions } from './stock-palette-auctions.mjs';
-import { stockPaletteCatalog } from './stock-palettes.mjs';
+import { supplyStockPaletteAuctions, stockPaletteAuctionCatalog } from './stock-palette-auctions.mjs';
 import { loadPaletteCatalog } from './palette-definitions.mjs';
 import { listPublishedNews } from './news.mjs';
 import { listResales, getResale } from './resale.mjs';
@@ -67,7 +66,7 @@ export function createEconomyApi({ dataDir, json, flags = featureFlags(), accoun
             { now, range, limit: limited(url.searchParams.get('limit'), 168, 1000) }) });
         return true;
       }
-      if (flags.palettes && url.pathname === '/api/stock-palettes') {json(response,200,stockPaletteCatalog(dataDir,{userId:player?.must_change_password?null:player?.id}));return true;}
+      if (flags.palettes && url.pathname === '/api/stock-palettes') {json(response,200,stockPaletteAuctionCatalog(dataDir,{userId:player?.must_change_password?null:player?.id}));return true;}
       if (flags.palettes && url.pathname === '/api/palettes') {
         // Persisted palette catalog: frozen editions with evaluated
         // availability; the legacy case catalog is untouched by this.

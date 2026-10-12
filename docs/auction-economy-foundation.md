@@ -135,7 +135,7 @@ precedes runtime startup in `server.mjs`.
   trusted runtime path; NPC accounts stay rejected on every player-facing
   surface.
 
-Current production supply calls `supplyStockPaletteAuctions`, keeping one active lot per available category/size on the ordinary board. Initial deadlines are staggered across an hour; replacements run a full hour. A receipt derived from offer, time bucket and previous lot prevents restart duplicates, while allowing an expired lot to be replaced in the same bucket. Lots retain frozen pools across midnight. Creation atomically snapshots reserve/reference values, quantity splits, reserved inventory IDs and exact variants for every supported Luck rank. See [Stock palettes](stock-palettes.md) for pricing, quantities and settlement.
+Current production supply calls `supplyStockPaletteAuctions`, keeping one active lot per available category/size on the ordinary board. Initial deadlines are staggered across an hour; replacements run a full hour. A receipt derived from offer, time bucket and previous lot prevents restart duplicates, while allowing an expired lot to be replaced in the same bucket. Lots retain frozen pools across midnight. Creation snapshots the reserve, rarity/quantity odds and private source pool. Actual items, quantities and inventory IDs are generated only at the winner's first opening, with their current Luck. See [Stock palettes](stock-palettes.md) for pricing, quantities and settlement.
 
 The older `supplyPaletteAuctions` and `createPaletteAuction` helpers remain for legacy compatibility and explicit manual auction creation. Their historical three-find reserve, story snapshots, weights and receipts stay valid for existing lots; they no longer supply the production stock board. The manual legacy helper rejects stock editions, which require the quantity-aware creator.
 
@@ -152,10 +152,11 @@ lots settle before serialization, allowing discovery without a background tick.
 The response has **no hidden reward data or reserved inventory IDs**.
 `getPaletteAuctionRewards` remains the only explicit reveal endpoint; only the
 recorded winner can retrieve the fixed snapshots after settlement. Admin is not
-a bypass. Settlement consumes the winning escrow and inserts the advertised quantity of
-reserved inventory rows atomically (three for legacy lots). Stock groups retain
-the winner's frozen Luck variant and actual winning acquisition cost. Reads/retries
-never duplicate rewards.
+a bypass. Settlement consumes winning escrow and awards a sealed asset. New mystery stock
+contains no generated inventory until first opening; that transaction rolls and
+saves all items/quantities with current Luck and the actual winning acquisition
+cost. Legacy fixed-size lots retain settlement-time minting. Replays never
+duplicate rewards or reroll a completed opening.
 
 The winner opens a full-screen item-then-quantity reel on the Auction House
 route. Legacy lots keep their three original single-item rewards. The server result is already fixed;

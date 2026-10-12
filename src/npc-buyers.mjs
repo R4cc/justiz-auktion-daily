@@ -154,7 +154,7 @@ export function tickNpcBuyers(dataDir, { now = Date.now(), unit = deterministicU
 // interested buyers compete and hot markets lift bids above a frozen reserve.
 export function paletteBidCeiling(snapshot, indexes, npc, auctionId, unit = deterministicUnit) {
   const items = Array.isArray(snapshot?.items) ? snapshot.items : [];
-  const expected = snapshot.stockOffer ? {et:expectedItemValue(items,snapshot.stockOffer.weights,item=>estimatedValueTokens(item,indexes))*snapshot.stockOffer.quantity}
+  const expected = snapshot.stockOffer ? {et:expectedItemValue(items,snapshot.stockOffer.weights,item=>estimatedValueTokens(item,indexes))*(snapshot.stockOffer.expectedQuantity??snapshot.stockOffer.quantity)}
     : bundleReferencePricing(items, item => indexes[item.marketCategory] ?? 100, snapshot.rewardCount ?? 3);
   const preferred = (snapshot.allowedMarketCategories ?? []).some(category => npc.categories.includes(category));
   const variation = (unit(`${auctionId}:${npc.id}:palette-value`) - .5) * .06;
@@ -186,7 +186,14 @@ export function tickPaletteBuyers(dataDir, { now = Date.now(), unit = determinis
     // waits for a rival instead of repeatedly raising its own standing bid.
     if (lot.current_bidder_id === npc.id) continue;
     if (unit(`${lot.id}:${npc.id}:${slot}:palette-showup`) >= .5) continue;
-    const { maxBid } = paletteBidCeiling(JSON.parse(lot.public_snapshot_json), indexes, npc, lot.id, unit);
+    const snapshot=JSON.parse(lot.public_snapshot_json);
+    if(snapshot.stockOffer?.openingMode==='opening-v2'){
+      const saved=withDatabase(dataDir,db=>db.prepare('SELECT offer FROM primary_palette_mystery_stock WHERE auction_id=?').get(lot.id));
+      if(!saved)continue;
+      snapshot.stockOffer=JSON.parse(saved.offer);snapshot.items=snapshot.stockOffer.items;
+    }
+    // Expected distributions only; no outcomes exist before opening.
+    const { maxBid } = paletteBidCeiling(snapshot, indexes, npc, lot.id, unit);
     // The tiered minimum raise applies to NPCs exactly like to humans; the
     // domain would reject anything below it anyway (bid_too_low).
     const minimum = lot.current_bid === null ? lot.reserve : lot.current_bid + paletteBidIncrement(lot.reserve);

@@ -71,6 +71,20 @@ export function collectFine(db, userId, now) {
       if(palette.cost>applied)db.prepare('UPDATE users SET tokens=tokens+? WHERE id=?').run(palette.cost-applied,userId);
     }
   }
+  if(due && hasTable(db,'primary_palette_mystery_stock')){
+    const palettes=db.prepare(`SELECT a.id,a.current_bid AS cost,m.offer FROM primary_palette_auctions a
+      JOIN primary_palette_mystery_stock m ON m.auction_id=a.id WHERE a.winner_id=? AND a.settled_at IS NOT NULL
+      AND a.revealed_at IS NULL AND m.seized_at IS NULL ORDER BY a.current_bid,a.id`).all(userId);
+    for(const palette of palettes){
+      if(!due)break;
+      db.prepare('UPDATE primary_palette_mystery_stock SET seized_at=? WHERE auction_id=?').run(now,palette.id);
+      db.prepare('UPDATE primary_palette_auctions SET revealed_at=? WHERE id=?').run(now,palette.id);
+      db.prepare('INSERT INTO justice_seizures(user_id,inventory_id,value,created_at) VALUES (?,?,?,?)').run(userId,palette.id,palette.cost,now);
+      const offer=JSON.parse(palette.offer);seized.push({id:palette.id,title:offer.name+' mystery palette',value:palette.cost});
+      const applied=Math.min(due,palette.cost);due-=applied;
+      if(palette.cost>applied)db.prepare('UPDATE users SET tokens=tokens+? WHERE id=?').run(palette.cost-applied,userId);
+    }
+  }
   const remainingItems = db.prepare('SELECT COUNT(*) AS n FROM inventory WHERE user_id=? AND sold_at IS NULL').get(userId).n;
   let jailedUntil = row.jailed_until, convertedToSentence = 0;
   if (due && !remainingItems) {

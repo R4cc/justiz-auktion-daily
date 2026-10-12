@@ -8,17 +8,19 @@ Points are derived from the current persisted XP through the shared level curve:
 
 ## Luck calculation
 
-| Rank | Additional cost | Total spent | Relative luck | Maximum paid reference return |
-| --- | ---: | ---: | ---: | ---: |
-| I | 1 | 1 | +3% | 84.46% |
-| II | 3 | 4 | +5% | 86.10% |
-| III | 6 | 10 | +7% | 87.74% |
+| Rank | Additional cost | Total spent | Relative luck | Maximum case reference return | Maximum mystery stock reference return |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| I | 1 | 1 | +3% | 84.46% | 86.99% |
+| II | 3 | 4 | +5% | 86.10% | 90.41% |
+| III | 6 | 10 | +7% | 87.74% | 93.88% |
 
 Luck increases weights of populated tiers above the lowest populated tier by the stated relative factor. The lowest tier retains its base weight. All weights are scaled by 100 before the bonus is applied, using exact integers; tiny jackpot probabilities are not rounded up. Normalization determines the final displayed probabilities. This is a relative odds multiplier, not a percentage-point addition or a reward-value multiplier.
 
-For any nonnegative outcome values, each unnormalized weight increases by at most `1 + luck/100`, and the normalizing total never decreases. Consequently `lucky EV <= baseline EV × (1 + luck/100)` for any archive value distribution. Paid case prices and stock palette auction reserves use `ceil(max(base EV, market EV)/0.82)` before skills. Winning bids are at least the reserve, so the reference return is bounded by `0.82 × 1.07 = 0.8774` at rank III. The bound is conservative; actual increases are generally smaller, and store/resale proceeds depend on demand and market movement. Palette quantities are independently drawn with their existing fixed-total splits and receive no additional bonus.
+For any nonnegative outcome values, each unnormalized weight increases by at most `1 + luck/100`, and the normalizing total never decreases. Consequently `lucky EV <= baseline EV × (1 + luck/100)` for any archive distribution. Paid case prices use `ceil(max(base EV, market EV)/0.82)` before skills, bounding rank-III reference return at `0.82 × 1.07 = 87.74%`.
 
-Paid Case Shop draws, legacy direct case draws, newly prepared Daily case contents and stock palette auction draws share this helper. The Daily reward's case-tier selection is not boosted again, avoiding a second application of Luck. Luck does not reroll already prepared cases, won legacy palettes or previously purchased stock palettes. New stock auctions freeze exact variants for all four supported bonuses at creation; the winner's current rank selects one variant once at settlement. Later upgrades cannot change that saved result. Public stock lot metadata uses baseline odds, while the signed-in bid room previews the player's current Luck and the opening shows the settled odds. Upgrading Luck invalidates personal case quotes; idempotent retries preserve completed purchases. Prices, reserves, quantities and frozen pools remain unchanged. The auction return bound uses values frozen at creation; later market movement can change sale proceeds.
+New mystery stock palettes apply the same relative modifier separately to rarity and quantity: higher rarities and quantities above one unit get better odds. These independent expectations multiply, giving the conservative bound `0.82 × 1.07² = 93.8818%` at reserve. Their starting prices include both complete baseline distributions; higher winning bids lower the reference return and never improve the odds. Actual gains are generally smaller, and market movement/store demand affect sale proceeds. See [Stock palettes](stock-palettes.md) for the tier tables. Public odds are previews, not guaranteed totals.
+
+Paid Case Shop draws, legacy direct case draws, newly prepared Daily contents and mystery palette first openings share `luckWeights`. Daily case-tier selection is not boosted a second time. New stock lots freeze only their private source pool, price and chance structure at creation; settlement awards a sealed asset without generating items. The winner's **current rank at first opening**, including upgrades after winning, applies to both rolls. The atomic opening saves items, actual quantities, inventory IDs and Luck once; retries and later upgrades cannot reroll it. Old prepared cases, settled fixed-size palettes and legacy purchases preserve their saved rewards. Public auction metadata uses baseline odds, while signed-in bid rooms/catalogs preview current Luck. Prices and source pools remain unchanged by upgrades.
 
 ## Security and influence
 

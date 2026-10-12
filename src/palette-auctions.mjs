@@ -1,4 +1,5 @@
 import { randomInt, randomUUID } from 'node:crypto';
+import { MYSTERY_STOCK_MODE, openMysteryStock } from './mystery-stock.mjs';
 import { skillEffects, luckWeights } from './skill-effects.mjs';
 import { expectedItemValue } from './economy-balance.mjs';
 import { acquireItems } from './trader.mjs';
@@ -123,10 +124,14 @@ export function ensurePaletteAuctionSchema(db, now = Date.now()) {
     group_position INTEGER NOT NULL CHECK(group_position BETWEEN 0 AND 2),
     inventory_id TEXT PRIMARY KEY
   ) STRICT;
-  CREATE INDEX IF NOT EXISTS primary_palette_stock_units_auction ON primary_palette_stock_units(auction_id)`);
+  CREATE INDEX IF NOT EXISTS primary_palette_stock_units_auction ON primary_palette_stock_units(auction_id);
+  CREATE TABLE IF NOT EXISTS primary_palette_mystery_stock (
+    auction_id TEXT PRIMARY KEY REFERENCES primary_palette_auctions(id),
+    offer TEXT NOT NULL CHECK(json_valid(offer)),rewards TEXT CHECK(rewards IS NULL OR json_valid(rewards)),seized_at INTEGER
+  ) STRICT`);
 }
 
-// Settlement mints the advertised units into the winner's inventory immediately,
+// Legacy settlement mints units immediately; new mystery stock mints at opening,
 // but they stay sealed until the winner's first reveal stamps revealed_at:
 // sealed ids stay out of every player-facing inventory read and out of
 // identity-matched disposal paths (sell-all sweeps, resale batch matching).
@@ -167,7 +172,7 @@ export function serializePublicAuction(db, row, { bids = false } = {}) {
     kind: snapshot.kind, type: snapshot.type, story: snapshot.story,
     allowedMarketCategories: snapshot.allowedMarketCategories,
     rewardCount: snapshot.rewardCount, items: snapshot.items,
-    ...(snapshot.stockOffer ? {stockOffer:snapshot.stockOffer,quantity:snapshot.stockOffer.quantity} : {}),
+    ...(snapshot.stockOffer ? {stockOffer:snapshot.stockOffer,...(snapshot.stockOffer.quantity!=null?{quantity:snapshot.stockOffer.quantity}:{})} : {}),
     reserve: row.reserve, currentBid: row.current_bid, bidCount,
     bidIncrement: paletteBidIncrement(row.reserve),
     requiredLevel: row.required_level, status: row.status,
@@ -350,6 +355,7 @@ function settleAuctionRow(db, row, now) {
   if (winnerId === null) {
     db.prepare('DELETE FROM primary_palette_stock_units WHERE auction_id=?').run(row.id);
     db.prepare('DELETE FROM primary_palette_stock_draws WHERE auction_id=?').run(row.id);
+    db.prepare('DELETE FROM primary_palette_mystery_stock WHERE auction_id=?').run(row.id);
     // No bids: the lot simply ends. No inventory, no token movement.
     db.prepare(`UPDATE primary_palette_auctions SET status = 'ended', closed_at = ?, winner_id = NULL,
       settled_at = ? WHERE id = ? AND settled_at IS NULL`).run(now, now, row.id);
@@ -396,6 +402,15 @@ function settleAuctionRow(db, row, now) {
 }
 
 function settleStockPalette(db,row,offer,winnerId,winningBid,held,now) {
+  if(offer.openingMode===MYSTERY_STOCK_MODE){
+    if(!db.prepare('SELECT 1 FROM primary_palette_mystery_stock WHERE auction_id=?').get(row.id))fail('palette_auction_inconsistent',500);
+    if(held>winningBid)db.prepare('UPDATE users SET tokens=tokens+? WHERE id=?').run(held-winningBid,winnerId);
+    db.prepare("UPDATE primary_palette_auctions SET status='ended',closed_at=?,winner_id=?,settled_at=? WHERE id=? AND settled_at IS NULL").run(now,winnerId,now,row.id);
+    pushNotification(db,winnerId,{type:'won',sourceKey:`palette:won:${row.id}`,href:'/auction-house?view=bids',titleEn:'You won a Mystery Palette',titleDe:'Du hast eine Mystery-Palette gewonnen',
+      bodyEn:`Your ${offer.name} palette is ready. Items and quantities are drawn when opened.`,bodyDe:`Deine ${offer.nameDe}-Palette ist bereit. Artikel und Mengen werden beim Öffnen ausgelost.`},now);
+    return db.prepare('SELECT * FROM primary_palette_auctions WHERE id=?').get(row.id);
+  }
+
   const stored=db.prepare('SELECT draws FROM primary_palette_stock_draws WHERE auction_id=?').get(row.id);
   if(!stored) fail('palette_auction_inconsistent',500);
   const draws=JSON.parse(stored.draws),units=db.prepare('SELECT group_position,inventory_id FROM primary_palette_stock_units WHERE auction_id=?').all(row.id);
@@ -501,10 +516,10 @@ export function paletteAuctionsByUser(dataDir, user, { now = Date.now(), limit =
 // database state (banned users are out), refuses before the deadline without
 // revealing anything, settles if needed, and returns the same three original
 // historical snapshots on every call — later resale of a reward changes
-// ownership, never this reveal. Retrieval never mints or debits anything;
-// the first retrieval stamps revealed_at so the winner's board stops
-// advertising the unbox (the rewards themselves were minted at settlement).
-export function getPaletteAuctionRewards(dataDir, user, auctionId, { now = Date.now() } = {}) {
+// ownership. Legacy rewards were minted at settlement. New mystery stock
+// draws and mints atomically on the first opening; replays return saved results.
+// The first-reveal stamp closes the winner's unbox prompt.
+export function getPaletteAuctionRewards(dataDir, user, auctionId, { now = Date.now(), random = randomInt } = {}) {
   const needsSettlement = withDatabase(dataDir, db => {
     ensurePaletteAuctionSchema(db, now);
     currentUser(db, user.id);
@@ -523,6 +538,10 @@ export function getPaletteAuctionRewards(dataDir, user, auctionId, { now = Date.
       .run(now, row.id);
     // The persisted first-reveal stamp keeps repeat responses byte-stable.
     const revealedAt = db.prepare('SELECT revealed_at FROM primary_palette_auctions WHERE id = ?').get(row.id).revealed_at;
+    if(JSON.parse(row.public_snapshot_json).stockOffer?.openingMode===MYSTERY_STOCK_MODE){
+      const result=openMysteryStock(db,row,user.id,now,random);
+      return {auctionId:row.id,editionId:row.edition_id,winnerId:row.winner_id,settledAt:row.settled_at,revealedAt,bundleCostTokens:row.current_bid,...result};
+    }
     if(JSON.parse(row.public_snapshot_json).stockOffer){
       const stored=db.prepare('SELECT rewards FROM primary_palette_stock_draws WHERE auction_id=?').get(row.id);
       if(!stored?.rewards)fail('palette_auction_inconsistent',500);

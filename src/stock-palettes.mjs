@@ -12,9 +12,9 @@ import { acquireItems } from './trader.mjs';
 import { AccountError } from './errors.mjs';
 import { justiceStatus, collectFine } from './justice.mjs';
 
-// Each palette contains exactly the advertised number of physical units.
-// Auction supply freezes quantity and supported Luck variants at creation.
-// The retained purchase domain below serves legacy receipts and fixtures.
+// Legacy fixed-size catalog and purchase receipts. Mystery stock auctions
+// reuse these category source pools; their actual items and amounts are drawn
+// only by mystery-stock.mjs at the winner's first opening.
 export const STOCK_PALETTE_TIERS = [
   { id: 'budget', name: 'Starter', nameDe: 'Starter', quantity: 6, weights: [8500,1200,250,49,1] },
   { id: 'standard', name: 'Warehouse', nameDe: 'Lager', quantity: 24, weights: [6500,2500,750,240,10] },
