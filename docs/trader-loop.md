@@ -4,6 +4,8 @@ Daily is appraisal practice that earns trading capital and one sealed reward. It
 
 The five primary destinations are Daily, Auction House, Inventory, Your Stores and Town. Auction House combines Browse, My bids (including outcomes and winning reveals), and My listings. Filters distinguish individual items, stock bundles and mystery lots. `/marketplace` and `/auctions` map into this view, preserving queries and existing notification links. Market Trends and the Case Store remain contextual destinations; Collection prestige, Daily scores and friends live under Profile. Settlement APIs and feature flags retain their existing rules.
 
+The Daily menu separates the featured Daily challenge, its J€/case/XP rewards and five-lot progress from Free Play and Higher or Lower. Signed-in Start/Continue/View results state comes from the saved account; guest progress and the labelled browser-history statistics remain local. The menu reuses the existing play actions and leaves all three game screens and rules unchanged.
+
 ## Private accounting
 
 `item_acquisitions` records the current owner's cost separately from tradable item JSON. `trader_sales` records immutable seller proceeds and cost inside the existing sale transaction, keyed by the source transaction and inventory ID. A paid transfer replaces the new owner's basis without changing the old seller's receipt. Failed transactions roll back balances, ownership and accounting together; existing transaction receipts keep retries safe.

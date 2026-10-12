@@ -154,7 +154,7 @@ function updateDailyReset() {
   const minutes = Math.floor((seconds % 3600) / 60);
   const remainder = seconds % 60;
   const node = document.querySelector('[data-daily-reset]');
-  if (node) node.textContent = [hours, minutes, remainder].map(value => String(value).padStart(2, '0')).join(':');
+  for(const output of [node,document.querySelector('[data-menu-reset]')]) if(output) output.textContent = [hours, minutes, remainder].map(value => String(value).padStart(2, '0')).join(':');
   if (initialUtcDate !== now.toISOString().slice(0, 10)) location.reload();
 }
 
@@ -374,41 +374,11 @@ function renderStart() {
   state.view = 'start';
   const saved = getTodayRecord();
   const playerStats = stats();
-  const buttonText = saved?.view === 'results' ? t("View results", "Ergebnis ansehen") : saved?.answers?.length ? t("Continue game", "Spiel fortsetzen") : t("Play today’s game", "Heutiges Spiel starten");
-  app.innerHTML = `
-    <section class="start-screen">
-      <div class="start-main">
-        <div class="section-title-row"><p class="eyebrow game-number"><span class="live-dot" aria-hidden="true"></span> ${t("DAILY", "DAILY")} · #${gameNumber()}</p>${infoTip(t('Guess the bids on five public justice auctions. Sign in to keep rewards and progress across devices.', 'Schätze die Gebote von fünf öffentlichen Justiz-Auktionen. Melde dich an, um Belohnungen und Fortschritt geräteübergreifend zu behalten.'), t('How Daily works', 'So funktioniert Daily'))}</div>
-        <h1 class="hero-title">Daily</h1>
-        <div class="start-actions">
-          <button class="primary-button" type="button" data-action="play">${buttonText}<span class="button-arrow">→</span></button>
-          <button class="secondary-button random-button" type="button" data-action="random">${t("Start a free game", "Freies Spiel starten")} <span aria-hidden="true">↻</span></button>
-          <button class="secondary-button hl-start" type="button" data-action="higher-lower"><span>Higher or Lower</span><span aria-hidden="true">↑↓</span></button>
-        </div>
-        ${economyFlags.paletteAuctions ? `<a class="home-auction-ticket" href="/auction-house" data-page><strong>${t('Auction House', 'Auktionshaus')}</strong><span>${t("Bid with J€", "Mit J€ bieten")} →</span></a>` : ""}
-      </div>
-      <aside class="start-side" aria-label="${t("Daily statistics", "Tagesstatistik")}">
-        <div class="auction-art" aria-hidden="true">
-          <span class="art-spark art-spark--one">✳</span><span class="art-spark art-spark--two">✦</span>
-          <div class="bid-paddle"><span>${t("BIDDER NUMBER", "BIETERNUMMER")}</span><strong>001</strong></div>
-          <div class="gavel"><i class="gavel-head"></i><i class="gavel-handle"></i></div>
-          <span class="art-stamp">${t("TODAY", "HEUTE")}<br><strong>${t("5 LOTS", "5 LOSE")}</strong></span>
-        </div>
-        <div class="ticket">
-          <div class="ticket-top">
-            <p class="ticket-label">${t("YOUR DAILY TARGET", "DEIN TAGESZIEL")}</p>
-            <p class="ticket-number">${number(5000)} ${t("PTS", "PKT")}</p>
-          </div>
-          <div class="ticket-stats">
-            <div class="ticket-stat"><span>STREAK</span><strong>${playerStats.streak ? `🔥 ${dayLabel(playerStats.streak)}` : '—'}</strong></div>
-            <div class="ticket-stat"><span>${t("PERSONAL BEST", "BESTWERT")}</span><strong>${playerStats.best ? playerStats.best.toLocaleString(uiLocale()) : '—'}</strong></div>
-          </div>
-        </div>
-        <div class="score-explainer">
-          <div class="indicator-key"><span>${t("🟩 EXACT", "🟩 EXAKT")}</span><span>${t("🟨 CLOSE", "🟨 NAH DRAN")}</span><span>🟧 FAIR</span><span>${t("🟥 MISSED", "🟥 DANEBEN")}</span></div>
-        </div>
-      </aside>
-    </section>`;
+  const localComplete=saved?.view==='results';
+  const daily=account?.daily || {status:localComplete?'completed':saved?.answers?.length?'in_progress':'not_started',completedRounds:saved?.answers?.length||0,score:localComplete?(saved.answers||[]).reduce((sum,answer)=>sum+(answer.score||0),0):null};
+  app.innerHTML=dailyMenuMarkup({status:daily.status,completedRounds:Math.max(0,Math.min(5,daily.completedRounds||0)),score:daily.score,playerStats,
+    rewards:window.justizRewards||{daily:200,dailyScoreBonus:150,higherLowerPerCorrect:25,higherLowerMax:250,minimumStreak:3},edition:gameNumber(),date:utcDateKey()});
+  updateDailyReset();
 }
 
 function renderRound() {

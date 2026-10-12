@@ -1,0 +1,97 @@
+/* Scoped to the Daily menu. In-game layouts retain their existing styles. */
+.daily-home { padding:44px 0 48px; }
+.daily-home svg { display:block;width:24px;height:24px;flex:none; }
+.daily-home-heading { display:flex;align-items:center;justify-content:space-between;gap:28px;margin-bottom:28px; }
+.daily-home-heading .eyebrow { margin-bottom:10px;font-size:.65rem; }
+.daily-home-heading h1 { font-size:clamp(38px,5vw,62px);letter-spacing:-.065em;line-height:1.05;margin:0 0 12px; }
+.daily-home-heading h1 > span { color:var(--red); }
+.daily-home-heading p:last-child { margin:0;color:var(--muted);font-size:.85rem;line-height:1.65;max-width:52ch; }
+.daily-edition { flex:none;display:grid;gap:7px;padding-left:22px;border-left:1px solid var(--line);font:500 .7rem 'DM Mono',monospace; }
+.daily-edition > span { color:var(--red);letter-spacing:.09em; }
+.daily-edition time { color:var(--muted); }
+.daily-home-feature { display:grid;grid-template-columns:minmax(0,1.9fr) minmax(270px,1fr);gap:20px; }
+.daily-challenge { position:relative;min-width:0;display:grid;grid-template-columns:minmax(0,1.4fr) minmax(180px,.8fr);background:radial-gradient(ellipse at 100% 5%,#326b55,transparent 60%),#173f33;color:#faf5dc;border:1px solid #193c31;border-radius:20px;overflow:hidden;box-shadow:0 8px 0 #183e360d; }
+.daily-challenge-content { padding:28px 0 28px 28px;position:relative;z-index:1;min-width:0; }
+.daily-feature-badge { display:inline-flex;align-items:center;gap:7px;margin:0 0 24px;padding:7px 10px;background:#d5e9c313;border:1px solid #d5e9c342;border-radius:99px;color:#c7e1b8;font-size:.65rem;font-weight:700; }
+.daily-feature-badge svg { width:16px;height:16px; }
+.daily-challenge h2 { white-space:pre-line;font-size:clamp(27px,3vw,37px);letter-spacing:-.055em;line-height:1.17;margin:0 0 16px; }
+.daily-challenge-content > p:not(.daily-feature-badge):not(.daily-play-note) { color:#c2d3c3;font-size:.78rem;line-height:1.7;margin:0;max-width:39ch; }
+.daily-challenge-facts { display:flex;flex-wrap:wrap;gap:14px 20px;margin:24px 0; }
+.daily-challenge-facts > span { display:grid;gap:4px;color:#b1c9b7;font-size:.62rem; }
+.daily-challenge-facts strong { font:500 .91rem 'DM Mono',monospace;color:#faf5dc; }
+.daily-play { display:flex;align-items:center;justify-content:space-between;gap:20px;width:100%;min-height:54px;padding:14px 18px;border:1px solid #f2ca7b;border-radius:9px;background:#f2ca7b;color:#173f33;text-align:left;font-size:.85rem;font-weight:800;cursor:pointer;box-shadow:0 4px 0 #071c175c;transition:background .15s,transform .15s; }
+.daily-play:hover { background:#ffdaa0;transform:translateY(-2px); }
+.daily-play:active { transform:translateY(2px);box-shadow:none; }
+.daily-play-note { margin:12px 0 0;color:#b2c6b7;font-size:.62rem;line-height:1.6; }
+.daily-challenge-art { position:relative;display:flex;flex-direction:column;justify-content:center;align-items:center;min-width:0;overflow:hidden; }
+.daily-challenge-art > svg { width:calc(100% + 48px);height:auto;max-width:350px;margin-left:-8px; }
+.daily-art-tag { font:500 .55rem 'DM Mono',monospace;letter-spacing:.1em;color:#b0ccb3;transform:rotate(-6deg);border:1px solid #b0ccb333;padding:8px 10px;margin-top:8px;white-space:nowrap; }
+.daily-challenge-bottom { grid-column:1/-1;display:flex;align-items:center;justify-content:space-between;gap:12px;padding:15px 28px;border-top:1px solid #a6c7ad25;background:#0c2d2540;font:400 .6rem 'DM Mono',monospace;color:#c2d3c3; }
+.daily-challenge-bottom > span:last-child { display:flex;gap:12px;align-items:center; }
+.daily-challenge-bottom strong { color:#f2ca7b;white-space:nowrap; }
+.daily-reward-panel { min-width:0;border:1px solid #dccdaf;border-radius:20px;background:linear-gradient(135deg,#fffaf0,#f5ebd6);padding:24px;display:flex;flex-direction:column; }
+.daily-reward-heading { display:flex;align-items:center;justify-content:space-between;gap:12px; }
+.daily-reward-heading .eyebrow { font-size:.6rem;margin:0;line-height:1.5;color:#876128; }
+.daily-reward-seal { width:34px;height:34px;display:grid;place-items:center;border:1px solid #c39c57;border-radius:50%;color:#937037;flex:none; }
+.daily-reward-seal svg { width:19px;height:19px; }
+.daily-reward-panel h2 { font-size:1.2rem;letter-spacing:-.03em;margin:10px 0 0; }
+.daily-reward-art { position:relative;width:100%;height:123px;display:flex;justify-content:center;align-items:center; }
+.daily-reward-art .case-object { width:170px;height:125px; }
+.daily-reward-art .case-object > svg { width:100%;height:100%; }
+.daily-reward-art > span { position:absolute;bottom:12px;right:0;transform:rotate(-5deg);border:1px solid #c8aa66;border-radius:5px;padding:5px 9px;background:#f9e6ab;font:700 .62rem 'DM Mono',monospace;color:#745527; }
+.daily-reward-amount { display:grid;gap:6px; }
+.daily-reward-amount strong { font:700 1.3rem 'DM Mono',monospace;letter-spacing:-.06em;overflow-wrap:anywhere; }
+.daily-reward-amount > span { font-size:.6rem;color:#7d735e;line-height:1.6; }
+.daily-case-reward { display:flex;align-items:center;gap:7px;font-size:.72rem;font-weight:700;margin:12px 0 20px; }
+.daily-case-reward svg { width:16px;height:16px;color:#8d6d32; }
+.daily-menu-progress { margin-top:auto;border-top:1px dashed #ccbb97;padding-top:16px; }
+.daily-menu-progress > div { display:flex;align-items:center;justify-content:space-between;gap:10px;font-size:.63rem; }
+.daily-menu-progress strong { font:600 .75rem 'DM Mono',monospace; }
+.daily-menu-progress ol { display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:6px;list-style:none;margin:12px 0 0;padding:0; }
+.daily-menu-progress li { min-height:29px;display:grid;place-items:center;border:1px solid #d4c5a6;border-radius:5px;background:#f7efd9;color:#99896a;font:500 .6rem 'DM Mono',monospace; }
+.daily-menu-progress li.is-done { color:#f8edcd;background:#355946;border-color:#355946; }
+.daily-menu-progress li svg { width:15px;height:15px; }
+.daily-reward-login { display:flex;align-items:center;justify-content:space-between;gap:8px;margin-top:17px;color:var(--ink);font-size:.67rem;font-weight:800; }
+.daily-reward-login svg { width:16px;height:16px; }
+.daily-reward-footnote { margin:12px 0 0;font-size:.6rem;color:#7d735e;line-height:1.65; }
+.daily-section-heading { display:flex;align-items:baseline;justify-content:space-between;gap:18px;margin:30px 0 15px; }
+.daily-section-heading h2 { font-size:1.15rem;letter-spacing:-.03em;margin:0; }
+.daily-section-heading > span { font-size:.65rem;color:var(--muted); }
+.daily-mode-grid { display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:20px; }
+.daily-mode { --mode-ink:#923f29;--mode-tint:#f2e1d6;display:grid;grid-template-columns:58px minmax(0,1fr);gap:18px;padding:23px;border:1px solid #d9bdae;border-radius:16px;background:linear-gradient(130deg,#fcf4ea,#f7eadd); }
+.daily-mode-hl { --mode-ink:#326373;--mode-tint:#dce8e9;border-color:#b9cdd0;background:linear-gradient(130deg,#f2f7f5,#e9f0ed); }
+.daily-mode-icon { width:58px;height:58px;display:grid;place-items:center;background:var(--mode-tint);color:var(--mode-ink);border:1px solid color-mix(in srgb,var(--mode-ink) 30%,transparent);border-radius:13px;transform:rotate(-5deg); }
+.daily-mode-icon svg { width:29px;height:29px; }
+.daily-mode-hl .daily-mode-icon { transform:rotate(5deg); }
+.daily-mode .eyebrow { margin:1px 0 7px;font-size:.58rem;color:var(--mode-ink); }
+.daily-mode h3 { margin:0 0 9px;letter-spacing:-.04em;font-size:1.18rem; }
+.daily-mode p:not(.eyebrow) { margin:0;font-size:.72rem;color:var(--muted);line-height:1.7; }
+.daily-mode-detail { display:block;margin-top:12px;color:var(--mode-ink);font-size:.6rem;line-height:1.6; }
+.daily-mode-play { grid-column:1/-1;display:flex;align-items:center;justify-content:space-between;gap:12px;border:0;border-top:1px solid color-mix(in srgb,var(--mode-ink) 22%,transparent);background:transparent;color:var(--mode-ink);padding:15px 0 0;margin:0;text-align:left;font-size:.76rem;font-weight:800;cursor:pointer;min-height:44px; }
+.daily-mode-play svg { width:20px;height:20px; }
+.daily-mode-play:hover { text-decoration:underline; }
+.daily-mode-play:disabled { cursor:wait;opacity:.65; }
+.daily-personal { display:flex;align-items:center;gap:24px;border-top:1px solid var(--line);border-bottom:1px solid var(--line);padding:23px 0;margin:28px 0 20px; }
+.daily-personal-title { display:flex;align-items:center;gap:12px;flex:1; }
+.daily-personal-title > span { width:36px;height:36px;display:grid;place-items:center;border:1px solid var(--line);border-radius:50%;color:var(--red);flex:none; }
+.daily-personal-title svg { width:18px;height:18px; }
+.daily-personal h2 { font-size:.84rem;margin:0 0 5px; }
+.daily-personal small { font-size:.6rem;color:var(--muted); }
+.daily-personal dl { display:flex;justify-content:space-between;gap:32px;margin:0; }
+.daily-personal dt { font-size:.6rem;color:var(--muted);margin-bottom:8px; }
+.daily-personal dd { font:600 .96rem 'DM Mono',monospace;margin:0; }
+.daily-next-links { display:flex;flex-wrap:wrap;gap:14px; }
+.daily-next-links a { flex:1;display:flex;align-items:center;gap:12px;padding:15px 18px;border:1px solid var(--line);border-radius:10px;text-decoration:none;color:var(--ink);background:#ffffff55;min-width:0; }
+.daily-next-links a:hover { background:#fff9ef;border-color:#778779; }
+.daily-next-icon { display:grid;place-items:center;width:34px;height:34px;color:var(--muted);flex:none; }
+.daily-next-links strong { display:block;font-size:.73rem; }
+.daily-next-links small { display:block;color:var(--muted);font-size:.6rem;margin-top:5px;line-height:1.5; }
+.daily-next-links a > svg { width:19px;height:19px;margin-left:auto; }
+.daily-home button:focus-visible,.daily-home a:focus-visible { outline:3px solid #ce6a25;outline-offset:4px; }
+@media(max-width:1150px){.daily-challenge{grid-template-columns:minmax(0,1.4fr) minmax(135px,.6fr)}.daily-challenge-content{padding-left:24px}.daily-challenge-art>svg{width:calc(100% + 40px)}.daily-art-tag{display:none}.daily-home-feature{grid-template-columns:minmax(0,1.7fr) minmax(245px,1fr)}.daily-reward-panel{padding:20px}.daily-personal dl{gap:24px}}
+@media(max-width:900px) and (min-width:601px){.daily-challenge{grid-template-columns:1fr}.daily-challenge-art{position:absolute;width:160px;right:0;top:7px;opacity:.3}.daily-feature-badge{position:relative;z-index:2}.daily-challenge-content{padding:24px}.daily-challenge h2{position:relative;max-width:14ch}.daily-challenge-bottom{padding:14px 20px;flex-wrap:wrap}.daily-mode{padding:20px;grid-template-columns:44px minmax(0,1fr);gap:12px}.daily-mode-icon{width:44px;height:44px}.daily-personal{flex-wrap:wrap}.daily-personal dl{flex:1}.daily-home-heading{gap:18px}.daily-edition{font-size:.6rem;padding-left:15px}.daily-challenge-facts{gap:12px}}
+@media(max-width:600px){.daily-home{padding:28px 0 34px}.daily-home-heading{align-items:flex-start;flex-direction:column;gap:15px;margin-bottom:20px}.daily-home-heading h1{font-size:44px}.daily-home-heading p:last-child{font-size:.76rem}.daily-edition{display:flex;flex-wrap:wrap;gap:12px;align-items:center;padding:0;border:0;font-size:.62rem}.daily-home-feature{grid-template-columns:1fr;gap:16px}.daily-challenge{grid-template-columns:1fr}.daily-challenge-content{padding:24px;z-index:1}.daily-challenge h2{font-size:32px;max-width:16ch}.daily-challenge-content>p:not(.daily-feature-badge):not(.daily-play-note){max-width:none}.daily-challenge-art{position:absolute;width:160px;right:0;top:12px;opacity:.17;pointer-events:none}.daily-feature-badge{margin-bottom:22px;position:relative;z-index:2}.daily-challenge-bottom{padding:15px 24px;flex-wrap:wrap;font-size:.58rem;gap:10px}.daily-play{min-height:52px}.daily-reward-panel{padding:20px;position:relative}.daily-reward-panel h2{max-width:70%;font-size:1.22rem}.daily-reward-art{position:absolute;top:48px;right:15px;width:123px;height:100px;opacity:.8;pointer-events:none}.daily-reward-art .case-object{width:125px;height:98px}.daily-reward-art>span{font-size:.55rem;bottom:0;right:0}.daily-reward-amount{padding-right:110px;margin-top:20px;min-height:48px}.daily-reward-amount strong{font-size:1.1rem}.daily-reward-amount>span{font-size:.58rem}.daily-case-reward{margin:12px 0 20px;padding-right:90px;line-height:1.6}.daily-reward-heading{min-height:34px}.daily-mode-grid{grid-template-columns:1fr;gap:14px}.daily-section-heading{align-items:flex-start;flex-direction:column;gap:7px;margin-top:26px}.daily-mode{padding:20px;gap:14px;grid-template-columns:46px minmax(0,1fr)}.daily-mode-icon{width:46px;height:46px}.daily-personal{align-items:stretch;flex-direction:column;gap:18px;padding:20px 0}.daily-personal dl{gap:14px;display:grid;grid-template-columns:repeat(3,minmax(0,1fr))}.daily-personal dd{font-size:.85rem;overflow-wrap:anywhere}.daily-personal dt{line-height:1.5}.daily-next-links{flex-direction:column;gap:10px}.daily-next-links a{padding:14px}.daily-next-links small{font-size:.58rem}}
+@media(max-width:360px){.daily-challenge-content{padding:20px}.daily-challenge h2{font-size:30px}.daily-challenge-bottom{padding:14px 20px}.daily-reward-amount{padding-right:80px}.daily-reward-art{width:105px;right:7px}.daily-case-reward{padding-right:60px}.daily-mode{padding:17px;gap:12px}.daily-reward-panel h2{font-size:1.12rem}.daily-reward-amount strong{font-size:1rem}}
+@media(prefers-reduced-motion:reduce){.daily-play{transition:none}.daily-play:hover{transform:none}}
+
+@media(max-width:600px){.daily-reward-login{min-height:44px}}
