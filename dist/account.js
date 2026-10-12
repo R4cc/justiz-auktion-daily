@@ -273,6 +273,7 @@ function giftToast(gifts) {
 }
 function updateAccount(user, progressionOptions) {
   account = user;
+  window.inventoryItemUi?.accountChanged(user);
   window.justiceUi?.sync(user);
   window.netWorthUi?.accountChanged();
   updatePersistentProgression(user, progressionOptions);
@@ -296,6 +297,7 @@ function showGamePage() {
   caseReveal.close(); auctionReveal.close();
   if (typeof traderStockDialog !== 'undefined') traderStockDialog.close();
   document.querySelector('.daily-case-dialog')?.close();
+  window.inventoryItemUi?.stop();
   window.netWorthUi?.stop();
   window.economyUi?.stop();
   window.businessUi?.stop();
@@ -317,6 +319,7 @@ async function navigateAccountPage(path, push = true) {
   caseReveal.close(); auctionReveal.close();
   if (typeof traderStockDialog !== 'undefined') traderStockDialog.close();
   document.querySelector('.daily-case-dialog')?.close();
+  window.inventoryItemUi?.stop();
   window.netWorthUi?.stop();
   window.economyUi?.stop();
   window.businessUi?.stop();
@@ -385,7 +388,9 @@ async function navigateAccountPage(path, push = true) {
       if (action && id) {
         query.delete('action'); history.replaceState({}, '', '/inventory?' + query);
         const selector = action === 'open' ? '[data-account="open-inventory-case"]' : action === 'list' ? '[data-economy="list"]' : '[data-trader="stock"]';
-        const button = [...accountContent.querySelectorAll(selector)].find(entry => entry.dataset.id === id);
+        if(action!=='open')window.inventoryItemUi?.open(id);
+        const root=action==='open'?accountContent:document.querySelector('.inventory-item-dialog[open]')||accountContent;
+        const button = [...root.querySelectorAll(selector)].find(entry => entry.dataset.id === id);
         if (button && !button.disabled) button.click();
       }
     }
@@ -453,6 +458,7 @@ function rarityLabel(id) {
   return ({ common: t('Common', 'Gewöhnlich'), uncommon: t('Uncommon', 'Ungewöhnlich'), rare: t('Rare', 'Selten'), epic: t('Epic', 'Episch'), legendary: t('Legendary', 'Legendär') })[id] || id;
 }
 function itemCard(item, controls = true) {
+  if(controls&&window.inventoryItemUi)return window.inventoryItemUi.card(item);
   const copies=item.copies||[item], available=copies.filter(copy=>!copy.listed&&!copy.storeId), chosen=available.find(copy=>copy.id===new URLSearchParams(location.search).get('focus'))||available[0]||item;
   const isCase=item.kind==='case', style=isCase&&item.caseType?'case-design-'+accountEscape(item.caseType):'rarity-'+accountEscape(item.rarity||item.caseTier||'common');
   const highlighted=new URLSearchParams(location.search).get('focus')===chosen.id;
@@ -512,6 +518,7 @@ function renderInventory() {
   accountContent.innerHTML+=(window.netWorthUi?.markup() || '')+inventoryCategorySummary(accountItems, category)+`<div class="inventory-filters"><label>${t('State','Status')}<select data-inventory-filter="state">${[['all',t('All finds','Alle Funde')],['available',t('Available','Verfügbar')],['cases',t('Cases','Kisten')],['listed',t('Listed','Angeboten')],['stores',t('In stores','In Läden')]].map(([id,label])=>`<option value="${id}" ${status===id?'selected':''}>${label}</option>`).join('')}</select></label><label>${t('Category','Kategorie')}<select data-inventory-filter="category"><option value="all">${t('All','Alle')}</option>${categories.map(id=>`<option value="${accountEscape(id)}" ${category===id?'selected':''}>${inventoryCategoryLabel(id)}</option>`).join('')}</select></label><label>${t('Rarity','Seltenheit')}<select data-inventory-filter="rarity"><option value="all">${t('All','Alle')}</option>${accountCatalog.rarities.map(entry=>`<option value="${entry.id}" ${rarity===entry.id?'selected':''}>${rarityLabel(entry.id)}</option>`).join('')}</select></label><a href="/auction-house" data-page>${t('Browse auctions','Auktionen ansehen')} →</a></div>
     ${filtered.length?`<div class="inventory-grid">${filtered.slice(accountInventoryPage*24,(accountInventoryPage+1)*24).map(item=>itemCard(item)).join('')}</div><div class="inventory-pages"><button data-account="page" data-step="-1" ${accountInventoryPage?'':'disabled'}>← ${t('Previous','Zurück')}</button><span>${accountInventoryPage+1}/${Math.ceil(filtered.length/24)}</span><button data-account="page" data-step="1" ${(accountInventoryPage+1)*24>=filtered.length?'disabled':''}>${t('Next','Weiter')} →</button></div>`:`<div class="collection-empty"><h2>${t('Your next find belongs here.','Hier wartet dein nächster Fund.')}</h2><p>${accountItems.length?t('No finds match these filters. Try All finds.','Keine Funde passen zu diesen Filtern. Wähle Alle Funde.'):t('Complete Daily for trading money and a sealed case.','Schließe Daily ab, um Handelskapital und eine versiegelte Kiste zu erhalten.')}</p><a href="${accountItems.length?'/inventory':'/'}" data-page class="primary-button">${accountItems.length?t('Clear filters','Filter entfernen'):t('Play Daily','Daily spielen')} →</a></div>`}`;
   window.netWorthUi?.wire();
+  window.inventoryItemUi?.refresh();
 }
 function dailyFriendLabel(daily) {
   if (daily.status === 'completed') return `${number(daily.score)} / ${number(5000)} ${t('pts', 'Pkt')}`;

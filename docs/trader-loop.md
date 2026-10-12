@@ -6,6 +6,8 @@ The five primary destinations are Daily, Auction House, Inventory, Your Stores a
 
 The Daily menu separates the featured Daily challenge, its J€/case/XP rewards and five-lot progress from Free Play and Higher or Lower. Signed-in Start/Continue/View results state comes from the saved account; guest progress and the labelled browser-history statistics remain local. The menu reuses the existing play actions and leaves all three game screens and rules unchanged.
 
+Inventory cards show the image, title, rarity, per-item market estimate and availability. Clicking anywhere except the card’s action opens the item details dialog; images, valuation/acquisition details and store-management options live there, with secondary sections collapsed initially. Quick list publishes one available copy for 15 minutes at 70% of its displayed market estimate (minimum J€1), through the existing resale flow, and refreshes Inventory without discarding filters or shelved stock. Cases retain their Open case shortcut and can be listed from details. Custom quantity, price and duration use the existing auction form.
+
 ## Private accounting
 
 `item_acquisitions` records the current owner's cost separately from tradable item JSON. `trader_sales` records immutable seller proceeds and cost inside the existing sale transaction, keyed by the source transaction and inventory ID. A paid transfer replaces the new owner's basis without changing the old seller's receipt. Failed transactions roll back balances, ownership and accounting together; existing transaction receipts keep retries safe.

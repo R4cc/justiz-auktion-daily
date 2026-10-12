@@ -612,7 +612,7 @@ window.economyUi = (() => {
       return;
     }
     if (busy) return;
-    const visit = accountVisit;
+    const visit = accountVisit,viewerId=account?.id;
     try {
       if (action === 'tab') { tab = id; const query = new URLSearchParams(location.search); query.set('view', id); window.history.replaceState({}, '', currentAccountPage + '?' + query); render(); accountContent.querySelector(`.marketplace-tabs [data-id="${id}"]`)?.focus(); }
       if (action === 'lot-type') { const query = new URLSearchParams(location.search); query.set('type',id); window.history.replaceState({},'',currentAccountPage+'?'+query); render(); accountContent.querySelector(`[data-economy="lot-type"][data-id="${id}"]`)?.focus(); }
@@ -628,20 +628,23 @@ window.economyUi = (() => {
         renderMarket(); await loadHistory(category);
         accountContent.querySelector(`[data-economy="${action}"][data-id="${id}"]`)?.focus({ preventScroll: true });
       }
-      if (action === 'list') { caseReveal.close(); listingDialog(id); }
+      if (action === 'list') { caseReveal.close(); window.inventoryItemUi?.stop(); listingDialog(id); }
       if (action === 'quick-list') {
         // One-click listing at the inventory card's default start price, one
         // item, same 15-minute duration the listing dialog pre-selects.
+        const owner=account?.id,item=accountItems.find(entry=>entry.id===id);
+        if(!owner||!economyFlags.resales||currentAccountPage!=='/inventory'||!item||item.listed||item.storeId)return;
         busy = true; button.disabled = true;
         const result = await api.listItem({ inventoryId: id, quantity: 1,
-          startPrice: Math.max(1, Number(button.dataset.price) || 1),
+          startPrice: Math.max(1,Math.round((item.estimatedValueTokens??item.sellValue??item.price??0)*.7)),
           endsAt: new Date(Date.now() + 900_000).toISOString() });
-        if (visit !== accountVisit) return;
-        updateAccount(result.user); busy = false;
-        const inventory = await accountApi('inventory');
-        if (visit !== accountVisit) return;
+        if (visit !== accountVisit||owner!==account?.id) return;
+        updateAccount(result.user);
+        const inventory = await accountApi('inventory?includeStores=1');
+        if (visit !== accountVisit||owner!==account?.id) return;
         accountItems = inventory.items;
         renderAccountPage();
+        if(!document.querySelector('.inventory-item-dialog[open]'))window.inventoryItemUi?.focus(id);
         showToast(t(`Auction started at ${justizEuro(result.listing.startPrice)}.`, `Auktion bei ${justizEuro(result.listing.startPrice)} gestartet.`));
       }
       if (action === 'primary' || action === 'resale') await showLot(id, action === 'primary');
@@ -653,7 +656,10 @@ window.economyUi = (() => {
         if (visit !== accountVisit) return;
         updateAccount(result.user); busy = false; await refresh(currentAccountPage, visit, true);
       }
-    } catch (error) { if (visit === accountVisit) showToast(error.message); }
+    } catch (error) { if(visit===accountVisit&&viewerId===account?.id){
+      if(action==='quick-list'){try{const inventory=await accountApi('inventory?includeStores=1');if(visit===accountVisit&&viewerId===account?.id){accountItems=inventory.items;renderAccountPage();}}catch{}}
+      if(visit===accountVisit&&viewerId===account?.id)showToast(error.message);
+    } }
     finally { if (visit === accountVisit) busy = false; if (button.isConnected) button.disabled = false; }
   });
   // Lot cards are role="button" articles; Enter and Space activate them like
