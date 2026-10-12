@@ -1,3 +1,4 @@
+import { luckWeights } from './skill-effects.mjs';
 import { randomInt, randomUUID } from 'node:crypto';
 import { RARITIES, drawItem, tokenValue } from './cases.mjs';
 import { ECONOMY_BALANCE, expectedItemValue } from './economy-balance.mjs';
@@ -44,16 +45,16 @@ function mixedPool(catalog, fallback) {
 
 // Store cases and tiered rewards share the same sealed draw and valuation.
 // The winner is private and frozen when the case is created.
-export function prepareMysteryCase(catalog, definition, { fallback = [], now = Date.now(), random = randomInt } = {}) {
+export function prepareMysteryCase(catalog, definition, { fallback = [], now = Date.now(), random = randomInt, luckPercent = 0 } = {}) {
   const items = mixedPool(catalog, fallback);
   if (!items.length) throw new Error('empty_catalog');
-  const winner = drawItem(catalog, { items, weights: definition.weights }, random);
+  const winner = drawItem(catalog, { items, weights: luckWeights(definition.weights,luckPercent) }, random);
   const price = Math.max(1, Math.round(expectedItemValue(items, definition.weights) * ECONOMY_BALANCE.sealedCaseValueRate));
   return {
     item: { id: randomUUID(), kind: 'case', caseType: definition.id, caseBadge: definition.badge,
-      title: definition.name, titleDe: definition.nameDe,
+      title: definition.name, titleDe: definition.nameDe, ...(luckPercent?{luckPercent}:{}),
       price, sellValue: price, image: null, createdAt: now },
-    reward: { ...winner, id: randomUUID(), caseId: 'sealed', caseCost: 0,
+    reward: { ...winner, ...(luckPercent?{luckPercent}:{}), id: randomUUID(), caseId: 'sealed', caseCost: 0,
       marketCategory: marketCategoryForItem(winner), edition: catalog?.rotationDate || new Date(now).toISOString().slice(0, 10),
       createdAt: now }
   };

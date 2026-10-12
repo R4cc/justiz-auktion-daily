@@ -1,3 +1,5 @@
+import { ensureSkillsSchema, skillEffects, luckWeights } from './skill-effects.mjs';
+import { skillSummary } from './skill-tree.mjs';
 import { ensureStockPaletteSchema } from './stock-palettes.mjs';
 import { settleExpiredPlayerHeists } from './storefronts.mjs';
 import { ensureJusticeSchema, justiceStatus, collectFine } from './justice.mjs';
@@ -152,6 +154,7 @@ export class Accounts {
       ensureSealedCaseSchema(db);
       ensureCaseStoreSchema(db);
       ensureStockPaletteSchema(db);
+      ensureSkillsSchema(db);
       const columns = db.prepare('PRAGMA table_info(users)').all().map(column => column.name);
       if (!columns.includes('npc')) db.exec('ALTER TABLE users ADD COLUMN npc INTEGER NOT NULL DEFAULT 0');
       ensureXpSchema(db);
@@ -356,7 +359,7 @@ export class Accounts {
       for (const table of ['trader_sales', 'item_acquisitions', 'trader_milestones', 'resale_npc_interest', 'resale_bids', 'resale_auctions',
         'store_events', 'store_event_checks', 'store_heists', 'store_reviews', 'store_visits', 'store_reactions', 'store_receipts',
         'business_sales', 'business_stock', 'businesses', 'town_plots', 'wholesale_bids', 'wholesale_auctions',
-        'primary_palette_bids', 'primary_palette_rewards', 'primary_palette_auctions', 'stock_palette_purchases', 'stock_palette_editions',
+        'primary_palette_bids', 'primary_palette_rewards', 'primary_palette_auctions', 'stock_palette_purchases', 'stock_palette_editions', 'skill_purchases', 'user_skills',
         'daily_rewards', 'daily_case_rewards', 'xp_events', 'case_openings', 'case_purchases', 'case_stock', 'sealed_cases', 'inventory', 'account_games',
         'user_token_grants', 'token_grants', 'account_notifications', 'net_worth_snapshots', 'justice_seizures', 'player_justice']) {
         if (hasTable(table)) db.prepare(`DELETE FROM ${table}`).run();
@@ -461,7 +464,7 @@ export class Accounts {
       // Progression derives from the freshly read users.xp through the shared
       // curve — no level arithmetic lives in this class.
       return { ...publicRow, justice:justiceStatus(db,user.id,this.now()), mustChangePassword: Boolean(must_change_password),
-        progression: progressionForXp(xp), ...this.summary(db, user.id), heldInBids, traderStock,
+        progression: progressionForXp(xp), skills:skillSummary(db,user.id,xp), ...this.summary(db, user.id), heldInBids, traderStock,
         ...tradingTotals(db,user.id), traderMilestones: traderProgress(db,user.id,this.now()),
         admin: Boolean(row.admin), reward: reward || null, rewardsByMode, gifts, date: day(this.now()) };
     });
@@ -600,7 +603,7 @@ export class Accounts {
       consumeCaseStock(db, caseId, this.now());
       if (!db.prepare('UPDATE users SET tokens = tokens - ? WHERE id = ? AND tokens >= ?').run(box.cost, user.id, box.cost).changes) fail('insufficient_tokens', 409);
       // marketCategory is frozen with the item, like rarity and sellValue.
-      const drawn = drawItem(catalog, box);
+      const drawn = drawItem(catalog, {...box,weights:luckWeights(box.weights,skillEffects(db,user.id).luckPercent)});
       const item = { ...drawn, id: randomUUID(), caseId, caseCost: box.cost,
         marketCategory: marketCategoryForItem(drawn),
         edition: catalog.rotationDate, createdAt: this.now() };
@@ -619,7 +622,8 @@ export class Accounts {
         if (previous.tier !== caseId) fail('request_conflict', 409);
         return currentItemValue(JSON.parse(previous.item));
       }
-      const quote = quoteCaseStore(catalog, marketIndexes(db, this.now()));
+      const luckPercent=skillEffects(db,user.id).luckPercent;
+      const quote = quoteCaseStore(catalog, marketIndexes(db, this.now()),{luckPercent});
       const offer = quote.cases.find(box => box.id === caseId);
       if (!offer) {
         if (['common', 'uncommon', 'rare', 'epic', 'legendary'].includes(caseId)) fail('catalog_changed', 409);
@@ -628,7 +632,7 @@ export class Accounts {
       if (revision !== quote.revision) fail('catalog_changed', 409);
       const now = this.now();
       consumeCaseStock(db, caseId, now);
-      const prepared = prepareMysteryCase(catalog, STORE_CASES.find(box => box.id === caseId), { now });
+      const prepared = prepareMysteryCase(catalog, STORE_CASES.find(box => box.id === caseId), { now, luckPercent });
       prepared.item.caseCost = offer.cost;
       prepared.item.edition = catalog.rotationDate;
       prepared.reward.caseCost = offer.cost;
@@ -644,7 +648,7 @@ export class Accounts {
     if (run.mode !== 'daily' || !run.complete || db.prepare('SELECT 1 FROM daily_case_rewards WHERE run_id = ?').get(run.id)) return;
     const score = run.answers.reduce((total, guess, index) => total + scoreGuess(guess, run.auctions[index].actualBid), 0);
     const tier = chooseCaseTier(dailyCaseWeights(score));
-    const prepared = prepareSealedCase(dailyRewardCatalog(catalog, run.auctions, this.now()), tier, { now: this.now() });
+    const prepared = prepareSealedCase(dailyRewardCatalog(catalog, run.auctions, this.now()), tier, { now: this.now(), luckPercent:skillEffects(db,user.id).luckPercent });
     db.prepare(`INSERT INTO daily_case_rewards (run_id, user_id, date, score, item)
       VALUES (?, ?, ?, ?, ?)`).run(run.id, user.id, run.date, score, JSON.stringify(prepared));
   }

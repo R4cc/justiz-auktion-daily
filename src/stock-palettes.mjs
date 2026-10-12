@@ -1,3 +1,4 @@
+import { skillEffects, luckWeights } from './skill-effects.mjs';
 import { createHash, randomInt, randomUUID } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { readArchiveRows, transaction, withDatabase } from './database.mjs';
@@ -68,24 +69,26 @@ export function quantitySplits(quantity) {
   const unit=quantity/6;
   return [{quantities:[unit,unit,4*unit],weight:40},{quantities:[unit,2*unit,3*unit],weight:45},{quantities:[2*unit,2*unit,2*unit],weight:15}];
 }
-function quote(db,now) {
+function quote(db,now,userId=null) {
+  const luckPercent=skillEffects(db,userId).luckPercent;
   const indexes=marketIndexes(db,now), categoryPools=pools(db,now), date=rotationDate(now);
   const offers=categoryPools.flatMap(category=>{
     if(!category.items.length) return [];
     let previous=0;
     return STOCK_PALETTE_TIERS.map(tier=>{
-      const weights=tier.weights.map((weight,index)=>category.items.some(item=>item.rarity===RARITIES[index].id)?weight:0);
+      const baseWeights=tier.weights.map((weight,index)=>category.items.some(item=>item.rarity===RARITIES[index].id)?weight:0);
       // Exchangeable random permutations mean each roll gets quantity/3 on
       // average, independently of the item's tier. EV includes every unit.
-      const expectedBase=expectedItemValue(category.items,weights)*tier.quantity;
-      const expectedMarket=expectedItemValue(category.items,weights,item=>estimatedValueTokens(item,indexes))*tier.quantity;
+      const expectedBase=expectedItemValue(category.items,baseWeights)*tier.quantity;
+      const expectedMarket=expectedItemValue(category.items,baseWeights,item=>estimatedValueTokens(item,indexes))*tier.quantity;
       const cost=Math.max(previous+1,Math.ceil(Math.max(expectedBase,expectedMarket)/ECONOMY_BALANCE.paidCaseReturn));
       if(!Number.isSafeInteger(cost)) return null;
       previous=cost;
+      const weights=luckWeights(baseWeights,luckPercent);
       const total=weights.reduce((sum,value)=>sum+value,0), splits=quantitySplits(tier.quantity), chances=new Map();
       for(const split of splits)for(const qty of split.quantities)chances.set(qty,(chances.get(qty)||0)+split.weight/3);
       return {id:category.id+'-'+tier.id,category:category.id,name:category.name,nameDe:category.nameDe,tier:tier.id,
-        tierName:tier.name,tierNameDe:tier.nameDe,quantity:tier.quantity,rolls:3,cost,expectedMarket,
+        tierName:tier.name,tierNameDe:tier.nameDe,quantity:tier.quantity,rolls:3,cost,expectedMarket:expectedItemValue(category.items,weights,item=>estimatedValueTokens(item,indexes))*tier.quantity,luckPercent,
         items:category.items,weights,quantitySplits:splits,
         dropChances:RARITIES.map((rarity,index)=>({rarity:rarity.id,percent:weights[index]/total*100})),
         multiplierChances:[...chances].sort((a,b)=>a[0]-b[0]).map(([quantity,percent])=>({quantity,percent}))};
@@ -94,8 +97,8 @@ function quote(db,now) {
   return {revision:hash({date,offers}),rotationDate:date,rotatesAt:new Date(Date.parse(date)+86400000).toISOString(),
     categories:categoryPools.map(({items,...category})=>({...category,available:items.length>0})),offers};
 }
-export function stockPaletteCatalog(dataDir,{now=Date.now()}={}) {
-  return withDatabase(dataDir,db=>transaction(db,()=>quote(db,now)));
+export function stockPaletteCatalog(dataDir,{now=Date.now(),userId=null}={}) {
+  return withDatabase(dataDir,db=>transaction(db,()=>quote(db,now,userId)));
 }
 function player(db,user,now) {
   const row=db.prepare('SELECT * FROM users WHERE id=? AND npc=0 AND banned=0').get(user?.id);
@@ -117,7 +120,7 @@ export function buyStockPalette(dataDir,user,{offerId,requestId,revision},{now=D
     ensureStockPaletteSchema(db);player(db,user,now);
     const previous=db.prepare('SELECT * FROM stock_palette_purchases WHERE user_id=? AND request_id=?').get(user.id,requestId);
     if(previous){if(previous.offer_id!==offerId)fail('request_conflict');return receipt(previous);}
-    const catalog=quote(db,now),offer=catalog.offers.find(entry=>entry.id===offerId);
+    const catalog=quote(db,now,user.id),offer=catalog.offers.find(entry=>entry.id===offerId);
     if(!offer)fail('invalid_palette',400);
     if(catalog.revision!==revision)fail('catalog_changed');
     if(!db.prepare('UPDATE users SET tokens=tokens-? WHERE id=? AND tokens>=?').run(offer.cost,user.id,offer.cost).changes)fail('insufficient_tokens');

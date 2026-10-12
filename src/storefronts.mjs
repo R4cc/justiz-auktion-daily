@@ -1,3 +1,4 @@
+import { skillEffects, weightedStoreRating } from './skill-effects.mjs';
 import { plotLocation } from './town-plots.mjs';
 import { randomInt, randomUUID } from 'node:crypto';
 import { withDatabase, transaction } from './database.mjs';
@@ -114,13 +115,13 @@ function moveItem(db, shop, player, inventoryId) {
   if (!db.prepare('DELETE FROM business_stock WHERE business_id = ? AND inventory_id = ? AND sold_at IS NULL').run(shop.id, inventoryId).changes) fail('stock_not_found', 409);
   if (!db.prepare('UPDATE inventory SET user_id = ? WHERE id = ? AND user_id = ? AND sold_at IS NULL').run(player.id, inventoryId, shop.user_id).changes) fail('stock_conflict', 409);
 }
-export function theftQuote(referencePrice, gooseGuard, locationMultiplier = 1) {
-  const fine = Math.max(20, Math.ceil(referencePrice * ECONOMY_BALANCE.theftFineMultiplier * (gooseGuard ? 2 : 1) * Math.max(1, 1 / locationMultiplier)));
+export function theftQuote(referencePrice, gooseGuard, locationMultiplier = 1, securityPercent = 0) {
+  const baseFine = Math.max(20, Math.ceil(referencePrice * ECONOMY_BALANCE.theftFineMultiplier * (gooseGuard ? 2 : 1) * Math.max(1, 1 / locationMultiplier)));
+  const fine=Math.ceil(baseFine*(100+securityPercent)/100);
   return { fine, rules: 'single-deck-s17' };
 }
 function publicCard(db, shop, viewer) {
-  const rating = db.prepare(`SELECT COUNT(*) AS count, AVG(r.stars) AS average FROM store_reviews r
-    JOIN users u ON u.id = r.user_id WHERE r.business_id = ? AND u.banned = 0`).get(shop.id);
+  const rating = weightedStoreRating(db,shop.id);
   return { id: shop.id, ownerId: shop.user_id, owner: viewer ? shop.username : maskUsername(shop.username),
     location: plotLocation(db, shop.plot_id), name: shop.store_name, motto: shop.store_motto, type: shop.type, size: shop.size, gooseGuard: Boolean(shop.goose_guard), mischiefEnabled: Boolean(shop.mischief_enabled),
     stockCount: db.prepare('SELECT COUNT(*) AS n FROM business_stock WHERE business_id = ? AND sold_at IS NULL').get(shop.id).n,
@@ -168,7 +169,7 @@ export function visitStore(dataDir, viewer, shopId, { now = Date.now() } = {}) {
     return { store: { ...publicCard(db, shop, player), own,
       stock: shopStock(db, shop.id, shop.type, shop.profit_margin, now).map(entry => ({ id: entry.id, price: entry.askingPrice,
         item: { title: entry.item.title, image: entry.item.image || null, rarity: entry.item.rarity || 'common' },
-        theft: !own ? theftQuote(entry.referencePrice, shop.goose_guard, plotLocation(db, shop.plot_id)?.theftMultiplier ?? 1) : null })),
+        theft: !own ? theftQuote(entry.referencePrice, shop.goose_guard, plotLocation(db, shop.plot_id)?.theftMultiplier ?? 1, skillEffects(db,shop.user_id).securityPercent) : null })),
       reviews: rows.map(row => ({ ...row, username: player ? row.username : maskUsername(row.username) })), reactions,
       canReview: Boolean(player && !own && db.prepare("SELECT 1 FROM store_receipts WHERE business_id = ? AND user_id = ? AND action = 'buy'").get(shop.id, player.id)),
       myReview: player ? db.prepare('SELECT stars, comment FROM store_reviews WHERE business_id = ? AND user_id = ?').get(shop.id, player.id) || null : null,
@@ -248,7 +249,7 @@ export function startStoreHeist(dataDir, user, payload, { now = Date.now(), draw
     if (db.prepare("SELECT 1 FROM store_heists WHERE user_id=? AND status='active'").get(player.id)) fail('heist_active',409);
     const entry = shelf(db, shop, payload.inventoryId, now);
     if (payload.expectedPrice !== entry.askingPrice) fail('store_price_changed', 409);
-    const quote = theftQuote(entry.referencePrice, shop.goose_guard, plotLocation(db, shop.plot_id)?.theftMultiplier ?? 1);
+    const quote = theftQuote(entry.referencePrice, shop.goose_guard, plotLocation(db, shop.plot_id)?.theftMultiplier ?? 1, skillEffects(db,shop.user_id).securityPercent);
     if (payload.expectedFine !== quote.fine) fail('store_risk_changed', 409);
     const game = dealBlackjack(draw);
     db.prepare(`INSERT INTO store_heists (id,user_id,business_id,owner_id,inventory_id,sequence,roll,chance,fee,created_at,ready_at,expires_at,blackjack)

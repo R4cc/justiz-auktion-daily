@@ -66,7 +66,7 @@ export function createEconomyApi({ dataDir, json, flags = featureFlags(), accoun
             { now, range, limit: limited(url.searchParams.get('limit'), 168, 1000) }) });
         return true;
       }
-      if (flags.palettes && url.pathname === '/api/stock-palettes') {json(response,200,stockPaletteCatalog(dataDir));return true;}
+      if (flags.palettes && url.pathname === '/api/stock-palettes') {json(response,200,stockPaletteCatalog(dataDir,{userId:player?.must_change_password?null:player?.id}));return true;}
       if (flags.palettes && url.pathname === '/api/palettes') {
         // Persisted palette catalog: frozen editions with evaluated
         // availability; the legacy case catalog is untouched by this.

@@ -25,7 +25,7 @@ caseReveal.addEventListener('close', () => {
 });
 let accountSelectedCase = 'fundkiste', accountInventoryPage = 0, accountFilter = 'all';
 let currentAccountPage = null, accountVisit = 0, pageLoaded = false;
-const accountPaths = ['/auction-house', '/auctions', '/marketplace', '/market', '/businesses', '/stores', '/town', '/shop', '/palettes', '/inventory', '/profile', '/login', '/register', '/admin', '/leaderboard'];
+const accountPaths = ['/auction-house', '/auctions', '/marketplace', '/market', '/businesses', '/stores', '/town', '/shop', '/palettes', '/skills', '/inventory', '/profile', '/login', '/register', '/admin', '/leaderboard'];
 const accountPage = document.querySelector('#account-page');
 const accountContent = document.querySelector('#account-content');
 const notificationButton = document.querySelector('#notification-button');
@@ -36,6 +36,9 @@ const accountEscape = value => String(value ?? '').replace(/[&<>"']/g, char => (
 
 function accountError(code) {
   const errors = {
+    insufficient_skill_points:t('You need more skill points to unlock this rank.','Du brauchst mehr Skillpunkte, um diesen Rang freizuschalten.'),
+    skill_rank_changed:t('This skill changed in another tab. Your tree has been refreshed.','Dieser Skill wurde in einem anderen Tab geändert. Dein Baum wurde aktualisiert.'),
+    skill_coming_soon:t('This skill is coming soon.','Dieser Skill kommt bald.'),
     instant_sell_disabled: t('List this item in the Auction House to sell it.', 'Biete diesen Gegenstand im Auktionshaus an.'),
     mischief_disabled: t('This owner has disabled player mischief. You can buy the item instead.', 'Dieser Laden erlaubt keinen Spielerunfug. Du kannst den Gegenstand kaufen.'),
     level_required: t('Your level is too low for this palette. Complete Daily games and sell items to earn XP.', 'Dein Level ist für diese Palette zu niedrig. Spiele Daily und verkaufe Gegenstände für XP.'),
@@ -148,6 +151,7 @@ function sidebarLinkMarkup(route, label) {
     '/marketplace': '<path d="M4 8h16m-4-4 4 4-4 4M20 16H4m4-4-4 4 4 4"/>',
     '/auction-house': '<path d="m13 3 8 8-4 4-8-8 4-4Zm-4 4L5 11l4 4 4-4m-2 2-8 8M15 21h7m-6-4h5v4"/>',
     '/auctions': '<path d="m13 3 8 8-4 4-8-8 4-4Zm-4 4L5 11l4 4 4-4m-2 2-8 8M15 21h7m-6-4h5v4"/>',
+    '/skills': '<path d="M12 21V10m0 6L5 9m7 7 7-7M5 9V4m14 5V4m-7 6V3"/><circle cx="5" cy="3" r="2"/><circle cx="19" cy="3" r="2"/><circle cx="12" cy="3" r="2"/>',
     '/palettes': '<path d="m3 8 9-4 9 4v10l-9 3-9-3V8Zm0 0 9 4 9-4m-9 4v9M7 6l9 4v10M2 21h20"/>',
     '/shop': '<path d="m3 7 9-4 9 4v10l-9 4-9-4V7Zm0 0 9 4 9-4m-9 4v10M7.5 5 17 9"/>',
     '/market': '<path d="M3 3v18h18M7 15l4-5 4 3 6-8m-5 0h5v5"/>',
@@ -164,10 +168,11 @@ function sidebarLinkMarkup(route, label) {
 }
 function updateNavigation() {
   renderPersistentProgression(account);
-  const labels = { '/': 'Daily', '/shop': t('Case Store', 'Kisten-Shop'), '/palettes': t('Mystery palettes', 'Mystery-Paletten'), '/auctions': t('Palette Auctions', 'Paletten-Auktionen'), '/auction-house': t('Auction House', 'Auktionshaus'), '/marketplace': t('Auction House', 'Auktionshaus'), '/market': t('Stock Market', 'Aktienmarkt'), '/businesses': t('Your stores', 'Deine Läden'), '/stores': t('Visit stores', 'Läden besuchen'), '/town': t('Town map', 'Stadtplan'), '/inventory': t('Inventory', 'Inventar'), '/leaderboard': t('Leaderboard', 'Rangliste'), '/profile': t('Profile', 'Profil'), '/admin': 'Admin' };
+  const labels = { '/': 'Daily', '/shop': t('Case Store', 'Kisten-Shop'), '/palettes': t('Mystery palettes', 'Mystery-Paletten'), '/skills': t('Skill tree', 'Skillbaum'), '/auctions': t('Palette Auctions', 'Paletten-Auktionen'), '/auction-house': t('Auction House', 'Auktionshaus'), '/marketplace': t('Auction House', 'Auktionshaus'), '/market': t('Stock Market', 'Aktienmarkt'), '/businesses': t('Your stores', 'Deine Läden'), '/stores': t('Visit stores', 'Läden besuchen'), '/town': t('Town map', 'Stadtplan'), '/inventory': t('Inventory', 'Inventar'), '/leaderboard': t('Leaderboard', 'Rangliste'), '/profile': t('Profile', 'Profil'), '/admin': 'Admin' };
   for (const link of document.querySelectorAll('.site-nav a')) {
     if (link.id !== 'header-auth') {
       link.innerHTML = sidebarLinkMarkup(link.getAttribute('href'), labels[link.getAttribute('href')] || link.textContent);
+      if(link.pathname==='/skills' && account?.skills?.available){ const badge=document.createElement('span');badge.className='skill-nav-points';badge.textContent=account.skills.available;badge.setAttribute('aria-label',t(`${account.skills.available} skill points available`,`${account.skills.available} Skillpunkte verfügbar`));link.append(badge); }
       const isNew = Boolean(link.dataset.newEntry && !sidebarEntrySeen(link.dataset.newEntry));
       link.classList.toggle('has-new-tag', isNew);
       if (isNew) {
@@ -302,6 +307,7 @@ function showGamePage() {
   window.netWorthUi?.stop();
   window.economyUi?.stop();
   window.paletteUi?.stop();
+  window.skillsUi?.stop();
   window.businessUi?.stop();
   window.storeUi?.stop();
   window.townUi?.stop();
@@ -325,6 +331,7 @@ async function navigateAccountPage(path, push = true) {
   window.netWorthUi?.stop();
   window.economyUi?.stop();
   window.paletteUi?.stop();
+  window.skillsUi?.stop();
   window.businessUi?.stop();
   window.storeUi?.stop();
   window.townUi?.stop();
@@ -360,6 +367,7 @@ async function navigateAccountPage(path, push = true) {
     }
     if (path === '/town') { await window.townUi.load(visit); if (visit !== accountVisit) return; }
     if (path === '/stores') { await window.storeUi.load(visit); if (visit !== accountVisit) return; }
+    if(path === '/skills') { await window.skillsUi.load(visit); if(visit!==accountVisit)return; }
     if(path === '/palettes') { await window.paletteUi.load(visit); if(visit!==accountVisit)return; }
     if (path === '/shop') {
       const store = await accountApi('case-store'); if (visit !== accountVisit) return; accountStore = store;
@@ -430,6 +438,7 @@ function renderAccountPage() {
   else if (currentAccountPage === '/businesses') window.businessUi.render();
   else if (currentAccountPage === '/town') window.townUi.render();
   else if (currentAccountPage === '/stores') window.storeUi.render();
+  else if (currentAccountPage === '/skills') window.skillsUi.render();
   else if (currentAccountPage === '/palettes') window.paletteUi.render();
   else if (currentAccountPage === '/shop') renderShop();
   else if (currentAccountPage === '/inventory') renderInventory();
@@ -732,6 +741,7 @@ async function refreshCaseStock(visit) {
   const request = ++caseStockRequest;
   const quotes = await Promise.all([accountApi('case-store'), ...(!economyFlags.paletteAuctions ? [accountApi('cases')] : [])]);
   if (request !== caseStockRequest || accountBusy || visit !== accountVisit || currentAccountPage !== '/shop') return;
+  if(quotes[0]?.luckPercent!==accountStore?.luckPercent){accountStore=quotes[0];renderShop();return;}
   for (const [index, quote] of quotes.entries()) {
     const catalog = index ? accountCatalog : accountStore;
     for (const box of catalog?.cases || []) box.stock = quote.cases.find(offer => offer.id === box.id)?.stock;
@@ -777,6 +787,7 @@ function renderShop() {
   const soldOut = box.stock?.remaining === 0;
   accountContent.innerHTML = `<div class="case-boutique">
     <header class="case-boutique-header">${pageHeading(t('Case Store', 'Kisten-Shop'))}<div class="case-wallet">${account ? `<span>${t('Available', 'Verfügbar')}</span><strong>${justizEuro(account.tokens)}</strong>` : `<a href="/login" data-page>${t('Log in to buy', 'Zum Kaufen anmelden')} →</a>`}</div><a class="secondary-button" href="/inventory" data-page>${t('Inventory', 'Inventar')} ↗</a></header>
+    ${accountStore.luckPercent?`<p class="skill-luck-notice"><strong>+${accountStore.luckPercent}% ${t('luck active','Glücksbonus aktiv')}</strong>${t('Your skill is included in the displayed odds.','Dein Skill ist in den angezeigten Chancen berücksichtigt.')}<a href="/skills" data-page>${t('Skill tree','Skillbaum')} →</a></p>`:''}
     <section class="case-showcase case-design-${accountEscape(box.id)}" aria-label="${t('Selected case', 'Ausgewählte Kiste')}">
       <div class="case-showroom"><span class="case-stage-seal">JG / ${accountEscape(box.badge)}</span><div class="case-orbit" aria-hidden="true"></div><div class="case-showroom-rays" aria-hidden="true"></div>${caseArtwork(box)}<div class="case-pedestal" aria-hidden="true"></div><span class="case-stage-caption">${t('SEALED', 'VERSIEGELT')} · ${t('ONE ITEM', 'EIN GEGENSTAND')}</span></div>
       <div class="case-showcase-info"><span class="case-edition-label">${t('CONTENTS', 'INHALTE')} / ${accountEscape(accountStore.rotationDate)}</span><h2>${accountEscape(t(box.name, box.nameDe))}</h2><p class="case-showcase-rule">${t('One mystery item. All rarities possible.', 'Ein geheimer Gegenstand. Jede Seltenheit möglich.')}</p>

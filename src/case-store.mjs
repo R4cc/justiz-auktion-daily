@@ -1,3 +1,4 @@
+import { luckWeights } from './skill-effects.mjs';
 import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { caseCatalog, loadCaseCatalog, RARITIES } from './cases.mjs';
@@ -31,7 +32,7 @@ export function loadCaseStoreCatalog(dataDir, now = Date.now()) {
     ? catalog : caseCatalog(starterArchive, now);
 }
 
-export function quoteCaseStore(catalog, indexes = {}) {
+export function quoteCaseStore(catalog, indexes = {}, {luckPercent=0} = {}) {
   const items = catalog.cases.find(box => box.id === 'fundkiste').items;
   let previousCost = 0;
   const cases = STORE_CASES.map(box => {
@@ -40,13 +41,14 @@ export function quoteCaseStore(catalog, indexes = {}) {
     // Even tiny or equal-valued pools retain a strictly increasing price ladder.
     const cost = Math.max(previousCost + 1, Math.ceil(Math.max(base, live) / ECONOMY_BALANCE.paidCaseReturn));
     previousCost = cost;
-    const total = box.weights.reduce((sum, weight) => sum + weight, 0);
+    const weights=luckWeights(box.weights,luckPercent);
+    const total = weights.reduce((sum, weight) => sum + weight, 0);
     return { id: box.id, name: box.name, nameDe: box.nameDe, badge: box.badge, cost, items,
-      dropChances: RARITIES.map((rarity, index) => ({ rarity: rarity.id, percent: box.weights[index] / (total / 100) })) };
+      dropChances: RARITIES.map((rarity, index) => ({ rarity: rarity.id, percent: weights[index] / (total / 100) })) };
   });
   const revision = createHash('sha256').update(JSON.stringify({ version: 2, pool: catalog.revision,
-    definitions: STORE_CASES, costs: cases.map(box => box.cost) })).digest('hex');
-  return { revision, rotationDate: catalog.rotationDate, rotatesAt: catalog.rotatesAt, cases };
+    definitions: STORE_CASES, ...(luckPercent?{luckPercent}:{}), costs: cases.map(box => box.cost) })).digest('hex');
+  return { revision, luckPercent, rotationDate: catalog.rotationDate, rotatesAt: catalog.rotatesAt, cases };
 }
 
 // The legacy column name 'tier' stores the purchased case id; retain it so

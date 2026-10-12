@@ -1,3 +1,5 @@
+import { skillEffects } from './skill-effects.mjs';
+import { skillTree, upgradeSkill } from './skill-tree.mjs';
 import { buyStockPalette, revealStockPalette, stockPalettesByUser } from './stock-palettes.mjs';
 import { netWorthHistory } from './net-worth.mjs';
 import { checkStoreEvents, acknowledgeStoreEvents } from './store-events.mjs';
@@ -72,9 +74,9 @@ export async function createAccountApi({ dataDir, dailyPayload, json, env = proc
     if (!catalog || catalog.rotationDate !== rotationDate()) catalog = loadCaseCatalog(dataDir);
     return quoteCaseCatalog(dataDir, catalog);
   }
-  function getStore() {
+  function getStore(user=null) {
     const now = Date.now();
-    return accounts.db(db => withCaseStock(db, quoteCaseStore(loadCaseStoreCatalog(dataDir, now), marketIndexes(db, now)), now));
+    return accounts.db(db => withCaseStock(db, quoteCaseStore(loadCaseStoreCatalog(dataDir, now), marketIndexes(db, now),{luckPercent:skillEffects(db,user?.id).luckPercent}), now));
   }
   return async (request, response, url) => {
     if (!url.pathname.startsWith('/api/account/')) return false;
@@ -85,7 +87,7 @@ export async function createAccountApi({ dataDir, dailyPayload, json, env = proc
       if (user?.justice?.jailed && !['me','logout','login','password/change'].includes(route)) { const error=new AccountError('player_jailed',423); error.justice=user.justice; throw error; }
       if (request.method === 'GET') {
         if (route === 'me') json(response, 200, { user: user ? accounts.profile(user) : null });
-        else if (route === 'case-store') json(response, 200, getStore());
+        else if (route === 'case-store') json(response, 200, getStore(user));
         else if (route === 'cases') json(response, 200, accounts.db(db => withCaseStock(db, publicCaseCatalog(getCatalog()))));
         else if (route === 'leaderboard') {
           // Public page: only signed-in viewers get uncensored names.
@@ -98,6 +100,7 @@ export async function createAccountApi({ dataDir, dailyPayload, json, env = proc
           // other surface waits until a real password is set.
           if (user.must_change_password && route !== 'me') throw new AccountError('password_change_required', 403);
           if (route === 'inventory') json(response, 200, { items: accounts.inventory(user, {includeStores:url.searchParams.get('includeStores')==='1'}) });
+          else if(route==='skills') json(response,200,skillTree(dataDir,user));
           else if (route === 'stock-palettes' && flags.palettes) json(response,200,{palettes:stockPalettesByUser(dataDir,user)});
           else if (route === 'net-worth') json(response, 200, netWorthHistory(dataDir, user, { range: url.searchParams.get('range') || '1d' }));
           else if (route === 'notifications') json(response, 200, notificationsForUser(dataDir, user.id));
@@ -168,6 +171,7 @@ export async function createAccountApi({ dataDir, dailyPayload, json, env = proc
         await accounts.changePassword(user, payload);
         result = { user: accounts.profile(user) };
       }
+      else if(route==='skills/upgrade') result={tree:upgradeSkill(dataDir,user,payload),user:accounts.profile(user)};
       else if (route === 'stock-palettes/buy' && flags.palettes) result={palette:buyStockPalette(dataDir,user,payload),user:accounts.profile(user)};
       else if (route === 'stock-palettes/reveal' && flags.palettes) result={palette:revealStockPalette(dataDir,user,payload.id),user:accounts.profile(user)};
       else if (route === 'notifications/read') result = markNotificationsRead(dataDir, user.id, payload.ids);
@@ -224,7 +228,7 @@ export async function createAccountApi({ dataDir, dailyPayload, json, env = proc
       else if (route === 'friends/remove') { accounts.removeFriend(user, payload.id); result = accounts.friends(user); }
       else if (route === 'codes/revoke') { accounts.revokeCode(user, payload.id); result = { ok: true }; }
       else if (route === 'cases/buy') {
-        result = { item: accounts.buyCase(user, loadCaseStoreCatalog(dataDir), payload.caseId ?? payload.tier, payload.requestId, payload.revision), user: accounts.profile(user), store: getStore() };
+        result = { item: accounts.buyCase(user, loadCaseStoreCatalog(dataDir), payload.caseId ?? payload.tier, payload.requestId, payload.revision), user: accounts.profile(user), store: getStore(user) };
       }
       else if (route === 'cases/open') {
         if (typeof payload.revision !== 'string') throw new AccountError('catalog_changed', 409);
