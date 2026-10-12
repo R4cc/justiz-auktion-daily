@@ -35,17 +35,18 @@ try{
   const context=await browser.newContext({viewport:{width:1440,height:1000}}),page=await context.newPage(),errors=[];
   page.on('pageerror',error=>errors.push(error.message));
   await page.goto(base+'/leaderboard');await page.waitForSelector('.leaderboard-page');
+  assert.equal(await page.locator('.leaderboard-modes a[aria-current="page"]').getAttribute('href'),'/leaderboard?view=daily');
   const guestNames=await page.locator('.podium-name').allTextContents();assert.ok(guestNames.every(name=>name.includes('****')));assert.equal(await page.locator('.leaderboard-personal .leaderboard-you').count(),0);
   assert.equal(await page.locator('.site-nav a[href="/leaderboard"]').isVisible(),true);
   assert.equal(await page.locator('.site-nav a[href="/leaderboard"]').getAttribute('aria-current'),'page');
   assert.equal(await page.locator('.site-nav a[href="/leaderboard"] [data-nav-icon="/leaderboard"]').count(),1);
   await context.addCookies([{name:'jg_session',value:viewer.token,url:base}]);await page.reload();await page.waitForSelector('.leaderboard-personal-rank');
-  assert.equal(await page.locator('.podium-place-1 .podium-name').innerText(),players[0].user.username);
+  assert.equal(await page.locator('.podium-place-1 .podium-name').innerText(),players[1].user.username);
   assert.equal(await page.locator('.leaderboard-personal-rank > strong').innerText(),'#4');assert.equal(await page.locator('tbody tr.is-me').count(),1);
   const setLanguage=async lang=>{const hidden=!(await page.locator('#language-select').isVisible());if(hidden)await page.locator('[data-action="sidebar"]').click();await page.locator('#language-select').selectOption(lang);if(hidden)await page.keyboard.press('Escape');};
-  for(const route of ['/leaderboard','/leaderboard?view=daily']){
+  for(const route of ['/leaderboard','/leaderboard?view=collection','/leaderboard?view=daily']){
     await page.goto(base+route);await page.waitForSelector('.leaderboard-podium');
-    const expected = accounts.leaderboard(route.includes('daily')?'daily':'collection').leaders;
+    const expected = accounts.leaderboard(route.includes('collection')?'collection':'daily').leaders;
     assert.deepEqual(await page.locator('.podium-name').allTextContents(),expected.slice(0,3).map(leader=>leader.username));
     for(const width of [1440,1024,768,600,390,320]){
       await page.setViewportSize({width,height:1000});
@@ -58,14 +59,14 @@ try{
         assert.ok(positions.find(p=>p.rank===2).x<positions.find(p=>p.rank===1).x&&positions.find(p=>p.rank===1).x<positions.find(p=>p.rank===3).x);
         assert.equal(await page.locator('.leaderboard-modes a[aria-current="page"]').count(),1);
         assert.ok(await page.locator('.leaderboard-modes a[aria-current="page"]').evaluate(el=>{const style=getComputedStyle(el);return style.color!==style.backgroundColor;}), 'Active mode label must stay visible');
-        if([1440,390,320].includes(width))await page.screenshot({path:`/tmp/jg-leaderboard-${route.includes('daily')?'daily':'collection'}-${width}-${lang}.png`,fullPage:true});
+        if([1440,390,320].includes(width))await page.screenshot({path:`/tmp/jg-leaderboard-${route.includes('collection')?'collection':'daily'}-${width}-${lang}.png`,fullPage:true});
       }
     }
   }
   await page.setViewportSize({width:1440,height:1000});await setLanguage('en');
   await page.locator('.leaderboard-refresh').click();await page.waitForSelector('.leaderboard-page');assert.ok(page.url().endsWith('?view=daily'));assert.equal(await page.locator('.podium-place-1 .podium-name').innerText(),'AppraisalAce');
-  await page.locator('.leaderboard-modes a[href="/leaderboard"]').focus();await page.keyboard.press('Enter');await page.waitForURL(base+'/leaderboard');await page.waitForSelector('.podium-place-1');
-  await page.setViewportSize({width:390,height:1000});await page.locator('[data-action="sidebar"]').click();await page.locator('.site-nav a[href="/leaderboard"]').click();assert.equal(await page.locator('.site-header').evaluate(el=>el.classList.contains('is-open')),false);
+  await page.locator('.leaderboard-modes a[href="/leaderboard?view=collection"]').focus();await page.keyboard.press('Enter');await page.waitForURL(base+'/leaderboard?view=collection');await page.waitForSelector('.podium-place-1');
+  await page.setViewportSize({width:390,height:1000});await page.locator('[data-action="sidebar"]').click();await page.locator('.site-nav a[href="/leaderboard"]').click();await page.waitForSelector('.leaderboard-modes a[href="/leaderboard?view=daily"][aria-current="page"]');assert.equal(await page.locator('.site-header').evaluate(el=>el.classList.contains('is-open')),false);
   // Sparse results render only real players, and an empty Daily offers a start action.
   const board=accounts.leaderboard();let sample=board;
   await page.route('**/api/account/leaderboard*',route=>route.fulfill({json:sample}));
@@ -77,5 +78,5 @@ try{
   }
   sample={...board,leaders:[{...board.leaders[0],username:'<img src=x onerror="window.bad=true">'}]};await page.reload();await page.waitForSelector('.podium-player');assert.equal(await page.locator('.podium-name img, .leaderboard-player img').count(),0);assert.equal(await page.evaluate(()=>window.bad),undefined);
   assert.deepEqual(errors,[]);
-  console.log('Leaderboard UI passed: sidebar trophy/active link, real podium order and metrics, guest privacy, personal standing, both modes, keyboard switching, refresh, mobile drawer; EN/DE at 1440/1024/768/600/390/320px; long names/large values; empty and 1/2/3-player results; escaped names; no overflow or JS errors.');
+  console.log('Leaderboard UI passed: sidebar trophy/active link, real podium order and metrics, guest privacy, personal standing, Daily default through direct and sidebar visits, explicit collection mode, keyboard switching, refresh, mobile drawer; EN/DE at 1440/1024/768/600/390/320px; long names/large values; empty and 1/2/3-player results; escaped names; no overflow or JS errors.');
 }finally{await browser.close();await new Promise(resolve=>server.close(resolve));closeDataStore(dir);await rm(dir,{recursive:true,force:true});}
