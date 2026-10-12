@@ -14,6 +14,7 @@ A price-guessing and trading game based on public listings from [Justiz-Auktion]
 - **Store reviews:** Verified player reviews stay above NPC feedback. Influence gives a small community-support bonus to likes; other players and NPC shoppers can add one like each. NPCs review completed purchases against the price paid and their price sensitivity. Editing a review clears its earned likes.
 - **Skill tree:** One point per account level, including existing levels. Unlock luck, store security and review influence; future branches are coming soon.
 - **Criminal record:** Your profile lists caught theft attempts, when they were recorded, and each exact fine. Older offenses remain accessible through “Show older offenses”.
+- **Player hub:** A personal level crest, XP progress and earned trading milestones guide your next step. Daily, collection and skills are close at hand; friends and the criminal record have separate profile tabs.
 - **Progress and friends:** Earn XP, level up, track trading profit and compare Daily scores and collections.
 - **English and German:** Play on desktop or mobile. Guests can start guessing immediately; accounts unlock rewards and trading.
 

@@ -104,7 +104,8 @@ try {
   listItem(dir,owner,{inventoryId:'gallery-item',startPrice:98,endsAt:new Date(Date.now()+900000).toISOString()});
   const previous=accounts.db(db=>db.prepare('SELECT COUNT(*) AS n FROM resale_auctions').get().n);await quick.click();await page.waitForFunction(()=>accountItems.find(item=>item.id==='gallery-item')?.listed===true);assert.equal(accounts.db(db=>db.prepare('SELECT COUNT(*) AS n FROM resale_auctions').get().n),previous);assert.equal(await quick.count(),0);
   // Listed and shelved finds open details without offering a quick listing.
-  await go('/inventory?state=listed&category=wine');await open(wineId);assert.equal(await page.locator('.inventory-item-dialog [data-economy="quick-list"]').count(),0);assert.equal(await page.locator('.inventory-detail-actions a').getAttribute('href'),'/auction-house?view=mine');await close();
+  // Listed copies may merge into an existing card; use its current representative.
+  await go('/inventory?state=listed&category=wine');await open(await page.locator('.inventory-card-trigger').first().getAttribute('data-inventory-detail'));assert.equal(await page.locator('.inventory-item-dialog [data-economy="quick-list"]').count(),0);assert.equal(await page.locator('.inventory-detail-actions a').getAttribute('href'),'/auction-house?view=mine');await close();
   await go('/inventory?focus=wine-0');await open('wine-0');await page.locator('.inventory-item-dialog [data-trader="unstock"]').click();await page.waitForFunction(()=>accountItems.find(item=>item.id==='wine-0')?.storeId===null);assert.equal(readItems().filter(item=>item.storeId===wine.id).length,1);
   // Existing action links still reach stock selection from the details handoff.
   await go('/inventory?focus=wine-0&action=stock');await page.waitForSelector('[data-trader="stock-confirm"]');assert.equal(await page.locator('.inventory-item-dialog').evaluate(el=>el.open),false);await page.locator('[data-trader="close"]').click();

@@ -1,0 +1,67 @@
+// Isolated browser regression: real caught theft plus historical pagination.
+import assert from 'node:assert/strict';
+import { createServer } from 'node:http';
+import { readFile,mkdtemp,rm } from 'node:fs/promises';
+import { fileURLToPath } from 'node:url';
+import path from 'node:path';
+import { Accounts } from '../src/accounts.mjs';
+import { createAccountApi } from '../src/account-api.mjs';
+import { createEconomyApi } from '../src/economy-api.mjs';
+import { closeDataStore,upsertAuctions } from '../src/database.mjs';
+import { buyBusiness,stockBusiness } from '../src/businesses.mjs';
+import { startStoreHeist,actStoreHeist,visitStore,playerCriminalRecord } from '../src/storefronts.mjs';
+import { listItem,placeBid,settleAuction } from '../src/resale.mjs';
+import { caseCatalog } from '../src/cases.mjs';
+import { loadCaseStoreCatalog,quoteCaseStore } from '../src/case-store.mjs';
+import { marketIndexes } from '../src/market.mjs';
+import { upgradeSkill } from '../src/skill-tree.mjs';
+import { featureFlags } from '../src/features.mjs';
+const {chromium}=await import(process.env.PLAYWRIGHT_MODULE||'/home/lxadm/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules/playwright/index.mjs');
+const root=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..'),dir=await mkdtemp('/tmp/jg-criminal-record-ui-');
+const env={ADMIN_USERNAME:'admin',ADMIN_PASSWORD:'criminal-record-browser-password',COOKIE_SECURE:'false'},flags=featureFlags(env);
+const json=(res,status,value)=>{res.writeHead(status,{'content-type':'application/json'});res.end(JSON.stringify(value));};
+const seed=JSON.parse(await readFile(path.join(root,'seed/auctions.json'),'utf8'));upsertAuctions(dir,seed.auctions);
+const api=await createAccountApi({dataDir:dir,json,env,flags,dailyPayload:async()=>({auctions:seed.auctions.slice(0,5)})}),accounts=new Accounts(dir,{flags});
+const adminToken=await accounts.login({username:'admin',password:env.ADMIN_PASSWORD}),owner=accounts.user(adminToken),now=Date.now();
+accounts.db(db=>{db.prepare('UPDATE users SET tokens=1000000 WHERE id=?').run(owner.id);db.prepare("INSERT INTO users(id,username,password_hash,tokens,created_at) VALUES('thief','Repeat_offender','disabled',100000,?)").run(now);db.prepare('INSERT INTO inventory(id,user_id,item,created_at) VALUES(?,?,?,?)').run('wine',owner.id,JSON.stringify({title:'Wine',price:100,marketCategory:'wine'}),now);});
+const shop=buyBusiness(dir,owner,'wine','popup',{now}).shop;stockBusiness(dir,owner,shop.id,['wine'],{now});
+const thief={id:'thief'},entry=visitStore(dir,thief,shop.id,{now}).store.stock[0],heist=startStoreHeist(dir,thief,{shopId:shop.id,inventoryId:entry.id,expectedPrice:entry.price,expectedFine:entry.theft.fine,requestId:'crime-browser-attempt-001'},{now,draw:max=>max-1});
+accounts.db(db=>db.prepare('UPDATE store_heists SET blackjack=? WHERE id=?').run(JSON.stringify({player:[2,3],dealer:[9,8],deck:[1,4,5],turn:0,outcome:'active'}),heist.id));
+actStoreHeist(dir,thief,{heistId:heist.id,action:'stand',turn:0,requestId:'crime-browser-stand-001'},{now});
+accounts.db(db=>{const insert=db.prepare(`INSERT INTO store_heists(id,user_id,business_id,owner_id,inventory_id,sequence,roll,chance,fee,created_at,ready_at,expires_at,status,result,blackjack,settled_at)
+ VALUES(?,'thief',?,?,'wine','[]',0,0,?,?,?,?,'caught','{}',?,?)`);for(let n=0;n<13;n++){const at=now-(n+1)*86400000;insert.run('historical-'+n,shop.id,owner.id,100+n,at,at+1000,at+600000,n===12?null:'{}',n===12?null:at+2000);}});
+const thiefToken=accounts.atomic(db=>accounts.session(db,'thief')),expected=playerCriminalRecord(dir,thief,{limit:50}),economy=createEconomyApi({dataDir:dir,json,flags,accounts});
+const server=createServer(async(req,res)=>{try{const url=new URL(req.url,'http://localhost');if(await api(req,res,url)||economy(req,res,url))return;if(url.pathname.startsWith('/api/'))return json(res,404,{error:'not_found'});const filename=url.pathname==='/'||!path.extname(url.pathname)?'/index.html':url.pathname,buf=await readFile(path.join(root,'dist',filename));res.writeHead(200,{'content-type':filename.endsWith('.js')?'text/javascript':filename.endsWith('.css')?'text/css':'text/html'});res.end(buf);}catch(error){json(res,500,{error:error.message});}});
+await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));const base=`http://127.0.0.1:${server.address().port}`;
+const browser=await chromium.launch({executablePath:process.env.CHROMIUM_PATH||'/home/lxadm/.cache/ms-playwright/chromium_headless_shell-1243/chrome-headless-shell-linux64/chrome-headless-shell',headless:true,args:['--no-sandbox']});
+try{
+ const context=await browser.newContext({viewport:{width:1440,height:1000}}),page=await context.newPage(),errors=[];page.on('pageerror',error=>errors.push(error.message));await context.addCookies([{name:'jg_session',value:thiefToken,url:base}]);
+ const go=async search=>{await page.goto(base+'/profile'+(search||''));await page.waitForSelector('.profile-hub');};
+ const language=async lang=>{await page.evaluate(lang=>{const select=document.querySelector('#language-select');select.value=lang;select.dispatchEvent(new Event('change',{bubbles:true}));},lang);};
+ const fits=async label=>{assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1),label+' page overflow');assert.ok(await page.locator('.profile-hero,.profile-tabs,.profile-milestone,.profile-play-card,.profile-wallet').evaluateAll(nodes=>nodes.every(el=>el.scrollWidth<=el.clientWidth+1)),label+' component overflow');};
+ await go();assert.equal(await page.locator('.profile-hero h1').innerText(),'Repeat_offender');assert.equal(await page.locator('[data-profile-tab="overview"]').getAttribute('aria-selected'),'true');assert.equal(await page.locator('.profile-next-goal').getAttribute('href'),'/');assert.equal(await page.locator('.profile-milestone.is-earned').count(),0);assert.equal(await page.locator('.profile-milestone.is-current').count(),1);assert.equal(await page.locator('.profile-xp').getAttribute('value'),'0');assert.equal(await page.locator('.profile-skill-bank > strong').innerText(),'1');assert.equal(await page.locator('.criminal-record-entry,#friend-form').count(),0);assert.equal(await page.locator('.profile-breakdown').evaluate(el=>el.open),false);
+ assert.equal(await page.locator('.profile-daily-card a').getAttribute('href'),'/');assert.equal(await page.locator('.profile-collection-card').getAttribute('href'),'/inventory');
+ await page.locator('.profile-breakdown summary').click();assert.equal(await page.locator('.economy-overview').isVisible(),true);await page.locator('.profile-breakdown summary').click();
+ await page.locator('[data-profile-tab="overview"]').focus();await page.keyboard.press('ArrowRight');assert.equal(await page.locator('[data-profile-tab="friends"]').getAttribute('aria-selected'),'true');assert.ok(page.url().includes('tab=friends'));assert.equal(await page.locator('#friend-form').count(),1);
+ await page.locator('#friend-form input[name="username"]').fill('admin');await page.locator('#friend-form button').click();await page.waitForSelector('.friend-request');assert.match(await page.locator('.friend-request').innerText(),/Waiting for a reply/);
+ accounts.acceptFriend(owner,thief.id);await page.locator('.profile-friends [data-account="refresh"]').click();await page.waitForSelector('.friend-card');assert.equal(await page.locator('.friend-card').count(),1);
+ await page.locator('[data-profile-tab="friends"]').focus();await page.keyboard.press('End');assert.equal(await page.locator('[data-profile-tab="record"]').getAttribute('aria-selected'),'true');assert.equal(await page.locator('.criminal-record-entry').count(),10);await page.locator('[data-account="criminal-record-more"]').click();await page.waitForFunction(()=>document.querySelectorAll('.criminal-record-entry').length===14);await page.locator('[data-profile-tab="record"]').focus();await page.keyboard.press('Home');assert.equal(await page.locator('[data-profile-tab="overview"]').getAttribute('aria-selected'),'true');
+ // Earn milestones through real Daily, collection, sale and purchase flows.
+ const lots=seed.auctions.slice(0,5).map((lot,index)=>({...lot,actualBid:100+index})),catalog=caseCatalog(lots);
+ let run=accounts.startGame(thief,'daily',()=>lots,undefined,catalog);accounts.answer(thief,run.id,0,lots[0].actualBid,catalog);
+ await go();assert.match(await page.locator('.profile-daily-card').innerText(),/In progress.*1 \/ 5/s);assert.match(await page.locator('.profile-daily-card a').innerText(),/Resume Daily/);
+ for(let n=1;n<5;n++)run=accounts.answer(thief,run.id,n,lots[n].actualBid,catalog);
+ await go();assert.equal(await page.locator('.profile-milestone.is-earned').count(),1);assert.equal(await page.locator('.profile-next-goal').getAttribute('href'),'/inventory');assert.equal(await page.locator('.profile-daily-card a').getAttribute('href'),'/leaderboard?view=daily');assert.match(await page.locator('.profile-daily-card').innerText(),/5,000 \/ 5,000/);
+ const box=accounts.claimDailyCase(thief,run.id),find=accounts.openSealedCase(thief,box.id);const saleEnd=Date.now()+3600000,listing=listItem(dir,thief,{inventoryId:find.id,startPrice:10,endsAt:new Date(saleEnd).toISOString()});placeBid(dir,owner,listing.id,20);settleAuction(dir,listing.id,{now:saleEnd+1000});
+ await go();assert.equal(await page.locator('.profile-milestone.is-earned').count(),3);assert.equal(await page.locator('.profile-next-goal').getAttribute('href'),'/auction-house');
+ const store=loadCaseStoreCatalog(dir),quote=accounts.db(db=>quoteCaseStore(store,marketIndexes(db,Date.now())));accounts.buyCase(thief,store,quote.cases[0].id,'profile-reinvest-case-001',quote.revision);
+ accounts.db(db=>db.prepare("UPDATE users SET xp=2000,username='Long_trader_name_<img src=x>' WHERE id='thief'").run());upgradeSkill(dir,thief,{skillId:'luck',rank:1,requestId:'profile-real-skill-001'});
+ await go();assert.equal(await page.locator('.profile-milestone.is-earned').count(),4);assert.equal(await page.locator('.profile-next-goal').count(),0);assert.equal(await page.locator('.profile-skill-bank > strong').innerText(),'4');assert.equal(await page.locator('.profile-hero img').count(),0);assert.match(await page.locator('.profile-hero h1').innerText(),/<img src=x>/);
+ for(const width of [1440,1024,768,600,390,320]){await page.setViewportSize({width,height:1000});for(const lang of ['en','de']){await language(lang);await fits(width+' '+lang);assert.equal(await page.locator('.profile-tabs [aria-selected="true"]').count(),1);if([1440,390].includes(width)){await page.locator('[data-notification="dismiss"]').evaluateAll(nodes=>nodes.forEach(node=>node.click()));await page.locator('.profile-hero').evaluate(el=>Promise.all(el.getAnimations().map(animation=>animation.finished.catch(()=>{}))));await page.screenshot({path:`/tmp/jg-profile-after-${width}-${lang}.png`,fullPage:true});}await page.locator('[data-profile-tab="friends"]').click();await fits('friends '+width+' '+lang);await page.locator('[data-profile-tab="record"]').click();assert.equal(await page.locator('.criminal-record-entry').count(),10);await fits('record '+width+' '+lang);await page.locator('[data-profile-tab="overview"]').click();}}
+ accounts.db(db=>db.prepare("UPDATE users SET xp=36100 WHERE id='thief'").run());await go();assert.equal(await page.locator('.profile-xp').getAttribute('value'),'1');assert.match(await page.locator('.profile-xp-caption').innerText(),/Max level reached|Maximallevel erreicht/);assert.doesNotMatch(await page.locator('.profile-xp-caption').innerText(),/21|NaN/);
+ for(const [skillId,ranks] of [['luck',[2,3]],['security',[1,2,3]]])for(const rank of ranks)upgradeSkill(dir,thief,{skillId,rank,requestId:`profile-zero-points-${skillId}-${rank}`});await go();assert.equal(await page.locator('.profile-skill-bank > strong').innerText(),'0');
+ await page.emulateMedia({reducedMotion:'reduce'});assert.equal(await page.locator('.profile-hero').evaluate(el=>getComputedStyle(el).animationName),'none');await go('?tab=record');await page.reload();await page.waitForSelector('.criminal-record-entry');assert.equal(await page.locator('[data-profile-tab="record"]').getAttribute('aria-selected'),'true');
+ await context.addCookies([{name:'jg_session',value:adminToken,url:base}]);await go('?tab=record');await page.waitForSelector('.criminal-record-clear');assert.equal(await page.locator('.criminal-record-entry').count(),0);
+ const guest=await browser.newContext(),anonymous=await guest.newPage();anonymous.on('pageerror',error=>errors.push(error.message));await anonymous.goto(base+'/profile');await anonymous.waitForSelector('#account-content a[href="/login"]');assert.equal(await anonymous.locator('.profile-hero,.profile-tabs').count(),0);await guest.close();
+ assert.deepEqual(errors,[]);console.log('Profile hub passed: real progression, Daily idle/resume/completion, all four earned milestones, real skill points, next actions, friends request/accept, record pagination/deep links/account isolation, keyboard tabs, max level, escaping, reduced motion, EN/DE 1440–320px without overflow.');
+}finally{await browser.close();await new Promise(resolve=>server.close(resolve));closeDataStore(dir);await rm(dir,{recursive:true,force:true});}

@@ -8,8 +8,7 @@ function traderStoreLabel(id) {
   const labels={wine:['Wine store','Weinhandlung'],toys:['Toy store','Spielwarenladen'],electronics:['Electronics store','Elektronikladen'],cars:['Car dealership','Autohaus']};
   return labels[id]?t(...labels[id]):id;
 }
-function traderMilestonesMarkup() {
-  if (!account) return '';
+function traderMilestoneState() {
   const done = new Set((account.traderMilestones || []).map(entry => entry.step));
   const steps = [
     ['daily', t('Complete Daily', 'Daily abschließen'), '/'],
@@ -22,6 +21,11 @@ function traderMilestonesMarkup() {
   else if (next?.[0]==='sale' && !account.traderStock?.available && account.traderStock?.inStores) next=['sale',t('Check your store sales','Prüfe deine Ladenverkäufe'),'/businesses'];
   else if (next?.[0]==='sale' && account.traderStock?.available===0) next=['sale',t('Acquire your next find','Erwirb deinen nächsten Fund'),account.tokens>0?'/auction-house':'/'];
   if (next?.[0]==='reinvest' && account.tokens===0) next=['reinvest',t('Earn capital with Daily','Verdiene Handelskapital mit Daily'),'/'];
+  return {done,steps,next};
+}
+function traderMilestonesMarkup() {
+  if (!account) return '';
+  const {done,steps,next}=traderMilestoneState();
   return `<section class="trader-progress" aria-label="${t('Milestones','Meilensteine')}">${next?`<div><strong>${t('Next step','Nächster Schritt')}: ${next[1]}</strong></div><a class="secondary-button" href="${next[2]}" data-page>${t('Continue','Weiter')} →</a>`:''}<details><summary>${t('Milestones','Meilensteine')} · ${steps.filter(([id])=>done.has(id)).length}/4</summary><ol>${steps.map(([id,label])=>`<li>${done.has(id)?'✓':'○'} ${label}</li>`).join('')}</ol></details></section>`;
 }
 

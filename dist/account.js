@@ -587,12 +587,7 @@ function criminalRecordMarkup() {
   }).join('');
   return `<section class="profile-criminal-record" aria-labelledby="criminal-record-title"><header><h2 id="criminal-record-title">${t('Criminal record', 'Strafregister')}</h2>${record.total ? `<p>${number(record.total)} ${t('recorded offenses', 'erfasste Vergehen')} · ${t('Total penalties', 'Strafen gesamt')}: ${justizEuro(record.totalPenalties)}</p>` : ''}</header>${rows ? `<ol class="criminal-record-list">${rows}</ol>${record.hasMore ? `<button type="button" class="secondary-button" data-account="criminal-record-more">${t('Show older offenses', 'Ältere Vergehen anzeigen')}</button>` : ''}` : `<p class="criminal-record-clear">${t('No recorded offenses.', 'Keine erfassten Vergehen.')}</p>`}</section>`;
 }
-function renderProfile() {
-  accountContent.innerHTML = pageHeading(account ? accountEscape(account.username) : t('Profile', 'Profil'));
-  if (!account) { accountContent.innerHTML += loginNotice('profile'); return; }
-  accountContent.innerHTML += economyOverviewMarkup() + traderMilestonesMarkup() + `<p class="trader-links"><a href="/leaderboard?view=daily" data-page>${t('Daily scores', 'Daily-Ergebnisse')} →</a><a href="/leaderboard?view=collection" data-page>${t('Collection prestige', 'Sammlungsrangliste')} →</a></p>` + progressionMarkup(account.progression) + `<div class="profile-stats"><div><span>JUSTIZ€</span><strong>${justizEuro(account.tokens)}</strong></div><div><span>${t('TODAY’S DAILY', 'HEUTIGES DAILY')}</span><strong>${dailyFriendLabel(account.daily)}</strong></div><button class="secondary-button" data-account="logout">${t('Log out', 'Abmelden')}</button></div>${rewardBanner()}
-    ${criminalRecordMarkup()}<section class="profile-friends"><div class="friends-heading"><div><h2>${t('Friends', 'Freunde')}</h2><p>${t('Daily for', 'Daily vom')} ${accountFriends.date} · ${t('Resets at 00:00 UTC', 'Reset um 00:00 UTC')}</p></div><button data-account="refresh">${t('Refresh', 'Aktualisieren')}</button></div>${friendsMarkup()}</section>`;
-}
+function renderProfile() { window.profileUi.render(); }
 function friendsMarkup() {
   const accepted = accountFriends.friends.filter(friend => friend.status === 'accepted');
   const incoming = accountFriends.friends.filter(friend => friend.status === 'incoming');
