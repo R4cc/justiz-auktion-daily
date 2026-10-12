@@ -462,9 +462,9 @@ test('progression terminal state and active economy routes remain in syntax veri
   const terminal = vm.runInContext('progressionMarkup({level:20,xp:36100,nextLevelXp:null,progress:1})', context);
   assert.match(terminal, /Level 20 reached/); assert.doesNotMatch(terminal, /NaN/);
   const index = await readFile(new URL('../dist/index.html', import.meta.url), 'utf8');
-  for (const route of ['/', '/auction-house', '/market', '/inventory', '/businesses', '/town']) assert.ok(index.includes(`href="${route}"`));
+  for (const route of ['/', '/leaderboard', '/auction-house', '/market', '/inventory', '/businesses', '/town']) assert.ok(index.includes(`href="${route}"`));
   assert.ok(!index.includes('href="/news"'));
-  assert.doesNotMatch(index, /href="\/(auctions|marketplace|shop|leaderboard|stores)"/);
+  assert.doesNotMatch(index, /href="\/(auctions|marketplace|shop|stores)"/);
   assert.match(index, /id="nav-play-title"[\s\S]*href="\/"[\s\S]*id="nav-trading-title"[\s\S]*href="\/auction-house"[\s\S]*href="\/inventory"[\s\S]*id="nav-town-title"[\s\S]*href="\/businesses"[\s\S]*href="\/town"[\s\S]*id="nav-account-title"[\s\S]*id="header-auth"[\s\S]*href="\/admin"/);
   assert.match(index, /class="sidebar-toggle"[\s\S]*aria-controls="site-menu"[\s\S]*aria-expanded="false"/);
   assert.match(index, /id="notification-button"[\s\S]*class="notification-badge"[\s\S]*id="notification-panel"[\s\S]*id="notification-toasts"/);
