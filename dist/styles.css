@@ -1465,10 +1465,6 @@ body { padding-left: var(--sidebar-width); }
 .store-heist-content h2 { padding-right: 1.5rem; font-size: 1.4rem; }
 .store-heist-content h3 { overflow-wrap: anywhere; }
 .store-heist-content p { line-height: 1.6; }
-.store-memory-arrow { display: grid; place-items: center; height: 120px; font: 700 4rem 'DM Mono', monospace; color: var(--accent); background: white; border: 1px solid var(--line); border-radius: 12px; }
-.store-direction-pad { display: grid; grid-template-columns: repeat(4,minmax(0,1fr)); gap: .5rem; }
-.store-direction-pad button { min-height: 70px; font-size: 1.7rem; padding: .5rem; }
-.store-direction-pad small { display: block; font-size: .7rem; }
 @media (max-width: 650px) { .store-search { grid-template-columns: minmax(0,1fr); } .store-front > div:last-child, .store-reviews { padding: 1rem; } .store-heist-content { padding: 1.2rem; } .store-action-row button, .store-action-row a { min-height: 44px; } }
 
 .store-event-dialog { width: min(640px, calc(100% - 2rem)); max-height: 90dvh; overflow: auto; padding: 0; border: 1px solid var(--ink); border-radius: 14px; background: var(--paper); color: var(--ink); }
@@ -1987,4 +1983,43 @@ body { padding-left: var(--sidebar-width); }
   .store-owner-remove { grid-column: 2; min-height: 44px; }
   .store-owner-reviews { padding: 18px; }
   .business-quick-content { padding: 24px; }
+}
+
+/* Player theft uses the shared opening reel with red and black pockets. */
+.store-heist-dialog { width: min(720px, calc(100vw - 24px)); max-width: 720px; border-color: #584044; background: #211b20; color: #fff5ed; }
+.roulette-content { padding: 32px; background: radial-gradient(ellipse at 50% 0, #54242d, transparent 65%), #211b20; }
+.roulette-content .dialog-close { color: #fff5ed; border-color: #ffffff55; }
+.roulette-content > .eyebrow { margin: 0 0 10px; color: #e8a4ac; font-size: .65rem; }
+.roulette-content h2 { margin: 0 0 16px; font-size: 1.8rem; letter-spacing: -.04em; }
+.roulette-content h3 { font-size: 1rem; }
+.roulette-content > p { font-size: .85rem; color: #e6d3d5; }
+.roulette-content .store-hint { color: #cbb9bc; font-size: .75rem; }
+.roulette-content .account-error { color: #ffbbc3; }
+.roulette-choices { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; margin: 24px 0; }
+.roulette-choice { display: flex; align-items: center; justify-content: center; gap: 12px; min-height: 78px; padding: 18px; border: 2px solid #ffffff33; border-radius: 12px; color: white; font-size: 1.1rem; font-weight: 800; }
+.roulette-red { background: #b32c40; }
+.roulette-black { background: #111217; }
+.roulette-choice > span { font-size: 1.7rem; }
+.roulette-choice[aria-pressed="true"] { border-color: #f7dfb2; box-shadow: 0 0 0 3px #f7dfb233; }
+.roulette-choice:focus-visible { outline: 3px solid #f7dfb2; outline-offset: 4px; }
+.roulette-quote { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; padding: 18px 0; border-top: 1px solid #ffffff22; border-bottom: 1px solid #ffffff22; }
+.roulette-quote dt { color: #cbb9bc; font-size: .75rem; }
+.roulette-quote dd { margin: 8px 0 0; font: 500 1.25rem 'DM Mono', monospace; overflow-wrap: anywhere; }
+.roulette-content .primary-button { min-height: 44px; margin: 12px 0 0; background: #f7dfb2; color: #321b20; border-color: #f7dfb2; }
+.roulette-content > .primary-button { width: 100%; }
+.roulette-content .primary-button:disabled { opacity: .45; cursor: default; }
+.roulette-content .secondary-button { min-height: 44px; color: #fff5ed; border-color: #ffffff55; }
+.roulette-content .secondary-button:hover { background: #ffffff15; }
+.roulette-window { height: 208px; border: 1px solid #ffffff33; border-radius: 12px; margin: 24px 0; background: #121216; }
+.roulette-window::after { background: linear-gradient(90deg, #111216ee, transparent 20%, transparent 80%, #111216ee); }
+.roulette-window .case-marker { background: #f7dfb2; }
+.roulette-card { display: grid; place-content: center; justify-items: center; flex: none; width: 144px; height: 174px; gap: 12px; border: 1px solid #ffffff33; border-radius: 10px; color: #fff5ed; }
+.roulette-card > span { font-size: 3rem; line-height: 1; }
+.roulette-card > strong { font-size: .9rem; }
+.roulette-window .is-pulled { box-shadow: inset 0 0 0 2px #f7dfb2, 0 0 24px #f7dfb255; }
+@media (max-width: 600px) {
+  .roulette-content { padding: 26px 18px 20px; }
+  .roulette-content h2 { font-size: 1.5rem; }
+  .roulette-choice { min-height: 68px; padding: 14px 10px; gap: 8px; }
+  .roulette-content .store-action-row { flex-direction: column; align-items: stretch; }
 }

@@ -11,6 +11,10 @@ export const ECONOMY_BALANCE = Object.freeze({
   sealedCaseValueRate: .80,
   paletteReserveRate: .70,
   wholesaleReserveRate: .85,
+  // Theft returns 30% of its fee in expected live market value. Even a
+  // max-markup store's 150% collector payout (3x market) stays below the fee
+  // in expectation at the quoted market, before any stock-loss race.
+  theftExpectedReturn: .30,
   businessDefaultMargin: 20,
   businessMarginElasticity: 3,
   npcResaleMinimum: .60,

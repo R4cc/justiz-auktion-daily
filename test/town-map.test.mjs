@@ -184,12 +184,12 @@ test('district theft odds appear in quotes, reject stale odds and freeze into pa
   f.accounts.db(db => db.prepare('UPDATE businesses SET mischief_enabled=1').run());
   const stock = shop => visitStore(f.dir, f.buyer, shop.id, { now }).store.stock[0];
   assert.equal(stock(shops[0]).theft.chancePercent, 52); assert.equal(stock(shops[1]).theft.chancePercent, 18);
-  const payload = { shopId:shops[0].id, inventoryId:'wine-0', expectedPrice:120, expectedFee:10, expectedChance:29, requestId:'town-heist-attempt-001' };
+  const payload = { shopId:shops[0].id, inventoryId:'wine-0', expectedPrice:120, expectedFee:97, expectedChance:29, choice:'black', requestId:'town-heist-attempt-001' };
   const before = f.balance(f.buyer);
   assert.throws(() => startStoreHeist(f.dir, f.buyer, payload, { now }), /store_risk_changed/);
   assert.equal(f.balance(f.buyer), before);
-  const attempt = startStoreHeist(f.dir, f.buyer, { ...payload, expectedChance:52 }, { now, draw:() => 0 });
-  assert.equal(f.balance(f.buyer), before - 10);
+  const attempt = startStoreHeist(f.dir, f.buyer, { ...payload, expectedFee:174, expectedChance:52 }, { now, draw:() => 0 });
+  assert.equal(f.balance(f.buyer), before - 174);
   customizeStore(f.dir, f.owner, {shopId:shops[0].id,name:'Goose',motto:'',gooseGuard:true,requestId:'town-goose-profile-001'}, { now });
   assert.equal(stock(shops[0]).theft.chancePercent, 26);
   assert.equal(f.accounts.db(db => db.prepare('SELECT chance FROM store_heists WHERE id=?').get(attempt.id).chance), 52);

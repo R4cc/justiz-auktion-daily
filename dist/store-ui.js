@@ -2,8 +2,6 @@ window.storeUi = (() => {
   const esc = accountEscape;
   const names = { wine: ['Wine store', 'Weinhandlung'], toys: ['Toy store', 'Spielwarenladen'], electronics: ['Electronics store', 'Elektronikladen'], cars: ['Car dealership', 'Autohaus'] };
   const symbols = { wine: 'VIN', toys: 'TOY', electronics: 'TECH', cars: 'AUTO' };
-  const arrows = ['↑', '→', '↓', '←'];
-  const directions = [['Up', 'Hoch'], ['Right', 'Rechts'], ['Down', 'Runter'], ['Left', 'Links']];
   const typeName = type => names[type] ? t(...names[type]) : type;
   let data = null, timer = null, generation = 0, busy = false, game = null, gameVersion = 0, timers = [], returnFocus = null;
   let eventQueue = [], eventOwner = null, eventPending = false, eventReturnFocus = null;
@@ -87,7 +85,7 @@ window.storeUi = (() => {
   function shelfCard(entry, store) {
     const available = account && !store.own;
     const cooling = Date.now() < store.cooldownUntil;
-    return `<article class="store-shelf-card">${entry.item.image ? `<img src="${esc(entry.item.image)}" alt="" loading="lazy">` : `<div class="store-item-placeholder" aria-hidden="true">${esc(symbols[store.type])}</div>`}<div class="store-shelf-info"><h3>${esc(entry.item.title)}</h3><p class="store-price">${justizEuro(entry.price)}</p><div class="store-action-row"><button class="primary-button" data-store="buy" data-item="${esc(entry.id)}" ${!available || busy || account.tokens < entry.price ? 'disabled' : ''}>${t('Buy', 'Kaufen')} · ${justizEuro(entry.price)}</button>${entry.theft ? `<button class="secondary-button" data-store="heist" data-item="${esc(entry.id)}" ${!available || busy || cooling || account.tokens < entry.theft.fee ? 'disabled' : ''}>${t('Try to steal', 'Diebstahl versuchen')}</button><small>${t('Mischief fee', 'Unfuggebühr')} ${justizEuro(entry.theft.fee)} · ${entry.theft.chancePercent}% ${t('chance after a perfect minigame', 'Chance nach einem perfekten Minispiel')}</small>` : ''}</div></div></article>`;
+    return `<article class="store-shelf-card">${entry.item.image ? `<img src="${esc(entry.item.image)}" alt="" loading="lazy">` : `<div class="store-item-placeholder" aria-hidden="true">${esc(symbols[store.type])}</div>`}<div class="store-shelf-info"><h3>${esc(entry.item.title)}</h3><p class="store-price">${justizEuro(entry.price)}</p><div class="store-action-row"><button class="primary-button" data-store="buy" data-item="${esc(entry.id)}" ${!available || busy || account.tokens < entry.price ? 'disabled' : ''}>${t('Buy', 'Kaufen')} · ${justizEuro(entry.price)}</button>${entry.theft ? `<button class="secondary-button" data-store="heist" data-item="${esc(entry.id)}" ${!available || busy || cooling || account.tokens < entry.theft.fee ? 'disabled' : ''}>${t('Try to steal', 'Diebstahl versuchen')}</button><small>${t('Mischief fee', 'Unfuggebühr')} ${justizEuro(entry.theft.fee)} · ${entry.theft.chancePercent}% ${t('chance to land on your color', 'Chance auf deine Farbe')}</small>` : ''}</div></div></article>`;
   }
   function reviewStars(stars) {
     return `<span class="store-review-stars" role="img" aria-label="${stars} ${t('out of 5 stars', 'von 5 Sternen')}">${[1,2,3,4,5].map(value => `<span aria-hidden="true" class="${value <= stars ? 'is-filled' : ''}">★</span>`).join('')}</span>`;
@@ -126,59 +124,47 @@ window.storeUi = (() => {
     }
   }
   function closeButton() { return `<button type="button" class="dialog-close" data-store="close-heist" aria-label="${t('Close', 'Schließen')}">×</button>`; }
+  const colorName = color => color === 'red' ? t('Red', 'Rot') : t('Black', 'Schwarz');
+  const rouletteCard = item => `<div class="roulette-card roulette-${item.rarity}"><span aria-hidden="true">${item.rarity === 'red' ? '◆' : '♠'}</span><strong>${colorName(item.rarity)}</strong></div>`;
   function openHeist(entry, button) {
-    returnFocus = button; game = { entry }; clearGameTimers();
-    heistDialog.innerHTML = `<div class="store-heist-content">${closeButton()}<h2 id="store-heist-title">${t('Theft attempt', 'Diebstahlversuch')}</h2><h3>${esc(entry.item.title)}</h3><p>${t('Watch six arrows, then repeat them from memory. A perfect sequence earns a chance to escape with this item.', 'Merke dir sechs Pfeile und wiederhole sie. Eine perfekte Folge gibt dir eine Chance, mit diesem Artikel zu entkommen.')}</p><p><strong>${entry.theft.chancePercent}% ${t('escape chance', 'Fluchtchance')}</strong> · ${t('Attempt fee', 'Versuchsgebühr')}: <strong>${justizEuro(entry.theft.fee)}</strong></p><p class="store-hint">${t('The owner keeps the fee whether you win, lose or leave. Stock may sell while you play. You have 65 seconds. After starting, wait 30 minutes before another attempt.', 'Der Besitzer behält die Gebühr bei Erfolg, Misserfolg oder Abbruch. Ware kann während des Spiels verkauft werden. Du hast 65 Sekunden. Nach dem Start musst du 30 Minuten auf den nächsten Versuch warten.')}</p><button class="primary-button" data-store="start-heist">${t('Pay fee & start', 'Gebühr zahlen & starten')} · ${justizEuro(entry.theft.fee)}</button><p class="account-error" role="alert"></p></div>`;
-    heistDialog.showModal(); heistDialog.querySelector('[data-store="start-heist"]').focus();
+    returnFocus = button; clearGameTimers(); game = { entry, choice: null };
+    heistDialog.innerHTML = `<div class="store-heist-content roulette-content">${closeButton()}<p class="eyebrow">${t('PLAYER THEFT', 'SPIELERDIEBSTAHL')}</p><h2 id="store-heist-title">${t('Pick your color', 'Wähle deine Farbe')}</h2><h3>${esc(entry.item.title)}</h3><p>${t('Land on your color to steal this item. Both choices have the same odds; store security weights the result.', 'Lande auf deiner Farbe, um diesen Artikel zu stehlen. Beide Farben haben dieselbe Chance; die Ladensicherheit bestimmt die Gewichtung.')}</p><div class="roulette-choices" role="group" aria-label="${t('Choose a color', 'Farbe wählen')}">${['red','black'].map(color => `<button type="button" class="roulette-choice roulette-${color}" data-store="choose-color" data-color="${color}" aria-pressed="false"><span aria-hidden="true">${color === 'red' ? '◆' : '♠'}</span>${colorName(color)}</button>`).join('')}</div><dl class="roulette-quote"><div><dt>${t('Success chance', 'Erfolgschance')}</dt><dd>${entry.theft.chancePercent}%</dd></div><div><dt>${t('Attempt fee', 'Versuchsgebühr')}</dt><dd>${justizEuro(entry.theft.fee)}</dd></div></dl><p class="store-hint">${t('You pay on every attempt. The owner keeps the fee, even if you lose or close the spin. Repeated attempts lose value on average. One attempt every 30 minutes; one per store every 5 minutes.', 'Du zahlst bei jedem Versuch. Der Besitzer behält die Gebühr, auch wenn du verlierst oder das Drehen schließt. Wiederholte Versuche verlieren im Durchschnitt an Wert. Ein Versuch alle 30 Minuten; pro Laden alle 5 Minuten.')}</p><button class="primary-button" data-store="start-heist" disabled>${t('Pay fee & spin', 'Gebühr zahlen & drehen')} · ${justizEuro(entry.theft.fee)}</button><p class="account-error" role="alert"></p></div>`;
+    heistDialog.showModal(); heistDialog.querySelector('[data-store="choose-color"]').focus();
   }
   function playHeist(attempt) {
-    clearGameTimers(); game = { attempt, moves: [], phase: 'watch' }; const version = gameVersion;
-    heistDialog.innerHTML = `<div class="store-heist-content">${closeButton()}<h2 id="store-heist-title">${t('Watch the route', 'Merke dir den Weg')}</h2><p data-heist-status role="status" aria-live="polite">${t('Watch carefully…', 'Schau genau hin …')}</p><div class="store-memory-arrow" data-heist-arrow aria-live="polite">…</div><p data-heist-progress>0 / 6</p><div class="store-direction-pad">${directions.map((labels,index) => `<button type="button" data-store="move" data-move="${index}" disabled aria-label="${t(...labels)}">${arrows[index]}<small>${t(...labels)}</small></button>`).join('')}</div><p class="store-hint">${t('Repeat using the buttons or arrow keys. The first completed sequence is final.', 'Wiederhole mit den Tasten oder Pfeiltasten. Die erste vollständige Folge zählt.')}</p><p data-heist-time></p><p class="account-error" role="alert"></p><button class="secondary-button" data-store="retry-finish" hidden>${t('Retry result', 'Ergebnis erneut laden')}</button></div>`;
+    clearGameTimers(); game = { attempt, phase: 'finish' };
+    heistDialog.innerHTML = `<div class="store-heist-content roulette-content">${closeButton()}<p class="eyebrow">${t('PLAYER THEFT', 'SPIELERDIEBSTAHL')}</p><h2 id="store-heist-title">${t('Red or black?', 'Rot oder Schwarz?')}</h2><p>${t('Your pick', 'Deine Wahl')}: <strong>${colorName(attempt.choice)}</strong> · ${attempt.chancePercent}%</p><div class="case-window roulette-window" aria-hidden="true"><div class="case-marker"></div><div class="case-reel">${Array.from({length:6}, (_,n) => rouletteCard({rarity:n%2?'black':'red'})).join('')}</div></div><p data-roulette-status role="status">${t('Spinning…', 'Die Rolle dreht sich …')}</p><p class="account-error" role="alert"></p><button class="secondary-button" data-store="retry-finish" hidden>${t('Resume spin', 'Drehen fortsetzen')}</button></div>`;
     if (!heistDialog.open) heistDialog.showModal();
-    const status = heistDialog.querySelector('[data-heist-status]'), arrow = heistDialog.querySelector('[data-heist-arrow]');
-    attempt.sequence.forEach((move,index) => later(() => {
-      if (version !== gameVersion) return;
-      arrow.textContent = arrows[move]; status.textContent = `${t('Watch', 'Ansehen')} ${index+1} / 6 · ${t(...directions[move])}`;
-    }, 250 + index * 750));
-    later(() => {
-      if (version !== gameVersion) return;
-      arrow.textContent = '?'; game.phase = 'repeat'; status.textContent = t('Your turn. Repeat the six arrows.', 'Du bist dran. Wiederhole die sechs Pfeile.');
-      heistDialog.querySelectorAll('[data-store="move"]').forEach(button => button.disabled = false);
-      heistDialog.querySelector('[data-store="move"]').focus({preventScroll:true});
-    }, Math.max(5000, attempt.readyAt - Date.now() + 100));
-    const countdown = () => {
-      if (version !== gameVersion) return;
-      const left = Math.max(0, Math.ceil((attempt.expiresAt-Date.now())/1000));
-      heistDialog.querySelector('[data-heist-time]').textContent = `${left}s ${t('left', 'übrig')}`;
-      if (!left) { if (!busy) finishHeist(); else later(countdown, 500); }
-      else later(countdown, 1000);
-    }; countdown();
-  }
-  function addMove(move) {
-    if (!game || game.phase !== 'repeat' || busy || game.moves.length >= 6) return;
-    game.moves.push(move); heistDialog.querySelector('[data-heist-progress]').textContent = `${game.moves.length} / 6`;
-    heistDialog.querySelector('[data-heist-arrow]').textContent = arrows[move];
-    if (game.moves.length === 6) finishHeist();
+    // Legacy paid attempts may still have a ready_at delay. New roulette
+    // attempts settle immediately, before the shared case animation plays.
+    later(() => finishHeist(), Math.max(0, attempt.readyAt - Date.now()));
   }
   const outcomes = {
-    stolen: ['You slipped away with the item. It’s in your inventory!', 'Du bist mit dem Artikel entkommen. Er liegt in deinem Inventar!'],
-    caught: ['Caught! The till coughed. The goose looked suspicious. No loot today.', 'Erwischt! Die Kasse hustete. Die Gans schaute misstrauisch. Heute keine Beute.'],
-    fumbled: ['Wrong turn! You walked straight back to the counter.', 'Falsch abgebogen! Du bist direkt zurück zur Kasse gelaufen.'],
-    gone: ['Too late — the item already left the shelf. An empty-handed getaway.', 'Zu spät — der Artikel ist schon weg. Flucht mit leeren Händen.'],
-    expired: ['Time ran out. Your grand escape became an awkward stroll.', 'Zeit abgelaufen. Aus der großen Flucht wurde ein peinlicher Spaziergang.']
+    stolen: ['Color matched. You stole the item! It’s in your inventory.', 'Farbe getroffen. Artikel gestohlen! Er liegt in deinem Inventar.'],
+    caught: ['Wrong color. No item this time.', 'Falsche Farbe. Diesmal kein Artikel.'],
+    fumbled: ['This older attempt failed.', 'Dieser ältere Versuch ist gescheitert.'],
+    gone: ['The item already left the shelf. Your attempt fee was spent.', 'Der Artikel ist bereits aus dem Regal verschwunden. Deine Versuchsgebühr wurde bezahlt.'],
+    expired: ['This paid attempt expired. The fee stays with the owner.', 'Dieser bezahlte Versuch ist abgelaufen. Die Gebühr bleibt beim Besitzer.']
   };
   async function finishHeist() {
     if (!game?.attempt || busy) return;
-    const visit = accountVisit, owner = account?.id, attempt = game.attempt, moves = [...game.moves], version = gameVersion;
-    busy = true; game.phase = 'finish'; heistDialog.querySelectorAll('[data-store="move"]').forEach(button => button.disabled = true);
+    const visit = accountVisit, owner = account?.id, attempt = game.attempt, version = gameVersion;
+    busy = true;
     try {
-      const result = await accountApi('stores/heist/finish', { heistId: attempt.id, moves });
+      const result = await accountApi('stores/heist/finish', { heistId: attempt.id });
       if (owner !== account?.id || visit !== accountVisit) return;
       updateAccount(result.user); await refresh(visit);
       if (version !== gameVersion || !heistDialog.open) return;
-      clearGameTimers(); game = null;
-      heistDialog.innerHTML = `<div class="store-heist-content">${closeButton()}<h2 id="store-heist-title">${t('Mischief report', 'Unfugbericht')}</h2><p role="status">${t(...outcomes[result.heist.outcome])}</p><p class="store-hint">${t('The owner keeps your attempt fee.', 'Der Besitzer behält deine Versuchsgebühr.')} ${justizEuro(result.heist.fee)}</p><div class="store-action-row">${result.heist.outcome === 'stolen' ? `<a href="/inventory" class="primary-button" data-page>${t('View inventory', 'Inventar ansehen')}</a>` : ''}<button class="secondary-button" data-store="close-heist">${t('Back to the store', 'Zurück zum Laden')}</button></div></div>`;
-      heistDialog.querySelector('[data-store="close-heist"]').focus();
+      const color = result.heist.color || (result.heist.outcome === 'stolen' ? attempt.choice : attempt.choice === 'red' ? 'black' : 'red');
+      const reel = heistDialog.querySelector('.case-reel'), viewport = heistDialog.querySelector('.case-window');
+      await spinCaseReel(reel, viewport, {rarity:color}, [{rarity:'red'},{rarity:'black'}], () => version === gameVersion && owner === account?.id && visit === accountVisit && heistDialog.open, rouletteCard);
+      if (version !== gameVersion || !heistDialog.open || owner !== account?.id || visit !== accountVisit) return;
+      game.phase = 'done';
+      heistDialog.querySelector('[data-roulette-status]').innerHTML = `<strong>${colorName(color)}</strong> · ${t(...outcomes[result.heist.outcome])}`;
+      heistDialog.querySelector('.account-error').textContent = '';
+      heistDialog.querySelector('[data-store="retry-finish"]').hidden = true;
+      heistDialog.querySelector('.roulette-content').insertAdjacentHTML('beforeend', `<p class="store-hint">${t('Attempt fee paid to the owner', 'Versuchsgebühr an den Besitzer gezahlt')}: ${justizEuro(result.heist.fee)}</p><div class="store-action-row">${result.heist.outcome === 'stolen' ? `<a href="/inventory" class="primary-button" data-page>${t('View inventory', 'Inventar ansehen')}</a>` : ''}<button class="secondary-button" data-store="close-heist">${t('Back to the store', 'Zurück zum Laden')}</button></div>`);
+      heistDialog.querySelector('.store-action-row [data-store="close-heist"]').focus();
     } catch (error) {
       if (version === gameVersion && heistDialog.open) { heistDialog.querySelector('.account-error').textContent = error.message; heistDialog.querySelector('[data-store="retry-finish"]').hidden = false; }
     } finally { if (visit === accountVisit) { busy = false; render(); } }
@@ -193,15 +179,17 @@ window.storeUi = (() => {
     }
     returnFocus = null;
   });
-  heistDialog.addEventListener('keydown', event => {
-    const move = ['ArrowUp','ArrowRight','ArrowDown','ArrowLeft'].indexOf(event.key);
-    if (move !== -1 && game?.phase === 'repeat') { event.preventDefault(); addMove(move); }
-  });
   document.addEventListener('click', async event => {
     const button = event.target.closest('[data-store]'); if (!button || currentAccountPage !== '/stores') return;
     const action = button.dataset.store;
     if (action === 'close-heist') { heistDialog.close(); return; }
-    if (action === 'move') { addMove(Number(button.dataset.move)); return; }
+    if (action === 'choose-color') {
+      if (busy || !game?.entry || !['red','black'].includes(button.dataset.color)) return;
+      game.choice = button.dataset.color;
+      heistDialog.querySelectorAll('[data-store="choose-color"]').forEach(entry => entry.setAttribute('aria-pressed', String(entry.dataset.color === game.choice)));
+      heistDialog.querySelector('[data-store="start-heist"]').disabled = false;
+      return;
+    }
     if (action === 'retry-finish') { await finishHeist(); return; }
     if (busy || !account || !data?.store) return;
     const store = data.store, visit = accountVisit, owner = account.id;
@@ -211,8 +199,8 @@ window.storeUi = (() => {
     try {
       let result;
       if (action === 'start-heist') {
-        const entry = game?.entry; if (!entry) return;
-        result = await mutate('stores/heist/start', { shopId: store.id, inventoryId: entry.id, expectedPrice: entry.price, expectedFee: entry.theft.fee, expectedChance: entry.theft.chancePercent }, true);
+        const entry = game?.entry; if (!entry || !['red','black'].includes(game.choice)) return;
+        result = await mutate('stores/heist/start', { shopId: store.id, inventoryId: entry.id, expectedPrice: entry.price, expectedFee: entry.theft.fee, expectedChance: entry.theft.chancePercent, choice: game.choice }, true);
         if (visit !== accountVisit || owner !== account?.id) return;
         updateAccount(result.user); data = {store:result.store}; render();
         if (heistDialog.open && result.store.heist?.outcome === 'active') playHeist(result.store.heist);
@@ -251,7 +239,7 @@ window.storeUi = (() => {
     event.preventDefault(); if (busy || !account) return;
     const visit = accountVisit, owner = account.id; busy = true; const button = form.querySelector('[type="submit"]'); button.disabled = true;
     try {
-      const result = profile ? await mutate('businesses/profile', { shopId: form.dataset.shop, name: form.elements.storeName.value, motto: form.elements.motto.value, gooseGuard: form.elements.gooseGuard.checked, mischiefEnabled: form.elements.mischiefEnabled.checked }, true)
+      const result = profile ? await mutate('businesses/profile', { shopId: form.dataset.shop, name: form.elements.storeName.value, motto: form.elements.motto.value, gooseGuard: form.elements.gooseGuard.checked }, true)
         : await mutate('stores/review', { shopId: data.store.id, stars: Number(form.elements.stars.value), comment: form.elements.comment.value });
       if (visit !== accountVisit || owner !== account?.id) return;
       if (result.user) updateAccount(result.user);

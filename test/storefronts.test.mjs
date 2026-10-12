@@ -8,7 +8,7 @@ import { closeDataStore } from '../src/database.mjs';
 import { buyBusiness, businessDashboard, stockBusiness, unstockBusiness } from '../src/businesses.mjs';
 import { adjustAdminMarket } from '../src/admin-economy.mjs';
 import { ensureStoreSchema, listStores, visitStore, recordStoreVisit, buyStoreItem, reviewStore, reactToStore, tipStore, customizeStore,
-  startStoreHeist, finishStoreHeist, HEIST_COOLDOWN, STORE_HEIST_COOLDOWN } from '../src/storefronts.mjs';
+  theftQuote, startStoreHeist, finishStoreHeist, HEIST_COOLDOWN, STORE_HEIST_COOLDOWN } from '../src/storefronts.mjs';
 
 const now = Date.parse('2026-10-08T12:30:00Z');
 async function fixture(t) {
@@ -27,7 +27,7 @@ async function fixture(t) {
   accounts.db(db=>db.prepare('UPDATE businesses SET mischief_enabled=1 WHERE id=?').run(shop.id));
   t.after(async () => { closeDataStore(dir); await rm(dir, { recursive: true, force: true }); });
   let next = 0;
-  const payload = (inventoryId = 'wine-0') => ({ shopId: shop.id, inventoryId, expectedPrice: 120, expectedFee: 10, expectedChance: 29, requestId: `store-request-${++next}-0001` });
+  const payload = (inventoryId = 'wine-0') => ({ shopId: shop.id, inventoryId, expectedPrice: 120, expectedFee: 97, expectedChance: 29, choice: 'red', requestId: `store-request-${++next}-0001` });
   const balance = user => accounts.db(db => db.prepare('SELECT tokens FROM users WHERE id = ?').get(user.id).tokens);
   const itemOwner = id => accounts.db(db => db.prepare('SELECT user_id FROM inventory WHERE id = ?').get(id).user_id);
   const view = (user = buyer, at = now) => visitStore(dir, user, shop.id, { now: at }).store;
@@ -147,20 +147,20 @@ test('goose guard is owner-only, charges once, reduces theft odds and rolls back
   assert.equal(visitStore(f.dir, f.owner, other.id, { now }).store.gooseGuard, false);
 });
 
-test('heists persist and charge once, require timed memory completion, hide rolls and transfer existing stock only on a winning roll', async t => {
+test('heists persist and charge once, freeze the color choice, hide rolls and transfer existing stock only on a winning roll', async t => {
   const f = await fixture(t), payload = f.payload(), buyer = f.balance(f.buyer), owner = f.balance(f.owner);
   assert.throws(() => startStoreHeist(f.dir, f.buyer, { ...payload, expectedFee: 5 }, { now }), /store_risk_changed/);
   const started = startStoreHeist(f.dir, f.buyer, payload, { now, draw: success });
   assert.deepEqual(startStoreHeist(f.dir, f.buyer, payload, { now: now + 1, draw: caught }), started);
-  assert.equal(f.balance(f.buyer), buyer - 10); assert.equal(f.balance(f.owner), owner + 10);
+  assert.equal(f.balance(f.buyer), buyer - 97); assert.equal(f.balance(f.owner), owner + 97);
   const challenge = f.view().heist;
-  assert.equal(challenge.sequence.length, 6); assert.doesNotMatch(JSON.stringify(challenge), /roll/);
+  assert.equal(challenge.choice, 'red'); assert.ok(!('sequence' in challenge)); assert.ok(!('roll' in challenge));
   assert.equal(f.view(null).heist, null); assert.equal(f.view(f.rival).heist, null);
   closeDataStore(f.dir); assert.deepEqual(f.view().heist, challenge);
   assert.throws(() => finishStoreHeist(f.dir, f.rival, { heistId: started.id, moves: challenge.sequence }, { now: now + 6000 }), /heist_not_found/);
-  assert.throws(() => finishStoreHeist(f.dir, f.buyer, { heistId: started.id, moves: challenge.sequence }, { now }), /heist_not_ready/);
+  assert.throws(() => startStoreHeist(f.dir, f.buyer, { ...payload, choice: 'black' }, { now }), /request_conflict/);
   const result = finishStoreHeist(f.dir, f.buyer, { heistId: started.id, moves: challenge.sequence }, { now: now + 6000 });
-  assert.equal(result.outcome, 'stolen'); assert.equal(f.itemOwner('wine-0'), f.buyer.id);
+  assert.equal(result.outcome, 'stolen'); assert.equal(result.choice, 'red'); assert.equal(result.color, 'red'); assert.equal(f.itemOwner('wine-0'), f.buyer.id);
   assert.deepEqual(finishStoreHeist(f.dir, f.buyer, { heistId: started.id, moves: [1,1,1,1,1,1] }, { now: now + 7000 }), result);
   assert.equal(f.view(f.buyer, now + 7000).stock.length, 7);
   assert.equal(businessDashboard(f.dir, f.owner, { now }).shops[0].sales, 0);
@@ -168,7 +168,7 @@ test('heists persist and charge once, require timed memory completion, hide roll
 });
 
 test('theft failure, chance, expiry and sold-out races cannot be forged or rerolled, and cooldowns cover players and stores', async t => {
-  for (const expected of ['fumbled', 'caught', 'expired', 'gone']) {
+  for (const expected of ['caught', 'expired', 'gone']) {
     const f = await fixture(t), started = startStoreHeist(f.dir, f.buyer, f.payload(), { now, draw: expected === 'caught' ? caught : success });
     const moves = expected === 'fumbled' ? [1,1,1,1,1,1] : [0,0,0,0,0,0];
     if (expected === 'gone') unstockBusiness(f.dir, f.owner, f.shop.id, 'wine-0', { now });
@@ -201,4 +201,64 @@ test('stock transfer failures roll back payment, sale history and notifications;
   startStoreHeist(f.dir, f.rival, f.payload('wine-1'), { now, draw: success });
   f.accounts.resetEconomy(f.owner, 'RESET ECONOMY');
   for (const table of ['business_sales','store_receipts','store_visits','store_reviews','store_heists','businesses']) assert.equal(f.accounts.db(db => db.prepare(`SELECT COUNT(*) AS n FROM ${table}`).get().n), 0);
+});
+
+test('roulette rejects invalid colors before charging and gives identical odds to either pick', async t => {
+  for (const choice of [undefined, null, 'green', 'RED', 1, {}]) {
+    const f = await fixture(t), balance = f.balance(f.buyer);
+    assert.throws(() => startStoreHeist(f.dir, f.buyer, { ...f.payload(), choice }, { now }), /invalid_heist_choice/);
+    assert.equal(f.balance(f.buyer), balance);
+    assert.equal(f.accounts.db(db => db.prepare('SELECT COUNT(*) AS n FROM store_heists').get().n), 0);
+  }
+  for (const choice of ['red', 'black']) {
+    for (const won of [true, false]) {
+      const f = await fixture(t), started = startStoreHeist(f.dir, f.buyer, { ...f.payload(), choice }, { now, draw: won ? success : caught });
+      const result = finishStoreHeist(f.dir, f.buyer, { heistId: started.id, choice: choice === 'red' ? 'black' : 'red', won: !won, roll: 0 }, { now });
+      assert.equal(result.choice, choice);
+      assert.equal(result.color, won ? choice : choice === 'red' ? 'black' : 'red');
+      assert.equal(result.outcome, won ? 'stolen' : 'caught');
+      assert.equal(f.itemOwner('wine-0'), won ? f.buyer.id : f.owner.id);
+      assert.deepEqual(finishStoreHeist(f.dir, f.buyer, { heistId: started.id }, { now: now + 1000 }), result);
+    }
+  }
+});
+
+test('theft fees lose value in expectation even at current maximum store and collector payouts', () => {
+  for (const value of [1, 5, 50, 100, 500, 1000, 10000, 1000000]) {
+    for (const guarded of [false, true]) {
+      for (const location of [.65, 1, 1.8, 10]) {
+        const quote = theftQuote(value, guarded, location);
+        assert.ok(Number.isSafeInteger(quote.fee) && quote.fee >= 5);
+        const expectedMarketValue = value * quote.chancePercent / 100;
+        const maxCurrentPayout = value * 2 * 1.5; // 100% store markup, 150% collector event.
+        assert.ok(expectedMarketValue <= quote.fee * .30 + 1e-8);
+        assert.ok(maxCurrentPayout * quote.chancePercent / 100 <= quote.fee * .90 + 1e-8);
+      }
+    }
+  }
+});
+
+test('old paid attempts migrate without exposing the memory sequence or changing their frozen fee', async t => {
+  const f = await fixture(t);
+  f.accounts.db(db => {
+    db.exec('ALTER TABLE store_heists DROP COLUMN choice');
+    db.prepare(`INSERT INTO store_heists (id,user_id,business_id,owner_id,inventory_id,sequence,roll,chance,fee,created_at,ready_at,expires_at)
+      VALUES ('legacy-paid',?,?,?,?,?,0,29,10,?,?,?)`).run(f.buyer.id, f.shop.id, f.owner.id, 'wine-0', '[0,1,2,3,0,1]', now, now + 5000, now + 65000);
+  });
+  assert.equal(f.view().heist.choice, 'red'); assert.ok(!('sequence' in f.view().heist));
+  assert.throws(() => finishStoreHeist(f.dir, f.buyer, { heistId: 'legacy-paid' }, { now }), /heist_not_ready/);
+  const result = finishStoreHeist(f.dir, f.buyer, { heistId: 'legacy-paid' }, { now: now + 6000 });
+  assert.equal(result.fee, 10); assert.equal(result.outcome, 'stolen');
+});
+
+test('failed winning transfers remain retryable without a reroll or another fee', async t => {
+  const f = await fixture(t), started = startStoreHeist(f.dir, f.buyer, { ...f.payload(), choice: 'black' }, { now, draw: success });
+  const paid = f.balance(f.buyer);
+  f.accounts.db(db => db.exec(`CREATE TRIGGER fail_roulette_transfer BEFORE UPDATE OF user_id ON inventory BEGIN SELECT RAISE(ABORT, 'unavailable'); END`));
+  assert.throws(() => finishStoreHeist(f.dir, f.buyer, { heistId: started.id }, { now }), /unavailable/);
+  assert.equal(f.itemOwner('wine-0'), f.owner.id); assert.equal(f.balance(f.buyer), paid);
+  assert.equal(f.view().heist.outcome, 'active');
+  f.accounts.db(db => db.exec('DROP TRIGGER fail_roulette_transfer'));
+  const result = finishStoreHeist(f.dir, f.buyer, { heistId: started.id }, { now });
+  assert.equal(result.color, 'black'); assert.equal(result.outcome, 'stolen'); assert.equal(f.balance(f.buyer), paid);
 });

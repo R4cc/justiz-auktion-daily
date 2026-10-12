@@ -80,14 +80,14 @@ test('public storefronts and player interactions use feature flags, sessions, CS
   assert.equal((await view(winnerCookie)).reviewCount, 1);
   assert.equal((await post(base, 'stores/visit', { shopId: shop.id }, winnerCookie)).status, 200);
   assert.equal((await post(base, 'stores/react', { shopId: shop.id, reaction: 'bell' }, winnerCookie)).status, 200);
-  assert.equal((await view(winnerCookie)).stock[0].theft, null);
+  assert.ok((await view(winnerCookie)).stock[0].theft);
   assert.equal((await post(base, 'businesses/profile', {shopId:shop.id,name:'API shop',motto:'',gooseGuard:false,mischiefEnabled:true,requestId:'enable-mischief-http-001'}, ownerCookie)).status, 200);
-  const start = await post(base, 'stores/heist/start', { ...payload, inventoryId: 'http-wine-1', expectedFee: 10, expectedChance: 29, requestId: 'store-http-heist-000001' }, winnerCookie);
+  const start = await post(base, 'stores/heist/start', { ...payload, inventoryId: 'http-wine-1', expectedFee: 97, expectedChance: 29, choice: 'black', requestId: 'store-http-heist-000001' }, winnerCookie);
   assert.equal(start.status, 200);
   const { store: { heist } } = await start.json();
-  assert.ok(heist.sequence.length === 6); assert.ok(!('roll' in heist));
+  assert.equal(heist.choice, 'black'); assert.ok(!('sequence' in heist)); assert.ok(!('roll' in heist));
   assert.equal((await view('')).heist, null);
-  assert.equal((await post(base, 'stores/heist/finish', { heistId: heist.id, moves: heist.sequence, won: true }, winnerCookie)).status, 409);
+  assert.equal((await post(base, 'stores/heist/finish', { heistId: heist.id, choice:'red', won:true }, ownerCookie)).status, 404);
   accounts.db(db => db.prepare('UPDATE store_heists SET ready_at = ?, roll = 0 WHERE id = ?').run(time - 1, heist.id));
   const finish = await post(base, 'stores/heist/finish', { heistId: heist.id, moves: heist.sequence }, winnerCookie);
   assert.equal(finish.status, 200); assert.equal((await finish.json()).heist.outcome, 'stolen');

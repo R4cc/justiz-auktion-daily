@@ -125,15 +125,15 @@ test('store transfers preserve seller margin by cost, buyer basis and receipt re
   assert.doesNotMatch(JSON.stringify(visitStore(f.dir,f.buyer,shop.id,{now})),/acquisition|realizedTradingProfit/);
 });
 
-test('mischief starts disabled, rejects direct theft attempts without fees, and can be enabled only by its owner',async t=>{
-  const f=await fixture(t);f.add('wine',80);const shop=buyBusiness(f.dir,f.seller,'wine','popup',{now}).shop;stockBusiness(f.dir,f.seller,shop.id,['wine'],{now});
-  const payload={shopId:shop.id,inventoryId:'wine',expectedPrice:120,expectedFee:10,expectedChance:29,requestId:'disabled-heist-test-001'};
-  assert.equal(shop.mischiefEnabled,false);assert.equal(visitStore(f.dir,f.buyer,shop.id,{now}).store.stock[0].theft,null);
-  const balance=f.accounts.profile(f.buyer).tokens;assert.throws(()=>startStoreHeist(f.dir,f.buyer,payload,{now}),/mischief_disabled/);assert.equal(f.accounts.profile(f.buyer).tokens,balance);
-  const profile={shopId:shop.id,name:'Trader store',motto:'',gooseGuard:false,mischiefEnabled:true,requestId:'optin-mischief-test-001'};
+test('theft is available in every player store and legacy owner opt-out cannot bypass it',async t=>{
+  const f=await fixture(t);f.add('wine',undefined,'unknown',{...item,marketCategory:'wine'});const shop=buyBusiness(f.dir,f.seller,'wine','popup',{now}).shop;stockBusiness(f.dir,f.seller,shop.id,['wine'],{now});
+  const view=()=>visitStore(f.dir,f.buyer,shop.id,{now}).store;
+  assert.equal(shop.mischiefEnabled,false);assert.ok(view().stock[0].theft);
+  const profile={shopId:shop.id,name:'Trader store',motto:'',gooseGuard:false,mischiefEnabled:false,requestId:'legacy-mischief-test-001'};
   assert.throws(()=>customizeStore(f.dir,f.buyer,profile,{now}),/forbidden/);
-  customizeStore(f.dir,f.seller,profile,{now});assert.ok(visitStore(f.dir,f.buyer,shop.id,{now}).store.stock[0].theft);
-  customizeStore(f.dir,f.seller,{...profile,mischiefEnabled:false,requestId:'optout-mischief-test-001'},{now});assert.equal(visitStore(f.dir,f.buyer,shop.id,{now}).store.stock[0].theft,null);
+  customizeStore(f.dir,f.seller,profile,{now});assert.ok(view().stock[0].theft);
+  const entry=view().stock[0],payload={shopId:shop.id,inventoryId:'wine',expectedPrice:entry.price,expectedFee:entry.theft.fee,expectedChance:entry.theft.chancePercent,choice:'red',requestId:'all-player-theft-001'};
+  const balance=f.accounts.profile(f.buyer).tokens;startStoreHeist(f.dir,f.buyer,payload,{now,draw:()=>0});assert.equal(f.accounts.profile(f.buyer).tokens,balance-entry.theft.fee);
 });
 
 test('Daily scores rank appraisal skill independently of collection prestige',async t=>{

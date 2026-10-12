@@ -35,7 +35,7 @@ live prices and shared demand. Automatic news publication is dormant.
   The chart scales to the selected prices and supports touch and keyboard inspection.
 - `/businesses`: owner management, storefront name/tagline, margins, stock and goose guard.
 - `/stores`: searchable player store directory and shareable `?shop=ID` storefronts,
-  shelf purchases, verified reviews, reactions, tips and the theft minigame.
+  shelf purchases, verified reviews, reactions, tips and red-or-black player theft.
 - `/profile`: XP, level, progress and remaining XP; level 20 is terminal.
 - `/shop`: permanent named mystery-case store with improving rarity odds at higher prices.
   Purchases add sealed cases to inventory. Daily gameplay is otherwise unchanged.
@@ -258,7 +258,7 @@ support remains 1 minute–30 days.
 `storefronts.mjs` shares the business shelf pricing and hourly NPC settlement.
 Public directory/detail responses allowlist merchandise and storefront fields;
 guests see masked usernames. Only the current player sees their review, reaction
-state or memory challenge. The random escape roll is never serialized.
+state or paid roulette attempt. The hidden roll is never serialized.
 
 Shelf purchases debit the buyer, credit the owner, remove the shelf row and
 transfer the existing inventory row within one transaction. Independent
@@ -267,16 +267,20 @@ item again; old sold shelf rows migrate once. Reviews require a saved purchase
 receipt and have one editable row per customer/store. Visits and each reaction
 count once per player/store/UTC day. Reactions are cosmetic. Tips transfer J€.
 
-The six-arrow memory game starts with a disclosed fee paid to the owner, including
-on failure/abandonment. Fee = `max(5, ceil(referenceValue * 0.1))`. Chance is
-`min(75, max(5, floor(35 / (1 + referenceValue / 500) * districtTheftMultiplier)))%`; a goose guard applies a 0.5
-factor before flooring, with a 2% minimum, and costs J€250 once. The server stores
-the sequence and random roll at start, enforces a five-second observation window,
-a 65-second expiry, a 30-minute actor cooldown and a 5-minute store cooldown.
-A successful sequence still needs the chance roll. Only the first terminal
-result counts; retries return it unchanged. Stock is not reserved during the
-game; sale/removal/banning makes it unavailable and prevents transfer. No escrow
-remains when a player disconnects. Successful theft is a stock transfer, not a sale.
+Red-or-black theft starts with a disclosed fee paid to the owner, including on
+failure or abandonment. Fee = `max(5, ceil(referenceValue * chancePercent / 100 / .30))`.
+Chance is `min(75, max(5, floor(35 / (1 + referenceValue / 500) * districtTheftMultiplier)))%`;
+a goose guard applies a 0.5 factor before flooring, with a 2% minimum, and costs
+J€250 once. Both picks have the same displayed, security-weighted chance. The
+server stores the choice and hidden roll once at payment. New attempts can settle
+immediately; the shared case-opening animation shows the fixed red/black result.
+A 65-second unclaimed-attempt expiry, 30-minute actor cooldown and 5-minute store
+cooldown remain. No direction sequence or skill input is required. Only the first
+terminal result counts; retries return it unchanged. Stock is not reserved before
+settlement; sale/removal/banning makes it unavailable and prevents transfer. No
+escrow remains when a player disconnects. Successful theft transfers an existing
+item and is not recorded as a sale. Legacy paid attempts retain their frozen
+fees, rolls and original ready times.
 
 Public `GET /api/stores?query=&type=&offset=0&limit=24` returns
 `{stores,total,offset,limit}` (limit capped at 48). `GET /api/stores/:id` returns
@@ -288,8 +292,8 @@ Public `GET /api/stores?query=&type=&offset=0&limit=24` returns
 - `stores/buy`: `{shopId,inventoryId,expectedPrice,requestId}`.
 - `stores/tip`: `{shopId,amount,requestId}`; amount is 5, 10 or 25.
 - `stores/review`: `{shopId,stars,comment}`; 1–5 stars, at most 240 characters.
-- `stores/heist/start`: `{shopId,inventoryId,expectedPrice,expectedFee,expectedChance,requestId}`;
-  `stores/heist/finish`: `{heistId,moves}` (six direction integers 0–3).
+- `stores/heist/start`: `{shopId,inventoryId,expectedPrice,expectedFee,expectedChance,choice,requestId}` (choice is `red` or `black`);
+  `stores/heist/finish`: `{heistId}`. The stored roll and choice decide the result; client outcome fields are ignored.
 
 All routes follow `FEATURE_BUSINESSES`. Purchases reject stale shelf prices.
 Heist starts also reject changed fees or odds before charging. Financial actions
@@ -449,7 +453,7 @@ elapsed NPC sales settle before the current-stock event. Randomness comes from
 Node's cryptographic generator. The check timestamp, inventory disposal, payout,
 sale history, event result and notification commit together or all roll back.
 
-New bombing, heist, flood and goose events are cosmetic and preserve every stock item. Rich buyers pay all shelf prices; collectors buy up to three items for 150% of their current shelf price. Tax raids remove up to J€100 without overdrawing; windfalls add J€200. Persisted old results are returned unchanged. Player theft is independently controlled by owner `mischiefEnabled`, default false. The goose guard still halves player theft chance.
+New bombing, heist, flood and goose events are cosmetic and preserve every stock item. Rich buyers pay all shelf prices; collectors buy up to three items for 150% of their current shelf price. Tax raids remove up to J€100 without overdrawing; windfalls add J€200. Persisted old results are returned unchanged. Player theft is available at every other human-owned store. The legacy `mischiefEnabled` flag no longer blocks it. The goose guard still halves player theft chance. Both color choices have identical disclosed, security-weighted odds. Attempt fees target at most 30% expected live market value, keeping even the current maximum store/collector cash-out below the fee in expectation.
 
 The EN/DE owner modal appears on `/stores` and `/businesses` and survives reload
 or navigation until `POST /api/account/stores/events/acknowledge` receives its

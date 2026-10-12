@@ -91,7 +91,7 @@ test('cosmetic heists preserve guarded shelves and live player purchases',async 
   assert.equal(run(f,3,0).type,'heist');assert.equal(f.query('SELECT * FROM inventory WHERE sold_at IS NULL').length,9);
   const g=await fixture(t);g.accounts.db(db=>db.prepare('UPDATE businesses SET mischief_enabled=1').run());
   buyStoreItem(g.dir,g.rival,{shopId:g.shop.id,inventoryId:'wine-0',expectedPrice:120,requestId:'event-purchase-0001'},{now});
-  const attempt=startStoreHeist(g.dir,g.rival,{shopId:g.shop.id,inventoryId:'wine-1',expectedPrice:120,expectedFee:10,expectedChance:29,requestId:'event-heist-start-001'},{now,draw:()=>0});
+  const attempt=startStoreHeist(g.dir,g.rival,{shopId:g.shop.id,inventoryId:'wine-1',expectedPrice:120,expectedFee:97,expectedChance:29,choice:'red',requestId:'event-heist-start-001'},{now,draw:()=>0});
   assert.equal(run(g,0).itemsLost,0);
   assert.equal(g.query("SELECT user_id, sold_at FROM inventory WHERE id='wine-0'")[0].user_id,g.rival.id);
   assert.equal(g.query("SELECT sold_at FROM inventory WHERE id='wine-0'")[0].sold_at,null);

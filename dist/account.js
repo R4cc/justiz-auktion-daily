@@ -59,7 +59,7 @@ function accountError(code) {
     invalid_store_review: t('Choose 1–5 stars and keep your review under 240 characters.', 'Wähle 1–5 Sterne und schreibe höchstens 240 Zeichen.'),
     invalid_store_profile: t('Use up to 60 characters for the name and 140 for the tagline.', 'Nutze höchstens 60 Zeichen für den Namen und 140 für den Spruch.'),
     heist_cooldown: t('The coast isn’t clear yet. Wait for the cooldown.', 'Die Luft ist noch nicht rein. Warte die Abklingzeit ab.'),
-    heist_not_ready: t('Watch the whole sequence before making your move.', 'Sieh dir die ganze Folge an, bevor du loslegst.'),
+    heist_not_ready: t('This paid attempt is not ready yet. Resume it in a moment.', 'Dieser bezahlte Versuch ist noch nicht bereit. Setze ihn gleich fort.'),
     heist_not_found: t('This attempt is no longer available.', 'Dieser Versuch ist nicht mehr verfügbar.'),
     guard_permanent: t('Your goose guard is already hired permanently.', 'Deine Wachgans ist schon dauerhaft eingestellt.'),
     invalid_plot: t('Choose a valid plot on the town map.', 'Wähle ein gültiges Grundstück auf dem Stadtplan.'),
@@ -101,6 +101,7 @@ function accountError(code) {
     item_listed: t('This item is listed in a resale auction.', 'Dieser Gegenstand ist in einer Verkaufsauktion gelistet.'),
     quantity_unavailable: t('That many matching items are no longer available.', 'So viele passende Gegenstände sind nicht mehr verfügbar.'),
     item_sold: t('This item has already been sold.', 'Dieser Gegenstand wurde bereits verkauft.'),
+    invalid_heist_choice: t('Choose red or black before spinning.', 'Wähle vor dem Drehen Rot oder Schwarz.'),
     invalid_listing: t('This listing is not valid. Check price and end time.', 'Diese Auktion ist ungültig. Prüfe Startpreis und Endzeit.'),
     auction_not_found: t('This auction is no longer available.', 'Diese Auktion ist nicht mehr verfügbar.'),
     auction_ended: t('This auction has ended.', 'Diese Auktion ist beendet.'),
@@ -798,10 +799,10 @@ async function accountGameAnswer(run, position, answer) {
     : t(`+${justizEuro(result.run.earned)}! Your next case is waiting.`, `+${justizEuro(result.run.earned)}! Deine nächste Kiste wartet.`));
   return result.run;
 }
-async function spinCaseReel(reel, viewport, item, pool, isCurrent) {
+async function spinCaseReel(reel, viewport, item, pool, isCurrent, cardMarkup = item => tierCard(item.rarity)) {
   const winnerIndex = 28 + Math.floor(Math.random() * 12);
   const cards = Array.from({ length: 42 }, (_, index) => index === winnerIndex ? item : pool[Math.floor(Math.random() * pool.length)]);
-  reel.innerHTML = cards.map(item => tierCard(item.rarity)).join('');
+  reel.innerHTML = cards.map(cardMarkup).join('');
   const width = reel.children[0].getBoundingClientRect().width;
   const landingBias = width * (0.25 + Math.random() * 0.5);
   const landingAt = index => index * (width + 12) + landingBias - viewport.clientWidth / 2;
