@@ -361,7 +361,9 @@ function archivedStock(db) {
   return groups;
 }
 
-export function supplyStockAuctions(dataDir, { now = Date.now() } = {}) {
+// Legacy auction migration. Production only retires unbid system lots;
+// explicit retire:false is retained for historical settlement regression fixtures.
+export function supplyStockAuctions(dataDir, { now = Date.now(), retire = true } = {}) {
   return withDatabase(dataDir, db => transaction(db, () => {
     ensureBusinessSchema(db, { now }); ensureResaleSchema(db, now); ensureNotificationSchema(db); marketIndexes(db, now);
     db.prepare(`UPDATE account_notifications SET href =
@@ -401,7 +403,7 @@ export function supplyStockAuctions(dataDir, { now = Date.now() } = {}) {
     for (const { id } of db.prepare(`SELECT a.id FROM resale_auctions a
       JOIN inventory i ON i.id = a.inventory_id
       WHERE a.seller_id = ? AND a.status = 'active' AND a.current_bidder_id IS NULL
-        AND json_extract(i.item, '$.auctionId') IS NULL`).all(STOCK_SELLER_ID)) {
+        AND (? OR json_extract(i.item, '$.auctionId') IS NULL)`).all(STOCK_SELLER_ID, Number(retire))) {
       const inventoryIds = db.prepare('SELECT inventory_id FROM resale_auction_items WHERE auction_id = ?').all(id);
       if (hasInterest) db.prepare('DELETE FROM resale_npc_interest WHERE auction_id = ?').run(id);
       db.prepare('DELETE FROM resale_auctions WHERE id = ?').run(id);
@@ -418,6 +420,7 @@ export function supplyStockAuctions(dataDir, { now = Date.now() } = {}) {
       db.prepare('UPDATE resale_auctions SET ends_at = ? WHERE id = ?')
         .run(row.ends_at + stockIndex * WHOLESALE_SLOT, row.id);
     }
+    if(retire) return {supplied:0};
     let supplied = 0;
     let sources;
     // At any moment one listing for each category slot is live. Include the
@@ -446,7 +449,7 @@ export function supplyStockAuctions(dataDir, { now = Date.now() } = {}) {
 }
 
 export function tickBusinesses(dataDir, { now = Date.now() } = {}) {
-  const supply = supplyStockAuctions(dataDir, { now });
+  const supply = supplyStockAuctions(dataDir, { now, retire: true });
   withDatabase(dataDir, db => transaction(db, () => {
     ensureBusinessSchema(db, { now });
     advanceShops(db, now);

@@ -8,7 +8,7 @@ const uiSource = await readFile(new URL('../dist/economy-ui.js', import.meta.url
 const dataSource = await readFile(new URL('../dist/economy.js', import.meta.url), 'utf8');
 const traderSource = await readFile(new URL('../dist/trader-ui.js', import.meta.url), 'utf8');
 const caseArtSource = await readFile(new URL('../dist/case-art.js', import.meta.url), 'utf8');
-const uiContext = values => vm.createContext({location:{search:''}, URLSearchParams, ...values});
+const uiContext = values => vm.createContext({window:{},location:{search:''}, URLSearchParams, ...values});
 const i18nSource = await readFile(new URL('../dist/i18n.js', import.meta.url), 'utf8');
 const extract = (source, from, to) => {
   let fragment = source.slice(source.indexOf(from), source.indexOf(to, source.indexOf(from)));

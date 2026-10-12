@@ -1,3 +1,4 @@
+import { buyStockPalette, revealStockPalette, stockPalettesByUser } from './stock-palettes.mjs';
 import { netWorthHistory } from './net-worth.mjs';
 import { checkStoreEvents, acknowledgeStoreEvents } from './store-events.mjs';
 import { Accounts, AccountError } from './accounts.mjs';
@@ -97,6 +98,7 @@ export async function createAccountApi({ dataDir, dailyPayload, json, env = proc
           // other surface waits until a real password is set.
           if (user.must_change_password && route !== 'me') throw new AccountError('password_change_required', 403);
           if (route === 'inventory') json(response, 200, { items: accounts.inventory(user, {includeStores:url.searchParams.get('includeStores')==='1'}) });
+          else if (route === 'stock-palettes' && flags.palettes) json(response,200,{palettes:stockPalettesByUser(dataDir,user)});
           else if (route === 'net-worth') json(response, 200, netWorthHistory(dataDir, user, { range: url.searchParams.get('range') || '1d' }));
           else if (route === 'notifications') json(response, 200, notificationsForUser(dataDir, user.id));
           else if (route === 'resale/listings' && flags.resales) json(response, 200, { listings: listingsByUser(dataDir, user.id) });
@@ -166,6 +168,8 @@ export async function createAccountApi({ dataDir, dailyPayload, json, env = proc
         await accounts.changePassword(user, payload);
         result = { user: accounts.profile(user) };
       }
+      else if (route === 'stock-palettes/buy' && flags.palettes) result={palette:buyStockPalette(dataDir,user,payload),user:accounts.profile(user)};
+      else if (route === 'stock-palettes/reveal' && flags.palettes) result={palette:revealStockPalette(dataDir,user,payload.id),user:accounts.profile(user)};
       else if (route === 'notifications/read') result = markNotificationsRead(dataDir, user.id, payload.ids);
       else if (route === 'admin/market/adjust') result = { adjustment: adjustAdminMarket(dataDir, user, payload), market: adminMarketDashboard(dataDir, user), user: accounts.profile(user) };
       else if (route === 'admin/grant-tokens') result = { grant: accounts.grantTokens(user, payload.amount, payload.requestId), user: accounts.profile(user) };

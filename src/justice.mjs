@@ -59,6 +59,18 @@ export function collectFine(db, userId, now) {
     const applied = Math.min(due,item.value); due -= applied;
     if (item.value > applied) db.prepare('UPDATE users SET tokens=tokens+? WHERE id=?').run(item.value-applied,userId);
   }
+  // Sealed stock palettes are owned assets too. Collect their disclosed cost
+  // without exposing or rerolling the private rewards.
+  if(due && hasTable(db,'stock_palette_purchases')) {
+    for(const palette of db.prepare('SELECT id,cost,offer FROM stock_palette_purchases WHERE user_id=? AND revealed_at IS NULL AND seized_at IS NULL ORDER BY cost,id').all(userId)) {
+      if(!due) break;
+      db.prepare('UPDATE stock_palette_purchases SET seized_at=? WHERE id=?').run(now,palette.id);
+      db.prepare('INSERT INTO justice_seizures(user_id,inventory_id,value,created_at) VALUES (?,?,?,?)').run(userId,palette.id,palette.cost,now);
+      const offer=JSON.parse(palette.offer);seized.push({id:palette.id,title:offer.quantity+'× '+offer.name+' palette',value:palette.cost});
+      const applied=Math.min(due,palette.cost);due-=applied;
+      if(palette.cost>applied)db.prepare('UPDATE users SET tokens=tokens+? WHERE id=?').run(palette.cost-applied,userId);
+    }
+  }
   const remainingItems = db.prepare('SELECT COUNT(*) AS n FROM inventory WHERE user_id=? AND sold_at IS NULL').get(userId).n;
   let jailedUntil = row.jailed_until, convertedToSentence = 0;
   if (due && !remainingItems) {

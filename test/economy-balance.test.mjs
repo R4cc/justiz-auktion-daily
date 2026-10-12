@@ -148,11 +148,11 @@ test('new wholesale reserves follow live market value and existing lots stay fro
   const f = await fixture(t);
   upsertAuctions(f.dir, [{ id: 101, title: 'Riesling Wein 1001', category: 'Getränke', finalPrice: 24, image: '/assets/test.jpg' }]);
   setMarketIndex(f.dir, 'wine', 150, { now });
-  supplyStockAuctions(f.dir, { now });
+  supplyStockAuctions(f.dir, { now, retire: false });
   const before = f.accounts.db(db => db.prepare("SELECT start_price FROM resale_auctions WHERE seller_id = 'npc-stock-supply'").all());
   assert.ok(before.every(row => row.start_price === Math.round(36 * 24 * .85)));
   setMarketIndex(f.dir, 'wine', 50, { now });
-  supplyStockAuctions(f.dir, { now });
+  supplyStockAuctions(f.dir, { now, retire: false });
   assert.deepEqual(f.accounts.db(db => db.prepare("SELECT start_price FROM resale_auctions WHERE seller_id = 'npc-stock-supply'").all()), before);
 });
 

@@ -437,7 +437,7 @@ test('runtime flag isolation, off no-op, startup timer unref and stop clears wor
   assert.deepEqual(tickEconomy(f.dir, { now: day, flags: featureFlags({ FEATURE_NEWS: 'false', FEATURE_MARKET: 'false', FEATURE_RESALES: 'false', FEATURE_PALETTES: 'false', FEATURE_PALETTE_AUCTIONS: 'false', FEATURE_BUSINESSES: 'false' }) }), { failures: [] });
   assert.equal(count(f, 'users'), 3);
   const primary = tickEconomy(f.dir, { now: day, flags: { paletteAuctions: true } });
-  assert.deepEqual(primary.failures, []); assert.ok(primary.supply.auctions.length); assert.equal(count(f, 'users'), 3);
+  assert.deepEqual(primary.failures, []); assert.equal(primary.supply.auctions.length, 0); assert.equal(count(f, 'users'), 3);
   const resale = tickEconomy(f.dir, { now: day, flags: { resales: true } });
   assert.deepEqual(resale.failures, []); assert.equal(count(f, 'users'), 3 + NPC_BUYERS.length);
   assert.equal(count(f, 'news_events'), 0);

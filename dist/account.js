@@ -25,7 +25,7 @@ caseReveal.addEventListener('close', () => {
 });
 let accountSelectedCase = 'fundkiste', accountInventoryPage = 0, accountFilter = 'all';
 let currentAccountPage = null, accountVisit = 0, pageLoaded = false;
-const accountPaths = ['/auction-house', '/auctions', '/marketplace', '/market', '/businesses', '/stores', '/town', '/shop', '/inventory', '/profile', '/login', '/register', '/admin', '/leaderboard'];
+const accountPaths = ['/auction-house', '/auctions', '/marketplace', '/market', '/businesses', '/stores', '/town', '/shop', '/palettes', '/inventory', '/profile', '/login', '/register', '/admin', '/leaderboard'];
 const accountPage = document.querySelector('#account-page');
 const accountContent = document.querySelector('#account-content');
 const notificationButton = document.querySelector('#notification-button');
@@ -148,6 +148,7 @@ function sidebarLinkMarkup(route, label) {
     '/marketplace': '<path d="M4 8h16m-4-4 4 4-4 4M20 16H4m4-4-4 4 4 4"/>',
     '/auction-house': '<path d="m13 3 8 8-4 4-8-8 4-4Zm-4 4L5 11l4 4 4-4m-2 2-8 8M15 21h7m-6-4h5v4"/>',
     '/auctions': '<path d="m13 3 8 8-4 4-8-8 4-4Zm-4 4L5 11l4 4 4-4m-2 2-8 8M15 21h7m-6-4h5v4"/>',
+    '/palettes': '<path d="m3 8 9-4 9 4v10l-9 3-9-3V8Zm0 0 9 4 9-4m-9 4v9M7 6l9 4v10M2 21h20"/>',
     '/shop': '<path d="m3 7 9-4 9 4v10l-9 4-9-4V7Zm0 0 9 4 9-4m-9 4v10M7.5 5 17 9"/>',
     '/market': '<path d="M3 3v18h18M7 15l4-5 4 3 6-8m-5 0h5v5"/>',
     '/inventory': '<path d="M9 5V3h6v2m-8 0h10a3 3 0 0 1 3 3v11a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V8a3 3 0 0 1 3-3Z"/><rect x="7" y="12" width="10" height="6" rx="1"/><path d="M8 8h8m-4 4v2"/>',
@@ -163,7 +164,7 @@ function sidebarLinkMarkup(route, label) {
 }
 function updateNavigation() {
   renderPersistentProgression(account);
-  const labels = { '/': 'Daily', '/shop': t('Case Store', 'Kisten-Shop'), '/auctions': t('Palette Auctions', 'Paletten-Auktionen'), '/auction-house': t('Auction House', 'Auktionshaus'), '/marketplace': t('Auction House', 'Auktionshaus'), '/market': t('Stock Market', 'Aktienmarkt'), '/businesses': t('Your stores', 'Deine Läden'), '/stores': t('Visit stores', 'Läden besuchen'), '/town': t('Town map', 'Stadtplan'), '/inventory': t('Inventory', 'Inventar'), '/leaderboard': t('Leaderboard', 'Rangliste'), '/profile': t('Profile', 'Profil'), '/admin': 'Admin' };
+  const labels = { '/': 'Daily', '/shop': t('Case Store', 'Kisten-Shop'), '/palettes': t('Mystery palettes', 'Mystery-Paletten'), '/auctions': t('Palette Auctions', 'Paletten-Auktionen'), '/auction-house': t('Auction House', 'Auktionshaus'), '/marketplace': t('Auction House', 'Auktionshaus'), '/market': t('Stock Market', 'Aktienmarkt'), '/businesses': t('Your stores', 'Deine Läden'), '/stores': t('Visit stores', 'Läden besuchen'), '/town': t('Town map', 'Stadtplan'), '/inventory': t('Inventory', 'Inventar'), '/leaderboard': t('Leaderboard', 'Rangliste'), '/profile': t('Profile', 'Profil'), '/admin': 'Admin' };
   for (const link of document.querySelectorAll('.site-nav a')) {
     if (link.id !== 'header-auth') {
       link.innerHTML = sidebarLinkMarkup(link.getAttribute('href'), labels[link.getAttribute('href')] || link.textContent);
@@ -300,6 +301,7 @@ function showGamePage() {
   window.inventoryItemUi?.stop();
   window.netWorthUi?.stop();
   window.economyUi?.stop();
+  window.paletteUi?.stop();
   window.businessUi?.stop();
   window.storeUi?.stop();
   window.townUi?.stop();
@@ -322,6 +324,7 @@ async function navigateAccountPage(path, push = true) {
   window.inventoryItemUi?.stop();
   window.netWorthUi?.stop();
   window.economyUi?.stop();
+  window.paletteUi?.stop();
   window.businessUi?.stop();
   window.storeUi?.stop();
   window.townUi?.stop();
@@ -357,6 +360,7 @@ async function navigateAccountPage(path, push = true) {
     }
     if (path === '/town') { await window.townUi.load(visit); if (visit !== accountVisit) return; }
     if (path === '/stores') { await window.storeUi.load(visit); if (visit !== accountVisit) return; }
+    if(path === '/palettes') { await window.paletteUi.load(visit); if(visit!==accountVisit)return; }
     if (path === '/shop') {
       const store = await accountApi('case-store'); if (visit !== accountVisit) return; accountStore = store;
     }
@@ -426,6 +430,7 @@ function renderAccountPage() {
   else if (currentAccountPage === '/businesses') window.businessUi.render();
   else if (currentAccountPage === '/town') window.townUi.render();
   else if (currentAccountPage === '/stores') window.storeUi.render();
+  else if (currentAccountPage === '/palettes') window.paletteUi.render();
   else if (currentAccountPage === '/shop') renderShop();
   else if (currentAccountPage === '/inventory') renderInventory();
   else if (currentAccountPage === '/profile') renderProfile();

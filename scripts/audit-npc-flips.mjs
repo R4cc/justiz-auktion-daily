@@ -17,7 +17,7 @@ try {
   upsertAuctions(dir, [['Getränke', 'Riesling Wein', 100], ['Sammlerstücke', 'Lego Spielzeug', 100],
     ['Elektronik', 'Laptop computer', 100], ['Fahrzeuge', 'BMW PKW', 1000]].map(([category,title,price], i) =>
     ({ id: 9100+i, category, title, currentBid: price, finalPrice: price })));
-  supplyStockAuctions(dir, { now });
+  supplyStockAuctions(dir, { now, retire: false });
   const supply = listResales(dir, { now });
   for (const lot of supply) placeBid(dir, user, lot.id, lot.startPrice, { now });
   now = Math.max(...supply.map(lot => lot.endsAt)) + 1;

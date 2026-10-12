@@ -4,9 +4,11 @@ Status: **first playable auction economy**. The existing transactional auction,
 market, edition and progression domains are retained. All five economy flags
 default on; the Compose file passes them through explicitly. Explicit false values disable individual systems; an unset or empty variable enables it.
 
+Current stock supply is documented in [Stock palettes](stock-palettes.md). Automatic primary palette drops and supplier stock auctions have been replaced by permanent stock palette purchases. The older auction sections below describe retained settlement and compatibility behavior.
+
 ## Player loop and routes
 
-Daily → J€ and 150 XP → sealed Mystery Palette auction → three fixed rewards
+Daily → J€ and 150 XP → category stock palette purchase → three item/quantity rolls
 → inventory → player resale marketplace → human/NPC buyers → seller J€ and XP.
 
 Player-facing currency is **J€ (Justiz€)**. Existing persisted and API fields such
@@ -69,10 +71,10 @@ contents and valuation remain unchanged.
 
 | Flag | Effect |
 | --- | --- |
-| `FEATURE_PALETTE_AUCTIONS` | Primary reads, participation history, bid/reveal/admin-create, Auctions UI, automatic supply and settlement |
+| `FEATURE_PALETTE_AUCTIONS` | Legacy primary reads, participation history, bid/reveal/admin-create and settlement |
 | `FEATURE_RESALES` | Resale routes/UI, NPC runtime, resale settlement, instant-sell rejection |
 | `FEATURE_MARKET` | Public market/history routes and Market UI |
-| `FEATURE_PALETTES` | Persisted palette catalog HTTP route only |
+| `FEATURE_PALETTES` | Permanent stock palette catalog, purchase/reveal routes and Palettes UI; legacy edition catalog |
 
 News is hard-disabled in normal feature discovery and runtime configuration;
 its backend tables and domain code remain dormant. Primary supply can persist/use

@@ -66,7 +66,8 @@ export function tickEconomy(dataDir, { now = Date.now(), flags = featureFlags() 
   if (flags.market) run('marketDrift', () => tickMarketDrift(dataDir, { now }));
   if (flags.paletteAuctions) {
     run('primarySettlement', () => settleDuePaletteAuctions(dataDir, { now }));
-    run('supply', () => supplyPaletteAuctions(dataDir, { now }));
+    // Existing palette bids settle normally; new stock is permanently sold on /palettes.
+    result.supply = { auctions: [], skipped: [] };
   }
   if (flags.resales) {
     run('resaleSettlement', () => settleDueListings(dataDir, { now }));

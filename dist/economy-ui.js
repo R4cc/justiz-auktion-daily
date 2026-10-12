@@ -258,6 +258,7 @@ window.economyUi = (() => {
           <span class="house-card-copy"><span class="house-card-tag">${t('MARKET INTELLIGENCE', 'MARKTWISSEN')}</span><strong>${t('Stock Market', 'Aktienmarkt')}</strong><span class="house-card-description">${t('Follow demand. Find the moment to trade.', 'Verfolge die Nachfrage. Finde den Moment zum Handeln.')}</span><span class="house-card-action">${t('View the market', 'Markt ansehen')} <span aria-hidden="true">↗</span></span></span>
           <span class="house-card-art house-market-art" aria-hidden="true"><span class="house-market-badge">J€</span><svg viewBox="0 0 200 160" fill="none"><path class="house-chart-grid" d="M16 34h170M16 66h170M16 98h170M16 130h170M36 24v116m48-116v116m48-116v116m48-116v116"/><path class="house-chart-area" d="M16 118 48 97 76 108 106 69 136 80 180 32v108H16Z"/><path class="house-chart-line" d="m16 118 32-21 28 11 30-39 30 11 44-48m-26 0h26v26"/><circle class="house-chart-point" cx="106" cy="69" r="5"/></svg><span class="house-market-caption">${t('READ THE TRENDS', 'ERKENNE DIE TRENDS')}</span></span>
         </a>` : ''}
+        ${economyFlags.palettes ? `<a class="house-launch-card house-palettes-card" href="/palettes" data-page><span class="house-card-copy"><span class="house-card-tag">${t('BULK STOCK DROPS','WAREN-DROPS')}</span><strong>${t('Mystery palettes','Mystery-Paletten')}</strong><span class="house-card-description">${t('One category. Three pulls. Multiply your stock.','Eine Kategorie. Drei Drops. Vervielfache deine Waren.')}</span><span class="house-card-action">${t('Find store stock','Ladenwaren finden')} →</span></span><span class="house-card-art" aria-hidden="true">${window.paletteUi.art({category:'wine',quantity:24})}</span></a>` : ''}
       </nav>
     </section>` + economyOverviewMarkup() + `
       <nav class="economy-tabs marketplace-tabs" aria-label="${t('Auction House sections','Auktionshaus-Bereiche')}">${[['browse',t('Browse','Entdecken')],['bids',t('My bids','Meine Gebote')],['mine',t('My listings','Meine Angebote')]].map(([id,label])=>`<button data-economy="tab" data-id="${id}" aria-pressed="${tab===id}">${label}</button>`).join('')}</nav>`;
@@ -435,6 +436,7 @@ window.economyUi = (() => {
       <p>${t('A listing with bids cannot be cancelled.', 'Angebote mit Geboten können nicht storniert werden.')}</p><p class="account-error" role="alert"></p><button class="primary-button" type="submit">${t('Start auction', 'Auktion starten')}</button></form>`);
   }
   async function startReveal(id) {
+    if(window.paletteUi && economyFlags.palettes){await navigateAccountPage('/palettes?auction='+encodeURIComponent(id));return;}
     const visit = accountVisit, owner = account?.id, request = ++dialogSequence;
     const [result, lot] = await Promise.all([api.paletteAuctionRewards(id), api.paletteAuction(id)]);
     if (visit !== accountVisit || owner !== account?.id || request !== dialogSequence) return;

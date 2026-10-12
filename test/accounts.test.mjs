@@ -215,7 +215,7 @@ test('registration codes are single-use and admin-only; credentials, sessions an
   await assert.rejects(service.register({ username: user.username.toLowerCase(), password, code: unused }), /username_taken/);
   await service.register({ username: 'Delta', password, code: unused });
   closeDataStore(dir);
-  const reopened = new Accounts(dir);
+  const reopened = new Accounts(dir, { now: () => service.now() });
   assert.equal(reopened.user(login).id, user.id);
   reopened.logout(login);
   assert.equal(reopened.user(login), null);

@@ -31,6 +31,7 @@ window.justizEconomy = {
   marketHistory: (category, limit = 168, range = null) =>
     economyGet(`/api/market/${encodeURIComponent(category)}/history?limit=${Number(limit) || 168}${range ? `&range=${encodeURIComponent(range)}` : ""}`),
   palettes: () => economyGet('/api/palettes'),
+  stockPalettes: () => economyGet('/api/stock-palettes'),
   paletteAuctions: (limit = 50, offset = 0) =>
     economyGet(`/api/palette-auctions?limit=${Number(limit) || 50}&offset=${Number(offset) || 0}`),
   paletteAuction: id => economyGet(`/api/palette-auctions/${encodeURIComponent(id)}`),

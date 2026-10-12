@@ -30,8 +30,9 @@ export function currentNetWorth(db, userId, { now = Date.now(), indexes = market
     .reduce((total, row) => total + (hidden.has(row.id) ? 0 : estimatedValueTokens(JSON.parse(row.item), indexes)), 0);
   // Hidden drawn rewards must not leak through a wealth total. Value a won,
   // unopened palette at its public winning price until the reveal completes.
-  const sealedPalettes = hasTable(db, 'primary_palette_auctions') && db.prepare('PRAGMA table_info(primary_palette_auctions)').all().some(column => column.name === 'revealed_at') ? db.prepare(`SELECT COALESCE(SUM(current_bid),0) AS value
+  let sealedPalettes = hasTable(db, 'primary_palette_auctions') && db.prepare('PRAGMA table_info(primary_palette_auctions)').all().some(column => column.name === 'revealed_at') ? db.prepare(`SELECT COALESCE(SUM(current_bid),0) AS value
     FROM primary_palette_auctions WHERE winner_id=? AND settled_at IS NOT NULL AND revealed_at IS NULL`).get(userId).value : 0;
+  if(hasTable(db,'stock_palette_purchases')) sealedPalettes+=db.prepare('SELECT COALESCE(SUM(cost),0) AS value FROM stock_palette_purchases WHERE user_id=? AND revealed_at IS NULL AND seized_at IS NULL').get(userId).value;
   let businesses = 0;
   if (hasTable(db, 'businesses')) for (const shop of db.prepare('SELECT type,size,plot_id FROM businesses WHERE user_id=?').all(userId)) {
     const size = SHOP_SIZES.find(entry => entry.id === shop.size), type = SHOP_TYPES.find(entry => entry.id === shop.type);

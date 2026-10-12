@@ -1,6 +1,7 @@
 import { townMap } from './town-map.mjs';
 import { featureFlags } from './features.mjs';
 import { marketHistory, marketState } from './market.mjs';
+import { stockPaletteCatalog } from './stock-palettes.mjs';
 import { loadPaletteCatalog } from './palette-definitions.mjs';
 import { listPublishedNews } from './news.mjs';
 import { listResales, getResale } from './resale.mjs';
@@ -65,6 +66,7 @@ export function createEconomyApi({ dataDir, json, flags = featureFlags(), accoun
             { now, range, limit: limited(url.searchParams.get('limit'), 168, 1000) }) });
         return true;
       }
+      if (flags.palettes && url.pathname === '/api/stock-palettes') {json(response,200,stockPaletteCatalog(dataDir));return true;}
       if (flags.palettes && url.pathname === '/api/palettes') {
         // Persisted palette catalog: frozen editions with evaluated
         // availability; the legacy case catalog is untouched by this.
@@ -86,7 +88,7 @@ export function createEconomyApi({ dataDir, json, flags = featureFlags(), accoun
         return true;
       }
       if (flags.resales && url.pathname === '/api/resales') {
-        if (flags.businesses) supplyStockAuctions(dataDir);
+        if (flags.businesses) supplyStockAuctions(dataDir,{retire:true});
         supplyCaseAuctions(dataDir);
         const listings = listResales(dataDir, { limit: limited(url.searchParams.get('limit'), 50, 200) });
         json(response, 200, { listings: signedIn(request) ? listings : listings.map(maskListing) });
