@@ -50,10 +50,13 @@ export function storeRatingWeights(db, shopId, now = Number.MAX_SAFE_INTEGER) {
     COALESCE(SUM(${weight}),0) AS weight FROM store_reviews r JOIN users u ON u.id=r.user_id
     LEFT JOIN user_skills s ON s.user_id=r.user_id AND s.skill_id='influence'
     WHERE r.business_id=? AND u.banned=0 AND r.updated_at<=?`).get(shopId,now);
-  const purchasedCount = db.prepare("SELECT 1 FROM sqlite_schema WHERE type='table' AND name='store_review_packs'").get()
-    ? db.prepare('SELECT COALESCE(SUM(review_count),0) AS count FROM store_review_packs WHERE business_id=? AND redeemed_at<=?').get(shopId,now).count : 0;
+  const purchased = db.prepare("SELECT 1 FROM sqlite_schema WHERE type='table' AND name='store_review_packs'").get()
+    ? db.prepare('SELECT COALESCE(SUM(review_count),0) AS count, COALESCE(SUM(review_count * stars),0) AS stars FROM store_review_packs WHERE business_id=? AND redeemed_at<=?').get(shopId,now) : { count: 0, stars: 0 };
+  const purchasedCount = purchased.count;
+  // Positive and negative campaigns share the same influence budget.
   const boughtWeight = Math.min(PURCHASED_REVIEW_WEIGHT_CAP, purchasedCount * PURCHASED_REVIEW_WEIGHT);
-  return { count: organic.count + purchasedCount, purchasedCount, stars: organic.stars + 5 * boughtWeight, weight: organic.weight + boughtWeight };
+  const boughtStars = purchasedCount ? purchased.stars / purchasedCount * boughtWeight : 0;
+  return { count: organic.count + purchasedCount, purchasedCount, stars: organic.stars + boughtStars, weight: organic.weight + boughtWeight };
 }
 export function weightedStoreRating(db, shopId) {
   const rating = storeRatingWeights(db,shopId);

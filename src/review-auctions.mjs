@@ -5,7 +5,7 @@ import { AccountError } from './errors.mjs';
 import { ensureResaleSchema, inventoryIsLocked } from './resale.mjs';
 import { advanceShop, ensureBusinessSchema } from './businesses.mjs';
 import { assertPlayerFree } from './justice.mjs';
-import { ensureStoreSchema } from './storefronts.mjs';
+import { ensureStoreSchema, listStores } from './storefronts.mjs';
 import { pushNotification } from './notifications.mjs';
 
 export const REVIEW_SUPPLIER_ID = 'npc-review-agency';
@@ -31,15 +31,15 @@ export function supplyReviewAuctions(dataDir, { now = Date.now() } = {}) {
   return withDatabase(dataDir, db => transaction(db, () => {
     ensureBusinessSchema(db); ensureResaleSchema(db, now);
     db.prepare(`INSERT OR IGNORE INTO users (id,username,password_hash,npc,tokens,created_at)
-      VALUES (?, 'Five Star Agency', 'disabled', 1, 0, ?)`).run(REVIEW_SUPPLIER_ID, now);
+      VALUES (?, 'Review Agency', 'disabled', 1, 0, ?)`).run(REVIEW_SUPPLIER_ID, now);
     const auctions = [];
     for (const { startsAt, endsAt } of windows) {
       const id = `npc-reviews:${startsAt}`, inventoryId = `review-pack:${startsAt}`;
       if (db.prepare('SELECT 1 FROM resale_auctions WHERE id=?').get(id)) continue;
       const reviewCount = REVIEW_PACK_SIZES[Math.floor(unit(`review-size:${startsAt}`) * REVIEW_PACK_SIZES.length)];
       const price = reviewCount * REVIEW_PRICE_PER_REVIEW;
-      const item = { id: inventoryId, kind: 'review-pack', reviewCount, stars: 5,
-        title: `${reviewCount} five-star reviews`, titleDe: `${reviewCount} Fünf-Sterne-Bewertungen`,
+      const item = { id: inventoryId, kind: 'review-pack', reviewCount, configurableStars: true,
+        title: `${reviewCount} configurable reviews`, titleDe: `${reviewCount} frei wählbare Bewertungen`,
         price, sellValue: 0, rarity: 'uncommon', createdAt: startsAt };
       db.prepare('INSERT INTO inventory (id,user_id,item,created_at) VALUES (?,?,?,?)')
         .run(inventoryId, REVIEW_SUPPLIER_ID, JSON.stringify(item), startsAt);
@@ -53,8 +53,15 @@ export function supplyReviewAuctions(dataDir, { now = Date.now() } = {}) {
   }));
 }
 
-export function redeemReviewPack(dataDir, user, { inventoryId, shopId } = {}, { now = Date.now() } = {}) {
+export function reviewPackTargets(dataDir, user, { query = '', offset = 0, limit = 24, now = Date.now() } = {}) {
+  const own = listStores(dataDir, user, { ownerId: user.id, limit: 48, now }).stores;
+  const other = listStores(dataDir, user, { excludeOwnerId: user.id, query, offset, limit, now });
+  return { own, other };
+}
+
+export function redeemReviewPack(dataDir, user, { inventoryId, shopId, stars = 5 } = {}, { now = Date.now() } = {}) {
   if (typeof inventoryId !== 'string' || inventoryId.length > 100 || typeof shopId !== 'string' || shopId.length > 100) fail('invalid_review_pack');
+  if (!Number.isInteger(stars) || stars < 1 || stars > 5) fail('invalid_review_stars');
   return withDatabase(dataDir, db => transaction(db, () => {
     ensureStoreSchema(db); ensureResaleSchema(db, now);
     const player = db.prepare('SELECT id FROM users WHERE id=? AND npc=0 AND banned=0 AND must_change_password=0').get(user?.id || '');
@@ -65,24 +72,25 @@ export function redeemReviewPack(dataDir, user, { inventoryId, shopId } = {}, { 
     if (!pack || pack.user_id !== player.id || JSON.parse(pack.item).kind !== 'review-pack') fail('review_pack_not_found', 404);
     // The inventory ID is the redemption receipt; an exact retry never adds stars.
     if (pack.redeemed_at !== null) {
-      if (pack.business_id !== shopId || pack.redeemed_by !== player.id) fail('review_pack_used', 409);
-      return { inventoryId, shopId, reviewCount: pack.review_count, stars: 5 };
+      if (pack.business_id !== shopId || pack.redeemed_by !== player.id || pack.stars !== stars) fail('review_pack_used', 409);
+      return { inventoryId, shopId, reviewCount: pack.review_count, stars };
     }
     if (pack.sold_at !== null) fail('review_pack_used', 409);
     if (inventoryIsLocked(db, inventoryId)) fail('item_listed', 409);
     if (db.prepare('SELECT 1 FROM business_stock WHERE inventory_id=? AND sold_at IS NULL').get(inventoryId)) fail('item_stocked', 409);
-    const shop = db.prepare('SELECT * FROM businesses WHERE id=? AND user_id=?').get(shopId, player.id);
+    const shop = db.prepare('SELECT b.* FROM businesses b JOIN users u ON u.id=b.user_id WHERE b.id=? AND u.npc=0 AND u.banned=0').get(shopId);
     if (!shop) fail('business_not_found', 404);
-    // Flush historical sales before applying the new reputation boost.
+    // Flush historical sales before applying the new rating campaign.
     advanceShop(db, shop, now);
     if (!db.prepare('UPDATE inventory SET sold_at=? WHERE id=? AND user_id=? AND sold_at IS NULL').run(now, inventoryId, player.id).changes) fail('review_pack_used', 409);
-    db.prepare('UPDATE store_review_packs SET business_id=?,redeemed_by=?,redeemed_at=? WHERE inventory_id=?')
-      .run(shopId, player.id, now, inventoryId);
-    pushNotification(db, player.id, { type: 'store', sourceKey: `review-pack:${inventoryId}`,
-      titleEn: 'Five-star reviews applied', titleDe: 'Fünf-Sterne-Bewertungen hinzugefügt',
-      bodyEn: `${pack.review_count} five-star reviews added to ${shop.store_name || 'your store'}.`,
-      bodyDe: `${pack.review_count} Fünf-Sterne-Bewertungen für ${shop.store_name || 'deinen Laden'}.`,
+    db.prepare('UPDATE store_review_packs SET business_id=?,redeemed_by=?,redeemed_at=?,stars=? WHERE inventory_id=?')
+      .run(shopId, player.id, now, stars, inventoryId);
+    for (const recipient of new Set([player.id, shop.user_id])) pushNotification(db, recipient, {
+      type: 'store', sourceKey: `review-pack:${inventoryId}`,
+      titleEn: 'Review campaign applied', titleDe: 'Bewertungskampagne angewendet',
+      bodyEn: `${pack.review_count} reviews with ${stars} stars added to ${shop.store_name || 'the store'}.`,
+      bodyDe: `${pack.review_count} Bewertungen mit ${stars} Sternen für ${shop.store_name || 'den Laden'}.`,
       href: `/stores?shop=${encodeURIComponent(shopId)}` }, now);
-    return { inventoryId, shopId, reviewCount: pack.review_count, stars: 5 };
+    return { inventoryId, shopId, reviewCount: pack.review_count, stars };
   }));
 }

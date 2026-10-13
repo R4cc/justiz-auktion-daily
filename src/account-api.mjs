@@ -1,5 +1,5 @@
 import { unopenedAuctionWinnings } from './auction-winnings.mjs';
-import { redeemReviewPack } from './review-auctions.mjs';
+import { redeemReviewPack, reviewPackTargets } from './review-auctions.mjs';
 import { skillEffects } from './skill-effects.mjs';
 import { skillTree, upgradeSkill } from './skill-tree.mjs';
 import { revealStockPalette, stockPalettesByUser } from './stock-palettes.mjs';
@@ -112,6 +112,7 @@ export async function createAccountApi({ dataDir, dailyPayload, json, env = proc
           else if (route === 'resale/bids' && flags.resales) json(response, 200, { listings: listingsBidOnByUser(dataDir, user.id) });
           else if (route === 'resale/bids/archived' && flags.resales) json(response, 200, { listings: archivedListingsBidOnByUser(dataDir, user.id) });
           else if (route === 'palette-auctions' && flags.paletteAuctions) json(response, 200, { auctions: paletteAuctionsByUser(dataDir, user, { limit: Number(url.searchParams.get('limit')) || 50, offset: Number(url.searchParams.get('offset')) || 0 }) });
+          else if (route === 'inventory/reviews/targets' && flags.businesses) json(response, 200, reviewPackTargets(dataDir, user, { query: url.searchParams.get('query') || '', offset: url.searchParams.get('offset') || 0 }));
           else if (route === 'businesses' && flags.businesses) json(response, 200, businessDashboard(dataDir, user));
           else if (route === 'friends') json(response, 200, accounts.friends(user));
           else if (route === 'codes') json(response, 200, { codes: accounts.listCodes(user) });

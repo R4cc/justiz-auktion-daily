@@ -143,14 +143,14 @@ function serializeHeist(row, now) {
     readyAt: row.ready_at, expiresAt: row.expires_at };
 }
 
-export function listStores(dataDir, viewer = null, { now = Date.now(), query = '', type = '', offset = 0, limit = 24 } = {}) {
+export function listStores(dataDir, viewer = null, { now = Date.now(), query = '', type = '', offset = 0, limit = 24, ownerId = '', excludeOwnerId = '' } = {}) {
   return withDatabase(dataDir, db => transaction(db, () => {
     ensureStoreSchema(db); marketIndexes(db, now);
     const needle = String(query).slice(0, 80).trim().toLowerCase();
-    const filter = `u.npc = 0 AND u.banned = 0 AND (? = '' OR b.type = ?) AND
+    const filter = `u.npc = 0 AND u.banned = 0 AND (? = '' OR b.user_id = ?) AND (? = '' OR b.user_id != ?) AND (? = '' OR b.type = ?) AND
       (? = '' OR instr(lower(b.store_name || ' ' || b.store_motto || ' ' || u.username), ?) > 0)`;
     const selectedType = SHOP_TYPES.some(entry => entry.id === type) ? type : '';
-    const args = [selectedType, selectedType, needle, needle];
+    const args = [ownerId, ownerId, excludeOwnerId, excludeOwnerId, selectedType, selectedType, needle, needle];
     const total = db.prepare(`SELECT COUNT(*) AS n FROM businesses b JOIN users u ON u.id = b.user_id WHERE ${filter}`).get(...args).n;
     const requestedOffset = Math.floor(Number(offset));
     const start = Number.isSafeInteger(requestedOffset) ? Math.max(0, requestedOffset) : 0;

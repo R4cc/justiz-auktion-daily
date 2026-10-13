@@ -10,7 +10,7 @@ import { closeDataStore, upsertAuctions } from '../src/database.mjs';
 import { buyBusiness, stockBusiness } from '../src/businesses.mjs';
 import { visitStore } from '../src/storefronts.mjs';
 import { supplyReviewAuctions, REVIEW_AUCTION_DURATION_MS } from '../src/review-auctions.mjs';
-import { settleAuction } from '../src/resale.mjs';
+import { settleAuction, getResale, placeBid } from '../src/resale.mjs';
 import { featureFlags } from '../src/features.mjs';
 
 const { chromium } = await import(process.env.PLAYWRIGHT_MODULE || '/home/lxadm/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules/playwright/index.mjs');
@@ -28,7 +28,7 @@ accounts.db(db=>{
   db.prepare('UPDATE businesses SET store_name=? WHERE id=?').run('Another choice',otherShop.id);
   for(let n=0;n<2;n++){
     db.prepare('INSERT INTO inventory(id,user_id,item,created_at,sold_at) VALUES(?,?,?,?,?)').run('already-used-'+n,owner.id,JSON.stringify({kind:'review-pack',reviewCount:20,price:1200}),now,now);
-    db.prepare('INSERT INTO store_review_packs VALUES(?,?,?,?,?)').run('already-used-'+n,20,otherShop.id,owner.id,now);
+    db.prepare('INSERT INTO store_review_packs(inventory_id,review_count,business_id,redeemed_by,redeemed_at) VALUES(?,?,?,?,?)').run('already-used-'+n,20,otherShop.id,owner.id,now);
   }
   db.prepare('INSERT INTO inventory(id,user_id,item,created_at) VALUES(?,?,?,?)').run('smoke-wine',owner.id,JSON.stringify({title:'Local wine',price:100,marketCategory:'wine'}),now);
   for(let stars=1;stars<=5;stars++){
@@ -37,6 +37,13 @@ accounts.db(db=>{
   }
 });
 stockBusiness(dir,owner,shop.id,['smoke-wine'],{now});
+const rival={id:'reviewer-4'};
+accounts.db(db=>db.prepare('UPDATE users SET tokens=100000,username=? WHERE id=?').run('Rival <owner> & '+ 'longname'.repeat(10),rival.id));
+const rivalShop=buyBusiness(dir,rival,'wine','popup',{now}).shop;
+accounts.db(db=>{
+  db.prepare('UPDATE businesses SET store_name=? WHERE id=?').run('Competitor <shop>',rivalShop.id);
+  db.prepare('INSERT INTO store_reviews VALUES(?,?,?,?,?)').run(rivalShop.id,'reviewer-1',4,'Good rival',now);
+});
 const day=Math.floor(now/86400000)*86400000;
 const auction=supplyReviewAuctions(dir,{now:day+8*3600000}).auctions[0];
 // Make the daily supply window live at the test's actual wall clock.
@@ -63,7 +70,7 @@ try {
     await page.setViewportSize({width,height:1000});await lang(language);await fits('auction '+width+' '+language);
   }
   await page.locator(`[data-economy="resale"][data-id="${auction}"]`).click();await page.waitForSelector('.auction-bid-form');
-  assert.match(await page.locator('.auction-room-meta').innerText(),/Fünf-Sterne/);
+  assert.match(await page.locator('.auction-room-meta').innerText(),/1–5 Sterne/);
   await page.locator('.auction-bid-form input[name="amount"]').fill(String(lot.start_price+100));
   await page.locator('.auction-bid-form button[type="submit"]').click();
   await page.waitForFunction(id=>document.querySelector(`.auction-bid-form[data-id="${id}"]`)?.textContent.includes('Dein aktuelles Höchstgebot'),auction);
@@ -76,19 +83,55 @@ try {
   for(const width of [1440,768,390,320])for(const language of ['en','de']){
     await page.setViewportSize({width,height:1000});await lang(language);await fits('inventory '+width+' '+language);
     await page.locator('[data-review-pack-action="choose"]').click();await page.waitForSelector('.review-pack-dialog[open]');
-    assert.equal(await page.locator('.review-pack-dialog [data-review-pack-action="redeem"]').count(),2);
+    assert.ok(await page.locator('#review-pack-title').evaluate(el=>el.getBoundingClientRect().top>=el.closest('dialog').getBoundingClientRect().top),'Dialog title visible on open');
+    assert.equal(await page.locator('.review-target-own .review-store-choice').count(),2);
+    assert.equal(await page.locator('.review-target-other .review-store-choice').count(),1);
+    assert.match(await page.locator('.review-target-other .review-store-rating').innerText(),/4.*5/);
+    assert.match(await page.locator('.review-target-other .review-store-owner').innerText(),/Rival <owner>/);
+    assert.equal(await page.locator('#review-pack-stars option').count(),5);
+    assert.ok(await page.locator('[data-review-pack-action="redeem"]').isDisabled());
     assert.equal(await page.locator('.review-pack-dialog .review-cap-note').count(),1);
     assert.ok(await page.locator('.review-pack-dialog').evaluate(el=>el.scrollWidth<=el.clientWidth+1));
-    assert.ok(await page.locator('.review-store-choices > button').evaluateAll(nodes=>nodes.every(el=>el.scrollWidth<=el.clientWidth+1&&el.scrollHeight<=el.clientHeight+1)));
+    assert.ok(await page.locator('.review-store-choices > .review-store-choice').evaluateAll(nodes=>nodes.every(el=>el.scrollWidth<=el.clientWidth+1&&el.scrollHeight<=el.clientHeight+1)));
     if([1440,390].includes(width))await page.locator('.review-pack-dialog').screenshot({path:`/tmp/jg-review-redemption-${width}-${language}.png`});
     await page.locator('.review-pack-dialog [data-review-pack-action="close"]').click();
   }
   const before=visitStore(dir,owner,shop.id).store;
   await page.locator('[data-review-pack-action="choose"]').click();await page.waitForSelector('.review-pack-dialog[open]');
-  await page.locator(`.review-pack-dialog [data-shop="${shop.id}"]`).click();await page.waitForFunction(()=>!document.querySelector('.review-pack-dialog').open&&!document.querySelector('.review-pack-card'));
-  const receipt={inventoryId:pack.id,shopId:shop.id};assert.equal((await post(receipt)).status(),200);
+  await page.locator(`.review-pack-dialog [data-shop="${shop.id}"]`).click();
+  await page.locator('.review-pack-dialog [data-review-pack-action="redeem"]').click();await page.waitForFunction(()=>!document.querySelector('.review-pack-dialog').open&&!document.querySelector('.review-pack-card'));
+  const receipt={inventoryId:pack.id,shopId:shop.id,stars:5};assert.equal((await post(receipt)).status(),200);
   assert.equal((await post({...receipt,shopId:otherShop.id})).status(),409);
   const after=visitStore(dir,owner,shop.id).store;assert.equal(after.reviewCount,before.reviewCount+pack.reviewCount);assert.equal(after.reviews.length,before.reviews.length);
+  // Win a second authentic pack and configure a negative campaign in the UI.
+  const secondAuction=supplyReviewAuctions(dir,{now:day+86400000+8*3600000}).auctions[0];
+  accounts.db(db=>db.prepare('UPDATE resale_auctions SET started_at=?,ends_at=? WHERE id=?').run(now,Date.now()+REVIEW_AUCTION_DURATION_MS,secondAuction));
+  const secondLot=getResale(dir,secondAuction);placeBid(dir,owner,secondAuction,secondLot.startPrice);
+  accounts.db(db=>db.prepare('UPDATE resale_auctions SET ends_at=? WHERE id=?').run(Date.now()-1,secondAuction));settleAuction(dir,secondAuction);
+  const secondPack=accounts.inventory(owner).find(item=>item.id===secondLot.inventoryId);
+  await page.goto(base+'/inventory?focus='+encodeURIComponent(secondPack.id));await page.waitForSelector('.review-pack-card');
+  await page.locator('[data-review-pack-action="choose"]').click();await page.waitForSelector('.review-pack-dialog[open]');
+  await page.locator('#review-store-query').fill('no-such-store');await page.locator('.review-store-search button').click();
+  await page.waitForFunction(()=>!document.querySelector('#review-store-query').disabled&&!document.querySelector('.review-target-other .review-store-choice'));
+  assert.equal(await page.locator('.review-target-own .review-store-choice').count(),2);
+  await page.locator('#review-store-query').fill('Competitor');await page.locator('.review-store-search button').click();
+  await page.waitForSelector('.review-target-other .review-store-choice');
+  await page.locator('#review-pack-stars').selectOption('1');
+  await page.locator(`.review-pack-dialog [data-shop="${rivalShop.id}"]`).click();
+  assert.match(await page.locator('.review-apply-summary').innerText(),/Negativ.*1 ★/);
+  assert.match(await page.locator('.review-apply-summary').innerText(),/Anderer Spieler.*Rival/);
+  await page.locator('.review-pack-dialog').screenshot({path:'/tmp/jg-review-negative-320-de.png'});
+  const rivalBefore=visitStore(dir,owner,rivalShop.id).store;
+  await page.locator('.review-pack-dialog [data-review-pack-action="redeem"]').click();
+  await page.waitForFunction(()=>!document.querySelector('.review-pack-dialog').open&&!document.querySelector('.review-pack-card'));
+  const negativeReceipt={inventoryId:secondPack.id,shopId:rivalShop.id,stars:1};
+  assert.equal((await post(negativeReceipt)).status(),200);
+  assert.equal((await post({...negativeReceipt,stars:5})).status(),409);
+  const rivalAfter=visitStore(dir,owner,rivalShop.id).store;
+  assert.equal(rivalAfter.reviewDistribution[0].count,rivalBefore.reviewDistribution[0].count+secondPack.reviewCount);
+  assert.ok(rivalAfter.rating<rivalBefore.rating);assert.ok(rivalAfter.reviewTrafficBonusPercent<rivalBefore.reviewTrafficBonusPercent);
+  assert.equal(rivalAfter.reviews.length,rivalBefore.reviews.length);
+  assert.equal(accounts.db(db=>db.prepare('SELECT COUNT(*) AS n FROM account_notifications WHERE user_id=? AND source_key=?').get(rival.id,`review-pack:${secondPack.id}`).n),1);
   await page.goto(base+'/stores?shop='+encodeURIComponent(shop.id));await page.waitForSelector('.store-rating-chart');
   assert.equal(await page.locator('[role="meter"]').count(),1);assert.equal(await page.locator('.store-rating-row').count(),5);
   for(const width of [1440,768,390,320])for(const language of ['en','de']){
@@ -97,14 +140,15 @@ try {
     if([1440,390].includes(width))await page.locator('.store-rating-summary').screenshot({path:`/tmp/jg-review-chart-${width}-${language}.png`});
   }
   await page.goto(base+'/businesses');await page.waitForSelector('.business-shop');assert.equal(await page.locator('.business-shop [role="meter"]').count(),2);
-  await page.goto(base+'/town');await page.waitForSelector('.town-store-row');assert.equal(await page.locator('.town-store-row [role="meter"]').count(),2);
+  await page.goto(base+'/town');await page.waitForSelector('.town-store-row');assert.equal(await page.locator('.town-store-row [role="meter"]').count(),3);
   const guest=await browser.newContext({viewport:{width:320,height:1000}}),anonymous=await guest.newPage();anonymous.on('pageerror',error=>errors.push(error.message));
   const unauth=await guest.request.post(base+'/api/account/inventory/reviews/redeem',{data:receipt,headers:{'x-requested-with':'JUSTIZGUESSR'}});assert.equal(unauth.status(),401);
-  await anonymous.goto(base+'/stores');await anonymous.waitForSelector('.store-card');assert.equal(await anonymous.locator('.store-card [role="meter"]').count(),2);
+  await anonymous.goto(base+'/stores');await anonymous.waitForSelector('.store-card');assert.equal(await anonymous.locator('.store-card [role="meter"]').count(),3);
   await anonymous.goto(base+'/stores?shop='+encodeURIComponent(shop.id));await anonymous.waitForSelector('.store-rating-chart');
   assert.equal(await anonymous.locator('.visitor-hero [role="meter"]').count(),1);assert.equal(await anonymous.locator('.store-rating-row').count(),5);
   assert.equal(await anonymous.locator('.store-review-card').count(),after.reviews.length);
   assert.ok(await anonymous.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1));
+  assert.equal((await guest.request.get(base+'/api/account/inventory/reviews/targets')).status(),401);
   assert.deepEqual(errors,[]);await guest.close();await context.close();
-  console.log('Review auctions browser checks passed: real bid/settlement, CSRF/auth, redeem/retry/store choice, rating-only counts, popularity across all store views, EN/DE at 1440/768/390/320px and no page errors.');
+  console.log('Review auctions browser checks passed: real bid/settlement, CSRF/auth, positive/negative redemption, retry star conflicts, own/rival groups with ratings, search, rating-only counts, popularity across all store views, EN/DE at 1440/768/390/320px and no page errors.');
 } finally {await browser.close();await new Promise(resolve=>server.close(resolve));closeDataStore(dir);await rm(dir,{recursive:true,force:true});}

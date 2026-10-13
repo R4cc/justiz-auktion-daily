@@ -35,6 +35,10 @@ export function ensureReviewSchema(db) {
     created_at INTEGER NOT NULL
   ) STRICT;
   CREATE INDEX IF NOT EXISTS store_npc_feedback_author ON store_npc_feedback(business_id,npc_id,created_at DESC);`);
+  // Older redeemed packs retain their original five-star rating.
+  if (!db.prepare('PRAGMA table_info(store_review_packs)').all().some(column => column.name === 'stars')) {
+    db.exec('ALTER TABLE store_review_packs ADD COLUMN stars INTEGER NOT NULL DEFAULT 5 CHECK(stars BETWEEN 1 AND 5)');
+  }
 }
 
 export function priceFeedback(npc, paid, reference) {

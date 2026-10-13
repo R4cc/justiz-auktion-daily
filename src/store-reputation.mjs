@@ -22,7 +22,7 @@ export function storeReputation(db, shop, now) {
   const distribution = [1, 2, 3, 4, 5].map(stars => ({ stars, count: 0 }));
   for (const row of db.prepare(`SELECT r.stars,COUNT(*) AS count FROM store_reviews r JOIN users u ON u.id=r.user_id
     WHERE r.business_id=? AND u.banned=0 AND r.updated_at<=? GROUP BY r.stars`).all(shop.id,now)) distribution[row.stars - 1].count = row.count;
-  distribution[4].count += rating.purchasedCount;
+  for (const row of db.prepare('SELECT stars,SUM(review_count) AS count FROM store_review_packs WHERE business_id=? AND redeemed_at<=? GROUP BY stars').all(shop.id,now)) distribution[row.stars - 1].count += row.count;
   const multiplier = multiplierForRating(rating);
   const popularity = Math.min(MAX_STORE_POPULARITY, Math.max(0, shop.traffic_popularity * multiplier));
   return { popularity, popularityPercent: Math.round(popularity / MAX_STORE_POPULARITY * 100),

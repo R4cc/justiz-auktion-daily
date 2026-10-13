@@ -37,6 +37,7 @@ const accountEscape = value => String(value ?? '').replace(/[&<>"']/g, char => (
 
 function accountError(code) {
   const errors = {
+    invalid_review_stars: t('Choose a star rating from 1 to 5.', 'Wähle eine Bewertung von 1 bis 5 Sternen.'),
     invalid_review_pack: t('Choose a review pack and a store.', 'Wähle ein Bewertungspaket und einen Laden.'),
     review_pack_not_found: t('This review pack is not available.', 'Dieses Bewertungspaket ist nicht verfügbar.'),
     review_pack_used: t('This review pack was already redeemed.', 'Dieses Bewertungspaket wurde bereits eingelöst.'),
