@@ -105,6 +105,27 @@ export function ensureResaleSchema(db, now = Date.now()) {
     db.prepare(`UPDATE resale_auctions SET status = 'cancelled', closed_at = ?
       WHERE current_bidder_id IS NOT NULL`).run(now);
   }
+  if (!db.prepare("SELECT 1 FROM sqlite_schema WHERE type='table' AND name='resale_xp_items'").get()) {
+    db.exec('SAVEPOINT resale_xp_upgrade');
+    try {
+      db.exec(`CREATE TABLE resale_xp_items (
+        inventory_id TEXT PRIMARY KEY REFERENCES inventory(id),
+        auction_id TEXT NOT NULL REFERENCES resale_auctions(id) ON DELETE CASCADE
+      ) STRICT`);
+      // Already rewarded physical items cannot earn again after the upgrade.
+      if (db.prepare("SELECT 1 FROM sqlite_schema WHERE type='table' AND name='xp_events'").get()) {
+        db.exec(`INSERT OR IGNORE INTO resale_xp_items
+          SELECT ai.inventory_id, a.id FROM resale_auction_items ai
+          JOIN resale_auctions a ON a.id=ai.auction_id JOIN users u ON u.id=a.seller_id
+          JOIN xp_events x ON x.source_id=a.id AND x.source_type='resale' AND x.user_id=a.seller_id
+          WHERE u.npc=0 ORDER BY a.settled_at,a.id`);
+      }
+      db.exec('RELEASE resale_xp_upgrade');
+    } catch (error) {
+      db.exec('ROLLBACK TO resale_xp_upgrade; RELEASE resale_xp_upgrade');
+      throw error;
+    }
+  }
 }
 
 // The single lock condition for inventory disposal paths (instant sell, sell
@@ -340,7 +361,12 @@ function settleListingRow(db, row, now) {
   db.prepare('UPDATE users SET tokens = tokens + ? WHERE id = ?').run(row.current_bid, row.seller_id);
   if (held > row.current_bid) db.prepare('UPDATE users SET tokens = tokens + ? WHERE id = ?')
     .run(held - row.current_bid, row.winner_id);
-  if (!seller.npc) awardXp(db, row.seller_id, 'resale', row.id, resaleXp(row.current_bid), now);
+  if (!seller.npc) {
+    const claim = db.prepare('INSERT OR IGNORE INTO resale_xp_items VALUES (?, ?)');
+    const eligible = items.reduce((count, item) => count + Number(claim.run(item.id, row.id).changes), 0);
+    if (eligible) awardXp(db, row.seller_id, 'resale', row.id,
+      resaleXp(Math.floor(row.current_bid * (eligible / items.length))), now);
+  }
   // The guarded UPDATE plus the surrounding transaction is the database-level
   // idempotency guarantee: a second settlement can never pay or transfer again.
   if (!db.prepare(`UPDATE resale_auctions SET settled_at = ? WHERE id = ? AND settled_at IS NULL`)

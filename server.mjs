@@ -1,7 +1,8 @@
 import { auctionGallery } from './src/auction-images.mjs';
-import { clientIp } from './src/client-ip.mjs';
 import { createAccountApi } from './src/account-api.mjs';
 import { createEconomyApi } from './src/economy-api.mjs';
+import { createGuestGameApi } from './src/guest-game-api.mjs';
+import { publicDailySummary } from './src/game-rounds.mjs';
 import { startEconomyRuntime } from './src/economy-runtime.mjs';
 import { higherLowerDeck } from './src/higher-lower.mjs';
 import {
@@ -161,31 +162,6 @@ let rollingPromise = null;
 let rollingTimer = null;
 let discoveryTimer = null;
 let shuttingDown = false;
-
-// /api/random writes a game record per request, so unauthenticated callers
-// must not be able to drive unbounded database growth. A generous per-IP
-// budget (a human playing free rounds needs a handful per minute) keeps
-// scripted floods from turning the endpoint into a disk-fill attack.
-const RANDOM_RATE_LIMIT = 10;
-const RANDOM_RATE_WINDOW_MS = 60_000;
-const randomRateBucket = new Map();
-const trustCloudflareIp = process.env.TRUST_CLOUDFLARE_IP === 'true';
-
-function randomRateExceeded(ip) {
-  const now = Date.now();
-  if (randomRateBucket.size > 10_000) {
-    for (const [key, entry] of randomRateBucket) {
-      if (entry.resetAt <= now) randomRateBucket.delete(key);
-    }
-  }
-  const entry = randomRateBucket.get(ip);
-  if (!entry || entry.resetAt <= now) {
-    randomRateBucket.set(ip, { count: 1, resetAt: now + RANDOM_RATE_WINDOW_MS });
-    return false;
-  }
-  entry.count += 1;
-  return entry.count > RANDOM_RATE_LIMIT;
-}
 
 let lastRefresh = {
   status:
@@ -506,8 +482,7 @@ async function randomPayload() {
 
   const game =
     selectRandomSet(
-      archive.auctions ||
-      [],
+      archive.auctions || [],
       5,
       Math.random,
       usage
@@ -932,6 +907,8 @@ await maybeScheduleDiscovery({
 const accountApi = await createAccountApi({ dataDir, dailyPayload, json });
 
 const economyApi = createEconomyApi({ dataDir, json });
+const guestGameApi = createGuestGameApi({ dataDir, dailyPayload, randomPayload,
+  higherLowerPayload: () => higherLowerDeck(readArchive(dataDir).auctions || []), json });
 const stopEconomyRuntime = startEconomyRuntime(dataDir);
 
 const server =
@@ -954,6 +931,7 @@ const server =
         if (await economyApi(request, response, url)) return;
 
         if (await accountApi(request, response, url)) return;
+        if (await guestGameApi(request, response, url)) return;
 
         if (['GET', 'HEAD'].includes(request.method) && ['/auction-house', '/auctions', '/marketplace', '/market', '/businesses', '/stores', '/town', '/shop', '/palettes', '/skills', '/inventory', '/profile', '/login', '/register', '/admin', '/leaderboard'].includes(url.pathname)) {
           await sendFile(request, response, publicDir, '/index.html', 'no-cache');
@@ -1066,14 +1044,14 @@ const server =
           json(
             response,
             200,
-            await dailyPayload()
+            publicDailySummary(await dailyPayload())
           );
 
           return;
         }
 
         if (request.method === 'GET' && url.pathname === '/api/higher-lower') {
-          json(response, 200, higherLowerDeck(readArchive(dataDir).auctions || []));
+          json(response, 200, { mode: 'higher-lower' });
           return;
         }
 
@@ -1083,22 +1061,10 @@ const server =
           url.pathname ===
             '/api/random'
         ) {
-          if (randomRateExceeded(clientIp(request, trustCloudflareIp))) {
-            json(
-              response,
-              429,
-              {
-                error:
-                  'try_later'
-              }
-            );
-            return;
-          }
-
           json(
             response,
             200,
-            await randomPayload()
+            { mode: 'random' }
           );
 
           return;

@@ -1,3 +1,4 @@
+import { playAnswer } from './helpers/play-answer.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtemp, rm } from 'node:fs/promises';
@@ -222,37 +223,37 @@ test('Daily gives 150 XP on completion exactly once even when Higher-or-Lower to
   const f = await fixture(t), user = f.user('seller');
   const auctions = stock.slice(0, 5).map(a => ({ ...a, actualBid: 100 }));
   const hl = f.accounts.startGame(user, 'higher-lower', () => auctions);
-  for (let i = 0; i < 4; i++) f.accounts.answer(user, hl.id, i, 'higher');
+  for (let i = 0; i < 4; i++) playAnswer(f.accounts, user, hl.id, i, 'higher');
   assert.equal(xp(f), 0);
   const daily = f.accounts.startGame(user, 'daily', () => auctions);
-  for (let i = 0; i < 4; i++) f.accounts.answer(user, daily.id, i, 100);
+  for (let i = 0; i < 4; i++) playAnswer(f.accounts, user, daily.id, i, 100);
   assert.equal(xp(f), 0);
-  const done = f.accounts.answer(user, daily.id, 4, 100);
+  const done = playAnswer(f.accounts, user, daily.id, 4, 100);
   assert.equal(done.earned, 350); assert.equal(xp(f), 150);
   assert.equal(f.accounts.profile(user).progression.level, 2);
   closeDataStore(f.dir);
-  f.accounts.answer(user, daily.id, 4, 100); f.accounts.startGame(user, 'daily', () => auctions);
+  playAnswer(f.accounts, user, daily.id, 4, 100); f.accounts.startGame(user, 'daily', () => auctions);
   assert.equal(xp(f), 150); assert.equal(count(f, 'xp_events'), 1);
   f.setNow(day + 24 * hour);
   const next = f.accounts.startGame(user, 'daily', () => auctions);
-  for (let i = 0; i < 5; i++) f.accounts.answer(user, next.id, i, 100);
+  for (let i = 0; i < 5; i++) playAnswer(f.accounts, user, next.id, i, 100);
   assert.equal(xp(f), 300); assert.equal(count(f, 'xp_events'), 2);
 });
 
 test('XP receipt and Daily completion roll back together and old completed activity is not backfilled', async t => {
   const f = await fixture(t), user = f.user('seller');
   const run = f.accounts.startGame(user, 'daily', () => stock.slice(0, 5).map(a => ({ ...a, actualBid: 100 })));
-  for (let i = 0; i < 4; i++) f.accounts.answer(user, run.id, i, 100);
+  for (let i = 0; i < 4; i++) playAnswer(f.accounts, user, run.id, i, 100);
   withDatabase(f.dir, db => db.exec(`CREATE TRIGGER stop_xp BEFORE UPDATE OF xp ON users BEGIN SELECT RAISE(ABORT, 'test fault'); END`));
   const tokens = balance(f, 'seller');
-  assert.throws(() => f.accounts.answer(user, run.id, 4, 100), /test fault/);
+  assert.throws(() => playAnswer(f.accounts, user, run.id, 4, 100), /test fault/);
   assert.equal(count(f, 'xp_events'), 0); assert.equal(balance(f, 'seller'), tokens);
   assert.equal(f.sql('SELECT complete FROM account_games WHERE id = ?', run.id)[0].complete, 0);
   withDatabase(f.dir, db => db.exec('DROP TRIGGER stop_xp'));
-  f.accounts.answer(user, run.id, 4, 100);
+  playAnswer(f.accounts, user, run.id, 4, 100);
   // Model a completed pre-migration game without a receipt.
   f.mutate('DELETE FROM xp_events'); f.mutate('UPDATE users SET xp = 0');
-  f.accounts.answer(user, run.id, 4, 100); assert.equal(xp(f), 0);
+  playAnswer(f.accounts, user, run.id, 4, 100); assert.equal(xp(f), 0);
 });
 
 test('resale XP uses final price, stays exactly once across restart and failure rolls back ownership', async t => {

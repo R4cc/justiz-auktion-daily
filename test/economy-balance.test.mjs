@@ -1,3 +1,4 @@
+import { playAnswer } from './helpers/play-answer.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtemp, rm } from 'node:fs/promises';
@@ -32,7 +33,7 @@ async function fixture(t, flags = { resales: true, market: true }) {
 }
 const complete = (f, mode, length, correct = true) => {
   let run = f.accounts.startGame(f.user('seller'), mode, () => deck.slice(0, length));
-  for (let i = 0; !run.complete; i++) run = f.accounts.answer(f.user('seller'), run.id, i,
+  for (let i = 0; !run.complete; i++) run = playAnswer(f.accounts, f.user('seller'), run.id, i,
     mode === 'daily' ? deck[i].actualBid : correct && i < length - 2 ? 'higher' : 'lower');
   return run;
 };
@@ -51,7 +52,7 @@ test('Higher or Lower pays only improvements; a failed attempt never blocks Dail
   assert.equal(f.accounts.profile(f.user('seller')).rewardsByMode['higher-lower'].earned, 250);
   closeDataStore(f.dir);
   const reopened = new Accounts(f.dir, { now: () => now });
-  assert.equal(reopened.answer(f.user('seller'), first.id, 3, 'lower').earned, 75);
+  assert.equal(playAnswer(reopened, f.user('seller'), first.id, 3, 'lower').earned, 75);
   assert.equal(f.balance('seller'), 100600);
 });
 
@@ -59,7 +60,7 @@ test('legacy reward receipts migrate once and keep paid currency and frozen run 
   const f = await fixture(t);
   let run = f.accounts.startGame(f.user('seller'), 'higher-lower', () => deck.slice(0, 5),
     { daily: 200, higherLowerPerCorrect: 40, higherLowerMax: 400, minimumStreak: 3 });
-  for (let n = 0; n < 4; n++) run = f.accounts.answer(f.user('seller'), run.id, n, 'higher');
+  for (let n = 0; n < 4; n++) run = playAnswer(f.accounts, f.user('seller'), run.id, n, 'higher');
   assert.equal(run.earned, 160);
   f.accounts.db(db => db.exec(`ALTER TABLE daily_rewards RENAME TO new_rewards;
     CREATE TABLE daily_rewards (user_id TEXT NOT NULL REFERENCES users(id), date TEXT NOT NULL,

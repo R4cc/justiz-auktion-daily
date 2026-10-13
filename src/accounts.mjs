@@ -24,6 +24,7 @@ import { progressionForXp } from './progression.mjs';
 import { ensureNotificationSchema, pushNotification } from './notifications.mjs';
 import { ensureBusinessSchema, businessTypeForItem } from './businesses.mjs';
 import { acquisition, acquireItems, recordSale, tradingTotals, traderProgress, milestone } from './trader.mjs';
+import { dailyAnswer, publicRunAuctions, startDailyRound } from './game-rounds.mjs';
 
 export { AccountError };
 
@@ -259,10 +260,14 @@ export class Accounts {
     if (!await passwordMatches(password, stored) || !row) fail('invalid_login', 401);
     if (row.banned) fail('account_banned', 403);
     return this.atomic(db => {
+      const current = db.prepare('SELECT password_hash, must_change_password, banned FROM users WHERE id = ?').get(row.id);
+      if (!current || current.password_hash !== row.password_hash) fail('invalid_login', 401);
+      if (current.banned) fail('account_banned', 403);
       // A temporary password from an admin reset works for exactly one login;
       // the session it creates may do nothing but set a real password.
-      if (row.must_change_password === 2) fail('temporary_password_used', 403);
-      if (row.must_change_password === 1) db.prepare('UPDATE users SET must_change_password = 2 WHERE id = ?').run(row.id);
+      if (current.must_change_password === 2) fail('temporary_password_used', 403);
+      if (current.must_change_password === 1 && !db.prepare('UPDATE users SET must_change_password = 2 WHERE id = ? AND must_change_password = 1 AND password_hash = ?')
+        .run(row.id, row.password_hash).changes) fail('temporary_password_used', 403);
       return this.session(db, row.id);
     });
   }
@@ -305,8 +310,10 @@ export class Accounts {
     if (!await passwordMatches(String(currentPassword ?? ''), stored)) fail('wrong_password', 403);
     const hash = await passwordHash(newPassword);
     return this.atomic(db => {
-      if (!db.prepare('UPDATE users SET password_hash = ?, must_change_password = 0 WHERE id = ? AND must_change_password != 0')
-        .run(hash, user.id).changes) fail('no_password_change_pending', 409);
+      if (!db.prepare('UPDATE users SET password_hash = ?, must_change_password = 0 WHERE id = ? AND must_change_password != 0 AND password_hash = ?')
+        .run(hash, user.id, stored).changes) fail('no_password_change_pending', 409);
+      db.prepare('DELETE FROM account_sessions WHERE user_id = ?').run(user.id);
+      return this.session(db, user.id);
     });
   }
   codes(user, count) {
@@ -756,6 +763,11 @@ export class Accounts {
         ${mode === 'daily' ? '' : 'AND complete = 0'} ORDER BY rowid DESC LIMIT 1`).get(user.id, day(this.now()), mode);
       if (existing) {
         const run = JSON.parse(existing.payload);
+        // Upgrade an in-progress pre-deadline run once, without rerolling it.
+        if (run.mode === 'daily' && !run.complete && !Object.hasOwn(run, 'roundDeadlineAt')) {
+          startDailyRound(run, run.answers.length, this.now());
+          db.prepare('UPDATE account_games SET payload = ? WHERE id = ?').run(JSON.stringify(run), run.id);
+        }
         this.grantDailyCase(db, user, run, catalog);
         return this.publicGame(run, db);
       }
@@ -763,6 +775,7 @@ export class Accounts {
       if (auctions.length < 2 || (mode === 'daily' && auctions.length !== 5)) fail('game_unavailable', 503);
       const run = { id: randomUUID(), date: day(this.now()), mode, auctions, answers: [], streak: 0, complete: false, earned: 0,
         rewards: rewardRates(rewards) };
+      if (mode === 'daily') startDailyRound(run, 0, this.now());
       db.prepare('INSERT INTO account_games (id, user_id, date, mode, payload) VALUES (?, ?, ?, ?, ?)')
         .run(run.id, user.id, run.date, mode, JSON.stringify(run));
       return this.publicGame(run, db);
@@ -777,14 +790,22 @@ export class Accounts {
       ? db.prepare('SELECT item, opened_at, case_inventory_id FROM daily_case_rewards WHERE run_id = ?').get(run.id) : null;
     const storedCase = caseReward ? JSON.parse(caseReward.item) : null;
     const caseTier = storedCase?.item?.caseTier || storedCase?.rarity || null;
-    return { ...run, ...(caseReward ? { dailyCase: { status: caseReward.opened_at === null ? 'ready'
+    const { submittedAnswers, ...view } = run;
+    return { ...view, serverNow: this.now(), ...(caseReward ? { dailyCase: { status: caseReward.opened_at === null ? 'ready'
       : caseReward.case_inventory_id ? 'claimed' : 'opened', tier: caseTier } } : {}),
-      auctions: run.auctions.map((auction, i) => {
-      const revealed = run.mode === 'daily' ? i < run.answers.length : i <= run.answers.length;
-      if (revealed) return auction;
-      const { actualBid, ...hidden } = auction;
-      return hidden;
-    }) };
+      auctions: publicRunAuctions(run) };
+  }
+  startRound(user, id, position) {
+    return this.atomic(db => {
+      const row = db.prepare('SELECT payload FROM account_games WHERE id = ? AND user_id = ?').get(String(id), user.id);
+      if (!row) fail('game_not_found', 404);
+      const run = JSON.parse(row.payload);
+      if (run.date !== day(this.now())) fail('daily_reset', 409);
+      if (run.mode !== 'daily') fail('invalid_mode');
+      startDailyRound(run, position, this.now());
+      db.prepare('UPDATE account_games SET payload = ? WHERE id = ?').run(JSON.stringify(run), run.id);
+      return this.publicGame(run, db);
+    });
   }
   answer(user, id, position, answer, catalog = null) {
     return this.atomic(db => {
@@ -794,18 +815,19 @@ export class Accounts {
       if (run.date !== day(this.now())) fail('daily_reset', 409);
       if (!Number.isInteger(position) || position < 0 || position > run.answers.length) fail('invalid_position', 409);
       if (position < run.answers.length) {
-        if (run.answers[position] !== answer) fail('answer_conflict', 409);
+        if (run.answers[position] !== answer && run.submittedAnswers?.[position] !== answer) fail('answer_conflict', 409);
         this.grantDailyCase(db, user, run, catalog);
         return this.publicGame(run, db);
       }
       if (run.complete) fail('game_complete', 409);
       if (run.mode === 'daily') {
-        // null records a round whose 25-second guess clock expired with an
-        // empty box: it counts toward completion but scores zero everywhere,
-        // because scoreGuess treats non-finite guesses as 0.
-        const timedOut = answer === null;
-        if (!timedOut && (typeof answer !== 'number' || !Number.isFinite(answer) || answer < 0 || answer > 1e12)) fail('invalid_guess');
-        run.answers.push(timedOut ? null : answer);
+        // Expired guesses are stored as null: the round completes with zero
+        // points even when a caller submits a numeric answer after its clock.
+        const accepted = dailyAnswer(run, answer, this.now());
+        run.submittedAnswers ||= [...run.answers];
+        run.submittedAnswers.push(answer);
+        run.answers.push(accepted);
+        run.roundDeadlineAt = null;
         run.complete = run.answers.length === 5;
       } else {
         if (!['higher', 'lower'].includes(answer)) fail('invalid_guess');

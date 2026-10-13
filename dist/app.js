@@ -1,80 +1,8 @@
-const FALLBACK_AUCTIONS = [
-  {
-    id: 210631,
-    title: '1 Akku der Marke „HILTI“',
-    category: 'Werkzeug',
-    image: 'assets/hilti.jpg',
-    description: 'Gebrauchter HILTI Akku, Modell B 22 / 5,2 Ah. Deutliche Gebrauchsspuren; Versand per DPD möglich.',
-    condition: 'Gebraucht',
-    fulfillment: 'Versand',
-    startBid: 10,
-    actualBid: 22,
-    bids: 8,
-    endAt: '2026-09-10T11:00:00Z',
-    url: 'https://www.justiz-auktion.de/1-Akku-der-Marke-quotHILTIquot-210631'
-  },
-  {
-    id: 210635,
-    title: 'Bohrhammer Makita HR2470',
-    category: 'Werkzeug',
-    image: 'assets/makita.jpg',
-    description: 'Augenscheinlich unbenutzter Bohrhammer im Koffer. Ein Funktionstest wurde nicht durchgeführt.',
-    condition: 'Neuwertig',
-    fulfillment: 'Versand',
-    startBid: 20,
-    actualBid: 110,
-    bids: 14,
-    endAt: '2026-09-10T11:00:00Z',
-    url: 'https://www.justiz-auktion.de/1-Bohrhammer-der-Marke-quotMakitaquot-210635'
-  },
-  {
-    id: 211520,
-    title: 'Parfum-Set: Jil Sander, Boss & Elizabeth Arden',
-    category: 'Kosmetik',
-    image: 'assets/perfume.jpg',
-    description: 'Vier originalverpackte Düfte: Jil Sander Eve und Evergreen, Boss The Scent Elixir und Elizabeth Arden Red Door.',
-    condition: 'Neu',
-    fulfillment: 'Versand',
-    startBid: 40,
-    actualBid: 60,
-    bids: 6,
-    endAt: '2026-09-16T18:09:00Z',
-    url: 'https://www.justiz-auktion.de/1-Eau-de-Toilette-Jil-Sander-Eve-Natural-Spray-uperiodaperiod-211520'
-  },
-  {
-    id: 210640,
-    title: 'Giant Mountainbike, 26 Zoll',
-    category: 'Fahrrad',
-    image: 'assets/bike.jpg',
-    description: 'Gebrauchtes schwarzes Giant Mountainbike mit 3×9-Gangschaltung. Technisch nicht geprüft, nur Selbstabholung.',
-    condition: 'Gebraucht',
-    fulfillment: 'Abholung',
-    startBid: 5,
-    actualBid: 350,
-    bids: 22,
-    endAt: '2026-09-10T11:00:00Z',
-    url: 'https://www.justiz-auktion.de/1-Fahrrad-quotGiantquot-210640'
-  },
-  {
-    id: 212441,
-    title: 'Philips Fernseher, 60 Zoll',
-    category: 'Elektronik',
-    image: 'assets/tv.jpg',
-    description: 'Gebrauchter Philips 60PFL6008K/12 ohne Fernbedienung und Anschlusskabel. Funktion nicht geprüft.',
-    condition: 'Gebraucht',
-    fulfillment: 'Abholung',
-    startBid: 10,
-    actualBid: 12,
-    bids: 3,
-    endAt: '2026-09-15T12:00:00Z',
-    url: 'https://www.justiz-auktion.de/1-Fernseher-der-Marke-quotPhilipsquot-212441'
-  }
-];
-
-let DAILY_AUCTIONS = FALLBACK_AUCTIONS;
+let DAILY_AUCTIONS = [];
 let AUCTIONS = DAILY_AUCTIONS;
 let dailyMeta = null;
 let gameMode = 'daily';
+let randomGameRun = null;
 
 const app = document.querySelector('#app');
 const dailyCaseDialog = document.createElement('dialog');
@@ -176,18 +104,11 @@ async function loadDailyGame() {
     const response = await fetch('/api/daily', { headers: { accept: 'application/json' } });
     if (!response.ok) return;
     const payload = await response.json();
-    if (!Array.isArray(payload.auctions) || payload.auctions.length !== 5) return;
-    DAILY_AUCTIONS = payload.auctions.map(item => ({
-      ...item,
-      image: item.image || item.images?.[0] || 'assets/tv.jpg',
-      actualBid: Number(item.actualBid ?? item.correctPrice),
-      startBid: Number(item.startBid || 0)
-    }));
-    if (gameMode === 'daily') AUCTIONS = DAILY_AUCTIONS;
+    if (payload.auctionCount !== 5) return;
     dailyMeta = { date: payload.date, gameNumber: payload.gameNumber, generatedAt: payload.generatedAt };
     if (state.view === 'start') renderStart();
   } catch {
-    // The bundled seed keeps the game playable during a temporary collector outage.
+    // Keep the start screen available; starting a round retries the server.
   }
 }
 
@@ -201,19 +122,14 @@ async function startRandomGame() {
     button.textContent = t("Loading a random round…", "Zufallsrunde wird geladen …");
   }
   try {
-    const response = await fetch('/api/random', { headers: { accept: 'application/json' } });
-    if (!response.ok) {
-      const problem = await response.json().catch(() => ({}));
-      throw new Error(problem.error === 'insufficient_variety' ? 'insufficient_variety' : 'random_game_unavailable');
-    }
-    const payload = await response.json();
+    const payload = await guestGameRequest('start', { mode: 'random' });
     if (request !== higherLowerRequest) return;
     if (!Array.isArray(payload.auctions) || payload.auctions.length !== 5) throw new Error('invalid_random_game');
     gameMode = 'random';
+    randomGameRun = payload;
     AUCTIONS = payload.auctions.map(item => ({
       ...item,
       image: item.image || item.images?.[0] || 'assets/tv.jpg',
-      actualBid: Number(item.actualBid ?? item.correctPrice),
       startBid: Number(item.startBid || 0)
     }));
     state = { view: 'game', round: 0, answers: [], scoreVersion: SCORE_VERSION };
@@ -221,7 +137,7 @@ async function startRandomGame() {
   } catch (error) {
     if (request !== higherLowerRequest) return;
     renderStart();
-    showToast(error.message === 'insufficient_variety'
+    showToast(error.code === 'insufficient_variety' || error.message === 'insufficient_variety'
       ? t("Not enough different auctions yet. Please try again later.", "Noch nicht genug unterschiedliche Auktionen. Bitte versuche es später erneut.")
       : t("The random round could not be loaded.", "Die Zufallsrunde konnte gerade nicht geladen werden."));
     if (button) {
@@ -351,19 +267,12 @@ async function startGame() {
     const answers = accountDailyRun.answers.map((guess, index) => ({ guess,
       score: scoreGuess(guess, AUCTIONS[index].actualBid),
       error: guess === null ? null : currentError(guess, AUCTIONS[index].actualBid) }));
-    state = { view: accountDailyRun.complete ? 'results' : 'game', round: Math.max(0, answers.length - 1), answers, scoreVersion: SCORE_VERSION };
+    state = { view: accountDailyRun.complete ? 'results' : 'game',
+      round: accountDailyRun.roundDeadlineAt ? answers.length : Math.max(0, answers.length - 1), answers, scoreVersion: SCORE_VERSION };
     if (accountDailyRun.complete) finishGame(); else renderRound();
     return;
   }
-  const saved = upgradeSavedState(getTodayRecord());
-  if (saved?.view === 'results') {
-    state = saved;
-    renderResults();
-    return;
-  }
-  state = saved?.answers ? saved : { view: 'game', round: 0, answers: [], scoreVersion: SCORE_VERSION };
-  state.view = 'game';
-  renderRound();
+  throw new Error(t('The Daily could not be loaded. Please try again.', 'Das Daily konnte nicht geladen werden. Bitte versuche es erneut.'));
   } catch (error) { if (request === higherLowerRequest) { renderStart(); showToast(error.message); } }
   finally { dailyStarting = false; }
 }
@@ -505,7 +414,8 @@ function startGuessTimer() {
   const bar = document.querySelector('[data-guess-timer]');
   if (!bar) return;
   const fill = bar.querySelector('[data-guess-timer-fill]');
-  guessDeadline = Date.now() + GUESS_TIME_LIMIT;
+  const run = gameMode === 'daily' ? accountDailyRun : randomGameRun;
+  guessDeadline = run ? run.clientDeadlineAt : Date.now() + GUESS_TIME_LIMIT;
   const tick = () => {
     if (state.view !== 'game' || state.answers[state.round] || !document.querySelector('#guess-form')) { stopGuessTimer(); return; }
     const fraction = Math.max(0, guessDeadline - Date.now()) / GUESS_TIME_LIMIT;
@@ -520,10 +430,7 @@ function startGuessTimer() {
 
 function expireGuess() {
   if (dailySubmitting || state.answers[state.round] || state.view !== 'game') return;
-  const raw = document.querySelector('#price-input')?.value.trim().replace(/\s/g, '').replace(',', '.') || '';
-  const guess = Number(raw);
-  // A typed value counts even after the clock ran out; an empty box scores zero.
-  applyGuess(raw && Number.isFinite(guess) && guess >= 0 ? guess : null);
+  applyGuess(null);
 }
 
 let dailySubmitting = false;
@@ -535,11 +442,15 @@ async function applyGuess(guess) {
   const button = document.querySelector('#guess-form button[type="submit"]');
   if (button) button.disabled = true;
   try {
-  if (gameMode === 'daily' && accountDailyRun) {
-    accountDailyRun = await accountGameAnswer(accountDailyRun, state.round, guess);
+  const run = gameMode === 'daily' ? accountDailyRun : randomGameRun;
+  if (run) {
+    const updated = await accountGameAnswer(run, state.round, guess);
+    if (state !== currentState || state.view !== 'game') return;
+    if (gameMode === 'daily') accountDailyRun = updated; else randomGameRun = updated;
     // The server seals upcoming answers; the response reveals the round just
     // answered, so the local deck needs that refreshed price for the display.
-    AUCTIONS = accountDailyRun.auctions;
+    AUCTIONS = updated.auctions;
+    guess = updated.answers[state.round];
   }
   if (state !== currentState || state.view !== 'game') return;
   const actual = AUCTIONS[state.round].actualBid;
@@ -564,8 +475,22 @@ async function submitGuess(form) {
   await applyGuess(guess);
 }
 
-function nextRound() {
+let dailyAdvancing = false;
+async function nextRound() {
+  if (dailyAdvancing || dailySubmitting || !state.answers[state.round]) return;
   if (state.round < 4) {
+    const activeRun = gameMode === 'daily' ? accountDailyRun : randomGameRun;
+    if (activeRun) {
+      const currentState = state, request = higherLowerRequest;
+      dailyAdvancing = true;
+      try {
+        const run = await accountGameRoundStart(activeRun, state.round + 1);
+        if (state !== currentState || request !== higherLowerRequest || state.view !== 'game') return;
+        if (gameMode === 'daily') accountDailyRun = run; else randomGameRun = run;
+        AUCTIONS = run.auctions;
+      } catch (error) { showToast(error.message); return; }
+      finally { dailyAdvancing = false; }
+    }
     state.round += 1;
     saveProgress();
     renderRound();

@@ -1,3 +1,4 @@
+import { playAnswer } from './helpers/play-answer.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtemp, rm } from 'node:fs/promises';
@@ -60,9 +61,9 @@ test('account and friend euro values count retained copies, exclude sold items a
   service.requestFriend(admin, 'Friend'); service.acceptFriend(friend, admin.id);
   let daily = service.startGame(admin, 'daily', () => lots.slice(0, 5));
   assert.equal(service.profile(admin).daily.status, 'not_started');
-  service.answer(admin, daily.id, 0, lots[0].actualBid);
+  playAnswer(service, admin, daily.id, 0, lots[0].actualBid);
   assert.deepEqual(service.friends(friend).friends[0].daily, { status: 'in_progress', completedRounds: 1, score: null });
-  for (let i = 1; i < 5; i++) service.answer(admin, daily.id, i, lots[i].actualBid);
+  for (let i = 1; i < 5; i++) playAnswer(service, admin, daily.id, i, lots[i].actualBid);
   assert.equal(service.friends(friend).friends[0].daily.score, 5000);
   const catalog = caseCatalog(lots.slice(0, 5).map(item => ({ ...item, currentBid: 123.45 })));
   const item = service.openCase(admin, catalog, 'fundkiste', 'value-request-0001');
@@ -73,7 +74,7 @@ test('account and friend euro values count retained copies, exclude sold items a
   assert.equal(service.friends(friend).friends[0].daily.score, null);
   assert.equal(service.friends(friend).friends[0].daily.status, 'not_started');
   daily = service.startGame(admin, 'daily', () => lots.slice(0, 5));
-  for (let i = 0; i < 5; i++) service.answer(admin, daily.id, i, 0);
+  for (let i = 0; i < 5; i++) playAnswer(service, admin, daily.id, i, 0);
   service.openCase(admin, catalog, 'fundkiste', 'value-request-0002');
   assert.equal(service.profile(admin).accountValueEur, 246.9);
   assert.equal(service.friends(friend).friends[0].itemCount, 2);
@@ -94,9 +95,9 @@ test('leaderboard ranks the top players by retained inventory value and only sco
   const sold = service.openCase(bob, catalog, 'fundkiste', 'leader-request-0004');
   service.sell(bob, sold.id);
   const daily = service.startGame(alice, 'daily', () => lots.slice(0, 5));
-  for (let i = 0; i < 5; i++) service.answer(alice, daily.id, i, lots[i].actualBid);
+  for (let i = 0; i < 5; i++) playAnswer(service, alice, daily.id, i, lots[i].actualBid);
   const partial = service.startGame(bob, 'daily', () => lots.slice(0, 5));
-  service.answer(bob, partial.id, 0, lots[0].actualBid);
+  playAnswer(service, bob, partial.id, 0, lots[0].actualBid);
   const board = service.leaderboard();
   assert.equal(board.date, '2026-09-12');
   assert.deepEqual(board.leaders.map(row => [row.rank, row.username, row.inventoryValueEur, row.score]), [
@@ -110,10 +111,10 @@ test('run responses seal upcoming daily answers but reveal answered rounds', asy
   const { service, admin } = await fixture(t);
   let daily = service.startGame(admin, 'daily', () => lots.slice(0, 5));
   assert.ok(daily.auctions.every(item => !('actualBid' in item)));
-  daily = service.answer(admin, daily.id, 0, lots[0].actualBid);
+  daily = playAnswer(service, admin, daily.id, 0, lots[0].actualBid);
   assert.equal(daily.auctions[0].actualBid, lots[0].actualBid);
   assert.ok(!('actualBid' in daily.auctions[1]));
-  for (let i = 1; i < 5; i++) daily = service.answer(admin, daily.id, i, lots[i].actualBid);
+  for (let i = 1; i < 5; i++) daily = playAnswer(service, admin, daily.id, i, lots[i].actualBid);
   assert.deepEqual(daily.auctions.map(item => item.actualBid), lots.slice(0, 5).map(item => item.actualBid));
   // Higher/lower keeps the current comparison price visible and future ones hidden.
   const hl = service.startGame(admin, 'higher-lower', () => lots);
@@ -229,27 +230,27 @@ test('daily rewards are separate per mode per UTC day, survive replay and resume
   const other = await register('other');
   let run = service.startGame(admin, 'daily', () => lots.slice(0, 5));
   assert.equal(service.startGame(admin, 'daily', () => []).id, run.id);
-  assert.throws(() => service.answer(other, run.id, 0, 10), { status: 404 });
-  assert.throws(() => service.answer(admin, run.id, 1, 10), /invalid_position/);
-  assert.throws(() => service.answer(admin, run.id, 0, '100'), /invalid_guess/);
-  for (let i = 0; i < 5; i++) run = service.answer(admin, run.id, i, 10);
+  assert.throws(() => playAnswer(service, other, run.id, 0, 10), { status: 404 });
+  assert.throws(() => playAnswer(service, admin, run.id, 1, 10), /invalid_position/);
+  assert.throws(() => playAnswer(service, admin, run.id, 0, '100'), /invalid_guess/);
+  for (let i = 0; i < 5; i++) run = playAnswer(service, admin, run.id, i, 10);
   assert.equal(run.earned, 294);
-  assert.equal(service.answer(admin, run.id, 4, 10).earned, 294);
+  assert.equal(playAnswer(service, admin, run.id, 4, 10).earned, 294);
   assert.equal(service.profile(admin).tokens, STARTING_TOKENS + 294);
-  assert.throws(() => service.answer(admin, run.id, 4, 20), /answer_conflict/);
+  assert.throws(() => playAnswer(service, admin, run.id, 4, 20), /answer_conflict/);
   const hl = service.startGame(admin, 'higher-lower', () => lots);
   assert.equal(hl.auctions[0].actualBid, 10);
   assert.ok(hl.auctions.slice(1).every(item => !('actualBid' in item)));
   let result;
-  for (let i = 0; i < 7; i++) result = service.answer(admin, hl.id, i, 'higher');
+  for (let i = 0; i < 7; i++) result = playAnswer(service, admin, hl.id, i, 'higher');
   assert.equal(result.earned, 175);
   assert.equal(service.profile(admin).tokens, STARTING_TOKENS + 469);
   nextDay();
   assert.equal(service.profile(admin).reward, null);
-  assert.throws(() => service.answer(admin, run.id, 0, 10), /daily_reset/);
+  assert.throws(() => playAnswer(service, admin, run.id, 0, 10), /daily_reset/);
   const fresh = service.startGame(admin, 'higher-lower', () => lots);
   assert.notEqual(fresh.id, hl.id);
-  for (let i = 0; i < 7; i++) result = service.answer(admin, fresh.id, i, 'higher');
+  for (let i = 0; i < 7; i++) result = playAnswer(service, admin, fresh.id, i, 'higher');
   assert.equal(result.earned, 175);
   assert.equal(service.profile(admin).tokens, STARTING_TOKENS + 644);
 });
@@ -257,20 +258,20 @@ test('daily rewards are separate per mode per UTC day, survive replay and resume
 test('a timed-out guess is recorded as null, scores zero and still completes the daily run', async t => {
   const { service, admin, nextDay } = await fixture(t);
   let run = service.startGame(admin, 'daily', () => lots.slice(0, 5));
-  run = service.answer(admin, run.id, 0, null);
+  run = playAnswer(service, admin, run.id, 0, null);
   assert.equal(run.answers[0], null);
-  assert.equal(service.answer(admin, run.id, 0, null).answers[0], null);
-  assert.throws(() => service.answer(admin, run.id, 0, 10), /answer_conflict/);
-  for (let i = 1; i < 5; i++) run = service.answer(admin, run.id, i, lots[i].actualBid);
+  assert.equal(playAnswer(service, admin, run.id, 0, null).answers[0], null);
+  assert.throws(() => playAnswer(service, admin, run.id, 0, 10), /answer_conflict/);
+  for (let i = 1; i < 5; i++) run = playAnswer(service, admin, run.id, i, lots[i].actualBid);
   assert.equal(run.complete, true);
   assert.equal(run.earned, 320);
   assert.equal(service.profile(admin).daily.score,
     [1, 2, 3, 4].reduce((sum, i) => sum + scoreGuess(lots[i].actualBid, lots[i].actualBid), 0));
   const hl = service.startGame(admin, 'higher-lower', () => lots);
-  assert.throws(() => service.answer(admin, hl.id, 0, null), /invalid_guess/);
+  assert.throws(() => playAnswer(service, admin, hl.id, 0, null), /invalid_guess/);
   nextDay();
   let replay = service.startGame(admin, 'daily', () => lots.slice(0, 5));
-  for (let i = 0; i < 5; i++) replay = service.answer(admin, replay.id, i, i % 2 ? null : 10);
+  for (let i = 0; i < 5; i++) replay = playAnswer(service, admin, replay.id, i, i % 2 ? null : 10);
   assert.equal(replay.complete, true);
 });
 
@@ -278,12 +279,12 @@ test('completing Daily grants one physical score-based case even after another m
   const { service, dir, admin, register } = await fixture(t);
   const other = await register('other');
   const higherLower = service.startGame(admin, 'higher-lower', () => lots);
-  for (let i = 0; i < 7; i++) service.answer(admin, higherLower.id, i, 'higher');
+  for (let i = 0; i < 7; i++) playAnswer(service, admin, higherLower.id, i, 'higher');
   const catalog = caseCatalog(lots);
   let daily = service.startGame(admin, 'daily', () => lots.slice(0, 5), undefined, catalog);
   assert.equal(daily.dailyCase, undefined);
   assert.throws(() => service.claimDailyCase(admin, daily.id), /daily_case_not_found/);
-  for (let i = 0; i < 5; i++) daily = service.answer(admin, daily.id, i, lots[i].actualBid, catalog);
+  for (let i = 0; i < 5; i++) daily = playAnswer(service, admin, daily.id, i, lots[i].actualBid, catalog);
   assert.equal(daily.earned, 350);
   assert.equal(daily.dailyCase.status, 'ready');
   assert.ok(daily.dailyCase.tier);
@@ -316,7 +317,7 @@ test('completing Daily grants one physical score-based case even after another m
 test('pending Daily rewards from the prior version become sealed cases without rerolling the find', async t => {
   const { service, admin } = await fixture(t);
   const run = service.startGame(admin, 'daily', () => lots.slice(0, 5));
-  for (let i = 0; i < 5; i++) service.answer(admin, run.id, i, lots[i].actualBid);
+  for (let i = 0; i < 5; i++) playAnswer(service, admin, run.id, i, lots[i].actualBid);
   const oldFind = { id: 'legacy-daily-find', title: 'Saved mystery find', rarity: 'rare', price: 120,
     sellValue: 120, image: '/assets/legacy.jpg', category: 'Werkzeug' };
   service.db(db => db.prepare('UPDATE daily_case_rewards SET item = ?, opened_at = NULL, case_inventory_id = NULL WHERE run_id = ?')
@@ -332,12 +333,12 @@ test('game rewards freeze the current case-priced schedule for each run', async 
   const { service, admin, nextDay } = await fixture(t);
   const rewards = { daily: 24, higherLowerPerCorrect: 5, higherLowerMax: 48, minimumStreak: 3 };
   let run = service.startGame(admin, 'daily', () => lots.slice(0, 5), rewards);
-  for (let i = 0; i < 5; i++) run = service.answer(admin, run.id, i, lots[i].actualBid);
+  for (let i = 0; i < 5; i++) run = playAnswer(service, admin, run.id, i, lots[i].actualBid);
   assert.equal(run.earned, 24);
   assert.deepEqual(run.rewards, rewards);
   nextDay();
   run = service.startGame(admin, 'higher-lower', () => lots, rewards);
-  for (let i = 0; i < 7; i++) run = service.answer(admin, run.id, i, 'higher');
+  for (let i = 0; i < 7; i++) run = playAnswer(service, admin, run.id, i, 'higher');
   assert.equal(run.earned, 35);
   assert.deepEqual(run.rewards, rewards);
   assert.equal(service.profile(admin).tokens, STARTING_TOKENS + 59);
@@ -348,16 +349,16 @@ test('failed Higher or Lower does not consume Daily income and ties reach the se
   const hl = service.startGame(admin, 'higher-lower', () => lots);
   service.startGame(admin, 'daily', () => lots.slice(0, 5));
   assert.equal(service.profile(admin).reward, null);
-  const ended = service.answer(admin, hl.id, 0, 'lower');
+  const ended = playAnswer(service, admin, hl.id, 0, 'lower');
   assert.equal(ended.complete, true);
   assert.equal(ended.earned, 0);
   const daily = service.startGame(admin, 'daily', () => []);
-  for (let i = 0; i < 5; i++) service.answer(admin, daily.id, i, 10);
+  for (let i = 0; i < 5; i++) playAnswer(service, admin, daily.id, i, 10);
   assert.equal(service.profile(admin).tokens, STARTING_TOKENS + 294);
   nextDay();
   const tie = service.startGame(admin, 'higher-lower', () => Array.from({ length: 15 }, () => ({ ...lots[0], actualBid: 10 })));
   let result;
-  for (let i = 0; i < 14; i++) result = service.answer(admin, tie.id, i, i % 2 ? 'higher' : 'lower');
+  for (let i = 0; i < 14; i++) result = playAnswer(service, admin, tie.id, i, i % 2 ? 'higher' : 'lower');
   assert.equal(result.streak, 14);
   assert.equal(result.earned, 250);
 });
@@ -368,7 +369,7 @@ test('case debits, item ownership, idempotent openings and sales remain atomic a
   const catalog = caseCatalog(lots);
   const cost = catalog.cases[0].cost;
   const daily = service.startGame(admin, 'daily', () => lots.slice(0, 5));
-  for (let i = 0; i < 5; i++) service.answer(admin, daily.id, i, 10);
+  for (let i = 0; i < 5; i++) playAnswer(service, admin, daily.id, i, 10);
   assert.throws(() => service.openCase(admin, catalog, 'fundkiste', 'test-request-00001', 'stale'), /catalog_changed/);
   assert.equal(service.profile(admin).tokens, STARTING_TOKENS + 294);
   const item = service.openCase(admin, catalog, 'fundkiste', 'test-request-00001');
@@ -517,7 +518,7 @@ test('admin economy reset clears player progress and auctions while preserving a
   const item = service.openCase(player, catalog, 'fundkiste', 'reset-case-open-0001');
   listItem(dir, player, { inventoryId: item.id, startPrice: 10, endsAt: new Date(Date.now() + 120000).toISOString() });
   const run = service.startGame(player, 'daily', () => lots.slice(0, 5));
-  for (let i = 0; i < 5; i++) service.answer(player, run.id, i, lots[i].actualBid);
+  for (let i = 0; i < 5; i++) playAnswer(service, player, run.id, i, lots[i].actualBid);
   const sessionsBefore = service.db(db => db.prepare('SELECT COUNT(*) AS count FROM account_sessions').get().count);
 
   assert.throws(() => service.resetEconomy(player, 'RESET ECONOMY'), { status: 403 });
@@ -652,7 +653,10 @@ test('HTTP API enforces authentication, CSRF headers, admin permissions and sess
   assert.equal(paged.page, 1);
   let rewarded = (await (await post('games/start', { mode: 'daily' }, playerCookie)).json()).run;
   assert.deepEqual(rewarded.rewards, publicCatalog.rewards);
-  for (let i = 0; i < 5; i++) rewarded = (await (await post('games/answer', { id: rewarded.id, position: i, answer: lots[i].actualBid }, playerCookie)).json()).run;
+  for (let i = 0; i < 5; i++) {
+    if (i) assert.equal((await post('games/round/start', { id: rewarded.id, position: i }, playerCookie)).status, 200);
+    rewarded = (await (await post('games/answer', { id: rewarded.id, position: i, answer: lots[i].actualBid }, playerCookie)).json()).run;
+  }
   assert.equal(rewarded.earned, publicCatalog.rewards.daily + publicCatalog.rewards.dailyScoreBonus);
   assert.equal((await post('admin/reset-economy', { confirmation: 'RESET ECONOMY' }, playerCookie)).status, 403);
   assert.equal((await post('admin/reset-economy', { confirmation: 'wrong' }, cookie)).status, 400);
@@ -669,6 +673,7 @@ test('HTTP API enforces authentication, CSRF headers, admin permissions and sess
   assert.equal((await post('games/daily-case/claim', { id: runId }, playerCookie)).status, 404);
   let finished;
   for (let position = 0; position < 5; position++) {
+    if (position) assert.equal((await post('games/round/start', { id: runId, position }, playerCookie)).status, 200);
     finished = await (await post('games/answer', { id: runId, position, answer: lots[position].actualBid }, playerCookie)).json();
   }
   assert.equal(finished.run.dailyCase.status, 'ready');
@@ -725,6 +730,9 @@ test('password reset over HTTP gates the whole account behind one forced passwor
   const changed = await post('password/change', { currentPassword: reset.reset.temporaryPassword, newPassword: 'brand-new-password-456' }, tempCookie);
   assert.equal(changed.status, 200);
   assert.equal((await changed.json()).user.mustChangePassword, false);
+  assert.match(changed.headers.get('set-cookie'), /jg_session=/);
+  assert.equal((await fetch(base + 'inventory', { headers: { cookie: tempCookie } })).status, 401);
+  assert.equal((await fetch(base + 'inventory', { headers: { cookie: changed.headers.get('set-cookie') } })).status, 200);
   // Normal usage resumes with the new password; the temporary one is consumed.
   assert.equal((await post('login', { username: 'fresh', password: 'brand-new-password-456' })).status, 200);
   assert.equal((await post('login', { username: 'fresh', password: reset.reset.temporaryPassword })).status, 401);

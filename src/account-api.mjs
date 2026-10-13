@@ -23,6 +23,7 @@ import { maskLeaderboard } from './username-privacy.mjs';
 import { markNotificationsRead, notificationsForUser } from './notifications.mjs';
 import { businessDashboard, buyBusiness, setBusinessMargin, stockBusiness, unstockBusiness } from './businesses.mjs';
 import { collectStoreCash, spinStoreHeist, actStoreHeist, buyStoreItem, customizeStore, finishStoreHeist, reactToStore, likeStoreReview, recordStoreVisit, playerCriminalRecord, reviewStore, startStoreHeist, tipStore, visitStore } from './storefronts.mjs';
+import { jsonBody as body } from './json-body.mjs';
 
 const AUCTION_PAGE_SIZE = 25;
 
@@ -47,22 +48,6 @@ function searchAuctions(auctions, query) {
   if (!needle) return auctions;
   return auctions.filter(auction => [auction.title, auction.description, auction.category, auction.id]
     .some(value => String(value ?? '').toLowerCase().includes(needle)));
-}
-
-async function body(request) {
-  if (!request.headers['content-type']?.startsWith('application/json')) throw new AccountError('json_required', 415);
-  let size = 0;
-  const chunks = [];
-  for await (const chunk of request) {
-    size += chunk.length;
-    if (size > 8192) throw new AccountError('body_too_large', 413);
-    chunks.push(chunk);
-  }
-  try {
-    const value = JSON.parse(Buffer.concat(chunks).toString('utf8'));
-    if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error();
-    return value;
-  } catch { throw new AccountError('invalid_json'); }
 }
 
 export async function createAccountApi({ dataDir, dailyPayload, json, env = process.env, flags = featureFlags(env) }) {
@@ -173,7 +158,8 @@ export async function createAccountApi({ dataDir, dailyPayload, json, env = proc
       else if (route === 'password/change') {
         // Thin adapter: pending-state check, temporary-password verification
         // and the guarded flag clear all live in the domain function.
-        await accounts.changePassword(user, payload);
+        const nextToken = await accounts.changePassword(user, payload);
+        response.setHeader('set-cookie', cookie(nextToken));
         result = { user: accounts.profile(user) };
       }
       else if(route==='skills/upgrade') result={tree:upgradeSkill(dataDir,user,payload),user:accounts.profile(user)};
@@ -256,7 +242,8 @@ export async function createAccountApi({ dataDir, dailyPayload, json, env = proc
         result = { run: accounts.startGame(user, payload.mode,
           () => auctions || higherLowerDeck(readArchive(dataDir).auctions, Math.random, Date.now(), dailyIds).auctions,
           caseRewards(getCatalog()), getCatalog()), user: accounts.profile(user) };
-      } else if (route === 'games/answer') result = { run: accounts.answer(user, payload.id, payload.position, payload.answer, getCatalog()), user: accounts.profile(user) };
+      } else if (route === 'games/round/start') result = { run: accounts.startRound(user, payload.id, payload.position), user: accounts.profile(user) };
+      else if (route === 'games/answer') result = { run: accounts.answer(user, payload.id, payload.position, payload.answer, getCatalog()), user: accounts.profile(user) };
       else if (route === 'games/daily-case/claim') result = { item: accounts.claimDailyCase(user, payload.id), user: accounts.profile(user) };
       else if (route === 'inventory/case/open') result = { item: accounts.openSealedCase(user, payload.id), user: accounts.profile(user) };
       else throw new AccountError('not_found', 404);

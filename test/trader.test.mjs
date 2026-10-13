@@ -1,3 +1,4 @@
+import { playAnswer } from './helpers/play-answer.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtemp, rm } from 'node:fs/promises';
@@ -78,7 +79,7 @@ test('sealed case transfer resets owner cost; opening inherits the paid case cos
 
 test('Daily claims/openings preserve zero reward cost, retries, currency and private provenance',async t=>{
   const f=await fixture(t),catalog=caseCatalog(lots);let run=f.accounts.startGame(f.seller,'daily',()=>lots.slice(0,5),undefined,catalog);
-  for(let i=0;i<5;i++)run=f.accounts.answer(f.seller,run.id,i,lots[i].actualBid,catalog);
+  for(let i=0;i<5;i++)run=playAnswer(f.accounts, f.seller,run.id,i,lots[i].actualBid,catalog);
   const balance=f.accounts.profile(f.seller).tokens,box=f.accounts.claimDailyCase(f.seller,run.id);
   assert.deepEqual(f.accounts.claimDailyCase(f.seller,run.id),box);assert.equal(f.accounts.profile(f.seller).tokens,balance);
   const reward=f.accounts.openSealedCase(f.seller,box.id);assert.equal(f.cost(reward.id,f.seller).acquisitionCost,0);assert.equal(f.cost(reward.id,f.seller).acquisitionSource,'reward');
@@ -141,7 +142,7 @@ test('Daily scores rank appraisal skill independently of collection prestige',as
   f.add('valuable',undefined,'unknown',{...item,price:100000});
   for(const [user,multiplier] of [[f.seller,5],[f.buyer,1]]) {
     const run=f.accounts.startGame(user,'daily',()=>lots.slice(0,5));
-    for(let i=0;i<5;i++)f.accounts.answer(user,run.id,i,lots[i].actualBid*multiplier);
+    for(let i=0;i<5;i++)playAnswer(f.accounts, user,run.id,i,lots[i].actualBid*multiplier);
   }
   assert.equal(f.accounts.leaderboard().leaders[0].id,f.seller.id);
   assert.equal(f.accounts.leaderboard('daily').leaders[0].id,f.buyer.id);

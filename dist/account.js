@@ -887,19 +887,40 @@ function revealCaseItem() {
   caseReveal.querySelector('[data-account="close-reveal"]').focus({ preventScroll: true });
 }
 async function accountGameStart(mode) {
-  await accountReady; if (!account) return null;
+  await accountReady;
+  if (!account) return guestGameRequest('start', { mode });
   const owner = account.id, result = await accountApi('games/start', { mode });
   if (account?.id !== owner) throw new Error(t('Your account changed. Please start again.', 'Das Konto wurde gewechselt. Bitte starte erneut.'));
-  updateAccount(result.user); return result.run;
+  updateAccount(result.user); return timedGameRun(result.run);
+}
+function timedGameRun(run) {
+  return { ...run, clientDeadlineAt: run.roundDeadlineAt ? Date.now() + Math.max(0, run.roundDeadlineAt - run.serverNow) : null };
+}
+async function guestGameRequest(route, payload) {
+  const owner = account?.id;
+  const response = await fetch(`/api/games/${route}`, { method: 'POST',
+    headers: { 'content-type': 'application/json', 'x-requested-with': 'JUSTIZGUESSR' }, body: JSON.stringify(payload) });
+  const result = await response.json();
+  if (!response.ok) { const error = new Error(accountError(result.error)); error.code = result.error; throw error; }
+  if (account?.id !== owner) throw new Error(t('Your account changed. Please start again.', 'Das Konto wurde gewechselt. Bitte starte erneut.'));
+  return timedGameRun(result.run);
+}
+async function accountGameRoundStart(run, position) {
+  if (run.guest) return guestGameRequest('round/start', { id: run.id, position });
+  const owner = account?.id, result = await accountApi('games/round/start', { id: run.id, position });
+  if (account?.id !== owner) throw new Error(t('Your account changed. Please start again.', 'Das Konto wurde gewechselt. Bitte starte erneut.'));
+  updateAccount(result.user);
+  return timedGameRun(result.run);
 }
 async function accountGameAnswer(run, position, answer) {
+  if (run.guest) return guestGameRequest('answer', { id: run.id, position, answer });
   const owner = account?.id, result = await accountApi('games/answer', { id: run.id, position, answer });
   if (account?.id !== owner) throw new Error(t('Your account changed. Please start again.', 'Das Konto wurde gewechselt. Bitte starte erneut.'));
   updateAccount(result.user);
   if (result.run.complete && result.run.earned) showToast(economyFlags.paletteAuctions
     ? t(`+${justizEuro(result.run.earned)}! Explore the auctions.`, `+${justizEuro(result.run.earned)}! Entdecke die Auktionen.`)
     : t(`+${justizEuro(result.run.earned)}! Your next case is waiting.`, `+${justizEuro(result.run.earned)}! Deine nächste Kiste wartet.`));
-  return result.run;
+  return timedGameRun(result.run);
 }
 async function spinCaseReel(reel, viewport, item, pool, isCurrent, cardMarkup = item => tierCard(item.rarity)) {
   const winnerIndex = 28 + Math.floor(Math.random() * 12);

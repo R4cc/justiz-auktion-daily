@@ -16,14 +16,9 @@ async function startHigherLower() {
   app.innerHTML = `<section class="hl-screen"><p class="eyebrow">HIGHER OR LOWER</p><h1>${t('Shuffling the lots…', 'Die Lose werden gemischt …')}</h1><button class="secondary-button" data-action="home">${t('Back to home', 'Zur Startseite')}</button></section>`;
   try {
     const serverRun = await accountGameStart('higher-lower');
-    let payload = serverRun;
-    if (!payload) {
-      const response = await fetch('/api/higher-lower', { headers: { accept: 'application/json' } });
-      if (!response.ok) throw new Error(response.status === 503 ? 'variety' : 'unavailable');
-      payload = await response.json();
-    }
+    const payload = serverRun;
     if (!Array.isArray(payload.auctions) || payload.auctions.length < 2 ||
-        (!serverRun && payload.auctions.some(item => !Number.isFinite(item.actualBid) || item.actualBid <= 0))) throw new Error('invalid');
+        !Number.isFinite(payload.auctions[0].actualBid) || payload.auctions[0].actualBid <= 0) throw new Error('invalid');
     if (request !== higherLowerRequest || state.view !== 'higher-lower-loading') return;
     higherLowerRun = { auctions: payload.auctions, index: Math.max(1, serverRun?.answers.length || 0),
       streak: serverRun?.streak || 0, revealed: Boolean(serverRun?.answers.length), correct: serverRun?.correct || false, images: [0, 0], server: serverRun };
@@ -34,7 +29,7 @@ async function startHigherLower() {
   } catch (error) {
     if (request !== higherLowerRequest || state.view !== 'higher-lower-loading') return;
     renderStart();
-    showToast(error.message === 'variety' ? t('Not enough different auctions with confirmed final bids yet. Try again later.', 'Noch nicht genug unterschiedliche Auktionen mit bestätigtem Endgebot. Versuche es später erneut.') : t('The lots could not be loaded. Please try again.', 'Die Lose konnten nicht geladen werden. Bitte versuche es erneut.'));
+    showToast(error.code === 'insufficient_variety' || error.message === 'variety' ? t('Not enough different auctions with confirmed final bids yet. Try again later.', 'Noch nicht genug unterschiedliche Auktionen mit bestätigtem Endgebot. Versuche es später erneut.') : t('The lots could not be loaded. Please try again.', 'Die Lose konnten nicht geladen werden. Bitte versuche es erneut.'));
   }
 }
 function renderHigherLower(focus = false) {
