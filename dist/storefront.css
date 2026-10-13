@@ -77,3 +77,9 @@
 
 .visitor-hero-chips .visitor-rating-link { min-height:44px; }
 .visitor-storefront .visitor-reviews { scroll-margin-top:140px; }
+
+@media (min-width:601px) and (max-width:950px) {
+  .store-owner-supply > .section-title-row { grid-column:1/-1; }
+  .store-owner-supply .store-owner-capacity { grid-column:1;grid-row:2; }
+  .store-owner-supply dl { grid-column:2;grid-row:2/4; }
+}

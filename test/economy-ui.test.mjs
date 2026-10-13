@@ -156,8 +156,8 @@ test('auction card actions share the same bottom row', async () => {
 
 test('marketplace keeps tabs, sell action and quantity controls in the source', () => {
   for (const label of ['Browse auctions', 'My auctions', 'My bids', 'Sell an item',
-    'No auctions are live right now.', "You haven't listed anything yet.",
-    'You have not bid on any auctions yet.', 'Choose an inventory item']) {
+    'No auctions are live right now.', "No listings yet.",
+    'No bids yet.', 'Choose an inventory item']) {
     assert.match(uiSource, new RegExp(label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
   }
   assert.match(uiSource, /data-economy="tab" data-id="\$\{id\}"/);
@@ -201,7 +201,7 @@ test('primary auction board separates My bids above all other live auctions', ()
   assert.deepEqual(order, ['won', 'lead', 'outbid', 'plain', 'other']);
   assert.match(html, /my-bids-board/);
   assert.match(html, /My bids/);
-  assert.match(html, /AUCTION FLOOR/);
+  assert.match(html, /<h2>Live auctions<\/h2>/);
   assert.equal([...html.matchAll(/data-id="lead"/g)].length, 1);
   assert.match(html, /data-reveal="true"/);
   // Won lots stay on the board until their reveal; lost and revealed lots
@@ -264,10 +264,10 @@ test('marketplace tabs show one context at a time with ended history inside its 
   context.tab = 'browse'; vm.runInContext('render()', context);
   assert.match(context.accountContent.innerHTML, /No auctions are live right now\./);
   context.tab = 'mine'; vm.runInContext('render()', context);
-  assert.match(context.accountContent.innerHTML, /You haven't listed anything yet\./);
+  assert.match(context.accountContent.innerHTML, /No listings yet\./);
   assert.match(context.accountContent.innerHTML, /Choose an inventory item/);
   context.tab = 'bids'; vm.runInContext('render()', context);
-  assert.match(context.accountContent.innerHTML, /You have not bid on any auctions yet\./);
+  assert.match(context.accountContent.innerHTML, /No bids yet\./);
   assert.match(context.accountContent.innerHTML, /data-economy="tab" data-id="browse"/);
 });
 
@@ -371,7 +371,7 @@ test('auction detail uses media, facts and bidding without flavour descriptions'
   assert.match(markup, /Raise bid/);
   assert.doesNotMatch(markup, /camera\.jpg|Camera|Possible contents/);
   assert.match(markup, /palette-artwork/);
-  assert.match(markup, /Sealed until your winning reveal/);
+  assert.match(markup, /three mystery finds[\s\S]*after winning[\s\S]*Duplicates are possible/);
   assert.doesNotMatch(markup, /The story|A mysterious customs lot/);
   assert.doesNotMatch(markup, /Customs warehouse bust/);
   assert.doesNotMatch(markup, /PARODY CASE/);
@@ -600,7 +600,7 @@ test('Auction House player filter excludes owned, NPC and primary lots and prese
   assert.doesNotMatch(html, /<article>own<\/article>/);
   context.location.search = '?seller=players&type=mystery';
   vm.runInContext('renderHouse()', context);
-  assert.match(context.accountContent.innerHTML, /No lots here yet/);
+  assert.match(context.accountContent.innerHTML, /No matching lots\./);
 });
 
 test('history helper sends an encoded quick range without breaking legacy limits', async () => {

@@ -47,7 +47,7 @@ try{
     await page.setViewportSize({width,height:1000});await language(lang);
     assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1),`${width}px ${lang} page overflow`);
     assert.ok(await page.locator('.house-winnings-card').evaluateAll(nodes=>nodes.every(el=>el.scrollWidth<=el.clientWidth+1&&el.scrollHeight<=el.clientHeight+1)),`${width}px ${lang} card clipping`);
-    assert.match(await page.locator('.house-winnings').innerText(),lang==='en'?/WON · UNOPENED/:/GEWONNEN · UNGEÖFFNET/);
+    assert.equal(await page.locator('#house-winnings-title').innerText(),lang==='en'?'Unopened rewards':'Ungeöffnete Gewinne');
     const first=await page.locator('.house-winnings').boundingBox(),next=await page.locator('.auction-house-shortcuts').boundingBox();assert.ok(first.y+first.height<=next.y+1);
     await page.evaluate(()=>document.querySelector('#notification-toasts').replaceChildren());
     if([1440,390].includes(width))await page.locator('.house-winnings').screenshot({path:`/tmp/jg-winnings-${width}-${lang}.png`});

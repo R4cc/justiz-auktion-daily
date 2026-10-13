@@ -46,7 +46,7 @@ test('store cards lead with daily results and edit actions; complete controls re
     variety: 1, value: 120, sales: 2, salesToday: 1, revenue: 300, revenueToday: 174,
     stock: [{ id: 'unit-1', item: { title: 'Puzzle' }, referencePrice: 120, askingPrice: 174 }] };
   const context = vm.createContext({ window: {}, dashboard: { inventory: [], shops: [shop] }, editorShopId: shop.id,
-    esc: String, t: en => en, number: String, justizEuro: value => `J€ ${value}`,
+    esc: String, t: en => en, number: String, justizEuro: value => `J€ ${value}`, infoTip: text => `<span class="info-tip">${text}</span>`,
     quickRestockMarkup: () => '', typeName: () => 'Toy store', sizeName: () => 'Small shop', storefrontArt: () => '', editIcon: () => '', typeIcon: () => '' });
   Object.assign(context,{collectionJob:null,cashMessages:new Map(),busy:false,pendingCollection:()=>null});
   const cashSource=source.slice(source.indexOf('  function collectCashMarkup('),source.indexOf('  async function cashCelebration('));

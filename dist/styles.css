@@ -387,7 +387,7 @@ html[lang="en"] .site-disclaimer [lang="de"], html[lang="de"] .site-disclaimer [
 .rules-grid p { margin: 4px 0 0; line-height: 1.55; font-size: .9rem; }
 .fine-print { border-top: 1px solid var(--line); margin: 26px 0 0; padding-top: 20px; color: var(--muted); font-size: .76rem; line-height: 1.5; }
 .toast { position: fixed; z-index: 80; left: 50%; bottom: 28px; transform: translate(-50%, 30px); opacity: 0; pointer-events: none; background: var(--ink); color: white; border-radius: 99px; padding: 12px 18px; font-size: .82rem; font-weight: 700; transition: .25s ease; }
-.toast.show { opacity: 1; transform: translate(-50%, 0); }
+.toast.show { opacity: 1; transform: translateY(0); }
 .confetti-layer { position: fixed; inset: 0; z-index: 100; overflow: hidden; pointer-events: none; }
 .confetti-layer i { position: absolute; left: 0; top: -24px; width: var(--size); height: calc(var(--size) * .55); background: var(--color); transform: translate3d(var(--x), -20px, 0); animation: confetti-fall var(--duration) cubic-bezier(.15,.65,.35,1) var(--delay) forwards; }
 @keyframes confetti-fall {
@@ -850,9 +850,8 @@ button:focus-visible, a:focus-visible { outline: 3px solid var(--red); outline-o
 .info-tip { position: relative; z-index: 8; display: inline-flex; flex: none; vertical-align: middle; }
 .info-tip > button { display: grid; place-items: center; width: 24px; height: 24px; padding: 0; border: 1px solid var(--line); border-radius: 50%; background: transparent; color: var(--muted); font: 800 12px/1 'DM Mono', monospace; cursor: help; }
 .info-tip > button:hover, .info-tip > button:focus-visible { border-color: var(--ink); color: var(--ink); background: #e8ebdd; }
-.info-tip [role="tooltip"] { position: absolute; z-index: 20; top: calc(100% + 9px); left: 50%; width: min(300px, calc(100vw - 32px)); padding: 11px 13px; border: 1px solid var(--ink); border-radius: 8px; background: var(--ink); color: var(--paper); box-shadow: 0 8px 24px #10251e30; font: 500 12px/1.55 'Manrope', sans-serif; text-align: left; text-transform: none; letter-spacing: normal; pointer-events: none; opacity: 0; transform: translate(-50%, -4px); transition: opacity .14s ease, transform .14s ease; }
-.info-tip:hover [role="tooltip"], .info-tip:focus-within [role="tooltip"] { opacity: 1; transform: translate(-50%, 0); }
-@media (max-width: 700px) { .info-tip [role="tooltip"] { left: auto; right: -8px; transform: translateY(-4px); } .info-tip:hover [role="tooltip"], .info-tip:focus-within [role="tooltip"] { transform: translateY(0); } }
+.info-tip [role="tooltip"] { position: absolute; z-index: 20; top: calc(100% + 9px); right: 0; width: min(300px, calc(100vw - 32px)); padding: 11px 13px; border: 1px solid var(--ink); border-radius: 8px; background: var(--ink); color: var(--paper); box-shadow: 0 8px 24px #10251e30; font: 500 12px/1.55 'Manrope', sans-serif; text-align: left; text-transform: none; letter-spacing: normal; pointer-events: none; opacity: 0; transform: translateY(-4px); transition: opacity .14s ease, transform .14s ease; }
+.info-tip:hover [role="tooltip"], .info-tip:focus-within [role="tooltip"] { opacity: 1; transform: translateY(0); }
 .collection-empty .primary-button { margin-top: 14px; }
 .shop-balance { display: flex; justify-content: space-between; align-items: center; gap: 14px; padding: 18px 0; border-block: 1px solid var(--line); font-size: 13px; }
 .shop-balance a { color: var(--ink); }
@@ -1371,8 +1370,6 @@ body { padding-left: var(--sidebar-width); }
 .case-store-contents li { display: flex; flex-direction: column; gap: .25rem; margin: .75rem 0; overflow-wrap: anywhere; }
 .case-store-legacy { margin-top: 3rem; }
 @media (max-width: 600px) { .case-store-intro { align-items: stretch; flex-direction: column; } }
-.shop-edition .info-tip [role="tooltip"] { left: auto; right: 0; transform: translateY(-4px); }
-.shop-edition .info-tip:hover [role="tooltip"], .shop-edition .info-tip:focus-within [role="tooltip"] { transform: translateY(0); }
 
 .case-design-lost-property { --rarity: #5d8376; }
 .case-design-evidence-locker { --rarity: #517e9f; }

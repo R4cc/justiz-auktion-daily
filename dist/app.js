@@ -224,10 +224,10 @@ function upgradeSavedState(saved) {
 }
 
 function accuracy(score) {
-  if (score === 1000) return { label: t("Perfect!", "Perfekt!"), message: t("Right on the money.", "Genau ins Schwarze getroffen."), icon: '★', className: 'green', emoji: '🟩' };
-  if (score >= 850) return { label: t("So close!", "Sehr nah dran!"), message: t("You know your prices.", "Dein Preisgefühl sitzt."), icon: '◎', className: 'green', emoji: '🟩' };
-  if (score >= 650) return { label: t("Good guess!", "Gut geschätzt!"), message: t("You were pretty close.", "Du warst ziemlich dicht dran."), icon: '★', className: 'yellow', emoji: '🟨' };
-  if (score >= 400) return { label: t("Not bad", "Nicht schlecht"), message: t("You were on the right track.", "Die Richtung hat gestimmt."), icon: '◆', className: 'orange', emoji: '🟧' };
+  if (score === 1000) return { label: t("Perfect!", "Perfekt!"), message: '', icon: '★', className: 'green', emoji: '🟩' };
+  if (score >= 850) return { label: t("So close!", "Sehr nah dran!"), message: '', icon: '◎', className: 'green', emoji: '🟩' };
+  if (score >= 650) return { label: t("Good guess!", "Gut geschätzt!"), message: '', icon: '★', className: 'yellow', emoji: '🟨' };
+  if (score >= 400) return { label: t("Not bad", "Nicht schlecht"), message: '', icon: '◆', className: 'orange', emoji: '🟧' };
   return { label: t("Off the mark", "Daneben"), message: '', icon: '↗', className: 'red', emoji: '🟥' };
 }
 
@@ -326,7 +326,7 @@ function renderRound() {
           <span class="time-tag${ended ? ' time-tag--ended' : ''}"><span class="clock-icon" aria-hidden="true"></span><span data-countdown>${timeRemaining(auction.endAt)}</span></span>
         </div>
         <div class="auction-panel${answer ? ' auction-panel--result' : ''}">
-          <p class="auction-id">${answer ? t("THE HAMMER HAS FALLEN", "DER HAMMER IST GEFALLEN") : t("UNDER THE HAMMER", "UNTER DEM HAMMER")} · #${auctionEscape(auction.id)}</p>
+          <p class="auction-id">${answer ? t("REVEALED", "AUFGEDECKT") : t("AUCTION", "AUKTION")} · #${auctionEscape(auction.id)}</p>
           <h1 class="auction-title${auctionTitleSizeClass(auction.title)}">${auctionEscape(auction.title)}</h1>
           ${answer ? revealMarkup(auction, answer) : `
             <p class="auction-description" tabindex="0" role="region" aria-label="${t("Auction description", "Auktionsbeschreibung")}">${auctionEscape(censorCurrencyValues(auction.description))}</p>
@@ -358,7 +358,7 @@ function guessMarkup(ended = false) {
         <div class="input-wrap"><span class="currency">€</span><input id="price-input" class="price-input" inputmode="decimal" autocomplete="off" placeholder="0" /></div>
         <button class="submit-guess" type="submit">${t("Submit guess", "Tipp abgeben")} <span aria-hidden="true">↗</span></button>
       </div>
-      <p class="input-hint">${t("Your guess is not a real bid.", "Dein Tipp ist kein echtes Gebot.")} · ${t("One guess per 25 seconds", "Ein Tipp pro 25 Sekunden")} <span>Enter ↵</span></p>
+      <p class="input-hint">${t("One guess per 25 seconds", "Ein Tipp pro 25 Sekunden")} <span>Enter ↵</span></p>
     </form>`;
 }
 
@@ -513,7 +513,7 @@ function finishGame() {
 
 function renderDailyCaseDialog() {
   const score = state.answers.reduce((total, answer) => total + answer.score, 0);
-  dailyCaseDialog.innerHTML = `<div class="daily-case-prompt rarity-${auctionEscape(accountDailyRun?.dailyCase?.tier || 'common')}"><span class="daily-case-gift" aria-hidden="true">◇</span><p class="eyebrow">${t('DAILY COMPLETE', 'DAILY ABGESCHLOSSEN')}</p><h2 id="daily-case-title">${t('Your sealed case is ready', 'Deine versiegelte Kiste ist bereit')}</h2><p class="rarity-label">${rarityLabel(accountDailyRun?.dailyCase?.tier || 'common')}</p><strong>${number(score)} / ${number(5000)} ${t('points', 'Punkte')}</strong><div class="case-reveal-actions"><button class="primary-button" type="button" data-action="daily-case-claim" data-choice="open" ${dailyCaseBusy ? 'disabled' : ''}>${t('Open Now', 'Jetzt öffnen')}</button><button class="secondary-button" type="button" data-action="daily-case-claim" data-choice="keep" ${dailyCaseBusy ? 'disabled' : ''}>${t('Add to inventory', 'Zum Inventar hinzufügen')}</button></div></div>`;
+  dailyCaseDialog.innerHTML = `<div class="daily-case-prompt rarity-${auctionEscape(accountDailyRun?.dailyCase?.tier || 'common')}"><span class="daily-case-gift" aria-hidden="true">◇</span><p class="eyebrow">${t('DAILY COMPLETE', 'DAILY ABGESCHLOSSEN')}</p><h2 id="daily-case-title">${t('Daily case', 'Daily-Kiste')}</h2><p class="rarity-label">${rarityLabel(accountDailyRun?.dailyCase?.tier || 'common')}</p><strong>${number(score)} / ${number(5000)} ${t('points', 'Punkte')}</strong><div class="case-reveal-actions"><button class="primary-button" type="button" data-action="daily-case-claim" data-choice="open" ${dailyCaseBusy ? 'disabled' : ''}>${t('Open Now', 'Jetzt öffnen')}</button><button class="secondary-button" type="button" data-action="daily-case-claim" data-choice="keep" ${dailyCaseBusy ? 'disabled' : ''}>${t('Add to inventory', 'Zum Inventar hinzufügen')}</button></div></div>`;
   if (!dailyCaseDialog.open) dailyCaseDialog.showModal();
   dailyCaseDialog.querySelector('[data-action="daily-case-claim"]')?.focus({ preventScroll: true });
 }

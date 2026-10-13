@@ -222,7 +222,7 @@ window.economyUi = (() => {
           : t('LIVE', 'LIVE') : '';
     const displayTitle = primary ? name(lot) : `${lot.quantity > 1 ? `${lot.quantity}× ` : ''}${t(lot.item.title, lot.item.titleDe || lot.item.title)}`;
     // The card itself is the button: one label describes the whole action.
-    const cardAction = primary && lot.revealAvailable ? t('View winning palette', 'Gewonnene Palette ansehen') : primary && !eligible ? t('Explore palette', 'Palette ansehen') : t('View auction', 'Auktion ansehen');
+    const cardAction = primary && lot.revealAvailable ? t('View winning palette', 'Gewonnene Palette ansehen') : primary && !eligible ? t('View palette', 'Palette ansehen') : t('View auction', 'Auktion ansehen');
     const outcome = primary && participation
       ? `${lot.status === 'active' ? lot.leading ? t('You lead', 'Du führst') : t('Outbid', 'Überboten')
         : lot.won ? t('Won!', 'Gewonnen!') : t('Lost', 'Verloren')} · ${t('Your highest bid', 'Dein Höchstgebot')}: ${justizEuro(lot.highestBid)}`
@@ -255,18 +255,18 @@ window.economyUi = (() => {
     const types = [['all',t('All lots','Alle Lose')],['reviews',t('Review packs','Bewertungspakete')],['items',t('Individual items','Einzelne Gegenstände')],['stock',t('Stock bundles','Warenpakete')],['mystery',t('Mystery pallets','Überraschungspaletten')]];
     const resaleType = lot => lot.item.kind === 'review-pack' ? 'reviews' : lot.item.kind === 'case' ? 'mystery' : lot.quantity > 1 ? 'stock' : 'items';
     const matches = lot => accepts(lot) && (filter === 'all' || filter === resaleType(lot));
-    const cards = rows => rows.length ? `<div class="economy-grid">${rows.join('')}</div>` : `<div class="collection-empty"><p>${t('No lots here yet. Try another filter, play Daily, or list a find.', 'Noch keine Lose hier. Wähle einen anderen Filter, spiele Daily oder biete einen Fund an.')}</p><a href="/" data-page>${t('Play Daily','Daily spielen')} →</a></div>`;
+    const cards = rows => rows.length ? `<div class="economy-grid">${rows.join('')}</div>` : `<div class="collection-empty"><p>${t('No matching lots.', 'Keine passenden Lose.')}</p></div>`;
     accountContent.innerHTML = `<section class="house-header" aria-labelledby="house-title">
-      <div class="house-heading"><div><p class="eyebrow">${t('THE TRADING FLOOR', 'DER HANDELSPLATZ')}</p><h1 id="house-title" tabindex="-1">${t('Auction House', 'Auktionshaus')}</h1><p class="house-intro">${t('Find your next treasure. Make your next trade.', 'Entdecke deinen nächsten Schatz. Starte deinen nächsten Handel.')}</p></div><a class="house-inventory-link" href="/inventory" data-page>${t('Manage your finds', 'Funde verwalten')} <span aria-hidden="true">→</span></a></div>
+      <div class="house-heading"><div><h1 id="house-title" tabindex="-1">${t('Auction House', 'Auktionshaus')}</h1></div><a class="house-inventory-link" href="/inventory" data-page>${t('Inventory', 'Inventar')} <span aria-hidden="true">→</span></a></div>
       ${window.auctionWinningsUi?.markup(unopened)||''}
       <nav class="auction-house-shortcuts${economyFlags.market ? '' : ' is-single'}" aria-label="${t('Explore trading', 'Handel entdecken')}">
         <a class="house-launch-card house-case-store-card" href="/shop" data-page>
-          <span class="house-card-copy"><span class="house-card-tag">${t('MYSTERY FINDS', 'ÜBERRASCHUNGSFUNDE')}</span><strong>${t('Case Shop', 'Kisten-Shop')}</strong><span class="house-card-description">${t('One case. One mystery find. What’s inside?', 'Eine Kiste. Ein Überraschungsfund. Was steckt drin?')}</span><span class="house-card-action">${t('Explore cases', 'Kisten entdecken')} <span aria-hidden="true">→</span></span></span>
+          <span class="house-card-copy"><strong>${t('Case Shop', 'Kisten-Shop')}</strong><span class="house-card-action" aria-hidden="true">→</span></span>
           <span class="house-card-art house-case-art" aria-hidden="true"><span class="house-spark house-spark-one">✦</span><span class="house-spark house-spark-two">✧</span>${caseArtwork({ caseType: 'collectors-cache', caseBadge: '?' })}<span class="house-rarity-dots"><i></i><i></i><i></i><i></i><i></i></span></span>
         </a>
         ${economyFlags.market ? `<a class="house-launch-card house-market-card" href="/market" data-page>
-          <span class="house-card-copy"><span class="house-card-tag">${t('MARKET INTELLIGENCE', 'MARKTWISSEN')}</span><strong>${t('Stock Market', 'Aktienmarkt')}</strong><span class="house-card-description">${t('Follow demand. Find the moment to trade.', 'Verfolge die Nachfrage. Finde den Moment zum Handeln.')}</span><span class="house-card-action">${t('View the market', 'Markt ansehen')} <span aria-hidden="true">↗</span></span></span>
-          <span class="house-card-art house-market-art" aria-hidden="true"><span class="house-market-badge">J€</span><svg viewBox="0 0 200 160" fill="none"><path class="house-chart-grid" d="M16 34h170M16 66h170M16 98h170M16 130h170M36 24v116m48-116v116m48-116v116m48-116v116"/><path class="house-chart-area" d="M16 118 48 97 76 108 106 69 136 80 180 32v108H16Z"/><path class="house-chart-line" d="m16 118 32-21 28 11 30-39 30 11 44-48m-26 0h26v26"/><circle class="house-chart-point" cx="106" cy="69" r="5"/></svg><span class="house-market-caption">${t('READ THE TRENDS', 'ERKENNE DIE TRENDS')}</span></span>
+          <span class="house-card-copy"><strong>${t('Market Trends', 'Markttrends')}</strong><span class="house-card-action" aria-hidden="true">↗</span></span>
+          <span class="house-card-art house-market-art" aria-hidden="true"><span class="house-market-badge">J€</span><svg viewBox="0 0 200 160" fill="none"><path class="house-chart-grid" d="M16 34h170M16 66h170M16 98h170M16 130h170M36 24v116m48-116v116m48-116v116m48-116v116"/><path class="house-chart-area" d="M16 118 48 97 76 108 106 69 136 80 180 32v108H16Z"/><path class="house-chart-line" d="m16 118 32-21 28 11 30-39 30 11 44-48m-26 0h26v26"/><circle class="house-chart-point" cx="106" cy="69" r="5"/></svg></span>
         </a>` : ''}
       </nav>
     </section>` + economyOverviewMarkup() + `
@@ -291,14 +291,13 @@ window.economyUi = (() => {
     const path = currentAccountPage;
     if (path === '/auction-house') { renderHouse(); return; }
     if (!economyFlags[routes[path]]) {
-      accountContent.innerHTML = pageHeading(t('Unavailable', 'Nicht verfügbar')) + `<a href="/shop" data-page>${t('Visit the case store', 'Zum Kisten-Shop')}</a>`;
+      accountContent.innerHTML = pageHeading(t('Unavailable', 'Nicht verfügbar')) + `<a href="/shop" data-page>${t('Case Shop', 'Kisten-Shop')}</a>`;
       return;
     }
     if (path === '/market') { renderMarket(); return; }
     const primary = path === '/auctions';
     if (primary) {
-      accountContent.innerHTML = pageHeading(t('Mystery Palette auctions', 'Mystery-Palette-Auktionen'),
-        t('Bid on a sealed Mystery Palette. Win it, then reveal three finds. Play Daily and sell items to unlock more.', 'Biete auf eine versiegelte Mystery-Palette. Gewinne und entdecke drei Funde. Spiele Daily und verkaufe Lose für höhere Level.')) + economyOverviewMarkup();
+      accountContent.innerHTML = pageHeading(t('Mystery Palette auctions', 'Mystery-Palette-Auktionen')) + economyOverviewMarkup();
       const paletteFilter = new URLSearchParams(location.search).get('palette');
       const myLots = data.mine || [];
       // Won lots stay on the board until the winner reveals them; every other
@@ -311,14 +310,14 @@ window.economyUi = (() => {
       if (account) {
         // An empty board collapses to a slim note; the box only earns its
         // border once there is something in it.
-        accountContent.innerHTML += `<section class="my-bids-board${myBoard.length ? '' : ' is-empty'}"><div class="auction-section-heading"><div><p class="eyebrow">${t('YOUR AUCTIONS', 'DEINE AUKTIONEN')}</p><h2>${t('My bids', 'Meine Gebote')}</h2></div>${myBoard.length ? `<strong>${myBoard.length}</strong>` : ''}</div>
-          ${myBoard.length ? `<div class="economy-grid">${myBoard.map(lot => lotCard(lot, true)).join('')}</div>` : `<p class="my-bids-empty">${t('You have not placed a bid yet.', 'Du hast noch kein Gebot abgegeben.')}</p>`}
+        accountContent.innerHTML += `<section class="my-bids-board${myBoard.length ? '' : ' is-empty'}"><div class="auction-section-heading"><div><h2>${t('My bids', 'Meine Gebote')}</h2></div>${myBoard.length ? `<strong>${myBoard.length}</strong>` : ''}</div>
+          ${myBoard.length ? `<div class="economy-grid">${myBoard.map(lot => lotCard(lot, true)).join('')}</div>` : `<p class="my-bids-empty">${t('No bids yet.', 'Noch keine Gebote.')}</p>`}
           ${myArchived.length ? archiveToggle(myArchived.length) : ''}
-          ${myArchived.length && archiveOpen ? `<div class="auction-section-heading archive-heading"><div><p class="eyebrow">${t('ARCHIVE', 'ARCHIV')}</p><h2>${t('Archived auctions', 'Archivierte Auktionen')}</h2></div><strong>${myArchived.length}</strong></div>
+          ${myArchived.length && archiveOpen ? `<div class="auction-section-heading archive-heading"><div><h2>${t('Archived auctions', 'Archivierte Auktionen')}</h2></div><strong>${myArchived.length}</strong></div>
           <div class="economy-grid">${myArchived.map(lot => lotCard(lot, true)).join('')}</div>` : ''}</section>`;
       }
-      if (paletteFilter) accountContent.innerHTML += `<p>${t('Related to your story', 'Passend zu deiner Geschichte')}: <strong>${esc(paletteName(paletteFilter))}</strong> <a href="/auctions" data-page>${t('Show all auctions', 'Alle Auktionen anzeigen')} →</a></p>`;
-      accountContent.innerHTML += `<div class="auction-section-heading live-auctions-heading"><div><p class="eyebrow">${t('AUCTION FLOOR', 'AUKTIONSHALLE')}</p><h2>${t('Live auctions', 'Laufende Auktionen')}</h2></div><strong>${liveLots.length}</strong></div>`;
+      if (paletteFilter) accountContent.innerHTML += `<p>${t('Palette', 'Palette')}: <strong>${esc(paletteName(paletteFilter))}</strong> <a href="/auctions" data-page>${t('Show all auctions', 'Alle Auktionen anzeigen')} →</a></p>`;
+      accountContent.innerHTML += `<div class="auction-section-heading live-auctions-heading"><div><h2>${t('Live auctions', 'Laufende Auktionen')}</h2></div><strong>${liveLots.length}</strong></div>`;
       accountContent.innerHTML += liveLots.length
         ? `<div class="economy-grid">${liveLots.map(lot => lotCard(lot, true)).join('')}</div>`
         : empty(t('No other auctions right now.', 'Aktuell keine weiteren Auktionen.'));
@@ -350,13 +349,13 @@ window.economyUi = (() => {
       accountContent.innerHTML += `<section><div class="marketplace-toolbar"><h2>${t('My auctions', 'Meine Auktionen')}</h2>${own.length ? `<span class="marketplace-count">${number(myLive.length)} ${t('active', 'aktiv')}</span>${sellAction(t('Sell an item', 'Gegenstand anbieten'))}` : ''}</div>
         ${group(t('LIVE', 'LIVE'), grouped)}${myLive.length ? grid(myLive.map(lot => lotCard(lot, false, 'mine-live'))) : ''}
         ${group(t('ENDED', 'BEENDET'), grouped)}${myDone.length ? grid(myDone.map(lot => lotCard(lot, false, 'mine-done'))) : ''}
-        ${own.length ? '' : `<div class="marketplace-blank"><p>${t("You haven't listed anything yet.", 'Du hast noch nichts angeboten.')}</p>${sellAction(t('Choose an inventory item', 'Inventargegenstand wählen'))}</div>`}</section>`;
+        ${own.length ? '' : `<div class="marketplace-blank"><p>${t('No listings yet.', 'Noch keine Angebote.')}</p>${sellAction(t('Choose an inventory item', 'Inventargegenstand wählen'))}</div>`}</section>`;
     } else if (tab === 'bids') {
       const grouped = Boolean(bidLots.length && archivedBids.length);
       accountContent.innerHTML += `<section><div class="marketplace-toolbar"><h2>${t('My bids', 'Meine Gebote')}</h2></div>
         ${group(t('ACTIVE', 'AKTIV'), grouped)}${bidLots.length ? grid(bidLots.map(lot => lotCard(lot, false, 'bid'))) : ''}
         ${group(t('ENDED', 'BEENDET'), grouped)}${archivedBids.length ? grid(archivedBids.map(lot => lotCard(lot, false, 'bid-done'))) : ''}
-        ${bidLots.length || archivedBids.length ? '' : `<div class="marketplace-blank"><p>${t('You have not bid on any auctions yet.', 'Du hast noch auf keine Auktionen geboten.')}</p><button class="secondary-button" type="button" data-economy="tab" data-id="browse">${t('Browse auctions', 'Auktionen entdecken')}</button></div>`}</section>`;
+        ${bidLots.length || archivedBids.length ? '' : `<div class="marketplace-blank"><p>${t('No bids yet.', 'Noch keine Gebote.')}</p><button class="secondary-button" type="button" data-economy="tab" data-id="browse">${t('Browse auctions', 'Auktionen entdecken')}</button></div>`}</section>`;
     } else accountContent.innerHTML += browse;
   }
   function bidForm(lot, primary) {
@@ -400,7 +399,7 @@ window.economyUi = (() => {
   }
   function auctionMedia(lot, primary) {
     if (!primary && lot.item.kind === 'review-pack') return window.storeReputationUi.packArt(lot.item);
-    if (primary) return `${paletteArtwork(lot)}<p class="palette-mystery-caption">${t('Sealed until your winning reveal.', 'Versiegelt bis zur Aufdeckung deines Gewinns.')}</p>`;
+    if (primary) return paletteArtwork(lot);
     const items = [lot.item];
     const images = items.filter(item => item?.image);
     if (!images.length) return stockLotArtwork(lot) || `<div class="auction-room-placeholder" aria-hidden="true">◇</div>`;
@@ -409,7 +408,7 @@ window.economyUi = (() => {
       ${images.length > 1 ? `<div class="auction-room-thumbs" role="group" aria-label="${primary ? t('Sealed palette illustration', 'Illustration der versiegelten Palette') : t('Auction pictures', 'Auktionsbilder')}">${images.map((item, index) => `<button type="button" data-economy="gallery" data-src="${esc(item.image)}" data-alt="${esc(item.title || '')}" aria-pressed="${index === 0}" aria-label="${esc(item.title || t('Auction picture', 'Auktionsbild'))}"><img src="${esc(item.image)}" alt=""></button>`).join('')}</div>` : ''}`;
   }
   function auctionContents(lot) {
-    if(lot.stockOffer)return `<div class="auction-room-contents"><p>${lot.stockOffer.openingMode?t('Unknown items. Unknown total. Three chances to luck out.','Unbekannte Artikel. Unbekannte Gesamtmenge. Drei Chancen auf einen Glückstreffer.'):lot.stockOffer.quantity+'× '+esc(t(lot.stockOffer.name,lot.stockOffer.nameDe))+' · '+t('Three item and quantity rolls after winning','Drei Artikel- und Mengen-Auslosungen nach dem Gewinn')}</p>${window.paletteUi.odds(lot.stockOffer,{luckPreview:lot.status==='active'})}</div>`;
+    if(lot.stockOffer)return `<div class="auction-room-contents"><p>${lot.stockOffer.openingMode?t('Three drops; items and quantities unknown.','Drei Drops; Artikel und Mengen unbekannt.'):lot.stockOffer.quantity+'× '+esc(t(lot.stockOffer.name,lot.stockOffer.nameDe))+' · '+t('Three item and quantity rolls after winning','Drei Artikel- und Mengen-Auslosungen nach dem Gewinn')}</p>${window.paletteUi.odds(lot.stockOffer,{luckPreview:lot.status==='active'})}</div>`;
     return `<div class="auction-room-contents">${infoTip(t('The palette contains three mystery finds, revealed one by one after winning. Duplicates are possible.', 'Die Palette enthält drei geheime Funde, die nach dem Gewinn einzeln aufgedeckt werden. Doppelte Funde sind möglich.'), t('What is inside?', 'Was ist enthalten?'))}</div>`;
   }
   async function showLot(id, primary) {
@@ -426,12 +425,12 @@ window.economyUi = (() => {
     const title = primary ? name(lot) : `${lot.quantity > 1 ? `${lot.quantity}× ` : ''}${t(lot.item.title, lot.item.titleDe || lot.item.title)}`;
     const owned = !primary && lot.winnerId === account?.id && lot.settledAt ? (await accountApi('inventory?includeStores=1')).items.filter(item=>item.id===lot.inventoryId) : [];
     if (request !== dialogSequence || visit !== accountVisit) return;
-    const wonLinks = owned.map(item=>`<p><a class="primary-button" href="/inventory?focus=${encodeURIComponent(item.id)}" data-page>${t('Manage your winning find','Gewonnenen Fund verwalten')} →</a>${item.businessType&&!item.listed&&!item.storeId?`<a class="secondary-button" href="/inventory?focus=${encodeURIComponent(item.id)}&action=stock" data-page>${t('Stock a compatible store','In passenden Laden einräumen')} →</a>`:''}</p>`).join('');
+    const wonLinks = owned.map(item=>`<p><a class="primary-button" href="/inventory?focus=${encodeURIComponent(item.id)}" data-page>${t('View item','Artikel ansehen')} →</a>${item.businessType&&!item.listed&&!item.storeId?`<a class="secondary-button" href="/inventory?focus=${encodeURIComponent(item.id)}&action=stock" data-page>${t('Stock a compatible store','In passenden Laden einräumen')} →</a>`:''}</p>`).join('');
     const winAction = wonLinks || (primary && lot.revealAvailable ? `<div class="auction-win-panel"><h3>${t('Won palette', 'Gewonnene Palette')}</h3><div class="palette-seal" aria-hidden="true"><span>01 ◇</span><span>02 ◇</span><span>03 ◇</span></div><button class="primary-button" data-economy="reveal" data-id="${esc(lot.id)}">${lot.stockOffer?t('Reveal stock','Stock aufdecken'):t('Reveal three finds', 'Drei Funde aufdecken')} →</button></div>` : bidForm(lot, primary));
     openDialog(`<div class="auction-room"><section class="auction-room-media" aria-label="${primary ? t('Sealed palette illustration', 'Illustration der versiegelten Palette') : t('Auction pictures', 'Auktionsbilder')}">${auctionMedia(lot, primary)}</section>
-      <section class="auction-room-story"><p class="eyebrow">${primary ? lot.stockOffer?t('SEALED · STOCK PALETTE','VERSIEGELT · WARENPALETTE'):t('SEALED · THREE FINDS', 'VERSIEGELT · DREI FUNDE') : t('AUCTION HOUSE', 'AUKTIONSHAUS')}</p><h2 id="economy-dialog-title" tabindex="-1">${esc(title)}</h2>${window.marketTrendUi?.markup(lotMarketCategory(lot,primary))||''}
+      <section class="auction-room-story"><h2 id="economy-dialog-title" tabindex="-1">${esc(title)}</h2>${window.marketTrendUi?.markup(lotMarketCategory(lot,primary))||''}
       ${primary ? `<p class="auction-room-meta">${t('Required level', 'Benötigtes Level')} <strong>${lot.requiredLevel}</strong><br>${esc((lot.allowedMarketCategories || []).map(categoryName).join(' · ') || categoryName(null))}</p>${auctionContents(lot)}` : `<p class="auction-room-meta">${t('Seller', 'Verkäufer')}: <strong>${esc(lot.sellerUsername)}</strong><br>${t('Quantity', 'Anzahl')}: <strong>${lot.quantity}</strong><br>${lot.item.kind === 'review-pack' ? `${lot.item.reviewCount} ${t('Botted Reviews · choose 1–5 stars and a store in inventory','Bot-Bewertungen · 1–5 Sterne und einen Laden im Inventar wählen')}` : lot.item.kind === 'case' ? t('Sealed case · one item from any category', 'Versiegelte Kiste · ein Gegenstand aus jeder Kategorie') : `${t('Historical real-auction value', 'Historischer Wert der echten Auktion')}: <strong>${euro(lot.item.price * lot.quantity)}</strong>`}<br>${t('Estimated market value', 'Geschätzter Marktwert')}: <strong>${justizEuro(lot.estimatedValueTokens)}</strong>${lot.npcDemand?`<br>${t('NPC demand','NPC-Nachfrage')}: <strong>${npcDemandLabel(lot.npcDemand)}</strong>`:''}${economyFlags.market&&lot.item.marketCategory?`<br><a href="/market?category=${encodeURIComponent(lot.item.marketCategory)}" data-page>${t('Market Trends','Markttrends')} ↗</a>`:''}</p>`}
-      </section><aside class="auction-room-bidding"><header><p class="eyebrow">${lot.status==='active'?t('LIVE AUCTION','LIVE-AUKTION'):t('AUCTION OUTCOME','AUKTIONSERGEBNIS')}</p><h3>${t('Bid room', 'Bietraum')}</h3></header><div data-live-facts>${bidFacts(lot, primary)}</div>
+      </section><aside class="auction-room-bidding"><header><h3>${lot.status==='active'?t('Bidding','Gebote'):t('Auction outcome','Auktionsergebnis')}</h3></header><div data-live-facts>${bidFacts(lot, primary)}</div>
       <ol class="auction-chat" data-live-history role="log" aria-label="${t('Bid history', 'Gebotsverlauf')}">${bidHistory(lot.bids)}</ol><div class="auction-bid-dock">${winAction}</div></aside></div>`);
     const historyNode = dialog.querySelector('[data-live-history]');
     if (historyNode) historyNode.scrollTop = historyNode.scrollHeight;
@@ -477,7 +476,7 @@ window.economyUi = (() => {
       : difference < 0 ? { label: t('Estimated shortfall', 'Geschätztes Minus'), className: 'is-loss' }
       : { label: t('Estimate equals cost', 'Schätzung entspricht Kosten'), className: 'is-even' };
     openDialog(`<h2 id="economy-dialog-title" tabindex="-1">${t('Palette contents', 'Paletteninhalt')}</h2><div class="inventory-grid">${fixed.rewards.map(r => itemCard({ ...r.item, sellValue: Math.max(1, Math.round(r.item.price)) }, false)).join('')}</div>
-      <div class="palette-ledger"><p class="eyebrow">${t('Summary', 'Zusammenfassung')}</p>
+      <div class="palette-ledger">
       ${entries.map(entry => `<div class="palette-ledger-row"><span>${esc(entry.title)}</span><b>+${justizEuro(entry.value)}</b></div>`).join('')}
       <div class="palette-ledger-row is-total"><span>${t('Total finds value', 'Gesamtwert der Funde')} <small>(${euro(value)})</small></span><b>${justizEuro(totalValue)}</b></div>
       <div class="palette-ledger-row"><span>${t('Winning bid', 'Gewinngebot')}</span><b>−${justizEuro(fixed.bundleCostTokens)}</b></div>
@@ -498,7 +497,7 @@ window.economyUi = (() => {
   }
   function marketChaosMarkup(event) {
     if (!event) return '';
-    return `<section class="market-chaos-banner" role="status"><div><p class="eyebrow">${t('WEEKLY MARKET EVENT','WÖCHENTLICHES MARKTEREIGNIS')}</p><h2>${t('Market frenzy','Marktrausch')}</h2><p>${t('Wild pumps, crashes and reversals are hitting every category. Quotes can fall to a quarter or rise to three times their normal value.','Wilde Kurssprünge, Einbrüche und Richtungswechsel treffen alle Kategorien. Kurse können auf ein Viertel fallen oder auf das Dreifache ihres normalen Werts steigen.')}</p></div><div class="market-chaos-clock"><span>${t('Normal trading returns in','Normaler Handel wieder in')}</span>${countdown(event.endsAt)}</div></section>`;
+    return `<section class="market-chaos-banner" role="status"><div><h2>${t('Market frenzy','Marktrausch')}</h2><p>${t('Quotes can fall to a quarter or rise to three times their normal value.','Kurse können auf ein Viertel fallen oder auf das Dreifache ihres normalen Werts steigen.')}</p></div><div class="market-chaos-clock"><span>${t('Normal trading returns in','Normaler Handel wieder in')}</span>${countdown(event.endsAt)}</div></section>`;
   }
   function renderMarket() {
     const categories = data.categories || [], selected = categories.find(c => c.category === category);
@@ -506,7 +505,7 @@ window.economyUi = (() => {
     const rangeFocus = document.activeElement?.dataset?.economy === 'market-range' ? document.activeElement.dataset.id : null;
     accountContent.innerHTML = pageHeading(t('Market Trends', 'Markttrends'), t('100 is neutral. Above 100 means stronger demand; below 100 means weaker demand. Market movement changes buyer valuations. A random one-hour market frenzy hits once a week.', '100 ist neutral. Darüber ist die Nachfrage stärker, darunter schwächer. Marktbewegungen verändern Käuferbewertungen. Ein zufälliger einstündiger Marktrausch trifft den Markt einmal pro Woche.')) + marketChaosMarkup(data.chaosEvent) + economyOverviewMarkup() +
       `<section class="market-guidance"><div class="section-title-row"><h2>${t("Market estimates", "Marktschätzungen")}</h2>${infoTip(t("Above-normal markets support higher estimates. Below normal, waiting may help, but recovery is never guaranteed. Bids decide the final price.", "Über Normalwert steigen die Schätzwerte. Darunter kann Warten helfen, eine Erholung ist aber nie garantiert. Gebote bestimmen den Verkaufspreis."), t('How to use the market', 'So nutzt du den Markt'))}</div><a href="/inventory" data-page>${t("Inventory", "Inventar")} →</a></section><div class="market-categories">${categories.map(c => `<button data-economy="category" data-id="${c.category}" aria-pressed="${category === c.category}"><span>${esc(t(c.name, c.nameDe))}</span><strong>${number(c.currentIndex, 2)} ${(c.change1h || 0) > 0 ? '↑' : (c.change1h || 0) < 0 ? '↓' : '→'}</strong><span class="market-card-change ${(c.change1h || 0) > 0 ? 'is-up' : (c.change1h || 0) < 0 ? 'is-down' : 'is-flat'}">${(c.changePercent1h || 0) > 0 ? '+' : ''}${number(c.changePercent1h || 0, 2)}% · 1h</span><small>${c.currentIndex >= 100 ? '+' : ''}${number(c.currentIndex - 100, 2)}% ${c.currentIndex > 100 ? t('above normal', 'über Normalwert') : c.currentIndex < 100 ? t('below normal', 'unter Normalwert') : t('normal value', 'Normalwert')}</small><time>${date(c.updatedAt)}</time></button>`).join('')}</div>
-      <section class="market-chart"><div class="market-chart-toolbar"><div class="section-title-row"><h2>${esc(selected ? t(selected.name, selected.nameDe) : '')}</h2>${infoTip(t('Quotes move every minute. The chart scales to the selected period; the dotted line marks its opening quote. High and low reflect the chart samples.', 'Kurse bewegen sich jede Minute. Die Skala folgt dem gewählten Zeitraum; die gepunktete Linie markiert den Startkurs. Hoch und Tief beziehen sich auf die Diagrammwerte.'), t('About this chart', 'Über dieses Diagramm'))}</div><div class="market-time-filters" role="group" aria-label="${t('Chart time range', 'Diagrammzeitraum')}">${marketRanges.map(([id, en, de]) => `<button type="button" data-economy="market-range" data-id="${id}" aria-pressed="${marketRange === id}">${t(en, de)}</button>`).join('')}</div></div>${marketSummary(history, selected)}${historyLoading && !history.length ? `<p role="status">${t('Loading history…', 'Verlauf wird geladen …')}</p>` : chart(history)}</section>`;
+      <section class="market-chart"><div class="market-chart-toolbar"><div class="section-title-row"><h2>${esc(selected ? t(selected.name, selected.nameDe) : '')}</h2>${infoTip(t('Quotes move every minute. The chart scales to the selected period; the dotted line marks its opening quote. High and low reflect the chart samples. Hover, touch, or use arrow keys to inspect values.', 'Kurse bewegen sich jede Minute. Die Skala folgt dem gewählten Zeitraum; die gepunktete Linie markiert den Startkurs. Hoch und Tief beziehen sich auf die Diagrammwerte. Prüfe Werte mit Maus, Berührung oder Pfeiltasten.'), t('About this chart', 'Über dieses Diagramm'))}</div><div class="market-time-filters" role="group" aria-label="${t('Chart time range', 'Diagrammzeitraum')}">${marketRanges.map(([id, en, de]) => `<button type="button" data-economy="market-range" data-id="${id}" aria-pressed="${marketRange === id}">${t(en, de)}</button>`).join('')}</div></div>${marketSummary(history, selected)}${historyLoading && !history.length ? `<p role="status">${t('Loading history…', 'Verlauf wird geladen …')}</p>` : chart(history)}</section>`;
     const chartSection = accountContent.querySelector('.market-chart');
     const categoryGrid = accountContent.querySelector('.market-categories');
     if (chartSection && categoryGrid) accountContent.insertBefore(chartSection, categoryGrid);
@@ -523,7 +522,7 @@ window.economyUi = (() => {
     return `<div class="market-quote-summary"><div><span class="market-live-label">${t('LIVE INDEX · 1 MIN QUOTES', 'LIVE-INDEX · MINUTENKURSE')}</span><strong class="market-current-quote">${number(latest, 2)}</strong><span class="market-period-change ${direction}">${change > 0 ? '↑' : change < 0 ? '↓' : '→'} ${sign}${number(change, 2)} (${sign}${number(percent, 2)}%) <small>${t('in selected period', 'im gewählten Zeitraum')}</small></span></div><dl><div><dt>${t('Open', 'Start')}</dt><dd>${number(opening, 2)}</dd></div><div><dt>${t('High', 'Hoch')}</dt><dd>${number(values.length ? Math.max(...values) : latest, 2)}</dd></div><div><dt>${t('Low', 'Tief')}</dt><dd>${number(values.length ? Math.min(...values) : latest, 2)}</dd></div></dl></div>`;
   }
   function chart(points) {
-    if (!points.length) return empty(t('History will appear as the market starts collecting data.', 'Der Verlauf erscheint, sobald der Markt Daten sammelt.'));
+    if (!points.length) return empty(t('No history yet.', 'Noch kein Verlauf.'));
     const sorted = [...points].reverse(), start = Date.parse(sorted[0].capturedAt), end = Date.parse(sorted.at(-1).capturedAt);
     const { width, left, right, top, bottom } = marketPlotGeometry();
     const x = p => start === end ? (left + right) / 2
@@ -546,7 +545,7 @@ window.economyUi = (() => {
     }).join('');
     const latest = sorted.at(-1), opening = sorted[0];
     const direction = latest.indexValue > opening.indexValue ? 'is-up' : latest.indexValue < opening.indexValue ? 'is-down' : 'is-flat';
-    return `<p class="market-chart-hint">${t('Hover or touch for a value · use arrow keys to inspect', 'Für Werte berühren oder mit der Maus darüberfahren · Pfeiltasten zum Prüfen')}</p><div class="market-plot-scroll"><div class="market-plot-wrap"><svg viewBox="0 0 ${width} 288" class="${direction}" data-market-plot tabindex="0" role="group" aria-label="${t('Market index over time. Use left and right arrow keys to inspect recorded values.', 'Marktindex im Zeitverlauf. Mit den Pfeiltasten links und rechts Messwerte ansehen.')}"><title>${t('Market index over time', 'Marktindex im Zeitverlauf')}</title>${yTicks}${xTicks}<path d="M${left} ${top}V${bottom}H${right}" class="market-chart-axis"/><text x="14" y="127" transform="rotate(-90 14 127)" text-anchor="middle" class="market-chart-axis-label">Index</text><text x="${(left + right) / 2}" y="281" text-anchor="middle" class="market-chart-axis-label">${t('Date', 'Datum')}</text><line x1="${left}" x2="${right}" y1="${y(opening)}" y2="${y(opening)}" class="market-chart-opening"/><polygon points="${left},${bottom} ${line} ${right},${bottom}" class="market-chart-area"/><polyline points="${line}" class="market-chart-line"/><circle cx="${x(latest)}" cy="${y(latest)}" r="4" class="market-chart-latest"/><line data-market-crosshair x1="0" x2="0" y1="${top}" y2="${bottom}" class="market-chart-crosshair" visibility="hidden"/><circle data-market-marker cx="0" cy="0" r="6" class="market-chart-marker" visibility="hidden"/></svg><div class="market-chart-tooltip" data-market-tooltip role="status" aria-live="polite" hidden></div></div></div><details><summary>${t("Read history as a table", "Verlauf als Tabelle lesen")}</summary><div class="market-history-table"><table><thead><tr><th>${t("Time", "Zeit")}</th><th>Index</th></tr></thead><tbody>${sorted.map(p => `<tr><td>${date(p.capturedAt)}</td><td>${number(p.indexValue, 2)}</td></tr>`).join("")}</tbody></table></div></details>`;
+    return `<div class="market-plot-scroll"><div class="market-plot-wrap"><svg viewBox="0 0 ${width} 288" class="${direction}" data-market-plot tabindex="0" role="group" aria-label="${t('Market index over time. Use left and right arrow keys to inspect recorded values.', 'Marktindex im Zeitverlauf. Mit den Pfeiltasten links und rechts Messwerte ansehen.')}"><title>${t('Market index over time', 'Marktindex im Zeitverlauf')}</title>${yTicks}${xTicks}<path d="M${left} ${top}V${bottom}H${right}" class="market-chart-axis"/><text x="14" y="127" transform="rotate(-90 14 127)" text-anchor="middle" class="market-chart-axis-label">Index</text><text x="${(left + right) / 2}" y="281" text-anchor="middle" class="market-chart-axis-label">${t('Date', 'Datum')}</text><line x1="${left}" x2="${right}" y1="${y(opening)}" y2="${y(opening)}" class="market-chart-opening"/><polygon points="${left},${bottom} ${line} ${right},${bottom}" class="market-chart-area"/><polyline points="${line}" class="market-chart-line"/><circle cx="${x(latest)}" cy="${y(latest)}" r="4" class="market-chart-latest"/><line data-market-crosshair x1="0" x2="0" y1="${top}" y2="${bottom}" class="market-chart-crosshair" visibility="hidden"/><circle data-market-marker cx="0" cy="0" r="6" class="market-chart-marker" visibility="hidden"/></svg><div class="market-chart-tooltip" data-market-tooltip role="status" aria-live="polite" hidden></div></div></div><details><summary>${t("History table", "Verlaufstabelle")}</summary><div class="market-history-table"><table><thead><tr><th>${t("Time", "Zeit")}</th><th>Index</th></tr></thead><tbody>${sorted.map(p => `<tr><td>${date(p.capturedAt)}</td><td>${number(p.indexValue, 2)}</td></tr>`).join("")}</tbody></table></div></details>`;
   }
   function marketPlotGeometry() {
     const compact = typeof window !== 'undefined' && window.matchMedia?.('(max-width: 600px)').matches;

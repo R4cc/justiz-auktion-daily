@@ -48,9 +48,8 @@ export function notificationsForUser(dataDir, userId, { now = Date.now(), limit 
     const date = utcDate(now);
     pushNotification(db, userId, {
       type: 'daily', sourceKey: `daily:${date}`, href: '/',
-      titleEn: 'A new Daily is ready', titleDe: 'Ein neues Daily ist bereit',
-      bodyEn: 'Five fresh auctions are waiting for your guesses.',
-      bodyDe: 'Fünf neue Auktionen warten auf deine Tipps.'
+      titleEn: 'New Daily', titleDe: 'Neues Daily',
+      bodyEn: '', bodyDe: ''
     }, now);
     const bounded = Math.max(1, Math.min(200, Math.floor(limit) || 100));
     const rows = db.prepare(`SELECT * FROM account_notifications WHERE user_id = ?

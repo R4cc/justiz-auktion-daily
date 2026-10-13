@@ -13,7 +13,7 @@ async function startHigherLower() {
   const request = ++higherLowerRequest;
   clearInterval(countdownTimer);
   state.view = 'higher-lower-loading';
-  app.innerHTML = `<section class="hl-screen"><p class="eyebrow">HIGHER OR LOWER</p><h1>${t('Shuffling the lots…', 'Die Lose werden gemischt …')}</h1><button class="secondary-button" data-action="home">${t('Back to home', 'Zur Startseite')}</button></section>`;
+  app.innerHTML = `<section class="hl-screen"><p class="eyebrow">HIGHER OR LOWER</p><h1>${t('Loading…', 'Wird geladen …')}</h1><button class="secondary-button" data-action="home">${t('Back to home', 'Zur Startseite')}</button></section>`;
   try {
     const serverRun = await accountGameStart('higher-lower');
     const payload = serverRun;
@@ -40,12 +40,12 @@ function renderHigherLower(focus = false) {
     const images = auctionImages(item);
     const image = images[run.images[side]];
     return `<article class="hl-card ${side ? 'hl-challenger' : ''}">
-      <p class="eyebrow">${side ? t('THE NEXT LOT', 'DAS NÄCHSTE LOS') : t('THE BENCHMARK', 'DIE MESSLATTE')} · ${hlEscape(listingLabel(item.category))}</p>
+      <p class="eyebrow">${side ? t('NEXT LOT', 'NÄCHSTES LOS') : t('REFERENCE LOT', 'VERGLEICHSLOS')} · ${hlEscape(listingLabel(item.category))}</p>
       <div class="hl-photo"><img src="${hlEscape(image)}" alt="${hlEscape(item.title)} – ${t('Image', 'Bild')} ${run.images[side] + 1} ${t('of', 'von')} ${images.length}">
       ${images.length > 1 ? `<div class="hl-gallery"><button data-action="hl-image" data-side="${side}" data-direction="-1" aria-label="${t('Previous image', 'Vorheriges Bild')}: ${side ? t('next lot', 'nächstes Los') : t('benchmark', 'Messlatte')}">←</button><span>${run.images[side] + 1} / ${images.length}</span><button data-action="hl-image" data-side="${side}" data-direction="1" aria-label="${t('Next image', 'Nächstes Bild')}: ${side ? t('next lot', 'nächstes Los') : t('benchmark', 'Messlatte')}">→</button></div>` : ''}</div>
       <h2>${hlEscape(item.title)}</h2>
       <div class="hl-price ${side && run.revealed ? 'hl-price-reveal' : ''}">${side && !run.revealed ? `<span aria-label="${t('Price still hidden', 'Preis noch verdeckt')}">?</span>` : euro(item.actualBid)}</div>
-      <p class="hl-price-label">${side && !run.revealed ? t('Higher or lower than the benchmark?', 'Höher oder niedriger als die Messlatte?') : t('CONFIRMED FINAL BID', 'BESTÄTIGTES ENDGEBOT')}</p>
+      <p class="hl-price-label">${side && !run.revealed ? t('Final bid?', 'Endgebot?') : t('CONFIRMED FINAL BID', 'BESTÄTIGTES ENDGEBOT')}</p>
     </article>`;
   }).join('<span class="hl-versus" aria-hidden="true">VS</span>');
   app.innerHTML = `<section class="hl-screen">

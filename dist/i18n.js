@@ -9,6 +9,19 @@ function infoTip(text, label = t('More information', 'Mehr Informationen')) {
   const id = `info-tip-${++infoTipSequence}`;
   return `<span class="info-tip"><button type="button" aria-label="${uiEscape(label)}" aria-describedby="${id}">?</button><span id="${id}" role="tooltip">${uiEscape(text)}</span></span>`;
 }
+function positionInfoTip(tip) {
+  const tooltip = tip.querySelector('[role="tooltip"]');
+  if (!tooltip) return;
+  const anchor = tip.getBoundingClientRect();
+  const width = tooltip.getBoundingClientRect().width;
+  const left = Math.max(16, Math.min(innerWidth - width - 16, anchor.right - width));
+  tooltip.style.left = `${left - anchor.left}px`;
+  tooltip.style.right = 'auto';
+  tooltip.style.top = 'calc(100% + 9px)';
+  const bounds = tooltip.getBoundingClientRect();
+  if (bounds.bottom > innerHeight - 16 && anchor.top > bounds.height + 16)
+    tooltip.style.top = `${-bounds.height - 9}px`;
+}
 function paletteName(id) {
   const names = { 'electronics-smuggling': ['Smuggled Electronics', 'Geschmuggelte Elektronik'],
     'dealer-seizure': ['Dealer Seizure', 'Händlerbeschlagnahme'], 'wine-tax-seizure': ['Wine Tax Seizure', 'Weinsteuerbeschlagnahme'] };
@@ -101,3 +114,13 @@ document.addEventListener('change', event => {
   document.dispatchEvent(new Event('jg:language'));
 });
 renderStaticUi();
+
+for (const eventName of ['pointerover', 'focusin']) document.addEventListener(eventName, event => {
+  const tip = event.target.closest?.('.info-tip');
+  if (tip) positionInfoTip(tip);
+});
+function repositionInfoTips() {
+  document.querySelectorAll('.info-tip:hover, .info-tip:focus-within').forEach(positionInfoTip);
+}
+document.addEventListener('scroll', repositionInfoTips, true);
+window.addEventListener('resize', repositionInfoTips);

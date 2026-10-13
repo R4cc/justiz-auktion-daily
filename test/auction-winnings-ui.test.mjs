@@ -21,8 +21,8 @@ for(const language of ['en','de'])test(`unopened rewards stay above the live lis
     context.tab=tab;vm.runInContext('renderHouse()',context);const html=context.accountContent.innerHTML;
     assert.ok(html.indexOf('class="house-winnings"')<html.indexOf('class="auction-house-shortcuts'));
     assert.match(html,/data-unopened-reward="palette:won"/);assert.doesNotMatch(html,/<sealed>|<versiegelte>/);
-    assert.match(html,language==='en'?/WON · UNOPENED/:/GEWONNEN · UNGEÖFFNET/);
-    assert.match(html,language==='en'?/Open Now/:/Jetzt öffnen/);
+    assert.match(html,language==='en'?/<h2 id="house-winnings-title">Unopened rewards<\/h2>/:/<h2 id="house-winnings-title">Ungeöffnete Gewinne<\/h2>/);
+    assert.match(html,language==='en'?/<span class="house-winnings-action">Open /:/<span class="house-winnings-action">Öffnen /);
     assert.doesNotMatch(html,/data-history="won"/);
   }
 });
