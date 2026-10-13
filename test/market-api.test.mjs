@@ -4,8 +4,9 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { createEconomyApi } from '../src/economy-api.mjs';
-import { closeDataStore } from '../src/database.mjs';
+import { closeDataStore, getState, withDatabase } from '../src/database.mjs';
 import { tickMarketDrift } from '../src/market.mjs';
+import { MARKET_CHAOS_MARKER } from '../src/market-chaos.mjs';
 
 test('public market history accepts all quick filters, keeps legacy limits and rejects invalid ranges', async t => {
   const dataDir = await mkdtemp(path.join(os.tmpdir(), 'jg-market-api-'));
@@ -21,7 +22,7 @@ test('public market history accepts all quick filters, keeps legacy limits and r
   for (const range of ['1h', '1d', '1w', '1m']) {
     const { status, body } = get(`range=${range}`);
     assert.equal(status, 200); assert.equal(body.range, range);
-    assert.ok(body.history.length >= 60 && body.history.length <= 722);
+    assert.ok(body.history.length >= 60 && body.history.length <= 800);
     assert.equal(body.history[0].capturedAt, body.updatedAt);
   }
   assert.equal(get('range=bad').status, 400);
@@ -42,5 +43,7 @@ test('a market-only runtime starts minute quotes even when every other economy f
     onError: result => assert.fail(JSON.stringify(result)) });
   t.mock.timers.tick(1000);
   assert.ok(marketState(dataDir, { now }).categories.some(c => c.currentIndex !== 100));
+  const chaos=withDatabase(dataDir,db=>getState(db,MARKET_CHAOS_MARKER));
+  assert.equal(chaos.activatedAtMs,now);assert.match(chaos.seed,/^[a-f0-9]{64}$/);
   stop();
 });

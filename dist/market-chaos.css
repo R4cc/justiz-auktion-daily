@@ -1,0 +1,9 @@
+.market-chaos-banner { display:flex;align-items:center;justify-content:space-between;gap:24px;flex-wrap:wrap;margin:24px 0;padding:24px;border:2px solid #af412c;border-radius:16px;background:linear-gradient(115deg,#ffe9ce,#f8dadb);color:#582b22; }
+.market-chaos-banner>div:first-child { flex:1;min-width:0; }
+.market-chaos-banner .eyebrow { color:#92341f;margin:0 0 8px; }
+.market-chaos-banner h2 { margin:0 0 8px;font-size:1.5rem; }
+.market-chaos-banner p { margin:0;font-size:.85rem;line-height:1.7;overflow-wrap:anywhere; }
+.market-chaos-clock { display:flex;flex-direction:column;gap:8px;padding:14px 18px;border:1px solid #cfa99a;border-radius:10px;background:#fffbf1;max-width:100%; }
+.market-chaos-clock span { font-size:.75rem;overflow-wrap:anywhere; }
+.market-chaos-clock time { font:600 1.35rem 'DM Mono',monospace;color:#782b23; }
+@media(max-width:600px) { .market-chaos-banner { padding:18px;gap:16px; }.market-chaos-banner>div:first-child { flex-basis:100%; }.market-chaos-clock { width:100%;box-sizing:border-box; } }

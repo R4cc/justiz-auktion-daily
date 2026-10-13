@@ -18,6 +18,20 @@ const extract = (source, from, to) => {
     : fragment;
 };
 
+test('market frenzy banner has localized player guidance and the shared accessible countdown',()=>{
+  const context=uiContext({t:en=>en,esc:String});
+  vm.runInContext(extract(uiSource,'  const remaining =','  const bidMinimum =')
+    +extract(uiSource,'  function marketChaosMarkup(','  function renderMarket()'),context);
+  assert.equal(vm.runInContext('marketChaosMarkup(null)',context),'');
+  const event={startsAt:Date.now(),endsAt:Date.now()+3600_000};
+  let html=vm.runInContext(`marketChaosMarkup(${JSON.stringify(event)})`,context);
+  assert.match(html,/Market frenzy/);assert.match(html,/quarter.*three times/);assert.match(html,/role="status"/);
+  assert.match(html,new RegExp(`data-economy-end="${event.endsAt}"`));assert.match(html,/aria-live="off"/);
+  context.t=(_en,de)=>de;
+  html=vm.runInContext(`marketChaosMarkup(${JSON.stringify(event)})`,context);
+  assert.match(html,/Marktrausch/);assert.match(html,/Viertel.*Dreifache/);assert.match(html,/Normaler Handel wieder in/);
+});
+
 test('economy helpers use authenticated history/list/bid/cancel contracts and safe encoded IDs', async () => {
   const calls = [], reads = [];
   const context = uiContext({ window: { accountApi: async (...args) => { calls.push(args); return {}; } },

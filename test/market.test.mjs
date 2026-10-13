@@ -7,6 +7,7 @@ import { CASES, caseCatalog } from '../src/cases.mjs';
 import { Accounts } from '../src/accounts.mjs';
 import { ensureNewsSchema } from '../src/news.mjs';
 import { closeDataStore, upsertAuctions, withDatabase } from '../src/database.mjs';
+import { ensureMarketChaos } from '../src/market-chaos.mjs';
 import { DEFAULT_MARKET_INDEX, MARKET_CATEGORIES, estimatedValueTokens, marketCategoryForAuction, marketCategoryForItem,
   marketCategoryForListingCategory, marketCategoryForTheme, markSimulationActivation, marketHistory, marketIndexes, marketState,
   setMarketIndex, snapshotMarketState, tickMarketDrift } from '../src/market.mjs';
@@ -19,6 +20,8 @@ const stock = Array.from({ length: 24 }, (_, n) => ({
 
 async function fixture(t) {
   const dir = await mkdtemp(path.join(os.tmpdir(), 'jg-market-'));
+  // The same simulated market needs the same private weekly event seed.
+  withDatabase(dir, db => ensureMarketChaos(db, day, { seed: 'market-test-seed' }));
   t.after(async () => { closeDataStore(dir); await rm(dir, { recursive: true, force: true }); });
   return dir;
 }
@@ -217,8 +220,8 @@ test('quick history ranges cover their full duration, include the live quote and
     const history = marketHistory(dir, 'vehicles', { now, range });
     assert.equal(Date.parse(history[0].capturedAt), now);
     assert.equal(Date.parse(history.at(-1).capturedAt), now - duration);
-    assert.ok(history.length <= 722 && history.length >= 60);
-    assert.ok(history.every(p => p.indexValue >= 50 && p.indexValue <= 150));
+    assert.ok(history.length <= 800 && history.length >= 60);
+    assert.ok(history.every(p => p.indexValue >= 12.5 && p.indexValue <= 450));
     assert.equal(history[0].indexValue, marketState(dir, { now }).categories.find(c => c.category === 'vehicles').currentIndex);
   }
   assert.throws(() => marketHistory(dir, 'vehicles', { now, range: 'all' }), /invalid_market_range/);

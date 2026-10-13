@@ -3,6 +3,7 @@ import { createHash } from 'node:crypto';
 import { auctionSelectionCategory } from './auction-selection.mjs';
 import { tokenValue } from './cases.mjs';
 import { getState, setState, transaction, withDatabase } from './database.mjs';
+import { ensureMarketChaos, marketChaosEvent, marketChaosHistoryTimes, marketChaosMultiplier } from './market-chaos.mjs';
 // Cyclic on purpose: market effects carry an FK into news_events, so the
 // drift path must be able to guarantee that schema exists. Both modules only
 // declare functions at module scope, so the cycle never dereferences a
@@ -114,7 +115,7 @@ export function computeCategoryIndex(db, category, at) {
     WHERE category = ? AND starts_at <= ? AND ends_at > ?`).all(category, at, at)
     .filter(effect => !trend || !effect.source_id.startsWith('drift:'));
   return indexFromEffects(effects, at, (trend?.index_value ?? DEFAULT_MARKET_INDEX)
-    + intradayMovement(db, category, at)) * marketMultiplierAt(db, category, at);
+    + intradayMovement(db, category, at)) * marketChaosMultiplier(db, category, at) * marketMultiplierAt(db, category, at);
 }
 
 // Unrounded, activation-aware index read for domain valuation (e.g. palette
@@ -299,6 +300,7 @@ export function applyMarketDrift(db, now, random = null) {
   if (!getState(db, INTRADAY_MARKER, null)) {
     setState(db, INTRADAY_MARKER, { activatedAtMs: now });
   }
+  ensureMarketChaos(db, now);
   const bucket = Math.floor(now / MARKET_DRIFT_INTERVAL_MS);
   const insert = db.prepare(`INSERT INTO market_trend_points
     (category, bucket, index_value, momentum, direction, regime_until) VALUES (?, ?, ?, ?, ?, ?)`);
@@ -361,7 +363,8 @@ export function tickMarketDrift(dataDir, { now = Date.now(), random = null } = {
 // Fill the hourly UTC snapshot grid through floor(now/hour)*hour, starting at
 // the first hour boundary at/after activation. Values are reconstructed from
 // effects at each boundary — never copied from today's index. At most
-// MAX_BACKFILL_BOUNDARIES boundaries are (re)computed per refresh, so long
+// MAX_BACKFILL_BOUNDARIES hourly boundaries (plus event turning points) are
+// (re)computed per refresh, so long
 // downtime simply leaves unretained hours unfilled. Snapshots older than the
 // retention window are deleted; effect and receipt records are never touched.
 function refreshMarketHistory(db, now, activationMs) {
@@ -372,6 +375,11 @@ function refreshMarketHistory(db, now, activationMs) {
   // this cursor, and drift backfills rewind it when invalidating history.
   const through = getState(db, HISTORY_CURSOR, null);
   let start = Math.max(first, retentionFloor, Number.isFinite(through) ? through + SNAPSHOT_INTERVAL_MS : -Infinity);
+  // The last hourly cursor may precede an event inside that completed hour.
+  // Revisit it to capture turning points that are not on the hourly grid.
+  if (start <= last && marketChaosHistoryTimes(db, Math.max(first, start - SNAPSHOT_INTERVAL_MS), start).length) {
+    start = Math.max(first, retentionFloor, start - SNAPSHOT_INTERVAL_MS);
+  }
   if (start <= last) {
     if (last - start > (MAX_BACKFILL_BOUNDARIES - 1) * SNAPSHOT_INTERVAL_MS) {
       start = last - (MAX_BACKFILL_BOUNDARIES - 1) * SNAPSHOT_INTERVAL_MS;
@@ -403,7 +411,9 @@ function refreshMarketHistory(db, now, activationMs) {
     const modifierPositions = new Map(MARKET_CATEGORIES.map(({ id }) => [id, -1]));
     const positions = new Map(MARKET_CATEGORIES.map(({ id }) => [id, 0]));
     const insert = db.prepare('INSERT OR IGNORE INTO market_snapshots (category, index_value, captured_at) VALUES (?, ?, ?)');
-    for (let boundary = start; boundary <= last; boundary += SNAPSHOT_INTERVAL_MS) {
+    const times = new Set(marketChaosHistoryTimes(db, start, last));
+    for (let boundary = start; boundary <= last; boundary += SNAPSHOT_INTERVAL_MS) times.add(boundary);
+    for (const boundary of [...times].sort((a,b)=>a-b)) {
       const capturedAt = new Date(boundary).toISOString();
       for (const { id } of MARKET_CATEGORIES) {
         // Per-boundary activation filter: an effect loaded for the window may
@@ -422,7 +432,8 @@ function refreshMarketHistory(db, now, activationMs) {
         let modifierPosition = modifierPositions.get(id);
         while (modifierPosition + 1 < changes.length && changes[modifierPosition + 1].created_at <= boundary) modifierPosition++;
         modifierPositions.set(id, modifierPosition);
-        insert.run(id, indexFromEffects(active, boundary, baseline + intradayMovement(db, id, boundary)) * (changes[modifierPosition]?.multiplier ?? 1), capturedAt);
+        insert.run(id, indexFromEffects(active, boundary, baseline + intradayMovement(db, id, boundary))
+          * marketChaosMultiplier(db, id, boundary) * (changes[modifierPosition]?.multiplier ?? 1), capturedAt);
       }
     }
   }
@@ -461,7 +472,7 @@ export function marketState(dataDir, { now = Date.now() } = {}) {
         const row = rows.get(id);
         return { category: id, name, nameDe, baseIndex: row.base_index, currentIndex: roundIndex(row.current_index * marketMultiplierAt(db, id, now)), updatedAt: row.updated_at, changePercent24h: null };
       });
-      return { updatedAt: categories.reduce((latest, c) => c.updatedAt > latest ? c.updatedAt : latest, '') || null, categories };
+      return { updatedAt: categories.reduce((latest, c) => c.updatedAt > latest ? c.updatedAt : latest, '') || null, categories, chaosEvent: null };
     }
     transaction(db, () => {
       refreshMarketHistory(db, now, activation);
@@ -481,7 +492,7 @@ export function marketState(dataDir, { now = Date.now() } = {}) {
         changePercent1h: previous > 0 ? roundIndex((row.current_index / previous - 1) * 100) : 0,
         changePercent24h: previousDay > 0 ? roundIndex((row.current_index / previousDay - 1) * 100) : null };
     });
-    return { updatedAt, categories };
+    return { updatedAt, categories, chaosEvent: marketChaosEvent(db, now) };
   });
 }
 
@@ -538,6 +549,7 @@ export function marketHistory(dataDir, category, { now = Date.now(), limit = 100
       // between samples, so jumps and the chart's latest value stay accurate.
       const times = new Set([start, now]), receipts = new Map();
       for (let at = Math.ceil(start / interval) * interval; at <= now; at += interval) times.add(at);
+      for (const at of marketChaosHistoryTimes(db, start, now)) times.add(at);
       for (const row of db.prepare(`SELECT created_at, after_index FROM admin_market_adjustments
         WHERE category = ? AND created_at >= ? AND created_at <= ? ORDER BY created_at, id`).all(category, start, now)) {
         times.add(row.created_at); receipts.set(row.created_at, row.after_index);

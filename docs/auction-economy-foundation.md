@@ -122,9 +122,20 @@ precedes runtime startup in `server.mjs`.
   order flow with category-specific volatility and short rallies/pullbacks.
   Hash-keyed anchors make quotes identical across domain reads and restarts.
   Its one-time activation preserves the initial quote and earlier history.
-  The combined index, including intraday flow and short-lived news effects, stays
+  The normal combined index, including intraday flow and short-lived news effects, stays
   between 50 and 150 (±50% of neutral 100) before any persistent admin multiplier.
-  Admin adjustments can move the final index beyond this band. The market chart retains 30 days.
+  Once per seven-day window, one randomly timed **Market frenzy** lasts exactly
+  one hour. A private persisted seed fixes its timing and each category's path.
+  Minute quotes rapidly alternate between five-minute pumps and crashes, with
+  multipliers from 0.25 to 3 times the ordinary quote; both event endpoints
+  return to the normal simulation. A new installation gets at least six hours
+  before its first event. Repeated reads, restarts and offline backfills cannot
+  reroll the schedule, rewrite earlier history or stack events. Only the active
+  event's start/end times are public; future timing and the seed stay private.
+  Inventory, cases, store estimates, theft fines and NPC valuations all consume
+  the same quote. Admin multipliers compose after it. The Market page shows an
+  EN/DE event banner and countdown; event turning points remain in every chart
+  range and hourly history after expiry. The market chart retains 30 days.
   The first trend tick also performs the one-time simulation activation.
 - Palette NPC buyers (under `FEATURE_RESALES`): every five minutes each active
   lot gets at most one deterministic consideration from a rotating cohort of
