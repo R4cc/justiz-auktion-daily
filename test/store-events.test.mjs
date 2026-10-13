@@ -95,7 +95,9 @@ test('cosmetic heists preserve guarded shelves and live player purchases',async 
   assert.equal(run(g,0).itemsLost,0);
   assert.equal(g.query("SELECT user_id, sold_at FROM inventory WHERE id='wine-0'")[0].user_id,g.rival.id);
   assert.equal(g.query("SELECT sold_at FROM inventory WHERE id='wine-0'")[0].sold_at,null);
-  const ended=actStoreHeist(g.dir,g.rival,{heistId:attempt.id,action:'stand',turn:0,requestId:'expired-event-hand-0001'},{now:due});
+  // This overdue hand also auto-spins its wheel. Fix the police draw to land
+  // on caught rather than relying on the live 20% catch chance.
+  const ended=actStoreHeist(g.dir,g.rival,{heistId:attempt.id,action:'stand',turn:0,requestId:'expired-event-hand-0001'},{now:due,policeDraw:()=>0});
   assert.equal(ended.outcome,'caught');
 });
 test('event failures roll back stock, money, check, sale history and modal result; live authority and economy reset apply',async t=>{

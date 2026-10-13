@@ -88,7 +88,15 @@ test('public storefronts and player interactions use feature flags, sessions, CS
   assert.ok(!('sequence' in heist)); assert.ok(!('roll' in heist)); assert.ok(!('deck' in heist.blackjack));
   assert.equal((await view('')).heist, null);
   assert.equal((await post(base, 'stores/heist/action', { heistId: heist.id, action:'stand', turn:0,requestId:'foreign-blackjack-0001' }, ownerCookie)).status, 404);
-  accounts.db(db => db.prepare("UPDATE store_heists SET status='active',result=NULL,blackjack=? WHERE id=?").run(JSON.stringify({player:[9,8],dealer:[6,10],deck:[1,2,3,4,5],turn:0,outcome:'active'}),heist.id));
+  accounts.db(db => {
+    // A natural win can transfer the item during start. Restore the shelf as
+    // well as the hand so this forced stand always tests a live target.
+    db.prepare('UPDATE inventory SET user_id=? WHERE id=?').run(owner.id, 'http-wine-1');
+    db.prepare('INSERT OR IGNORE INTO business_stock(inventory_id,business_id,stocked_at,asking_price) VALUES(?,?,?,?)')
+      .run('http-wine-1', shop.id, time, payload.expectedPrice);
+    db.prepare("UPDATE store_heists SET status='active',result=NULL,blackjack=? WHERE id=?")
+      .run(JSON.stringify({player:[9,8],dealer:[6,10],deck:[1,2,3,4,5],turn:0,outcome:'active'}),heist.id);
+  });
   const finish = await post(base, 'stores/heist/action', { heistId: heist.id, action:'stand',turn:0,requestId:'http-blackjack-action-001' }, winnerCookie);
   assert.equal(finish.status, 200); assert.equal((await finish.json()).heist.outcome, 'stolen');
   assert.ok(!('policeWheel' in (await (await fetch(`${base}/api/stores/${shop.id}`,{headers:{cookie:winnerCookie}})).json()).store.heist));
