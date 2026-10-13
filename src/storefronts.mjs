@@ -19,6 +19,8 @@ export const GOOSE_GUARD_COST = 250;
 export const HEIST_COOLDOWN = 30 * 60000;
 export const STORE_HEIST_COOLDOWN = 5 * 60000;
 export const HEIST_DURATION = 10 * 60000;
+export const POLICE_WHEEL_DURATION = 2 * 60000;
+export const POLICE_CATCH_PERCENT = ECONOMY_BALANCE.theftPoliceCatchPercent;
 const fail = (code, status = 400) => { throw new AccountError(code, status); };
 const date = now => new Date(now).toISOString().slice(0, 10);
 
@@ -125,7 +127,7 @@ function moveItem(db, shop, player, inventoryId) {
 export function theftQuote(referencePrice, gooseGuard, locationMultiplier = 1, securityPercent = 0) {
   const baseFine = Math.max(20, Math.ceil(referencePrice * ECONOMY_BALANCE.theftFineMultiplier * (gooseGuard ? 2 : 1) * Math.max(1, 1 / locationMultiplier)));
   const fine=Math.ceil(baseFine*(100+securityPercent)/100);
-  return { fine, rules: 'single-deck-s17' };
+  return { fine, policeCatchPercent: POLICE_CATCH_PERCENT, rules: 'single-deck-s17' };
 }
 function publicCard(db, shop, viewer, now) {
   return { id: shop.id, ownerId: shop.user_id, owner: viewer ? shop.username : maskUsername(shop.username),
@@ -276,14 +278,14 @@ export function customizeStore(dataDir, user, payload, { now = Date.now() } = {}
     return { id, amount: cost };
   }), now);
 }
-export function startStoreHeist(dataDir, user, payload, { now = Date.now(), draw = randomInt } = {}) {
+export function startStoreHeist(dataDir, user, payload, { now = Date.now(), draw = randomInt, policeDraw = randomInt } = {}) {
   return atomic(dataDir, user, (db, player) => receipt(db, player, payload, 'heist', now, id => {
     const shop = store(db, payload.shopId); otherStore(shop, player);
     if (assertPlayerFree(db,player.id,now).fineDue) fail('unpaid_fine',409);
     const last = db.prepare('SELECT created_at FROM store_heists WHERE user_id = ? ORDER BY created_at DESC LIMIT 1').get(player.id);
     const target = db.prepare('SELECT MAX(created_at) AS last FROM store_heists WHERE business_id = ?').get(shop.id).last;
     if ((last && now < last.created_at + HEIST_COOLDOWN) || (target !== null && now < target + STORE_HEIST_COOLDOWN)) fail('heist_cooldown', 409);
-    if (db.prepare("SELECT 1 FROM store_heists WHERE user_id=? AND status='active'").get(player.id)) fail('heist_active',409);
+    if (db.prepare("SELECT 1 FROM store_heists WHERE user_id=? AND status IN ('active','police')").get(player.id)) fail('heist_active',409);
     const entry = shelf(db, shop, payload.inventoryId, now);
     if (payload.expectedPrice !== entry.askingPrice) fail('store_price_changed', 409);
     const quote = theftQuote(entry.referencePrice, shop.goose_guard, plotLocation(db, shop.plot_id)?.theftMultiplier ?? 1, skillEffects(db,shop.user_id).securityPercent);
@@ -291,60 +293,100 @@ export function startStoreHeist(dataDir, user, payload, { now = Date.now(), draw
     const game = dealBlackjack(draw);
     db.prepare(`INSERT INTO store_heists (id,user_id,business_id,owner_id,inventory_id,sequence,roll,chance,fee,created_at,ready_at,expires_at,blackjack)
       VALUES (?,?,?,?,?,'[]',0,0,?,?,?,?,?)`).run(id,player.id,shop.id,shop.user_id,entry.id,quote.fine,now,now,now+HEIST_DURATION,JSON.stringify(game));
-    if (game.outcome !== 'active') settleBlackjack(db,player,db.prepare('SELECT * FROM store_heists WHERE id=?').get(id),game,now);
+    if (game.outcome !== 'active') settleBlackjack(db,player,db.prepare('SELECT * FROM store_heists WHERE id=?').get(id),game,now,policeDraw);
     return { id, amount:0, heist:serializeHeist(db.prepare('SELECT * FROM store_heists WHERE id=?').get(id),now) };
   }), now);
 }
-function settleBlackjack(db,player,attempt,game,now) {
+function policeWheel(attempt, spun = false, autoSpun = false) {
+  return { catchPercent: attempt.chance, escapePercent: 100 - attempt.chance, spun,
+    ...(spun ? { sector: Math.floor(attempt.roll / 100000), outcome: attempt.roll < attempt.chance * 10000 ? 'caught' : 'escaped', autoSpun } : {}) };
+}
+function queuePoliceWheel(db,attempt,game,now,draw) {
+  const roll = draw(1000000);
+  if (!Number.isInteger(roll) || roll < 0 || roll >= 1000000) throw new Error('invalid_police_draw');
+  const expiresAt = (game.abandoned ? attempt.expires_at : now) + POLICE_WHEEL_DURATION;
+  const updated = { ...attempt, chance: POLICE_CATCH_PERCENT, roll, expires_at: expiresAt };
+  const result = { id: attempt.id, outcome: 'police', fine: attempt.fee, expiresAt,
+    blackjack: publicBlackjack(game), policeWheel: policeWheel(updated), abandoned: Boolean(game.abandoned) };
+  db.prepare("UPDATE store_heists SET status='police',roll=?,chance=?,blackjack=?,expires_at=?,result=? WHERE id=?")
+    .run(roll, POLICE_CATCH_PERCENT, JSON.stringify(game), expiresAt, JSON.stringify(result), attempt.id);
+  return now >= expiresAt ? settlePoliceWheel(db,playerForHeist(db,attempt),updated,game,now,true) : result;
+}
+const playerForHeist = (db,attempt) => db.prepare('SELECT id,username FROM users WHERE id=?').get(attempt.user_id);
+function settlePoliceWheel(db,player,attempt,game,now,autoSpun = false) {
+  const outcome = attempt.roll < attempt.chance * 10000 ? 'caught' : 'escaped';
+  return settleBlackjack(db,player,attempt,game,now,randomInt,{ outcome, policeWheel: policeWheel(attempt,true,autoSpun) });
+}
+function settleBlackjack(db,player,attempt,game,now,policeDraw = randomInt, policeResult = null) {
+  if (game.outcome === 'lose' && !policeResult) return queuePoliceWheel(db,attempt,game,now,policeDraw);
   const shop = db.prepare(`SELECT b.*,u.banned FROM businesses b JOIN users u ON u.id=b.user_id WHERE b.id=?`).get(attempt.business_id);
   if (shop) advanceShop(db,shop,now);
   const present = shop && !shop.banned && db.prepare(`SELECT 1 FROM business_stock s JOIN inventory i ON i.id=s.inventory_id
     WHERE s.business_id=? AND s.inventory_id=? AND s.sold_at IS NULL AND i.sold_at IS NULL AND i.user_id=?`).get(shop.id,attempt.inventory_id,attempt.owner_id) && !inventoryIsLocked(db,attempt.inventory_id);
-  const outcome = game.outcome === 'lose' ? 'caught' : game.outcome === 'push' ? 'push' : present ? 'stolen' : 'gone';
+  const outcome = policeResult?.outcome ?? (game.outcome === 'push' ? 'push' : present ? 'stolen' : 'gone');
   let consequence = null;
   if (outcome === 'stolen') { moveItem(db,shop,player,attempt.inventory_id); acquireItems(db,player.id,[attempt.inventory_id],0,'mischief',now); }
   if (outcome === 'caught') consequence = imposeFine(db,player.id,attempt.fee,now);
   const result = { id:attempt.id,outcome,fine:attempt.fee,inventoryId:outcome==='stolen'?attempt.inventory_id:null,
-    blackjack:publicBlackjack(game),consequence,abandoned:game.abandoned||false };
+    blackjack:publicBlackjack(game),consequence,abandoned:game.abandoned||false,
+    ...(policeResult ? { policeWheel: policeResult.policeWheel } : {}) };
   db.prepare('UPDATE store_heists SET status=?,result=?,blackjack=?,settled_at=? WHERE id=?').run(outcome,JSON.stringify(result),JSON.stringify(game),now,attempt.id);
   if (shop) notify(db,shop,`${attempt.id}:end`,outcome==='stolen'?'A shelf item was stolen':'A theft attempt ended',outcome==='stolen'?'Ein Regalartikel wurde gestohlen':'Ein Diebstahlversuch endete',
     `${player.username}: ${outcome==='stolen'?'check your shelves.':outcome==='caught'?'caught and fined. No stock was stolen.':'no stock was stolen.'}`,
     `${player.username}: ${outcome==='stolen'?'Prüfe deine Regale.':outcome==='caught'?'erwischt und mit Bußgeld belegt. Keine Ware wurde gestohlen.':'Keine Ware wurde gestohlen.'}`,now);
   return result;
 }
-export function actStoreHeist(dataDir,user,payload,{now=Date.now()}={}) {
+export function actStoreHeist(dataDir,user,payload,{now=Date.now(),policeDraw=randomInt}={}) {
   return atomic(dataDir,user,(db,player)=>{
     const attempt=db.prepare('SELECT * FROM store_heists WHERE id=? AND user_id=?').get(payload.heistId,player.id);
     if (!attempt) fail('heist_not_found',404);
     if (!attempt.blackjack) fail('legacy_heist',409);
     return receipt(db,player,{...payload,shopId:attempt.business_id},'blackjack',now,()=>{
+      if (attempt.status==='police' && now>=attempt.expires_at) return settlePoliceWheel(db,player,attempt,JSON.parse(attempt.blackjack),now,true);
       if (attempt.status!=='active') return JSON.parse(attempt.result);
       const game=JSON.parse(attempt.blackjack);
-      if (now>=attempt.expires_at) { game.outcome='lose';game.abandoned=true;return settleBlackjack(db,player,attempt,game,now); }
+      if (now>=attempt.expires_at) { game.outcome='lose';game.abandoned=true;return settleBlackjack(db,player,attempt,game,now,policeDraw); }
       if (!['hit','stand'].includes(payload.action)) fail('invalid_blackjack_action');
       if (payload.turn!==game.turn) fail('blackjack_turn_changed',409);
       playBlackjack(game,payload.action);
-      if (game.outcome!=='active') return settleBlackjack(db,player,attempt,game,now);
+      if (game.outcome!=='active') return settleBlackjack(db,player,attempt,game,now,policeDraw);
       db.prepare('UPDATE store_heists SET blackjack=? WHERE id=?').run(JSON.stringify(game),attempt.id);
       return {id:attempt.id,outcome:'active',fine:attempt.fee,expiresAt:attempt.expires_at,blackjack:publicBlackjack(game)};
     });
   },now);
 }
-export function settleExpiredPlayerHeists(db,userId,now) {
+export function spinStoreHeist(dataDir,user,payload,{now=Date.now()}={}) {
+  return atomic(dataDir,user,(db,player)=>{
+    const attempt=db.prepare('SELECT * FROM store_heists WHERE id=? AND user_id=?').get(typeof payload?.heistId==='string'&&payload.heistId.length<=100?payload.heistId:'',player.id);
+    if (!attempt) fail('heist_not_found',404);
+    return receipt(db,player,{...payload,shopId:attempt.business_id},'police-wheel',now,()=>{
+      if (attempt.status!=='police') {
+        const saved=attempt.result ? JSON.parse(attempt.result) : null;
+        if (saved?.policeWheel?.spun) return saved;
+        fail('police_spin_not_ready',409);
+      }
+      return settlePoliceWheel(db,player,attempt,JSON.parse(attempt.blackjack),now,now>=attempt.expires_at);
+    });
+  },now);
+}
+export function settleExpiredPlayerHeists(db,userId,now,{policeDraw=randomInt}={}) {
   if (!db.prepare("SELECT 1 FROM sqlite_schema WHERE type='table' AND name='store_heists'").get()) return;
   ensureStoreSchema(db);
   for (const attempt of db.prepare("SELECT * FROM store_heists WHERE user_id=? AND status='active' AND blackjack IS NOT NULL AND expires_at<=?").all(userId,now)) {
     const player=db.prepare('SELECT id,username FROM users WHERE id=?').get(userId),game=JSON.parse(attempt.blackjack);
-    game.outcome='lose';game.abandoned=true;settleBlackjack(db,player,attempt,game,now);
+    game.outcome='lose';game.abandoned=true;settleBlackjack(db,player,attempt,game,now,policeDraw);
+  }
+  for (const attempt of db.prepare("SELECT * FROM store_heists WHERE user_id=? AND status='police' AND expires_at<=?").all(userId,now)) {
+    settlePoliceWheel(db,playerForHeist(db,attempt),attempt,JSON.parse(attempt.blackjack),now,true);
   }
 }
-export function tickStoreJustice(dataDir,{now=Date.now()}={}) {
+export function tickStoreJustice(dataDir,{now=Date.now(),policeDraw=randomInt}={}) {
   return withDatabase(dataDir,db=>transaction(db,()=>{
     if (!db.prepare("SELECT 1 FROM sqlite_schema WHERE type='table' AND name='users'").get()) return {processed:0};
     ensureStoreSchema(db);
-    const users=db.prepare(`SELECT id FROM users WHERE npc=0 AND (id IN (SELECT user_id FROM store_heists WHERE status='active' AND blackjack IS NOT NULL AND expires_at<=?)
+    const users=db.prepare(`SELECT id FROM users WHERE npc=0 AND (id IN (SELECT user_id FROM store_heists WHERE status IN ('active','police') AND blackjack IS NOT NULL AND expires_at<=?)
       OR id IN (SELECT user_id FROM player_justice WHERE fine_due>0))`).all(now);
-    for(const user of users) {settleExpiredPlayerHeists(db,user.id,now);collectFine(db,user.id,now);}
+    for(const user of users) {settleExpiredPlayerHeists(db,user.id,now,{policeDraw});collectFine(db,user.id,now);}
     return {processed:users.length};
   }));
 }

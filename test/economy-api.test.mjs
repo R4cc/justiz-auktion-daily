@@ -91,6 +91,8 @@ test('public storefronts and player interactions use feature flags, sessions, CS
   accounts.db(db => db.prepare("UPDATE store_heists SET status='active',result=NULL,blackjack=? WHERE id=?").run(JSON.stringify({player:[9,8],dealer:[6,10],deck:[1,2,3,4,5],turn:0,outcome:'active'}),heist.id));
   const finish = await post(base, 'stores/heist/action', { heistId: heist.id, action:'stand',turn:0,requestId:'http-blackjack-action-001' }, winnerCookie);
   assert.equal(finish.status, 200); assert.equal((await finish.json()).heist.outcome, 'stolen');
+  assert.ok(!('policeWheel' in (await (await fetch(`${base}/api/stores/${shop.id}`,{headers:{cookie:winnerCookie}})).json()).store.heist));
+  assert.equal((await post(base,'stores/heist/spin',{heistId:heist.id,requestId:'http-no-wheel-on-win-1'},winnerCookie)).status,409);
   // Jail applies to every account/game route and authenticated public economy
   // route, while session state, logout and password access stay available.
   const player=accounts.user(winnerCookie.match(/jg_session=([a-f0-9]+)/)[1]);
@@ -408,4 +410,35 @@ test('store events and the three-store cap use live sessions, CSRF, private resu
   assert.deepEqual((await (await post(base,'stores/events/acknowledge',{ids:[event.id]},ownerCookie)).json()).events,[]);
   assert.deepEqual((await (await post(base,'stores/events/acknowledge',{ids:[event.id]},ownerCookie)).json()).events,[]);
   assert.deepEqual((await (await post(base,'stores/events/check',{},ownerCookie)).json()).events,[]);
+});
+
+
+test('police wheel HTTP requires authentication, CSRF and ownership, conceals the saved outcome and settles retries once',async t=>{
+ const {base,dir}=await fixture(t);const accounts=new Accounts(dir),now=Date.now();
+ const ownerCookie=(await post(base,'login',{username:'admin',password})).headers.get('set-cookie');
+ const owner=accounts.db(db=>db.prepare("SELECT id FROM users WHERE username='admin'").get());
+ accounts.db(db=>{db.prepare('UPDATE users SET tokens=100000 WHERE id=?').run(owner.id);db.prepare('INSERT INTO inventory(id,user_id,item,created_at) VALUES(?,?,?,?)').run('wheel-wine',owner.id,JSON.stringify({title:'Wine',price:100,marketCategory:'wine'}),now);});
+ const shop=buyBusiness(dir,owner,'wine','popup',{now}).shop;stockBusiness(dir,owner,shop.id,['wheel-wine'],{now});
+ const codes=(await (await post(base,'codes',{count:1},ownerCookie)).json()).codes;
+ const cookie=(await post(base,'register',{username:'WheelPlayer',password,code:codes[0]})).headers.get('set-cookie');
+ const quote=(await (await fetch(`${base}/api/stores/${shop.id}`,{headers:{cookie}})).json()).store.stock[0];
+ const started=await post(base,'stores/heist/start',{shopId:shop.id,inventoryId:quote.id,expectedPrice:quote.price,expectedFine:quote.theft.fine,requestId:'http-wheel-start-0001'},cookie);
+ const id=(await started.json()).receipt.id;
+ accounts.db(db=>{
+  // A random natural can win before we replace this isolated test hand.
+  db.prepare('UPDATE inventory SET user_id=? WHERE id=?').run(owner.id,'wheel-wine');
+  db.prepare('INSERT OR IGNORE INTO business_stock(inventory_id,business_id,stocked_at,asking_price) VALUES(?,?,?,?)').run('wheel-wine',shop.id,now,quote.price);
+  db.prepare("UPDATE store_heists SET status='active',result=NULL,blackjack=? WHERE id=?").run(JSON.stringify({player:[2,3],dealer:[9,8],deck:[0,1,4,5,6],turn:0,outcome:'active'}),id);
+ });
+ const losing=await post(base,'stores/heist/action',{heistId:id,action:'stand',turn:0,requestId:'http-wheel-loss-00001'},cookie);
+ const staged=(await losing.json()).heist;assert.equal(staged.outcome,'police');assert.ok(!('sector' in staged.policeWheel));assert.ok(!('roll' in staged));
+ const payload={heistId:id,requestId:'http-wheel-spin-00001',outcome:'caught',roll:0};
+ assert.equal((await post(base,'stores/heist/spin',payload)).status,401);
+ assert.equal((await fetch(base+'/api/account/stores/heist/spin',{method:'POST',headers:{cookie,'content-type':'application/json'},body:JSON.stringify(payload)})).status,403);
+ assert.equal((await post(base,'stores/heist/spin',payload,ownerCookie)).status,404);
+ assert.equal((await post(base,'stores/heist/spin',{requestId:'http-wheel-bad-id-001'},cookie)).status,404);
+ accounts.db(db=>db.prepare('UPDATE store_heists SET roll=999999 WHERE id=?').run(id));
+ const spun=(await (await post(base,'stores/heist/spin',payload,cookie)).json());assert.equal(spun.heist.outcome,'escaped');assert.equal(spun.user.justice.offences,0);
+ assert.deepEqual((await (await post(base,'stores/heist/spin',payload,cookie)).json()).heist,spun.heist);
+ assert.equal(accounts.db(db=>db.prepare('SELECT user_id FROM inventory WHERE id=?').get('wheel-wine').user_id),owner.id);
 });

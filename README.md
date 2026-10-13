@@ -10,7 +10,7 @@ A price-guessing and trading game based on public listings from [Justiz-Auktion]
 - **Auction House:** Bid on player listings and cases, or auction your own finds.
 - **Mystery palettes:** Bid on category stock palettes in the Auction House, with price-based rarity and quantity odds. Items and amounts are drawn at opening with your current Luck. Reveal three item and quantity rolls, then restock your stores from inventory.
 - **Cases and inventory:** Open mystery cases, collect items, auction them or stock a compatible store.
-- **Stores and Town:** Open a shop, set prices and sell to players and simulated customers. Steal through fair blackjack at other players’ stores: no upfront cost, a fine if caught, inventory seizure if cash runs out, and escalating jail time if the fine cannot be covered.
+- **Stores and Town:** Open a shop, set prices and sell to players and simulated customers. Blackjack wins steal an item directly; losses get an 80% escape / 20% caught police wheel. Catches enforce fines, inventory seizure and escalating jail if the fine cannot be covered.
 - **Market Trends:** Follow changing item values and NPC demand to guide your trades.
 - **Visitor storefronts:** Shop crests and town artwork, rarity cards with grouped stock quantities, one-item buying and blackjack theft. Verified reviews, Influence likes and daily shop reactions sit below the shelves.
 - **Store popularity and review auctions:** Every store has a popularity meter and a five-star rating breakdown. An NPC offers packs of 5–30 reviews once or twice daily in 12-hour auctions. Winners choose 1–5 stars and apply the pack to their store or another player’s store; bought reviews add counts without written comments and have capped, reduced influence.

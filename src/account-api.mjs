@@ -22,7 +22,7 @@ import { archivedListingsBidOnByUser, cancelListing, listItem, listingsBidOnByUs
 import { maskLeaderboard } from './username-privacy.mjs';
 import { markNotificationsRead, notificationsForUser } from './notifications.mjs';
 import { businessDashboard, buyBusiness, setBusinessMargin, stockBusiness, unstockBusiness } from './businesses.mjs';
-import { actStoreHeist, buyStoreItem, customizeStore, finishStoreHeist, reactToStore, likeStoreReview, recordStoreVisit, playerCriminalRecord, reviewStore, startStoreHeist, tipStore, visitStore } from './storefronts.mjs';
+import { spinStoreHeist, actStoreHeist, buyStoreItem, customizeStore, finishStoreHeist, reactToStore, likeStoreReview, recordStoreVisit, playerCriminalRecord, reviewStore, startStoreHeist, tipStore, visitStore } from './storefronts.mjs';
 
 const AUCTION_PAGE_SIZE = 25;
 
@@ -218,6 +218,7 @@ export async function createAccountApi({ dataDir, dailyPayload, json, env = proc
         result = { receipt, heist:receipt.heist, user: accounts.profile(user) };
         if (!result.user.justice.jailed) Object.assign(result,visitStore(dataDir,user,payload.shopId));
       }
+      else if (flags.businesses && route === 'stores/heist/spin') result = { heist:spinStoreHeist(dataDir,user,payload), user:accounts.profile(user) };
       else if (flags.businesses && route === 'stores/heist/action') result = { heist:actStoreHeist(dataDir,user,payload), user:accounts.profile(user) };
       else if (flags.businesses && route === 'stores/heist/finish') result = { heist: finishStoreHeist(dataDir, user, payload), user: accounts.profile(user) };
       else if (flags.paletteAuctions && route === 'admin/palette-auctions') {

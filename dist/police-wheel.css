@@ -1,0 +1,16 @@
+.police-wheel-content { text-align:center; }
+.police-wheel-wrap { position:relative; width:min(270px,100%); margin:24px auto 20px; }
+.police-wheel { width:100%; display:block; transform-origin:50% 50%; border:7px solid var(--ink); border-radius:50%; box-shadow:0 8px 0 #173f331a; }
+.police-wheel .is-escape { fill:#28684f; }
+.police-wheel .is-caught { fill:#b13f2b; }
+.police-wheel path { stroke:#f7f3e8; stroke-width:1.5; }
+.police-wheel text { fill:#fff; font:700 20px sans-serif; }
+.police-wheel-pointer { position:absolute; top:-6px; left:50%; transform:translateX(-50%); z-index:2; width:0; height:0; border-left:15px solid transparent; border-right:15px solid transparent; border-top:28px solid var(--ink); }
+.police-wheel-hub { position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); display:grid; place-items:center; width:50px; height:50px; border:5px solid var(--paper); border-radius:50%; color:var(--paper); background:var(--ink); font-size:24px; font-weight:800; }
+.police-wheel-odds { display:flex; flex-wrap:wrap; justify-content:center; gap:12px; font-weight:700; }
+.police-wheel-odds .is-escape { color:#28684f; }
+.police-wheel-odds .is-caught { color:#a13522; }
+.police-wheel-content .blackjack-status { min-height:48px; }
+.police-wheel-action { width:100%; min-height:48px; height:auto; white-space:normal; padding:12px; }
+.police-wheel-content .blackjack-consequence { text-align:left; margin:18px 0; }
+@media(max-width:400px){.police-wheel-wrap{width:min(220px,100%)}.police-wheel-odds{gap:8px;font-size:.84rem}}

@@ -269,7 +269,7 @@ soft-17 standing, standard aces and two-card naturals. Wins transfer stock;
 pushes end without theft or a fine; losses incur a frozen fine of at least
 4× market value. Guards double fines and district security increases fines,
 without altering the cards. Turns and action receipts prevent duplicate draws.
-Unfinished hands are caught after ten minutes even when the player is offline.
+Unfinished hands lose after ten minutes even when the player is offline. Losing queues a persisted 80% escape / 20% caught police wheel, which resolves automatically after two more minutes if not spun. Escape gives no loot or fine; only caught wheels enforce the existing fine. Blackjack wins and pushes skip the wheel.
 
 The bailiff collects cash, then inventory at current market estimates, returning
 excess liquidation value. Unbid listings can be cancelled and stocked items

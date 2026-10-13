@@ -8,7 +8,7 @@ import { closeDataStore } from '../src/database.mjs';
 import { buyBusiness, businessDashboard, stockBusiness, unstockBusiness } from '../src/businesses.mjs';
 import { adjustAdminMarket } from '../src/admin-economy.mjs';
 import { ensureStoreSchema, listStores, visitStore, recordStoreVisit, buyStoreItem, reviewStore, reactToStore, tipStore, customizeStore,
-  playerCriminalRecord, theftQuote, startStoreHeist, finishStoreHeist, actStoreHeist, tickStoreJustice, HEIST_DURATION, HEIST_COOLDOWN, STORE_HEIST_COOLDOWN } from '../src/storefronts.mjs';
+  spinStoreHeist, POLICE_WHEEL_DURATION, playerCriminalRecord, theftQuote, startStoreHeist, finishStoreHeist, actStoreHeist, tickStoreJustice, HEIST_DURATION, HEIST_COOLDOWN, STORE_HEIST_COOLDOWN } from '../src/storefronts.mjs';
 
 const now = Date.parse('2026-10-08T12:30:00Z');
 async function fixture(t) {
@@ -151,7 +151,11 @@ function setHand(f,id,{player=[9,8],dealer=[6,10],deck}={}) {
   const game={player,dealer,deck:deck||Array.from({length:52},(_,n)=>n).filter(n=>!used.has(n)),turn:0,outcome:'active'};
   f.accounts.db(db=>db.prepare('UPDATE store_heists SET blackjack=? WHERE id=?').run(JSON.stringify(game),id));
 }
-const action=(f,id,move='stand',turn=0,at=now)=>actStoreHeist(f.dir,f.buyer,{heistId:id,action:move,turn,requestId:`blackjack-${id}-${turn}-${move}`},{now:at});
+// Existing bailiff tests deliberately land on the caught sector after a loss.
+const action=(f,id,move='stand',turn=0,at=now)=>{
+ const result=actStoreHeist(f.dir,f.buyer,{heistId:id,action:move,turn,requestId:`blackjack-${id}-${turn}-${move}`},{now:at,policeDraw:()=>0});
+ return result.outcome==='police'?spinStoreHeist(f.dir,f.buyer,{heistId:id,requestId:`police-${id}-${turn}-${move}`},{now:at}):result;
+};
 test('free blackjack persists; deck and hole card remain private; replay cannot redraw or transfer twice',async t=>{
   const f=await fixture(t),payload=f.payload(),buyer=f.balance(f.buyer),owner=f.balance(f.owner);
   assert.throws(()=>startStoreHeist(f.dir,f.buyer,{...payload,expectedFine:5},{now}),/store_risk_changed/);
@@ -172,7 +176,9 @@ test('hit and stand are authoritative, stale turns cannot consume cards, pushes 
   assert.deepEqual(action(f,id,'hit'),hit);
   assert.throws(()=>actStoreHeist(f.dir,f.buyer,{heistId:id,action:'hit',turn:0,requestId:'stale-turn-attempt-0001'},{now}),/blackjack_turn_changed/);
   assert.throws(()=>actStoreHeist(f.dir,f.buyer,{heistId:id,action:'cheat',turn:1,requestId:'cheat-turn-attempt-0001'},{now}),/invalid_blackjack_action/);
-  const result=actStoreHeist(f.dir,f.buyer,{heistId:id,action:'stand',turn:1,won:true,dealer:[26],requestId:'stand-final-hand-00001'},{now});
+  const lost=actStoreHeist(f.dir,f.buyer,{heistId:id,action:'stand',turn:1,won:true,dealer:[26],requestId:'stand-final-hand-00001'},{now,policeDraw:()=>0});
+  assert.equal(lost.outcome,'police');
+  const result=spinStoreHeist(f.dir,f.buyer,{heistId:id,requestId:'stand-final-spin-00001'},{now});
   assert.equal(result.outcome,'caught');assert.equal(result.consequence.paidCash,400);assert.equal(f.balance(f.buyer),99600);
   const g=await fixture(t),tie=startStoreHeist(g.dir,g.buyer,g.payload(),{now,draw:success}).id;setHand(g,tie,{player:[9,7],dealer:[22,20]});
   assert.equal(action(g,tie).outcome,'push');assert.equal(g.balance(g.buyer),100000);assert.equal(g.itemOwner('wine-0'),g.owner.id);
@@ -204,13 +210,13 @@ test('unpaid fines protect live bidder escrow; debt blocks new theft and collect
 });
 test('abandoned hands are caught offline; insolvency causes persisted, escalating jail without permanent debt loops',async t=>{
   const f=await fixture(t);f.accounts.db(db=>db.prepare('UPDATE users SET tokens=0 WHERE id=?').run(f.buyer.id));
-  startStoreHeist(f.dir,f.buyer,f.payload(),{now,draw:success});const end=now+HEIST_DURATION;
-  tickStoreJustice(f.dir,{now:end});closeDataStore(f.dir);const status=f.accounts.profile(f.buyer).justice;
+  startStoreHeist(f.dir,f.buyer,f.payload(),{now,draw:success});const end=now+HEIST_DURATION+POLICE_WHEEL_DURATION;
+  tickStoreJustice(f.dir,{now:end,policeDraw:()=>0});closeDataStore(f.dir);const status=f.accounts.profile(f.buyer).justice;
   assert.equal(status.offences,1);assert.equal(status.fineDue,0);assert.equal(status.jailedUntil,end+5*60000);assert.equal(status.lastConsequence.convertedToSentence,400);
   assert.throws(()=>visitStore(f.dir,f.buyer,f.shop.id,{now:end+1}),/player_jailed/);
   tickStoreJustice(f.dir,{now:end+1});assert.equal(f.accounts.profile(f.buyer).justice.offences,1);
-  const next=now+HEIST_COOLDOWN+1;startStoreHeist(f.dir,f.buyer,f.payload('wine-1'),{now:next,draw:success});tickStoreJustice(f.dir,{now:next+HEIST_DURATION});
-  const again=f.accounts.profile(f.buyer).justice;assert.equal(again.offences,2);assert.equal(again.jailedUntil,next+HEIST_DURATION+15*60000);
+  const next=now+HEIST_COOLDOWN+1;startStoreHeist(f.dir,f.buyer,f.payload('wine-1'),{now:next,draw:success});tickStoreJustice(f.dir,{now:next+HEIST_DURATION+POLICE_WHEEL_DURATION,policeDraw:()=>0});
+  const again=f.accounts.profile(f.buyer).justice;assert.equal(again.offences,2);assert.equal(again.jailedUntil,next+HEIST_DURATION+POLICE_WHEEL_DURATION+15*60000);
 });
 test('stock races grant no missing item or fine on a win, and cooldowns cover player and store',async t=>{
   const f=await fixture(t),id=startStoreHeist(f.dir,f.buyer,f.payload(),{now,draw:success}).id;setHand(f,id);unstockBusiness(f.dir,f.owner,f.shop.id,'wine-0',{now});
@@ -257,7 +263,7 @@ test('winning transfer and fine collection failures roll back all consequences a
   const g=await fixture(t);g.accounts.db(db=>{db.prepare('UPDATE users SET tokens=0 WHERE id=?').run(g.buyer.id);db.prepare('INSERT INTO inventory VALUES (?,?,?, ?,NULL)').run('seize',g.buyer.id,JSON.stringify({title:'seize',price:100}),now);});
   const caught=startStoreHeist(g.dir,g.buyer,g.payload(),{now,draw:success}).id;setHand(g,caught,{player:[2,3],dealer:[9,8]});
   g.accounts.db(db=>db.exec("CREATE TRIGGER fail_seize BEFORE UPDATE OF sold_at ON inventory BEGIN SELECT RAISE(ABORT,'seizure unavailable'); END"));
-  assert.throws(()=>action(g,caught),/seizure unavailable/);assert.equal(g.view().heist.outcome,'active');assert.equal(g.accounts.profile(g.buyer).justice.offences,0);
+  assert.throws(()=>action(g,caught),/seizure unavailable/);assert.equal(g.view().heist.outcome,'police');assert.equal(g.accounts.profile(g.buyer).justice.offences,0);
   g.accounts.db(db=>db.exec('DROP TRIGGER fail_seize'));assert.equal(action(g,caught).outcome,'caught');
 });
 
@@ -277,10 +283,12 @@ test('criminal record captures each caught attempt at settlement, exact fines an
 });
 test('criminal record includes abandoned offenses once; non-criminal outcomes are excluded and fine rollback leaves no entry',async t=>{
  const f=await fixture(t),id=startStoreHeist(f.dir,f.buyer,f.payload(),{now,draw:success}).id;
- tickStoreJustice(f.dir,{now:now+HEIST_DURATION+60000});tickStoreJustice(f.dir,{now:now+HEIST_DURATION+120000});
+ tickStoreJustice(f.dir,{now:now+HEIST_DURATION+60000,policeDraw:()=>0});
+ assert.equal(playerCriminalRecord(f.dir,f.buyer,{now}).total,0);
+ tickStoreJustice(f.dir,{now:now+HEIST_DURATION+POLICE_WHEEL_DURATION,policeDraw:()=>0});
  const record=playerCriminalRecord(f.dir,f.buyer,{now:now+HEIST_DURATION+120000});
- assert.equal(record.total,1);assert.equal(record.records[0].abandoned,true);assert.equal(record.records[0].recordedAt,now+HEIST_DURATION+60000);
- for(const status of ['stolen','push','gone','expired','active']){
+ assert.equal(record.total,1);assert.equal(record.records[0].abandoned,true);assert.equal(record.records[0].recordedAt,now+HEIST_DURATION+POLICE_WHEEL_DURATION);
+ for(const status of ['stolen','push','gone','expired','active','police','escaped']){
   f.accounts.db(db=>db.prepare('UPDATE store_heists SET status=? WHERE id=?').run(status,id));
   assert.equal(playerCriminalRecord(f.dir,f.buyer,{now}).total,0);
  }
@@ -314,4 +322,74 @@ test('historical catch dates migrate from receipts; unknown timestamps stay unkn
  assert.equal(playerCriminalRecord(f.dir,f.buyer,{limit:1000,now}).limit,50);
  f.accounts.db(db=>db.prepare("UPDATE users SET banned=1 WHERE id='buyer'").run());
  assert.throws(()=>playerCriminalRecord(f.dir,f.buyer,{now}),/login_required/);
+});
+
+
+test('loss stages a private persisted wheel; escape is free, has no loot, and cannot be rerolled or forced by payload',async t=>{
+ const f=await fixture(t),id=startStoreHeist(f.dir,f.buyer,f.payload(),{now,draw:success}).id;
+ setHand(f,id,{player:[2,3],dealer:[9,8]});
+ let draws=0;const payload={heistId:id,action:'stand',turn:0,requestId:'loss-wheel-stage-00001'};
+ const lost=actStoreHeist(f.dir,f.buyer,payload,{now,policeDraw:max=>{draws++;assert.equal(max,1000000);return 200000;}});
+ assert.equal(lost.outcome,'police');assert.equal(lost.blackjack.outcome,'lose');assert.equal(lost.policeWheel.spun,false);
+ assert.equal(lost.policeWheel.catchPercent,20);assert.equal(lost.expiresAt,now+POLICE_WHEEL_DURATION);
+ assert.ok(!('sector' in lost.policeWheel));assert.ok(!JSON.stringify(lost).includes('roll'));
+ assert.equal(f.balance(f.buyer),100000);assert.equal(playerCriminalRecord(f.dir,f.buyer,{now}).total,0);
+ assert.deepEqual(actStoreHeist(f.dir,f.buyer,payload,{now,policeDraw:()=>{throw Error('reroll');}}),lost);
+ assert.equal(draws,1);closeDataStore(f.dir);assert.equal(f.view().heist.outcome,'police');
+ assert.throws(()=>spinStoreHeist(f.dir,f.rival,{heistId:id,requestId:'foreign-wheel-spin-001'},{now}),/heist_not_found/);
+ const request={heistId:id,requestId:'escape-wheel-spin-0001',roll:0,outcome:'caught',catchPercent:100};
+ const result=spinStoreHeist(f.dir,f.buyer,request,{now:now+1000});
+ assert.equal(result.outcome,'escaped');assert.equal(result.policeWheel.sector,2);assert.equal(result.policeWheel.spun,true);assert.equal(result.consequence,null);
+ assert.equal(f.balance(f.buyer),100000);assert.equal(f.itemOwner('wine-0'),f.owner.id);assert.equal(f.accounts.profile(f.buyer).justice.offences,0);
+ assert.deepEqual(spinStoreHeist(f.dir,f.buyer,request,{now:now+2000}),result);
+ assert.deepEqual(spinStoreHeist(f.dir,f.buyer,{...request,requestId:'second-wheel-spin-001'},{now:now+2000}),result);
+ assert.equal(playerCriminalRecord(f.dir,f.buyer,{now}).total,0);
+});
+
+test('wheel catches only the first 20% of its roll range and winning/pushed hands never create or spin it',async t=>{
+ for(const [roll,caught] of [[0,true],[199999,true],[200000,false],[999999,false]]){
+  const f=await fixture(t),id=startStoreHeist(f.dir,f.buyer,f.payload(),{now,draw:success}).id;
+  assert.throws(()=>spinStoreHeist(f.dir,f.buyer,{heistId:id,requestId:'too-early-spin-000001'},{now}),/police_spin_not_ready/);
+  setHand(f,id,{player:[2,3],dealer:[9,8]});
+  const lost=actStoreHeist(f.dir,f.buyer,{heistId:id,action:'stand',turn:0,requestId:'wheel-boundary-loss-01'},{now,policeDraw:()=>roll});
+  assert.equal(lost.outcome,'police');assert.equal(f.balance(f.buyer),100000);
+  const result=spinStoreHeist(f.dir,f.buyer,{heistId:id,requestId:'wheel-boundary-spin-01'},{now});
+  assert.equal(result.outcome,caught?'caught':'escaped');assert.equal(f.balance(f.buyer),caught?99600:100000);
+  assert.equal(playerCriminalRecord(f.dir,f.buyer,{now}).total,caught?1:0);
+ }
+ for(const tie of [false,true]){
+  const f=await fixture(t),id=startStoreHeist(f.dir,f.buyer,f.payload(),{now,draw:success}).id;
+  setHand(f,id,tie?{player:[9,7],dealer:[22,20]}:{});
+  const result=actStoreHeist(f.dir,f.buyer,{heistId:id,action:'stand',turn:0,requestId:'skip-police-wheel-001'},{now,policeDraw:()=>{throw Error('must not spin');}});
+  assert.equal(result.outcome,tie?'push':'stolen');assert.ok(!('policeWheel' in result));
+  assert.throws(()=>spinStoreHeist(f.dir,f.buyer,{heistId:id,requestId:'terminal-wheel-spin-1'},{now}),/police_spin_not_ready/);
+ }
+});
+
+test('pending and abandoned wheels expire to their saved result once even offline, without granting escape loot',async t=>{
+ for(const roll of [0,999999]){
+  const f=await fixture(t),id=startStoreHeist(f.dir,f.buyer,f.payload(),{now,draw:success}).id;
+  setHand(f,id,{player:[2,3],dealer:[9,8]});
+  actStoreHeist(f.dir,f.buyer,{heistId:id,action:'stand',turn:0,requestId:'expiry-wheel-loss-001'},{now,policeDraw:()=>roll});
+  tickStoreJustice(f.dir,{now:now+POLICE_WHEEL_DURATION-1,policeDraw:()=>{throw Error('reroll');}});assert.equal(f.view().heist.outcome,'police');
+  tickStoreJustice(f.dir,{now:now+POLICE_WHEEL_DURATION,policeDraw:()=>{throw Error('reroll');}});
+  closeDataStore(f.dir);
+  const final=f.view().heist;assert.equal(final.outcome,roll===0?'caught':'escaped');assert.equal(final.policeWheel.autoSpun,true);
+  tickStoreJustice(f.dir,{now:now+POLICE_WHEEL_DURATION+1});assert.equal(f.balance(f.buyer),roll===0?99600:100000);
+  assert.equal(f.itemOwner('wine-0'),f.owner.id);
+ }
+ const f=await fixture(t);startStoreHeist(f.dir,f.buyer,f.payload(),{now,draw:success});
+ tickStoreJustice(f.dir,{now:now+HEIST_DURATION,policeDraw:()=>999999});assert.equal(f.view().heist.outcome,'police');assert.equal(f.balance(f.buyer),100000);
+ tickStoreJustice(f.dir,{now:now+HEIST_DURATION+POLICE_WHEEL_DURATION});assert.equal(f.view().heist.outcome,'escaped');assert.equal(f.accounts.profile(f.buyer).justice.offences,0);
+});
+
+test('natural dealer blackjack enters the wheel immediately; natural player blackjack wins without any police draw',async t=>{
+ const drawFor=prefix=>{const target=[...prefix,...Array.from({length:52},(_,n)=>n).filter(n=>!prefix.includes(n))],deck=Array.from({length:52},(_,n)=>n);return max=>{const i=max-1,j=deck.indexOf(target[i]);[deck[i],deck[j]]=[deck[j],deck[i]];return j;};};
+ const f=await fixture(t);let draws=0;
+ const lost=startStoreHeist(f.dir,f.buyer,f.payload(),{now,draw:drawFor([2,0,3,9]),policeDraw:()=>{draws++;return 999999;}}).heist;
+ assert.equal(lost.outcome,'police');assert.equal(lost.blackjack.outcome,'lose');assert.equal(draws,1);assert.equal(f.balance(f.buyer),100000);
+ assert.equal(spinStoreHeist(f.dir,f.buyer,{heistId:lost.id,requestId:'natural-loss-spin-001'},{now}).outcome,'escaped');
+ const g=await fixture(t);
+ const win=startStoreHeist(g.dir,g.buyer,g.payload(),{now,draw:drawFor([0,2,9,3]),policeDraw:()=>{throw Error('win must skip police');}}).heist;
+ assert.equal(win.outcome,'stolen');assert.ok(!('policeWheel' in win));assert.equal(g.itemOwner('wine-0'),g.buyer.id);
 });

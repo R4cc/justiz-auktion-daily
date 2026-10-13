@@ -13,6 +13,7 @@ export const ECONOMY_BALANCE = Object.freeze({
   wholesaleReserveRate: .85,
   // Fair blackjack is balanced through the loss fine, never deck manipulation.
   theftFineMultiplier: 4,
+  theftPoliceCatchPercent: 20,
   businessDefaultMargin: 20,
   reviewPricePerReview: 60,
   purchasedReviewWeight: .25,
