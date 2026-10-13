@@ -6,9 +6,6 @@
 .auction-house .house-wallet { display: grid; gap: 4px; min-width: 0; text-align: right; }
 .auction-house .house-wallet span { color: var(--muted); font-size: .7rem; }
 .auction-house .house-wallet strong { overflow-wrap: anywhere; font: 600 .95rem/1.4 'DM Mono', monospace; }
-.auction-house .auction-house-shortcuts { display: flex; flex-wrap: wrap; gap: 8px 22px; padding-bottom: 20px; border-bottom: 1px solid var(--line); }
-.auction-house .auction-house-shortcuts a { display: inline-flex; align-items: center; gap: 8px; min-height: 32px; color: var(--ink); font-size: .78rem; font-weight: 700; text-decoration: none; }
-.auction-house .auction-house-shortcuts a:hover { text-decoration: underline; text-underline-offset: 4px; }
 .auction-house .house-section-heading { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin: 0 0 16px; }
 .auction-house .house-section-heading h2 { min-width: 0; margin: 0; font-size: 1.05rem; line-height: 1.4; letter-spacing: -.02em; }
 .auction-house .house-section-heading > span { flex: none; color: var(--muted); font: 500 .76rem/1.5 'DM Mono', monospace; }
@@ -79,7 +76,6 @@
   .auction-house .house-heading h1 { font-size: 1.7rem; }
   .auction-house .house-wallet { max-width: 43%; }
   .auction-house .house-wallet strong { font-size: .78rem; }
-  .auction-house .auction-house-shortcuts { gap: 6px 18px; padding-bottom: 14px; }
   .auction-house .house-grid { grid-template-columns: minmax(0, 1fr); gap: 16px; }
   .auction-house .house-filters { gap: 12px; padding: 0 0 16px; }
   .auction-house .house-filters label { flex-basis: calc(50% - 6px); }
@@ -89,3 +85,6 @@
   .auction-house .house-lot-body { padding: 16px; }
   .auction-house .house-winnings { padding: 14px; }
 }
+
+.auction-house .auction-house-shortcuts { margin-bottom:28px; }
+.auction-house .house-inventory-link { min-height:32px;font-size:.75rem;color:var(--ink);text-decoration-color:var(--red); }

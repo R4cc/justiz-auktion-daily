@@ -624,7 +624,9 @@ test('Auction House pins authenticated active bids above every view and filter w
     vm.runInContext('renderHouse()', context);
     const html = context.accountContent.innerHTML;
     assert.deepEqual(houseCards(html), ['resale:shared', 'primary:shared']);
-    assert.ok(html.indexOf('class="house-active-bids"') < html.indexOf('class="auction-house-shortcuts"'));
+    assert.ok(html.indexOf('<nav class="auction-house-shortcuts') < html.indexOf('class="house-active-bids"'));
+    assert.match(html, /class="house-launch-card house-case-store-card" href="\/shop"/);
+    assert.match(html, /class="house-launch-card house-market-card" href="\/market"/);
     assert.ok(html.indexOf('class="house-active-bids"') < html.indexOf('class="house-filters"'));
   }
   context.account = null; vm.runInContext('renderHouse()', context);

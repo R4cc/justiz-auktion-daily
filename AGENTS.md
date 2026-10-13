@@ -9,6 +9,15 @@
 - When reviewing generated UI, remove any text that can be deleted without reducing usability or removing meaningful information.
 - Prefer using questionmark tooltips to display explaining information.
 
+### UI Playfulness and Gamification
+
+- Keep the application playful and visibly game-like, with an auction and collecting theme.
+- Use expressive illustrations, colorful rarity and achievement badges, tactile cards and buttons, and satisfying interaction feedback.
+- Make existing progress, streaks, milestones, skill points, and earned rewards easy to see.
+- Celebrate confirmed achievements and rewards; do not invent progress, prizes, or economic effects.
+- Create playfulness through visuals and interactions while keeping UI copy concise and functional.
+- Keep controls readable and usable on phones, preserve keyboard access, and respect reduced-motion preferences.
+
 ### Git Operations
 
 - Always push your changes directly to main, no separate branches.

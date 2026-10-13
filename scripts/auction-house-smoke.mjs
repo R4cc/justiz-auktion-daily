@@ -113,6 +113,10 @@ try {
   };
   await page.goto(base + '/auction-house'); await page.waitForSelector('.house-active-bids'); await language('en');
   await pinned();
+  assert.equal(await page.locator('.house-case-store-card').getAttribute('href'), '/shop');
+  assert.equal(await page.locator('.house-market-card').getAttribute('href'), '/market');
+  const banner=await page.locator('.auction-house-shortcuts').boundingBox(),active=await page.locator('.house-active-bids').boundingBox();
+  assert.ok(banner.y+banner.height<=active.y+1, 'Original banner stays above the auction grid');
   assert.doesNotMatch(await page.locator('.auction-house').innerText(), /SECRET CASE FIND/);
   assert.equal(await card(long.id).locator('script').count(), 0);
   assert.match(await card(stock.id).innerText(), /12/);
@@ -227,6 +231,13 @@ try {
   await page.locator('.economy-dialog .dialog-close').click();
   bidOnPaletteAuction(dir, rival, paletteStock.id, paletteStock.reserve + 2000);
   await page.waitForFunction(id => document.querySelector(`.house-active-bids [data-economy="primary"][data-id="${id}"] .house-lot-state`)?.textContent === 'Outbid', paletteStock.id);
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  const motionCard = page.locator('.house-lot').first();
+  assert.equal(await motionCard.evaluate(el => getComputedStyle(el).animationName), 'none');
+  assert.equal(await motionCard.evaluate(el => getComputedStyle(el).transitionDuration), '0s');
+  await motionCard.hover();
+  assert.equal(await motionCard.evaluate(el => getComputedStyle(el).transform), 'none');
+  await page.emulateMedia({ reducedMotion: 'no-preference' });
   const guest = await browser.newContext({ viewport: { width: 320, height: 1000 } }), anonymous = await guest.newPage();
   anonymous.on('pageerror', error => errors.push(error.message));
   await anonymous.goto(base + '/auction-house?view=bids'); await anonymous.waitForSelector('.auction-house');

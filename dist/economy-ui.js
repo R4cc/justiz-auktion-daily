@@ -342,10 +342,20 @@ window.economyUi = (() => {
     const grid = rows => `<div class="house-grid">${rows.map(houseCard).join('')}</div>`;
     const options = (items, selected) => items.map(([id, label]) => `<option value="${id}" ${selected === id ? 'selected' : ''}>${label}</option>`).join('');
     const filtered = type !== 'all' || seller !== 'all' || search || stock || palette || sort !== 'ends';
-    accountContent.innerHTML = `<div class="auction-house"><section class="house-header" aria-labelledby="house-title"><div class="house-heading"><h1 id="house-title" tabindex="-1">${t('Auction House', 'Auktionshaus')}</h1>${account ? `<div class="house-wallet"><span>${t('Available', 'Verfügbar')}</span><strong>${justizEuro(account.tokens)}</strong></div>` : ''}</div>
+    accountContent.innerHTML = `<div class="auction-house"><section class="house-header" aria-labelledby="house-title"><div class="house-heading"><div><h1 id="house-title" tabindex="-1">${t('Auction House', 'Auktionshaus')}</h1><a class="house-inventory-link" href="/inventory" data-page>${t('Inventory', 'Inventar')} ↗</a></div>${account ? `<div class="house-wallet"><span>${t('Available', 'Verfügbar')}</span><strong>${justizEuro(account.tokens)}</strong></div>` : ''}</div>
+      <nav class="auction-house-shortcuts${economyFlags.market ? '' : ' is-single'}" aria-label="${t('Explore trading', 'Handel entdecken')}">
+        <a class="house-launch-card house-case-store-card" href="/shop" data-page>
+          <span class="house-card-copy"><strong>${t('Case Shop', 'Kisten-Shop')}</strong><span class="house-card-action" aria-hidden="true">→</span></span>
+          <span class="house-card-art house-case-art" aria-hidden="true"><span class="house-spark house-spark-one">✦</span><span class="house-spark house-spark-two">✧</span>${caseArtwork({ caseType: 'collectors-cache', caseBadge: '?' })}<span class="house-rarity-dots"><i></i><i></i><i></i><i></i><i></i></span></span>
+        </a>
+        ${economyFlags.market ? `<a class="house-launch-card house-market-card" href="/market" data-page>
+          <span class="house-card-copy"><strong>${t('Stock Market', 'Aktienmarkt')}</strong><span class="house-card-action" aria-hidden="true">↗</span></span>
+          <span class="house-card-art house-market-art" aria-hidden="true"><span class="house-market-badge">J€</span><svg viewBox="0 0 200 160" fill="none"><path class="house-chart-grid" d="M16 34h170M16 66h170M16 98h170M16 130h170M36 24v116m48-116v116m48-116v116m48-116v116"/><path class="house-chart-area" d="M16 118 48 97 76 108 106 69 136 80 180 32v108H16Z"/><path class="house-chart-line" d="m16 118 32-21 28 11 30-39 30 11 44-48m-26 0h26v26"/><circle class="house-chart-point" cx="106" cy="69" r="5"/></svg></span>
+        </a>` : ''}
+      </nav>
       ${pinned.length ? `<section class="house-active-bids" aria-labelledby="house-active-title"><div class="house-section-heading"><h2 id="house-active-title">${t('Active bids', 'Aktive Gebote')}</h2><span>${number(pinned.length)}</span></div>${grid(pinned)}</section>` : ''}
       ${window.auctionWinningsUi?.markup(unopened) || ''}
-      <nav class="auction-house-shortcuts" aria-label="${t('Trading pages', 'Handelsseiten')}"><a href="/shop" data-page>${t('Case Shop', 'Kisten-Shop')} ↗</a>${economyFlags.market ? `<a href="/market" data-page>${t('Market Trends', 'Markttrends')} ↗</a>` : ''}<a href="/inventory" data-page>${t('Inventory', 'Inventar')} ↗</a></nav></section>
+      </section>
       <form class="house-filters" role="search" aria-label="${t('Auction filters', 'Auktionsfilter')}">
         <label>${t('View', 'Ansicht')}<select data-house-filter="view">${options([['browse', t('Live auctions', 'Laufende Auktionen')], ['mine', t('My listings', 'Meine Angebote')], ['bids', t('Bid history', 'Gebotsverlauf')]], view)}</select></label>
         <label>${t('Type', 'Art')}<select data-house-filter="type">${options(types.map(id => [id, id === 'all' ? t('All types', 'Alle Arten') : houseTypeLabel(id)]), type)}</select></label>

@@ -1,0 +1,156 @@
+/* Playful surfaces use real game states; copy and economy rules stay in their views. */
+:root {
+  --game-gold: #efbd61;
+  --game-shadow: #183e3619;
+}
+
+.site-nav a[aria-current="page"] {
+  box-shadow: 0 3px 0 #0c2c25, inset 0 1px 0 #ffffff20;
+  border-radius: 12px;
+}
+.site-nav a[aria-current="page"] .nav-icon { color: #f6d68d; }
+.sidebar-progression {
+  border: 1px solid #e8bf6a60;
+  box-shadow: 0 4px 0 #0e2b25, inset 0 1px 0 #ffffff20;
+}
+.sidebar-progression .xp-level { color: #ffe1a1; }
+.xp-meter > span { background: linear-gradient(90deg, #eaa94f, #ffe4a0); }
+.skill-nav-points, .inventory-copy-count, .house-winnings-count {
+  box-shadow: 0 2px 0 #183e3633, inset 0 1px 0 #ffffff55;
+}
+
+.primary-button:not(:disabled), .daily-play:not(:disabled),
+.submit-guess:not(:disabled), .skill-upgrade:not(:disabled) {
+  box-shadow: 0 4px 0 #183e3666, inset 0 1px 0 #ffffff35;
+}
+.secondary-button:not(:disabled) { box-shadow: 0 2px 0 var(--game-shadow); }
+.primary-button:not(:disabled):active, .daily-play:not(:disabled):active,
+.submit-guess:not(:disabled):active, .skill-upgrade:not(:disabled):active,
+.secondary-button:not(:disabled):active {
+  box-shadow: inset 0 1px 0 #183e3620;
+}
+
+.daily-reward-panel {
+  border-color: #d2ae6b;
+  box-shadow: 0 5px 0 #dbc69555;
+  background: radial-gradient(ellipse at 90% 5%, #ffe9ac80, transparent 65%), #fff8e8;
+}
+.daily-reward-seal {
+  background: #ffe7a8;
+  box-shadow: 0 2px 0 #b9944355, inset 0 0 0 3px #fff4d6;
+}
+.daily-menu-progress li.is-done {
+  border-color: #78956b;
+  background: #e3efd5;
+  color: #315a39;
+  box-shadow: 0 3px 0 #a3ba8555;
+}
+.daily-mode { box-shadow: 0 4px 0 var(--game-shadow); }
+.daily-mode-icon { box-shadow: 0 3px 0 #183e3620, inset 0 1px 0 #ffffff70; }
+.daily-mode-random .daily-mode-icon { transform: rotate(-6deg); }
+.daily-mode-hl .daily-mode-icon { transform: rotate(6deg); }
+.daily-challenge.is-complete { border-color: #dbb45c; box-shadow: 0 6px 0 #d8ba7040; }
+
+.auction-house .house-lot {
+  border-bottom-width: 4px;
+  box-shadow: 0 3px 0 var(--game-shadow);
+}
+.auction-house .house-lot-media {
+  background: radial-gradient(ellipse at 50% 15%, #fff8e3, #e8ecdf);
+}
+.auction-house .house-lot.is-leading { border-color: #749760; }
+.auction-house .is-leading .house-lot-state {
+  border-color: #6f9457;
+  box-shadow: 0 2px 0 #8cab6955;
+}
+.auction-house .is-outbid .house-lot-state { box-shadow: 0 2px 0 #c6917255; }
+.auction-house .house-winnings { box-shadow: 0 5px 0 #d1ad5850; }
+.house-winnings-action { box-shadow: 0 3px 0 #102a2460; }
+
+.inventory-find.collection-item {
+  border-bottom: 4px solid var(--rarity);
+  box-shadow: 0 3px 0 var(--game-shadow);
+}
+.inventory-find-media {
+  background: radial-gradient(ellipse at 50% 10%, color-mix(in srgb, var(--rarity) 18%, #fff9e7), #e5eadd);
+}
+.inventory-find .inventory-rarity { box-shadow: 0 2px 0 #183e3614; }
+.inventory-find.rarity-legendary, .inventory-find.rarity-epic {
+  border-color: color-mix(in srgb, var(--rarity) 65%, #d4d9cd);
+}
+.inventory-open-case, .inventory-quick-list { box-shadow: 0 3px 0 #183e3626; }
+
+.profile-level-seal { filter: drop-shadow(0 3px 0 #0f2b2540); }
+.profile-skill-bank { box-shadow: 0 3px 0 #0f2b2545, inset 0 1px 0 #ffffff20; }
+.profile-milestone { box-shadow: 0 3px 0 var(--game-shadow); }
+.profile-milestone.is-earned {
+  border-color: #a5b37c;
+  background: linear-gradient(135deg, #edf3df, #f9edc9);
+}
+.profile-milestone.is-earned .profile-milestone-emblem {
+  border-radius: 50%;
+  background: #f1d485;
+  color: #365b39;
+  box-shadow: inset 0 0 0 3px #fff1bf, 0 2px 0 #b89b4555;
+}
+.profile-milestone.is-current { border-color: #b68b37; background: #fff7df; }
+.profile-daily-card.is-complete { border-color: #c4a35f; background: #f5edce; }
+.profile-card-icon { box-shadow: 0 3px 0 #183e3620; }
+.profile-xp::-webkit-progress-value { background: linear-gradient(90deg, #e8ad4f, #ffe19b); }
+.profile-xp::-moz-progress-bar { background: linear-gradient(90deg, #e8ad4f, #ffe19b); }
+.skill-rank.is-owned .skill-rank-number {
+  box-shadow: 0 3px 0 #183e3633, inset 0 0 0 3px #ffffff35;
+  border-radius: 50%;
+}
+.skill-rank.is-next .skill-rank-number { box-shadow: 0 3px 0 #183e3620, 0 0 0 4px var(--skill-tint); }
+.skill-emblem { transform: rotate(-5deg); }
+.skill-available-points > span { box-shadow: 0 3px 0 #bfa76555; }
+
+.business-shop { box-shadow: 0 5px 0 var(--game-shadow); }
+.business-card-art { background: radial-gradient(ellipse at 50% 5%, #fff3d1, #e4ebdc); }
+.business-add-card { background: #fff5d9; border-color: #c7a967; }
+.business-cash-button:not(:disabled) { box-shadow: 0 4px 0 #bfa25066, inset 0 1px 0 #ffffff60; }
+.visitor-stock-card { border-bottom: 4px solid var(--rarity, #a7b791); }
+.visitor-reaction-buttons button[aria-pressed="true"] { box-shadow: inset 0 0 0 2px #e7c46e; }
+.podium-place-1 .podium-player-card { box-shadow: 0 5px 0 #c4a45d55; }
+.podium-crown { filter: drop-shadow(0 2px 0 #b6943c50); }
+.feedback-icon { border-radius: 50%; box-shadow: 0 3px 0 #183e3620; }
+.round-reward { border-radius: 12px; }
+.xp-feedback.is-level-up { border-color: #ffe8a7; box-shadow: 0 5px 0 #a6753450, 0 0 0 5px #efbd6140; }
+
+@media (prefers-reduced-motion: no-preference) {
+  .daily-mode, .profile-milestone, .business-shop, .auction-house .house-lot,
+  .inventory-find.collection-item, .business-cash-button, .site-nav a {
+    transition: transform .16s ease, box-shadow .16s ease, border-color .16s ease;
+  }
+  .reveal-panel { animation: reward-arrive .22s ease-out; }
+  .xp-feedback.is-level-up { animation: level-reward 4.2s ease both; }
+  @keyframes reward-arrive { from { opacity: .7; transform: scale(.97); } to { opacity: 1; transform: scale(1); } }
+  @keyframes level-reward {
+    0% { opacity: 0; transform: translate(-50%, 8px) scale(.9); }
+    8% { opacity: 1; transform: translate(-50%, 0) scale(1.04); }
+    14%, 86% { opacity: 1; transform: translate(-50%, 0) scale(1); }
+    100% { opacity: 0; transform: translate(-50%, -8px) scale(.98); }
+  }
+}
+@media (hover: hover) and (pointer: fine) and (prefers-reduced-motion: no-preference) {
+  .daily-mode:hover, .profile-milestone:hover, .business-shop:hover,
+  .auction-house .house-lot:hover, .inventory-find.collection-item:hover {
+    transform: translateY(-3px);
+    box-shadow: 0 6px 0 var(--game-shadow);
+  }
+  .business-cash-button:not(:disabled):hover { transform: translateY(-2px); }
+  .primary-button:not(:disabled):hover, .daily-play:not(:disabled):hover,
+  .submit-guess:not(:disabled):hover, .skill-upgrade:not(:disabled):hover { transform: translateY(-2px); }
+  .primary-button:not(:disabled):active, .daily-play:not(:disabled):active,
+  .submit-guess:not(:disabled):active, .skill-upgrade:not(:disabled):active,
+  .business-cash-button:not(:disabled):active { transform: translateY(2px); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .daily-mode, .profile-milestone, .business-shop, .auction-house .house-lot,
+  .inventory-find.collection-item, .business-cash-button, .site-nav a,
+  .reveal-panel, .xp-feedback.is-level-up { animation: none; transition: none; }
+  .daily-mode:hover, .profile-milestone:hover, .business-shop:hover,
+  .auction-house .house-lot:hover, .inventory-find.collection-item:hover,
+  .business-cash-button:not(:disabled):hover { transform: none; }
+}

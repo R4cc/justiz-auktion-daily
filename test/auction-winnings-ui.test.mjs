@@ -20,7 +20,8 @@ for(const language of ['en','de'])test(`unopened rewards stay above the live lis
   const context=setup(language);context.data.unopened=[reward];context.data.paletteMine=[{id:'won',name:'Won',status:'ended'},{id:'opened',name:'Opened',status:'ended'}];context.data.archivedBids=[{id:'item',status:'ended',item:{title:'Item'}}];
   for(const tab of ['browse','bids','mine']){
     context.tab=tab;vm.runInContext('renderHouse()',context);const html=context.accountContent.innerHTML;
-    assert.ok(html.indexOf('class="house-winnings"')<html.indexOf('class="auction-house-shortcuts'));
+    assert.ok(html.indexOf('<nav class="auction-house-shortcuts')<html.indexOf('class="house-winnings"'));
+    assert.ok(html.indexOf('class="house-winnings"')<html.indexOf('class="house-filters"'));
     assert.match(html,/data-unopened-reward="palette:won"/);assert.doesNotMatch(html,/<sealed>|<versiegelte>/);
     assert.match(html,language==='en'?/<h2 id="house-winnings-title">Unopened rewards<\/h2>/:/<h2 id="house-winnings-title">Ungeöffnete Gewinne<\/h2>/);
     assert.match(html,language==='en'?/<span class="house-winnings-action">Open /:/<span class="house-winnings-action">Öffnen /);
