@@ -1,4 +1,4 @@
-import { auctionSelectionCategory, buildAuctionFamilies, chooseVariedAuctions } from './auction-selection.mjs';
+import { auctionSelectionCategory, buildAuctionFamilies, chooseVariedAuctions, isWineAuction } from './auction-selection.mjs';
 import { auctionGallery } from './auction-images.mjs';
 import { createHash } from 'node:crypto';
 
@@ -280,33 +280,53 @@ export function selectDailySet(auctions, dateKey, previousSets = {}, count = 5, 
   const byId = new Map(auctions.map(item => [Number(item?.id), item]));
   const families = buildAuctionFamilies([...auctions, ...history]);
   const active = item => (!item.endAt || Date.parse(item.endAt) > now) && Number.isFinite(item.currentBid) && item.currentBid > 0;
-  // Scaling contract for rank (bigger is picked first):
-  //   active bonus 40000   – hard tier: playable lots before archived ones
-  //   jitter * 3000        – the day's random draw; must dominate everything below so
-  //                          crawl-state (bid counts, quality flags) cannot decide picks
-  //   * 10 heuristics <=~2700 – soft tie-breakers the jitter may override at will
+  const sourcePrice = item => active(item) ? item.currentBid : item.finalPrice ?? item.currentBid;
+  const wineRecentlyUsed = Object.keys(previousSets).some(date => date < dateKey &&
+    Date.parse(date + 'T00:00:00Z') > now - 14 * 86_400_000 &&
+    previousSets[date]?.auctions?.some(isWineAuction));
+  // One draw per day, not per bottle: a large wine archive cannot increase its odds.
+  const allowWine = !wineRecentlyUsed && deterministicJitter('daily-wine-v1', dateKey) < .05;
+  // Bid count is the collector's real-source "Anzahl Gebote", never game bids.
+  // Logarithms favor popular, valuable lots without letting one outlier dominate.
+  const interest = item => {
+    const bids = Number.isFinite(item.bidCount) ? Math.max(0, Math.min(250, item.bidCount)) : 0;
+    return Math.log2(1 + bids) * 600 + Math.log2(1 + Math.min(250_000, sourcePrice(item))) * 180;
+  };
+  // Live lots retain a hard advantage; seeded variation only breaks near ties.
   const rank = (item, selected = []) => (active(item) ? 40000 : 0)
-    + deterministicJitter(dateKey, item.id) * 3000
+    + interest(item)
+    + deterministicJitter(dateKey, item.id) * 350
     + 10 * (
       qualityScore(item, now)
-      - (recentCategories.get(auctionSelectionCategory(item)) || 0) * 12
-      + (selected.some(other => priceBand(other.currentBid) === priceBand(item.currentBid)) ? 0 : 20)
+      - (recentCategories.get(auctionSelectionCategory(item)) || 0) * 20
+      + (selected.some(other => priceBand(sourcePrice(other)) === priceBand(sourcePrice(item))) ? 0 : 20)
       + (selected.some(other => endSlot(other.endAt) === endSlot(item.endAt)) ? -50 : 35)
     );
-  const candidates = [];
+  const candidates = [], withoutWine = [];
   for (const family of families) {
     if (family.some(item => used.has(Number(item.id)))) continue;
     const members = [...new Map(family.map(item => [Number(item.id), byId.get(Number(item.id))])).values()]
       .filter(eligibleAuction).sort((a, b) => rank(b) - rank(a) || Number(a.id) - Number(b.id));
-    if (members.length) candidates.push(members[0]);
+    if (members.length) {
+      candidates.push(members[0]);
+      const nonWine = members.find(item => !isWineAuction(item));
+      if (nonWine) withoutWine.push(nonWine);
+    }
   }
-  const selected = chooseVariedAuctions(candidates, count, rank);
+  let selected;
+  try {
+    selected = chooseVariedAuctions(allowWine ? candidates : withoutWine, count, rank);
+  } catch (error) {
+    if (allowWine || error.code !== 'insufficient_variety') throw error;
+    // A sparse archive must stay playable; the normal drinks cap still limits it to one.
+    selected = chooseVariedAuctions(candidates, count, rank);
+  }
   selected.sort((a, b) => deterministicOrder(dateKey, a.id) - deterministicOrder(dateKey, b.id));
   return {
     date: dateKey,
     gameNumber: gameNumber(dateKey),
     generatedAt: new Date().toISOString(),
-    auctions: selected.map(item => playableAuction(item, active(item) ? item.currentBid : item.finalPrice ?? item.currentBid))
+    auctions: selected.map(item => playableAuction(item, sourcePrice(item)))
   };
 }
 

@@ -40,6 +40,20 @@ export function auctionSelectionCategory(auction) {
   return CATEGORY_ALIASES.get(normalizeSelectionText(auction.category)) || 'Sonstiges';
 }
 
+const WINE_WORDS = /\b(wine|wines|wein|weine|rotwein|weisswein|rosewein|riesling|merlot|cabernet|sauvignon|chardonnay|pinot|spatburgunder|burgunder|bordeaux|barolo|brunello|chianti|rioja|tempranillo|malbec|zinfandel|portwein|weingut|primitivo|avignonesi|champagner|champagne|prosecco|sekt|chablis|amarone|valpolicella|montepulciano|montalcino|sangiovese|sancerre|tignanello|sassicaia|ornellaia)\b/;
+const OTHER_DRINK_WORDS = /\b(whisky|whiskey|rum|cognac|brandy|vodka|wodka|likor|liqueur|spirituosen|spirits|schnaps|grappa|absinth|bier|beer|gin|tequila|wasser|saft|cola|limonade)\b/;
+
+export function isWineAuction(auction) {
+  const title = normalizeSelectionText(auction.title);
+  // Wine-colored clothes and perfume bottles remain in their own categories.
+  if (auctionSelectionCategory(auction) !== 'Getränke') return false;
+  if (OTHER_DRINK_WORDS.test(title)) return false;
+  if (WINE_WORDS.test(title) || /^(wine|wines|wein|weine)$/.test(normalizeSelectionText(auction.category))) return true;
+  const description = normalizeSelectionText(String(auction.description || '').split(/versand|foto und farbhinweis|offnungszeiten|geschäftszeiten/i)[0].slice(0, 600));
+  if (OTHER_DRINK_WORDS.test(description)) return false;
+  return WINE_WORDS.test(description) || /\bflaschen?\b/.test(description) && /\b(jahrgang|trinkbarkeit)\b/.test(description);
+}
+
 const STOP_WORDS = new Set(('der die das den dem des ein eine einer eines einem einen und oder mit ohne von vom zum zur fur im in aus am an auf ca circa marke modell typ koffer transportkoffer zustand gebraucht gebrauchte gebrauchter neu neuwertig original verpackt ovp ungepruft defekt stuck stk st flasche flaschen set paket konvolut auktion angebot artikel verkauf siehe beschreibung auflage aufl kommentar').split(' '));
 function productText(value) {
   return normalizeSelectionText(String(value || '')

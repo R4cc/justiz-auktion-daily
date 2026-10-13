@@ -3,10 +3,10 @@ import assert from 'node:assert/strict';
 import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { auctionSelectionCategory, buildAuctionFamilies } from '../src/auction-selection.mjs';
+import { auctionSelectionCategory, buildAuctionFamilies, isWineAuction } from '../src/auction-selection.mjs';
 import { selectDailySet, selectRandomSet } from '../src/core.mjs';
 import { ensureDailyGame } from '../src/collector.mjs';
-import { closeDataStore, saveDailyGame } from '../src/database.mjs';
+import { closeDataStore, saveDailyGame, upsertAuctions } from '../src/database.mjs';
 import { formatPublicStats } from '../src/public-stats.mjs';
 
 function auction(id, title, category = 'Sonstiges', extra = {}) {
@@ -139,4 +139,114 @@ test('a generic title cannot bridge distinct numbered models into one duplicate 
   assert.equal(groups.length, 2);
   assert.ok(groups.every(group => !(group.some(item => item.id === 2) && group.some(item => item.id === 3))));
   assert.deepEqual(groups.map(group => group.map(item => item.id)), buildAuctionFamilies([...lots].reverse()).map(group => group.map(item => item.id)));
+});
+
+const pickerCategories = ['Werkzeuge', 'Fahrräder', 'Elektronik', 'Kosmetik', 'Möbel & Wohnen', 'Mode'];
+const dateAt = day => new Date(Date.UTC(2026, 0, 1) + day * 86_400_000).toISOString().slice(0, 10);
+const daysBefore = (date, days) => new Date(Date.parse(date + 'T00:00:00Z') - days * 86_400_000).toISOString().slice(0, 10);
+function interestPool(low, high) {
+  return pickerCategories.flatMap((category, index) => [
+    auction(5000 + index * 2, `Selection model ${5000 + index * 2}`, category, { endAt: '2099-12-31T12:00:00Z', ...low }),
+    auction(5001 + index * 2, `Selection model ${5001 + index * 2}`, category, { endAt: '2099-12-31T12:00:00Z', ...high })
+  ]);
+}
+const rareWine = Array.from({ length: 30 }, (_, index) => auction(8000 + index,
+  `Riesling Jahrgang ${1900 + index}`, 'Getränke', { bidCount: 250, currentBid: 200_000, endAt: '2099-12-31T12:00:00Z' }));
+
+test('wine rarity recognizes sparkling and producer-only wine, without restricting whisky or wine-colored clothes', () => {
+  for (const title of ['Riesling', 'Champagne Moët', 'Prosecco']) assert.equal(isWineAuction(auction(1, title)), true);
+  assert.equal(isWineAuction(auction(1, 'Il Pino di Biserno', 'Getränke', {
+    description: '1 Flasche. Jahrgang und Alkoholgehalt auf dem Foto. Keine Gewähr für Trinkbarkeit.'
+  })), true);
+  for (const title of ['Single Malt Whisky', 'Rum', 'Bier', 'Weinrote Winterjacke', 'Eau de Parfum'])
+    assert.equal(isWineAuction(auction(1, title)), false);
+});
+
+test('wine stays rare across a full year even when it has the highest prices and source bid counts', () => {
+  const ordinary = interestPool({ bidCount: 1 }, { bidCount: 1 });
+  const largePool = [...ordinary, ...rareWine], singleWinePool = [...ordinary, rareWine[0]];
+  let wineDays = 0;
+  for (let day = 0; day < 365; day++) {
+    const date = dateAt(day), game = selectDailySet(largePool, date);
+    const wines = game.auctions.filter(isWineAuction);
+    assertVaried(game);
+    assert.ok(wines.length <= 1);
+    assert.equal(wines.length, selectDailySet(singleWinePool, date).auctions.filter(isWineAuction).length,
+      'Wine inventory size cannot amplify the daily eligibility draw');
+    wineDays += wines.length;
+  }
+  assert.ok(wineDays >= 3 && wineDays <= 29, `Expected rare wine days, got ${wineDays}/365`);
+});
+
+test('recent wine enforces a fourteen-day cooldown, while sparse archives still produce a varied Daily', () => {
+  const ordinary = interestPool({ bidCount: 1 }, { bidCount: 1 }), pool = [...ordinary, ...rareWine];
+  const date = Array.from({ length: 365 }, (_, day) => dateAt(day))
+    .find(date => selectDailySet(pool, date).auctions.some(isWineAuction));
+  assert.ok(date);
+  const oldWine = auction(99000, 'Chardonnay Jahrgang 1880', 'Getränke');
+  for (const days of [1, 7, 13]) {
+    const history = { [daysBefore(date, days)]: { auctions: [oldWine] } };
+    const game = selectDailySet(pool, date, history);
+    assertVaried(game); assert.equal(game.auctions.some(isWineAuction), false);
+  }
+  assert.equal(selectDailySet(pool, date, { [daysBefore(date, 14)]: { auctions: [oldWine] } })
+    .auctions.some(isWineAuction), true);
+  const sparse = [...varied.slice(0, 4), rareWine[0]];
+  const game = selectDailySet(sparse, date, { [daysBefore(date, 1)]: { auctions: [oldWine] } });
+  assertVaried(game); assert.equal(game.auctions.filter(isWineAuction).length, 1);
+});
+
+test('real source bid popularity and higher prices each beat low-interest peers within category limits', () => {
+  const pools = [
+    interestPool({ bidCount: 0, currentBid: 1000 }, { bidCount: 40, currentBid: 1000 }),
+    interestPool({ bidCount: 5, currentBid: 10 }, { bidCount: 5, currentBid: 5000 }),
+    interestPool({ bidCount: 0, currentBid: 10 }, { bidCount: 40, currentBid: 5000 })
+  ];
+  for (const pool of pools) for (let day = 0; day < 30; day++) {
+    const game = selectDailySet(pool, dateAt(day));
+    assertVaried(game);
+    assert.ok(game.auctions.every(item => item.id % 2 === 1));
+    assert.deepEqual(game.auctions.map(item => item.id), selectDailySet([...pool].reverse(), dateAt(day)).auctions.map(item => item.id));
+  }
+});
+
+test('virtual bids and prices never influence Daily selection, and live source auctions outrank archived outliers', () => {
+  const pool = interestPool({ bidCount: 0, currentBid: 1000,
+    bids: Array.from({ length: 100 }, () => ({ amount: 1_000_000 })), virtualBidCount: 1_000_000,
+    estimatedValueTokens: 1_000_000 }, { bidCount: 40, currentBid: 1000 });
+  const clean = pool.map(({ bids, virtualBidCount, estimatedValueTokens, ...lot }) => lot);
+  for (let day = 0; day < 20; day++) {
+    const date = dateAt(day), game = selectDailySet(pool, date);
+    assert.deepEqual(game.auctions.map(item => item.id), selectDailySet(clean, date).auctions.map(item => item.id));
+    assert.ok(game.auctions.every(item => item.bidCount === 40));
+  }
+  const live = interestPool({ bidCount: 0, currentBid: 5 }, { bidCount: 0, currentBid: 5 });
+  const archived = live.map(item => ({ ...item, id: item.id + 10_000, title: `Archived model ${item.id + 10_000}`,
+    sourceImages: [], endAt: '2025-01-01T00:00:00Z', finalPrice: 10_000_000, bidCount: 1_000_000 }));
+  assert.ok(selectDailySet([...archived, ...live], dateAt(0)).auctions.every(item => item.id < 10_000));
+});
+
+test('recently overused categories give way to similarly interesting alternatives', () => {
+  const pool = interestPool({ bidCount: 5, currentBid: 1000 }, { bidCount: 5, currentBid: 1000 });
+  const history = Object.fromEntries(Array.from({ length: 7 }, (_, index) => [dateAt(index), {
+    auctions: [auction(99000 + index, `Old drill model ${99000 + index}`, 'Werkzeuge')]
+  }]));
+  const game = selectDailySet(pool, dateAt(7), history);
+  assertVaried(game);
+  assert.equal(game.auctions.some(item => item.category === 'Werkzeuge'), false);
+});
+
+test('new picker versions apply only to newly generated Dailies', async () => {
+  const dir = await mkdtemp(path.join(tmpdir(), 'jg-picker-version-'));
+  try {
+    const seed = JSON.parse(await readFile(new URL('../seed/auctions.json', import.meta.url), 'utf8')).auctions;
+    const saved = { date: dateAt(0), gameNumber: 1, generatedAt: dateAt(0) + 'T00:00:00Z', selectionVersion: 5,
+      auctions: seed.map(item => ({ ...item, correctPrice: item.currentBid })) };
+    saveDailyGame(dir, saved);
+    upsertAuctions(dir, interestPool({ bidCount: 0 }, { bidCount: 40 }));
+    assert.deepEqual(await ensureDailyGame({ dataDir: dir, dateKey: saved.date }), saved);
+    const next = await ensureDailyGame({ dataDir: dir, dateKey: dateAt(1) });
+    assert.equal(next.selectionVersion, 6); assertVaried(next);
+    assert.ok(next.auctions.every(item => item.bidCount === 40));
+  } finally { closeDataStore(dir); await rm(dir, { recursive: true, force: true }); }
 });
