@@ -326,7 +326,7 @@ test('margin changes keep earlier sales at the old price and existing stores mig
   assert.ok(remaining.every(entry => entry.askingPrice === 200));
 });
 
-test('profit margin changes sales without changing visitors, even when stock sells out', async t => {
+test('profit margin preserves assortment appeal; customer feedback has bounded traffic impact even after sellout', async t => {
   const f = await fixture(t);
   const shop = buyBusiness(f.dir, f.rival, 'toys', 'tiny', { now: start }).shop;
   f.accounts.db(db => {
@@ -346,7 +346,10 @@ test('profit margin changes sales without changing visitors, even when stock sel
     db.prepare("UPDATE inventory SET sold_at = NULL WHERE user_id = 'rival' AND id LIKE 'traffic-toy-%'").run();
   });
   const high = businessDashboard(f.dir, f.rival, { now: start + 7 * 24 * hour }).shops[0];
-  assert.equal(high.visitors, low.visitors);
+  // Assortment is unchanged; the new review system can slightly reduce
+  // foot traffic after buyers respond to the high markup.
+  assert.ok(high.visitors <= low.visitors);
+  assert.ok(high.visitors >= Math.floor(low.visitors * .9));
   assert.ok(high.sales < low.sales);
 });
 

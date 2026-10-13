@@ -2,6 +2,7 @@ import { marketCategoryForItem } from './market.mjs';
 import { auctionSelectionCategory } from './auction-selection.mjs';
 
 export function businessTypeForItem(item) {
+  if (item.kind === 'review-pack') return null;
   if (['wine', 'toys', 'electronics', 'cars'].includes(item.businessCategory)) return item.businessCategory;
   const category = marketCategoryForItem(item);
   // The wine market also covers drinks. Use the same category rule for

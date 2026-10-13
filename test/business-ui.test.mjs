@@ -45,7 +45,7 @@ test('store cards lead with daily results and edit actions; complete controls re
     profitMargin: 45, buyChancePercent: 22.8, visitors: 11, popularity: 1,
     variety: 1, value: 120, sales: 2, salesToday: 1, revenue: 300, revenueToday: 174,
     stock: [{ id: 'unit-1', item: { title: 'Puzzle' }, referencePrice: 120, askingPrice: 174 }] };
-  const context = vm.createContext({ dashboard: { inventory: [], shops: [shop] }, editorShopId: shop.id,
+  const context = vm.createContext({ window: {}, dashboard: { inventory: [], shops: [shop] }, editorShopId: shop.id,
     esc: String, t: en => en, number: String, justizEuro: value => `J€ ${value}`,
     quickRestockMarkup: () => '', typeName: () => 'Toy store', sizeName: () => 'Small shop', storefrontArt: () => '', editIcon: () => '', typeIcon: () => '' });
   vm.runInContext(`${cardSource}\nthis.shopCard = shopCard;`, context);

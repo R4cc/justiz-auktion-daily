@@ -1,5 +1,6 @@
+import { storeReputation } from './store-reputation.mjs';
 import { storeReviewList } from './store-reviews.mjs';
-import { skillEffects, weightedStoreRating } from './skill-effects.mjs';
+import { skillEffects } from './skill-effects.mjs';
 import { plotLocation } from './town-plots.mjs';
 import { randomInt, randomUUID } from 'node:crypto';
 import { withDatabase, transaction } from './database.mjs';
@@ -126,13 +127,12 @@ export function theftQuote(referencePrice, gooseGuard, locationMultiplier = 1, s
   const fine=Math.ceil(baseFine*(100+securityPercent)/100);
   return { fine, rules: 'single-deck-s17' };
 }
-function publicCard(db, shop, viewer) {
-  const rating = weightedStoreRating(db,shop.id);
+function publicCard(db, shop, viewer, now) {
   return { id: shop.id, ownerId: shop.user_id, owner: viewer ? shop.username : maskUsername(shop.username),
     location: plotLocation(db, shop.plot_id), name: shop.store_name, motto: shop.store_motto, type: shop.type, size: shop.size, gooseGuard: Boolean(shop.goose_guard), mischiefEnabled: Boolean(shop.mischief_enabled),
     stockCount: db.prepare('SELECT COUNT(*) AS n FROM business_stock WHERE business_id = ? AND sold_at IS NULL').get(shop.id).n,
     playerVisits: db.prepare('SELECT COUNT(*) AS n FROM store_visits WHERE business_id = ?').get(shop.id).n,
-    rating: rating.average === null ? null : Math.round(rating.average * 10) / 10, reviewCount: rating.count };
+    ...storeReputation(db, shop, now) };
 }
 function serializeHeist(row, now) {
   if (!row) return null;
@@ -158,7 +158,7 @@ export function listStores(dataDir, viewer = null, { now = Date.now(), query = '
     const rows = db.prepare(`SELECT b.*, u.username FROM businesses b JOIN users u ON u.id = b.user_id
       WHERE ${filter} ORDER BY b.bought_at DESC, b.id LIMIT ? OFFSET ?`).all(...args, count, start);
     for (const shop of rows) advanceShop(db, shop, now);
-    return { stores: rows.map(shop => publicCard(db, shop, viewer)), total, offset: start, limit: count };
+    return { stores: rows.map(shop => publicCard(db, shop, viewer, now)), total, offset: start, limit: count };
   }));
 }
 export function visitStore(dataDir, viewer, shopId, { now = Date.now() } = {}) {
@@ -171,7 +171,7 @@ export function visitStore(dataDir, viewer, shopId, { now = Date.now() } = {}) {
     const lastHeist = player ? db.prepare('SELECT * FROM store_heists WHERE user_id = ? ORDER BY created_at DESC, id DESC LIMIT 1').get(player.id) : null;
     const storeHeist = db.prepare('SELECT MAX(created_at) AS last FROM store_heists WHERE business_id = ?').get(shop.id).last;
     const cooldownUntil = Math.max(lastHeist ? lastHeist.created_at + HEIST_COOLDOWN : 0, storeHeist === null ? 0 : storeHeist + STORE_HEIST_COOLDOWN);
-    return { store: { ...publicCard(db, shop, player), own,
+    return { store: { ...publicCard(db, shop, player, now), own,
       stock: shopStock(db, shop.id, shop.type, shop.profit_margin, now).map(entry => ({ id: entry.id, price: entry.askingPrice,
         item: { title: entry.item.title, image: entry.item.image || null, rarity: entry.item.rarity || 'common' },
         theft: !own ? theftQuote(entry.referencePrice, shop.goose_guard, plotLocation(db, shop.plot_id)?.theftMultiplier ?? 1, skillEffects(db,shop.user_id).securityPercent) : null })),

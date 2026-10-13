@@ -193,7 +193,7 @@ window.economyUi = (() => {
       <p>${lot.bidCount} ${lot.bidCount === 1 ? t('bid', 'Gebot') : t('bids', 'Gebote')} · ${countdown(lot.endsAt)}</p>`;
   }
   function lotMarketCategory(lot,primary) {
-    if(!primary)return lot.item.kind==='case'?null:lot.item.marketCategory;
+    if(!primary)return ['case','review-pack'].includes(lot.item.kind)?null:lot.item.marketCategory;
     const categories=lot.allowedMarketCategories||[];
     return categories.length===1?categories[0]:null;
   }
@@ -233,11 +233,12 @@ window.economyUi = (() => {
         : view === 'mine-done' && lot.winnerId ? `${t('Final sale', 'Verkaufspreis')}: ${justizEuro(lot.currentBid)}` : '';
     // A listing with bids cannot be cancelled; the rule lives in the backend.
     const cancellable = view === 'mine-live' && lot.status === 'active' && !lot.bidCount;
-    return `<article class="economy-lot${borderState}" data-economy="${primary ? 'primary' : 'resale'}" data-id="${esc(lot.id)}" role="button" tabindex="0" aria-label="${esc(`${cardAction}: ${displayTitle}`)}"><div class="economy-lot-image">${primary ? paletteArtwork(lot) : image ? `<img src="${esc(image)}" alt="" loading="lazy">` : stockLotArtwork(lot) || '<span aria-hidden="true">◇</span>'}
-      ${primary ? '' : `<span class="economy-badge">${lot.item.kind === 'case' ? t('Sealed case', 'Versiegelte Kiste') : esc(categoryName(lot.item.marketCategory))}</span><span class="auction-state-badge">${resaleState}</span>`}</div>
+    return `<article class="economy-lot${borderState}" data-economy="${primary ? 'primary' : 'resale'}" data-id="${esc(lot.id)}" role="button" tabindex="0" aria-label="${esc(`${cardAction}: ${displayTitle}`)}"><div class="economy-lot-image">${primary ? paletteArtwork(lot) : lot.item.kind === 'review-pack' ? window.storeReputationUi.packArt(lot.item) : image ? `<img src="${esc(image)}" alt="" loading="lazy">` : stockLotArtwork(lot) || '<span aria-hidden="true">◇</span>'}
+      ${primary ? '' : `<span class="economy-badge">${lot.item.kind === 'review-pack' ? t('Positive reviews','Positive Bewertungen') : lot.item.kind === 'case' ? t('Sealed case', 'Versiegelte Kiste') : esc(categoryName(lot.item.marketCategory))}</span><span class="auction-state-badge">${resaleState}</span>`}</div>
       <div class="economy-lot-body"><h2>${esc(displayTitle)}</h2>${window.marketTrendUi?.markup(lotMarketCategory(lot,primary))||''}
       ${primary ? `<div class="palette-seal" aria-hidden="true"><span>01 ◇</span><span>02 ◇</span><span>03 ◇</span></div>`
         : `${ownListing ? '' : `<p>${t('Seller', 'Verkäufer')}: ${esc(lot.sellerUsername)}</p>`}<p>${t('Market estimate', 'Marktschätzung')}: ${justizEuro(lot.estimatedValueTokens)}</p>`}
+      ${!primary && lot.item.kind === 'review-pack' ? `<p>${t('Redeem from inventory for a store you own. Limited popularity boost.','Im Inventar für einen eigenen Laden einlösen. Begrenzter Beliebtheitsbonus.')}</p>` : ''}
       ${bidFacts(lot, primary)}
       ${!primary && lot.npcDemand ? `<p class="npc-demand">${t('NPC demand','NPC-Nachfrage')}: ${npcDemandLabel(lot.npcDemand)}</p>` : ''}
       ${outcome ? `<p class="economy-outcome">${outcome}</p>` : ''}
@@ -250,8 +251,8 @@ window.economyUi = (() => {
     const query = new URLSearchParams(location.search), filter = query.get('type') || 'all', stockType = query.get('stock'), palette = query.get('palette'), playersOnly = query.get('seller') === 'players';
     const palettes = (data.palettes || []).filter(lot => (!palette || lot.paletteId === palette) && (!stockType || lot.stockOffer?.category===stockType));
     const accepts = lot => !stockType || lot.item.businessType === stockType || lot.item.businessCategory === stockType;
-    const types = [['all',t('All lots','Alle Lose')],['items',t('Individual items','Einzelne Gegenstände')],['stock',t('Stock bundles','Warenpakete')],['mystery',t('Mystery pallets','Überraschungspaletten')]];
-    const resaleType = lot => lot.item.kind === 'case' ? 'mystery' : lot.quantity > 1 ? 'stock' : 'items';
+    const types = [['all',t('All lots','Alle Lose')],['reviews',t('Positive reviews','Positive Bewertungen')],['items',t('Individual items','Einzelne Gegenstände')],['stock',t('Stock bundles','Warenpakete')],['mystery',t('Mystery pallets','Überraschungspaletten')]];
+    const resaleType = lot => lot.item.kind === 'review-pack' ? 'reviews' : lot.item.kind === 'case' ? 'mystery' : lot.quantity > 1 ? 'stock' : 'items';
     const matches = lot => accepts(lot) && (filter === 'all' || filter === resaleType(lot));
     const cards = rows => rows.length ? `<div class="economy-grid">${rows.join('')}</div>` : `<div class="collection-empty"><p>${t('No lots here yet. Try another filter, play Daily, or list a find.', 'Noch keine Lose hier. Wähle einen anderen Filter, spiele Daily oder biete einen Fund an.')}</p><a href="/" data-page>${t('Play Daily','Daily spielen')} →</a></div>`;
     accountContent.innerHTML = `<section class="house-header" aria-labelledby="house-title">
@@ -397,6 +398,7 @@ window.economyUi = (() => {
     </svg></div>`;
   }
   function auctionMedia(lot, primary) {
+    if (!primary && lot.item.kind === 'review-pack') return window.storeReputationUi.packArt(lot.item);
     if (primary) return `${paletteArtwork(lot)}<p class="palette-mystery-caption">${t('Sealed until your winning reveal.', 'Versiegelt bis zur Aufdeckung deines Gewinns.')}</p>`;
     const items = [lot.item];
     const images = items.filter(item => item?.image);
@@ -427,7 +429,7 @@ window.economyUi = (() => {
     const winAction = wonLinks || (primary && lot.revealAvailable ? `<div class="auction-win-panel"><h3>${t('Won palette', 'Gewonnene Palette')}</h3><div class="palette-seal" aria-hidden="true"><span>01 ◇</span><span>02 ◇</span><span>03 ◇</span></div><button class="primary-button" data-economy="reveal" data-id="${esc(lot.id)}">${lot.stockOffer?t('Reveal stock','Stock aufdecken'):t('Reveal three finds', 'Drei Funde aufdecken')} →</button></div>` : bidForm(lot, primary));
     openDialog(`<div class="auction-room"><section class="auction-room-media" aria-label="${primary ? t('Sealed palette illustration', 'Illustration der versiegelten Palette') : t('Auction pictures', 'Auktionsbilder')}">${auctionMedia(lot, primary)}</section>
       <section class="auction-room-story"><p class="eyebrow">${primary ? lot.stockOffer?t('SEALED · STOCK PALETTE','VERSIEGELT · WARENPALETTE'):t('SEALED · THREE FINDS', 'VERSIEGELT · DREI FUNDE') : t('AUCTION HOUSE', 'AUKTIONSHAUS')}</p><h2 id="economy-dialog-title" tabindex="-1">${esc(title)}</h2>${window.marketTrendUi?.markup(lotMarketCategory(lot,primary))||''}
-      ${primary ? `<p class="auction-room-meta">${t('Required level', 'Benötigtes Level')} <strong>${lot.requiredLevel}</strong><br>${esc((lot.allowedMarketCategories || []).map(categoryName).join(' · ') || categoryName(null))}</p>${auctionContents(lot)}` : `<p class="auction-room-meta">${t('Seller', 'Verkäufer')}: <strong>${esc(lot.sellerUsername)}</strong><br>${t('Quantity', 'Anzahl')}: <strong>${lot.quantity}</strong><br>${lot.item.kind === 'case' ? t('Sealed case · one item from any category', 'Versiegelte Kiste · ein Gegenstand aus jeder Kategorie') : `${t('Historical real-auction value', 'Historischer Wert der echten Auktion')}: <strong>${euro(lot.item.price * lot.quantity)}</strong>`}<br>${t('Estimated market value', 'Geschätzter Marktwert')}: <strong>${justizEuro(lot.estimatedValueTokens)}</strong>${lot.npcDemand?`<br>${t('NPC demand','NPC-Nachfrage')}: <strong>${npcDemandLabel(lot.npcDemand)}</strong>`:''}${economyFlags.market&&lot.item.marketCategory?`<br><a href="/market?category=${encodeURIComponent(lot.item.marketCategory)}" data-page>${t('Market Trends','Markttrends')} ↗</a>`:''}</p>`}
+      ${primary ? `<p class="auction-room-meta">${t('Required level', 'Benötigtes Level')} <strong>${lot.requiredLevel}</strong><br>${esc((lot.allowedMarketCategories || []).map(categoryName).join(' · ') || categoryName(null))}</p>${auctionContents(lot)}` : `<p class="auction-room-meta">${t('Seller', 'Verkäufer')}: <strong>${esc(lot.sellerUsername)}</strong><br>${t('Quantity', 'Anzahl')}: <strong>${lot.quantity}</strong><br>${lot.item.kind === 'review-pack' ? `${lot.item.reviewCount} ${t('five-star reviews · redeem from inventory for your store','Fünf-Sterne-Bewertungen · im Inventar für deinen Laden einlösen')}` : lot.item.kind === 'case' ? t('Sealed case · one item from any category', 'Versiegelte Kiste · ein Gegenstand aus jeder Kategorie') : `${t('Historical real-auction value', 'Historischer Wert der echten Auktion')}: <strong>${euro(lot.item.price * lot.quantity)}</strong>`}<br>${t('Estimated market value', 'Geschätzter Marktwert')}: <strong>${justizEuro(lot.estimatedValueTokens)}</strong>${lot.npcDemand?`<br>${t('NPC demand','NPC-Nachfrage')}: <strong>${npcDemandLabel(lot.npcDemand)}</strong>`:''}${economyFlags.market&&lot.item.marketCategory?`<br><a href="/market?category=${encodeURIComponent(lot.item.marketCategory)}" data-page>${t('Market Trends','Markttrends')} ↗</a>`:''}</p>`}
       </section><aside class="auction-room-bidding"><header><p class="eyebrow">${lot.status==='active'?t('LIVE AUCTION','LIVE-AUKTION'):t('AUCTION OUTCOME','AUKTIONSERGEBNIS')}</p><h3>${t('Bid room', 'Bietraum')}</h3></header><div data-live-facts>${bidFacts(lot, primary)}</div>
       <ol class="auction-chat" data-live-history role="log" aria-label="${t('Bid history', 'Gebotsverlauf')}">${bidHistory(lot.bids)}</ol><div class="auction-bid-dock">${winAction}</div></aside></div>`);
     const historyNode = dialog.querySelector('[data-live-history]');

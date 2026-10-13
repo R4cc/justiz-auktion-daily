@@ -162,12 +162,13 @@ function serializeListing(db, row, { bids = false, now = Date.now(), indexes = m
     item: { title: item.title, ...(item.auctionId != null ? { auctionId: item.auctionId } : {}),
       ...(item.titleDe ? { titleDe: item.titleDe } : {}), image: item.image || null, price: item.price,
       ...(item.kind ? { kind: item.kind } : {}),
+      ...(item.kind === 'review-pack' ? { reviewCount: item.reviewCount, stars: 5 } : {}),
       ...(item.caseTier ? { caseTier: item.caseTier } : {}),
       ...(item.caseType ? { caseType: item.caseType, caseBadge: item.caseBadge } : {}),
       rarity: item.rarity, businessType: businessTypeForItem(item), marketCategory: marketCategoryForItem(item),
       ...(item.businessCategory ? { businessCategory: item.businessCategory } : {}) },
     estimatedValueTokens: estimatedValueTokens(item, indexes) * quantity,
-    npcDemand: item.kind === 'case' ? null : npcDemand(db, item, now, row.id).level,
+    npcDemand: ['case', 'review-pack'].includes(item.kind) ? null : npcDemand(db, item, now, row.id).level,
     currentBidderId: row.current_bidder_id,
     startPrice: row.start_price, bidIncrement: resaleBidIncrement(row.start_price), currentBid: row.current_bid, bidCount,
     status: row.status, startedAt: row.started_at, endsAt: row.ends_at,
@@ -251,7 +252,7 @@ export function placeBid(dataDir, user, auctionId, amount, { now = Date.now() } 
         || (row.max_bid ?? row.current_bid) < row.current_bid) fail('escrow_inconsistent', 500);
     const bidder = db.prepare('SELECT npc, tokens FROM users WHERE id = ? AND banned = 0').get(user.id);
     if (!bidder) fail('login_required', 401);
-    if (bidder.npc && JSON.parse(listingInventory(db, row)[0].item).kind === 'case') fail('npc_case_bid_forbidden', 403);
+    if (bidder.npc && ['case', 'review-pack'].includes(JSON.parse(listingInventory(db, row)[0].item).kind)) fail('npc_case_bid_forbidden', 403);
     if (bidder.npc && row.current_bidder_id === user.id) fail('npc_self_outbid', 409);
     const minimum = proxyMinimum(row.current_bid, row.max_bid, row.current_bidder_id, user.id, row.start_price, resaleBidIncrement(row.start_price));
     if (amount < minimum) fail('bid_too_low', 409);

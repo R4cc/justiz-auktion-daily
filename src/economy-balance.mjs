@@ -14,6 +14,10 @@ export const ECONOMY_BALANCE = Object.freeze({
   // Fair blackjack is balanced through the loss fine, never deck manipulation.
   theftFineMultiplier: 4,
   businessDefaultMargin: 20,
+  reviewPricePerReview: 60,
+  purchasedReviewWeight: .25,
+  purchasedReviewWeightCap: 10,
+  reviewTrafficMaxBonus: .10,
   businessMarginElasticity: 3,
   npcResaleMinimum: .60,
   npcResaleMaximum: .96,

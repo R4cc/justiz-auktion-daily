@@ -34,7 +34,7 @@ const SESSION_MS = 30 * 86400000;
 export const STARTING_TOKENS = ECONOMY_BALANCE.startingTokens;
 const DEFAULT_REWARDS = GAME_REWARDS;
 const fail = (code, status) => { throw new AccountError(code, status); };
-const currentItemValue = item => ({ ...item, sellValue: tokenValue(item.price), marketCategory: marketCategoryForItem(item) });
+const currentItemValue = item => ({ ...item, sellValue: item.kind === 'review-pack' ? 0 : tokenValue(item.price), marketCategory: marketCategoryForItem(item) });
 const collectibleIdentity = item => JSON.stringify([item.auctionId, item.title, item.image, item.price, item.rarity, tokenValue(item.price)]);
 const rewardRates = value => ({
   ...Object.fromEntries(Object.entries(DEFAULT_REWARDS).filter(([key]) => key !== 'dailyScoreBonus').map(([key, fallback]) =>
@@ -357,7 +357,7 @@ export class Accounts {
       // same transaction that restores balances. Authentication/social tables,
       // registration codes, passwords, bans and account_sessions are untouched.
       for (const table of ['trader_sales', 'item_acquisitions', 'trader_milestones', 'resale_npc_interest', 'resale_bids', 'resale_auctions',
-        'store_events', 'store_event_checks', 'store_heists', 'store_review_likes', 'store_npc_feedback', 'store_reviews', 'store_visits', 'store_reactions', 'store_receipts',
+        'store_review_packs', 'store_events', 'store_event_checks', 'store_heists', 'store_review_likes', 'store_npc_feedback', 'store_reviews', 'store_visits', 'store_reactions', 'store_receipts',
         'business_sales', 'business_stock', 'businesses', 'town_plots', 'wholesale_bids', 'wholesale_auctions',
         'primary_palette_mystery_stock', 'primary_palette_stock_units', 'primary_palette_stock_draws', 'primary_palette_bids', 'primary_palette_rewards', 'primary_palette_auctions', 'stock_palette_purchases', 'stock_palette_editions', 'skill_purchases', 'user_skills',
         'daily_rewards', 'daily_case_rewards', 'xp_events', 'case_openings', 'case_purchases', 'case_stock', 'sealed_cases', 'inventory', 'account_games',
@@ -709,6 +709,7 @@ export class Accounts {
       if (inventoryIsLocked(db, row.id)) fail('item_listed', 409);
       if (db.prepare('SELECT 1 FROM business_stock WHERE inventory_id = ? AND sold_at IS NULL').get(row.id)) fail('item_stocked', 409);
       const item = currentItemValue(JSON.parse(row.item));
+      if (item.kind === 'review-pack') fail('review_pack_redeem_only', 409);
       if (row.sold_at === null) {
         const balance = db.prepare('SELECT tokens FROM users WHERE id = ?').get(user.id).tokens;
         if (!Number.isSafeInteger(balance + item.sellValue)) fail('token_balance_limit', 409);
@@ -724,6 +725,7 @@ export class Accounts {
     return this.atomic(db => {
       const selected = db.prepare('SELECT item FROM inventory WHERE id = ? AND user_id = ?').get(String(id), user.id);
       if (!selected) fail('item_not_found', 404);
+      if (JSON.parse(selected.item).kind === 'review-pack') fail('review_pack_redeem_only', 409);
       const identity = collectibleIdentity(JSON.parse(selected.item));
       // Sealed palette finds are invisible in the inventory and are never
       // swept up by a visible duplicate's sell-all.

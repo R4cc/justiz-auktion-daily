@@ -15,6 +15,14 @@ export function ensureReviewSchema(db) {
     stars INTEGER NOT NULL CHECK(stars BETWEEN 1 AND 5), comment TEXT NOT NULL, updated_at INTEGER NOT NULL,
     PRIMARY KEY(business_id,user_id)
   ) STRICT;
+  CREATE TABLE IF NOT EXISTS store_review_packs (
+    inventory_id TEXT PRIMARY KEY REFERENCES inventory(id),
+    review_count INTEGER NOT NULL CHECK(review_count BETWEEN 1 AND 30),
+    business_id TEXT REFERENCES businesses(id), redeemed_by TEXT REFERENCES users(id), redeemed_at INTEGER,
+    CHECK((business_id IS NULL AND redeemed_by IS NULL AND redeemed_at IS NULL) OR
+      (business_id IS NOT NULL AND redeemed_by IS NOT NULL AND redeemed_at IS NOT NULL))
+  ) STRICT;
+  CREATE INDEX IF NOT EXISTS store_review_packs_shop ON store_review_packs(business_id,redeemed_at);
   CREATE TABLE IF NOT EXISTS store_review_likes (
     business_id TEXT NOT NULL, reviewer_id TEXT NOT NULL, user_id TEXT NOT NULL REFERENCES users(id),
     created_at INTEGER NOT NULL, PRIMARY KEY(business_id,reviewer_id,user_id),

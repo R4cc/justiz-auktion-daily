@@ -1,0 +1,27 @@
+.store-popularity { margin: 16px 0; min-width: 0; }
+.store-popularity-label { display: flex; justify-content: space-between; gap: 12px; margin-bottom: 7px; font-size: .78rem; }
+.store-popularity-track, .store-rating-track { display: block; height: 8px; overflow: hidden; border-radius: 10px; background: #183e3615; }
+.store-popularity-track > span { display: block; height: 100%; background: var(--choice-accent, var(--ink)); border-radius: inherit; }
+.visitor-hero .store-popularity { max-width: 420px; }
+.store-rating-chart { display: grid; gap: 8px; max-width: 480px; margin: 20px 0; }
+.store-rating-row { display: grid; grid-template-columns: 36px minmax(0,1fr) 48px; align-items: center; gap: 12px; font-size: .8rem; }
+.store-rating-row > strong { text-align: right; font-variant-numeric: tabular-nums; }
+.store-rating-row b { color: #b78621; }
+.store-rating-track > i { display: block; height: 100%; border-radius: inherit; background: #c99b37; }
+.store-rating-note { color: var(--muted); font-size: .78rem; }
+.review-pack-art { display: grid; justify-items: center; gap: 8px; padding: 20px; background: #f2e5b8; border: 1px solid #c5a34a; border-radius: 16px; color: #78561b; }
+.review-pack-art > span { letter-spacing: .15em; font-size: 1.4rem; }
+.review-pack-art > strong { font-size: 3rem; line-height: 1.1; font-variant-numeric: tabular-nums; }
+.review-pack-card { display: flex; flex-direction: column; gap: 14px; padding: 20px; }
+.review-pack-card h3, .review-pack-card p { margin: 0; }
+.review-pack-card > p { color: var(--muted); font-size: .85rem; line-height: 1.5; }
+.review-pack-card button { margin: 0; width: 100%; }
+.review-store-choices { display: grid; gap: 12px; margin-top: 20px; }
+.review-store-choices > button { display: block; height: auto; min-height: 90px; padding: 14px 18px; line-height: 1.4; white-space: normal; overflow-wrap: anywhere; text-align: left; }
+.review-store-choices .store-popularity { margin: 12px 0 0; }
+.review-pack-dialog .review-pack-art { max-width: 240px; margin: 20px auto; }
+.economy-lot-image > .review-pack-art, .auction-room-media > .review-pack-art { width: 100%; height: 100%; align-content: center; }
+.town-store-copy .store-popularity { margin: 8px 0 0; }
+@media (max-width: 400px) { .store-rating-row { grid-template-columns: 30px minmax(0,1fr) 36px; gap: 8px; } }
+
+.review-cap-note { display: block; margin-top: 10px; color: var(--muted); font-size: .74rem; font-weight: 400; }

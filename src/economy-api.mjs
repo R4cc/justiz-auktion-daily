@@ -1,3 +1,4 @@
+import { supplyReviewAuctions } from './review-auctions.mjs';
 import { townMap } from './town-map.mjs';
 import { featureFlags } from './features.mjs';
 import { marketHistory, marketState } from './market.mjs';
@@ -89,6 +90,7 @@ export function createEconomyApi({ dataDir, json, flags = featureFlags(), accoun
         return true;
       }
       if (flags.resales && url.pathname === '/api/resales') {
+        if (flags.businesses) supplyReviewAuctions(dataDir);
         if (flags.businesses) supplyStockAuctions(dataDir,{retire:true});
         supplyCaseAuctions(dataDir);
         const listings = listResales(dataDir, { limit: limited(url.searchParams.get('limit'), 50, 200) });

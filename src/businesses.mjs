@@ -1,3 +1,4 @@
+import { storePopularity, storeReputation } from './store-reputation.mjs';
 import { ensureReviewSchema, recordNpcStoreFeedback } from './store-reviews.mjs';
 import { businessTypeForItem } from './stock-compatibility.mjs';
 export { businessTypeForItem } from './stock-compatibility.mjs';
@@ -183,7 +184,7 @@ export function advanceShop(db, row, now) {
   for (let hour = row.last_tick_at + HOUR; hour <= until; hour += HOUR) {
     if (!stock.length && !row.traffic_popularity) break;
     const traffic = hour >= row.plot_since ? plotTraffic : 1;
-    const base = shopSize(row.size).visitorsPerHour * row.traffic_popularity * traffic;
+    const base = shopSize(row.size).visitorsPerHour * storePopularity(db, row, hour) * traffic;
     const count = Math.floor(base) + (hashNumber(`${row.id}:${hour}:visitors`) < base % 1 ? 1 : 0);
     visitors += count;
     for (let n = 0; n < count && stock.length; n++) {
@@ -234,7 +235,7 @@ function publicShop(db, row, now = Date.now()) {
     buyChancePercent: Math.round((stock.length ? stock.reduce((sum, entry) => sum
       + businessItemSaleChance(shopType(row.type), row.profit_margin, entry.referencePrice), 0) / stock.length
       : businessSaleChance(shopType(row.type).conversion, row.profit_margin)) * 1000) / 10,
-    ...shopMetrics(db, row, stock, now), popularity: row.traffic_popularity,
+    ...shopMetrics(db, row, stock, now), ...storeReputation(db, row, now),
     stock: stock.map(entry=>({...entry,...acquisition(db,entry.id,row.user_id)})) };
 }
 

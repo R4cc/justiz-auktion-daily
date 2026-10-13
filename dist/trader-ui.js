@@ -30,6 +30,7 @@ function traderMilestonesMarkup() {
 }
 
 function traderItemActions(item, copies) {
+  if (item.kind === 'review-pack') return `<div class="item-actions"><button class="primary-button" data-review-pack-action="choose" data-id="${accountEscape(item.id)}" ${item.listed?'disabled':''}>${t('Redeem reviews','Bewertungen einlösen')}</button></div>`;
   const available = copies.find(copy => copy.id===item.id&&!copy.listed&&!copy.storeId)||copies.find(copy => !copy.listed && !copy.storeId);
   if (!available) return `<p class="item-state">${item.storeId?t('On store shelves','Im Ladenregal'):t('Listed for auction','Zur Auktion angeboten')}</p>${item.storeId?`<button class="secondary-button" data-trader="unstock" data-id="${accountEscape(item.id)}" data-shop="${accountEscape(item.storeId)}">${t('Return to inventory','Zurück ins Inventar')}</button>`:`<a href="/auction-house?view=mine" data-page>${t('View listing','Angebot ansehen')} →</a>`}`;
   const compatible = traderStores.filter(shop=>shop.type===available.businessType);

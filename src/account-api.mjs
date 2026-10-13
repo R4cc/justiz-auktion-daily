@@ -1,3 +1,4 @@
+import { redeemReviewPack } from './review-auctions.mjs';
 import { skillEffects } from './skill-effects.mjs';
 import { skillTree, upgradeSkill } from './skill-tree.mjs';
 import { revealStockPalette, stockPalettesByUser } from './stock-palettes.mjs';
@@ -204,6 +205,7 @@ export async function createAccountApi({ dataDir, dailyPayload, json, env = proc
       else if (flags.businesses && route === 'stores/events/acknowledge') result = acknowledgeStoreEvents(dataDir, user, payload.ids);
       else if (flags.businesses && route === 'stores/visit') result = recordStoreVisit(dataDir, user, payload.shopId);
       else if (flags.businesses && route === 'stores/buy') result = { receipt: buyStoreItem(dataDir, user, payload), user: accounts.profile(user) };
+      else if (flags.businesses && route === 'inventory/reviews/redeem') result = { receipt: redeemReviewPack(dataDir, user, payload), user: accounts.profile(user) };
       else if (flags.businesses && route === 'stores/review') result = reviewStore(dataDir, user, payload);
       else if (flags.businesses && route === 'stores/review/like') result = likeStoreReview(dataDir, user, payload);
       else if (flags.businesses && route === 'stores/react') result = reactToStore(dataDir, user, payload);

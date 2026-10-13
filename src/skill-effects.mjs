@@ -1,3 +1,4 @@
+import { ECONOMY_BALANCE } from './economy-balance.mjs';
 // Shared db-scoped effects. No client-supplied rank or effect is authoritative.
 export const SKILL_COSTS = [1, 3, 6, 12];
 export const LUCK_BONUSES = [0, 3, 5, 7];
@@ -38,13 +39,23 @@ export function luckWeights(weights, bonus = 0) {
   return weights.map((weight,index) => weight * (index > first ? 100 + bonus : 100));
 }
 
-export function weightedStoreRating(db, shopId) {
+// A paid star has a quarter of an ordinary customer's weight, with a shared
+// ceiling of ten ordinary reviews per store. Actual counts remain visible.
+export const PURCHASED_REVIEW_WEIGHT = ECONOMY_BALANCE.purchasedReviewWeight;
+export const PURCHASED_REVIEW_WEIGHT_CAP = ECONOMY_BALANCE.purchasedReviewWeightCap;
+export function storeRatingWeights(db, shopId, now = Number.MAX_SAFE_INTEGER) {
   ensureSkillsSchema(db);
-  // Re-evaluate existing verified reviews when their author improves Influence.
-  // One review per customer remains enforced by the existing primary key.
-  const weight = `CASE COALESCE(s.rank,0) WHEN 1 THEN 125 WHEN 2 THEN 150 WHEN 3 THEN 175 ELSE 100 END`;
-  return db.prepare(`SELECT COUNT(*) AS count, SUM(r.stars * (${weight})) * 1.0 / SUM(${weight}) AS average
-    FROM store_reviews r JOIN users u ON u.id=r.user_id
+  const weight = `CASE COALESCE(s.rank,0) WHEN 1 THEN 1.25 WHEN 2 THEN 1.5 WHEN 3 THEN 1.75 ELSE 1 END`;
+  const organic = db.prepare(`SELECT COUNT(*) AS count, COALESCE(SUM(r.stars * (${weight})),0) AS stars,
+    COALESCE(SUM(${weight}),0) AS weight FROM store_reviews r JOIN users u ON u.id=r.user_id
     LEFT JOIN user_skills s ON s.user_id=r.user_id AND s.skill_id='influence'
-    WHERE r.business_id=? AND u.banned=0`).get(shopId);
+    WHERE r.business_id=? AND u.banned=0 AND r.updated_at<=?`).get(shopId,now);
+  const purchasedCount = db.prepare("SELECT 1 FROM sqlite_schema WHERE type='table' AND name='store_review_packs'").get()
+    ? db.prepare('SELECT COALESCE(SUM(review_count),0) AS count FROM store_review_packs WHERE business_id=? AND redeemed_at<=?').get(shopId,now).count : 0;
+  const boughtWeight = Math.min(PURCHASED_REVIEW_WEIGHT_CAP, purchasedCount * PURCHASED_REVIEW_WEIGHT);
+  return { count: organic.count + purchasedCount, purchasedCount, stars: organic.stars + 5 * boughtWeight, weight: organic.weight + boughtWeight };
+}
+export function weightedStoreRating(db, shopId) {
+  const rating = storeRatingWeights(db,shopId);
+  return { count: rating.count, average: rating.weight ? rating.stars / rating.weight : null };
 }

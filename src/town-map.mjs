@@ -1,3 +1,4 @@
+import { storeReputation } from './store-reputation.mjs';
 import { withDatabase, transaction } from './database.mjs';
 import { ensureBusinessSchema, advanceShop, SHOP_TYPES, SHOP_SIZES, MAX_STORES_PER_USER, businessTypeForItem } from './businesses.mjs';
 import { inventoryIsLocked } from './resale.mjs';
@@ -17,7 +18,7 @@ export function townMap(dataDir, viewer = null, { now = Date.now() } = {}) {
       const location=plotLocation(db,plot.id), size=SHOP_SIZES.find(entry=>entry.id===plot.size), shop=businesses.find(entry=>entry.plot_id===plot.id);
       return {id:plot.id,...location,occupied:Boolean(shop),costs:Object.fromEntries(SHOP_TYPES.map(type=>[type.id,Math.round(size.cost*type.costFactor*location.priceMultiplier)])),
         capacity:size.capacity,carCapacity:size.carCapacity,requiredLevel:size.requiredLevel,
-        business:shop && !shop.banned && !shop.npc ? {id:shop.id,type:shop.type,name:shop.store_name,owner:player ? shop.username : maskUsername(shop.username),own:player?.id===shop.user_id,
+        business:shop && !shop.banned && !shop.npc ? {...storeReputation(db,shop,now),id:shop.id,type:shop.type,name:shop.store_name,owner:player ? shop.username : maskUsername(shop.username),own:player?.id===shop.user_id,
           stockCount:db.prepare('SELECT COUNT(*) AS n FROM business_stock WHERE business_id=? AND sold_at IS NULL').get(shop.id).n} : null};
     });
     const sealed = sealedPaletteInventoryIds(db), compatibleStock = Object.fromEntries(SHOP_TYPES.map(type=>[type.id,0]));

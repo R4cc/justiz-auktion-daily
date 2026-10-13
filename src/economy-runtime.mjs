@@ -1,3 +1,4 @@
+import { supplyReviewAuctions } from './review-auctions.mjs';
 import { supplyStockPaletteAuctions } from './stock-palette-auctions.mjs';
 import { tickStoreJustice } from './storefronts.mjs';
 import { captureNetWorth } from './net-worth.mjs';
@@ -73,6 +74,7 @@ export function tickEconomy(dataDir, { now = Date.now(), flags = featureFlags() 
   if (flags.resales) {
     run('resaleSettlement', () => settleDueListings(dataDir, { now }));
     run('caseSupply', () => supplyCaseAuctions(dataDir, { now }));
+    if (flags.businesses) run('reviewSupply', () => supplyReviewAuctions(dataDir, { now }));
     run('buyers', () => tickNpcBuyers(dataDir, { now }));
     run('paletteBuyers', () => tickPaletteBuyers(dataDir, { now }));
   }

@@ -37,6 +37,10 @@ const accountEscape = value => String(value ?? '').replace(/[&<>"']/g, char => (
 
 function accountError(code) {
   const errors = {
+    invalid_review_pack: t('Choose a review pack and a store.', 'Wähle ein Bewertungspaket und einen Laden.'),
+    review_pack_not_found: t('This review pack is not available.', 'Dieses Bewertungspaket ist nicht verfügbar.'),
+    review_pack_used: t('This review pack was already redeemed.', 'Dieses Bewertungspaket wurde bereits eingelöst.'),
+    review_pack_redeem_only: t('Redeem these reviews for a store or list the pack for auction.', 'Löse diese Bewertungen für einen Laden ein oder versteigere das Paket.'),
     insufficient_skill_points:t('You need more skill points to unlock this rank.','Du brauchst mehr Skillpunkte, um diesen Rang freizuschalten.'),
     skill_rank_changed:t('This skill changed in another tab. Your tree has been refreshed.','Dieser Skill wurde in einem anderen Tab geändert. Dein Baum wurde aktualisiert.'),
     skill_coming_soon:t('This skill is coming soon.','Dieser Skill kommt bald.'),
@@ -304,6 +308,7 @@ const accountReady = Promise.all([accountApi('me'), catalogReady, economyReady])
   if (typeof renderStart === 'function' && state.view === 'start' && location.pathname === '/') renderStart();
 }).catch(() => {});
 function showGamePage() {
+  window.storeReputationUi?.stop();
   if(account?.justice?.jailed){window.justiceUi?.sync(account);return;}
   caseReveal.close(); auctionReveal.close();
   if (typeof traderStockDialog !== 'undefined') traderStockDialog.close();
@@ -322,6 +327,7 @@ function showGamePage() {
   updateNavigation();
 }
 async function navigateAccountPage(path, push = true) {
+  window.storeReputationUi?.stop();
   const destination = new URL(path, location.origin);
   if(!push&&!path.includes('?')&&destination.pathname===location.pathname)destination.search=location.search;
   if(destination.pathname==='/palettes'){
@@ -488,6 +494,7 @@ function rarityLabel(id) {
   return ({ common: t('Common', 'Gewöhnlich'), uncommon: t('Uncommon', 'Ungewöhnlich'), rare: t('Rare', 'Selten'), epic: t('Epic', 'Episch'), legendary: t('Legendary', 'Legendär') })[id] || id;
 }
 function itemCard(item, controls = true) {
+  if (controls && item.kind === 'review-pack' && window.storeReputationUi) return window.storeReputationUi.packCard(item);
   if(controls&&window.inventoryItemUi)return window.inventoryItemUi.card(item);
   const copies=item.copies||[item], available=copies.filter(copy=>!copy.listed&&!copy.storeId), chosen=available.find(copy=>copy.id===new URLSearchParams(location.search).get('focus'))||available[0]||item;
   const isCase=item.kind==='case', style=isCase&&item.caseType?'case-design-'+accountEscape(item.caseType):'rarity-'+accountEscape(item.rarity||item.caseTier||'common');
@@ -508,10 +515,10 @@ function groupedInventory(items) {
   return [...groups.values()];
 }
 function inventoryCategory(item) {
-  return item.kind === 'case' ? 'cases' : item.marketCategory || 'other';
+  return item.kind === 'review-pack' ? 'review-packs' : item.kind === 'case' ? 'cases' : item.marketCategory || 'other';
 }
 function inventoryCategoryLabel(id) {
-  return id === 'all' ? t('All finds', 'Alle Funde') : id === 'cases' ? t('Sealed cases', 'Versiegelte Kisten') : traderCategoryLabel(id);
+  return id === 'review-packs' ? t('Review packs','Bewertungspakete') : id === 'all' ? t('All finds', 'Alle Funde') : id === 'cases' ? t('Sealed cases', 'Versiegelte Kisten') : traderCategoryLabel(id);
 }
 function inventoryCategorySummary(items, selected) {
   const counts = new Map();
