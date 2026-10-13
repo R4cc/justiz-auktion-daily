@@ -81,9 +81,12 @@ const dailyCaseDialog = document.createElement('dialog');
 dailyCaseDialog.className = 'case-reveal daily-case-dialog';
 dailyCaseDialog.setAttribute('aria-labelledby', 'daily-case-title');
 document.body.append(dailyCaseDialog);
-let dailyCasePromptedRun = null, dailyCaseBusy = false;
+let dailyCasePromptedRun = null, dailyCaseBusy = false, dailyCaseClaim = null;
 dailyCaseDialog.addEventListener('cancel', event => { if (dailyCaseBusy) event.preventDefault(); });
 dailyCaseDialog.addEventListener('close', () => app.querySelector('.results-header h1')?.focus({ preventScroll: true }));
+caseReveal.addEventListener('close', () => {
+  if (currentAccountPage === null && state.view === 'results') app.querySelector('.results-header h1')?.focus({ preventScroll: true });
+});
 const helpDialog = document.querySelector('#help-dialog');
 const toast = document.querySelector('#toast');
 const sidebar = document.querySelector('.site-header');
@@ -585,9 +588,9 @@ function finishGame() {
 
 function renderDailyCaseDialog() {
   const score = state.answers.reduce((total, answer) => total + answer.score, 0);
-  dailyCaseDialog.innerHTML = `<div class="daily-case-prompt rarity-${auctionEscape(accountDailyRun?.dailyCase?.tier || 'common')}"><span class="daily-case-gift" aria-hidden="true">◇</span><p class="eyebrow">${t('DAILY COMPLETE', 'DAILY ABGESCHLOSSEN')}</p><h2 id="daily-case-title">${t('Your sealed case is ready', 'Deine versiegelte Kiste ist bereit')}</h2><p class="rarity-label">${rarityLabel(accountDailyRun?.dailyCase?.tier || 'common')}</p><p class="daily-trader-reward"><strong>+${justizEuro(accountDailyRun?.earned || account.rewardsByMode?.daily?.earned || 0)}</strong> ${t('trading capital + one sealed case', 'Handelskapital + eine versiegelte Kiste')}</p><strong>${number(score)} / ${number(5000)} ${t('points', 'Punkte')}</strong><div class="case-reveal-actions"><button class="primary-button" type="button" data-action="daily-case-claim" data-choice="open" ${dailyCaseBusy ? 'disabled' : ''}>${t('Claim and open', 'Abholen und öffnen')}</button><button class="secondary-button" data-action="daily-case-claim" data-choice="keep" ${dailyCaseBusy ? 'disabled' : ''}>${t('Claim and keep', 'Abholen und behalten')}</button>${economyFlags.resales ? `<button class="secondary-button" data-action="daily-case-claim" data-choice="list" ${dailyCaseBusy ? 'disabled' : ''}>${t('Claim and list', 'Abholen und anbieten')}</button>` : ''}<button class="secondary-button" type="button" data-action="daily-case-close">${t('View results', 'Ergebnis ansehen')}</button></div></div>`;
+  dailyCaseDialog.innerHTML = `<div class="daily-case-prompt rarity-${auctionEscape(accountDailyRun?.dailyCase?.tier || 'common')}"><span class="daily-case-gift" aria-hidden="true">◇</span><p class="eyebrow">${t('DAILY COMPLETE', 'DAILY ABGESCHLOSSEN')}</p><h2 id="daily-case-title">${t('Your sealed case is ready', 'Deine versiegelte Kiste ist bereit')}</h2><p class="rarity-label">${rarityLabel(accountDailyRun?.dailyCase?.tier || 'common')}</p><strong>${number(score)} / ${number(5000)} ${t('points', 'Punkte')}</strong><div class="case-reveal-actions"><button class="primary-button" type="button" data-action="daily-case-claim" data-choice="open" ${dailyCaseBusy ? 'disabled' : ''}>${t('Open Now', 'Jetzt öffnen')}</button><button class="secondary-button" type="button" data-action="daily-case-claim" data-choice="keep" ${dailyCaseBusy ? 'disabled' : ''}>${t('Add to inventory', 'Zum Inventar hinzufügen')}</button></div></div>`;
   if (!dailyCaseDialog.open) dailyCaseDialog.showModal();
-  dailyCaseDialog.querySelector('[data-action="daily-case-claim"], [data-action="daily-case-close"]')?.focus({ preventScroll: true });
+  dailyCaseDialog.querySelector('[data-action="daily-case-claim"]')?.focus({ preventScroll: true });
 }
 
 function promptDailyCase() {
@@ -598,24 +601,50 @@ function promptDailyCase() {
 }
 
 async function claimDailyCase(choice = 'keep') {
-  if (dailyCaseBusy || !account || accountDailyRun?.dailyCase?.status !== 'ready') return;
+  if (dailyCaseBusy || !account || !accountDailyRun) return;
   const owner = account.id, runId = accountDailyRun.id, visit = accountVisit;
+  const alreadyClaimed = dailyCaseClaim?.owner === owner && dailyCaseClaim?.runId === runId;
+  if (accountDailyRun.dailyCase?.status !== 'ready' && !alreadyClaimed) return;
   dailyCaseBusy = true; renderDailyCaseDialog();
+  const isCurrent = () => account?.id === owner && accountDailyRun?.id === runId && accountVisit === visit && state.view === 'results';
   try {
-    const result = await accountApi('games/daily-case/claim', { id: runId });
-    if (account?.id !== owner || accountDailyRun?.id !== runId) return;
-    updateAccount(result.user);
-    accountDailyRun = { ...accountDailyRun, dailyCase: { ...accountDailyRun.dailyCase, status: 'claimed' } };
-    if (visit !== accountVisit || state.view !== 'results') return;
-    renderResults();
-    dailyCaseDialog.close();
-    showToast(t('Case added to inventory.', 'Kiste zum Inventar hinzugefügt.'));
-    await navigateAccountPage('/inventory?focus='+encodeURIComponent(result.item.id)+(choice==='keep'?'':'&action='+choice));
-  } catch (error) {
-    if (account?.id === owner && accountDailyRun?.id === runId) {
-      showToast(error.message);
+    if (!alreadyClaimed) {
+      const result = await accountApi('games/daily-case/claim', { id: runId });
+      if (account?.id !== owner || accountDailyRun?.id !== runId) return;
+      updateAccount(result.user);
+      dailyCaseClaim = { owner, runId, item: result.item };
+      accountDailyRun = { ...accountDailyRun, dailyCase: { ...accountDailyRun.dailyCase, status: 'claimed' } };
     }
-  } finally { dailyCaseBusy = false; if (dailyCaseDialog.open) renderDailyCaseDialog(); }
+    if (!isCurrent()) return;
+    if (choice === 'open') {
+      const result = await accountApi('inventory/case/open', { id: dailyCaseClaim.item.id });
+      if (!isCurrent()) return;
+      updateAccount(result.user);
+      dailyCaseDialog.close();
+      renderResults();
+      await showDailyCaseItem(result.item, isCurrent);
+    } else {
+      dailyCaseDialog.close();
+      renderResults();
+      showToast(t('Case added to inventory.', 'Kiste zum Inventar hinzugefügt.'));
+    }
+    dailyCaseClaim = null;
+  } catch (error) {
+    if (isCurrent()) showToast(error.message);
+  } finally { dailyCaseBusy = false; if (dailyCaseDialog.open && isCurrent()) renderDailyCaseDialog(); }
+}
+
+async function showDailyCaseItem(item, isCurrent) {
+  caseReveal.innerHTML = `<div class="case-reveal-content rarity-${auctionEscape(item.rarity)}"><h2 id="case-reveal-title">${t('Opening case…', 'Kiste wird geöffnet …')}</h2><div class="case-window"><div class="case-marker"></div><div class="case-reel"></div></div></div>`;
+  caseReveal.showModal();
+  const pool = accountCatalog?.cases?.find(box => box.id === 'fundkiste')?.items || [];
+  try {
+    await spinCaseReel(caseReveal.querySelector('.case-reel'), caseReveal.querySelector('.case-window'), item,
+      pool.length ? pool : [item], () => caseReveal.open && isCurrent());
+  } catch { /* The awarded item is already saved; still show the result. */ }
+  if (!caseReveal.open || !isCurrent()) return;
+  caseReveal.innerHTML = `<div class="case-reveal-content rarity-${auctionEscape(item.rarity)}"><h2 id="case-reveal-title">${auctionEscape(item.title)}</h2>${item.image ? `<img src="${auctionEscape(item.image)}" alt="">` : ''}<p class="rarity-label">${rarityLabel(item.rarity)}</p><p>${t('Added to inventory.', 'Zum Inventar hinzugefügt.')}</p><div class="case-reveal-actions"><button class="primary-button" type="button" data-account="close-reveal">${t('View results', 'Ergebnis ansehen')}</button></div></div>`;
+  caseReveal.querySelector('[data-account="close-reveal"]').focus({ preventScroll: true });
 }
 
 function renderResults() {
@@ -631,7 +660,7 @@ function renderResults() {
   app.innerHTML = `
     <section class="results-screen">
       <div class="results-header">
-        <div><p class="eyebrow">${gameMode === 'random' ? t("FREE PLAY", "FREIES SPIEL") : `${t('DAILY', 'DAILY')} #${gameNumber()}`}</p><h1 tabindex="-1">${t("Results", "Ergebnis")}</h1></div>
+        <div><p class="eyebrow">${gameMode === 'random' ? t("FREE PLAY", "FREIES SPIEL") : `${t('DAILY', 'DAILY')} #${gameNumber()}`}</p><h1 tabindex="-1">${gameMode === 'daily' ? t('Daily complete', 'Daily geschafft') : t('Results', 'Ergebnis')}</h1></div>
         <div class="results-score"><strong>${total.toLocaleString(uiLocale())} / ${number(5000)}</strong><span>${t("TOTAL POINTS", "GESAMTPUNKTE")}</span></div>
       </div>
       <div class="result-stats">
@@ -641,16 +670,13 @@ function renderResults() {
           ? `<div class="result-stat"><span>${t("ENDED AUCTIONS", "BEENDETE AUKTIONEN")}</span><strong>${completedAuctions} / 5</strong></div>`
           : `<div class="result-stat"><span>${t("CURRENT STREAK", "AKTUELLER STREAK")}</span><strong>${playerStats.streak ? `🔥 ${dayLabel(playerStats.streak)}` : '—'}</strong></div>`}
       </div>
+      <h2 class="results-list-title">${t('Your five rounds', 'Deine fünf Runden')}</h2>
       <div class="results-list">
         ${AUCTIONS.map((auction, index) => resultRow(auction, state.answers[index], index)).join('')}
       </div>
       <div class="results-actions">
-        ${account && gameMode === 'daily' && accountDailyRun?.dailyCase?.status === 'ready' ? `<button class="primary-button" type="button" data-action="daily-case-prompt">${t('Claim Daily Case', 'Daily-Kiste abholen')} ◇</button>` : ''}
-        ${account && gameMode === 'daily' ? `<p class="daily-trader-reward">+${justizEuro(accountDailyRun?.earned || account.rewardsByMode?.daily?.earned || 0)} ${t('earned · one sealed reward case','verdient · eine versiegelte Belohnungskiste')}</p><a class="secondary-button" href="/inventory" data-page>${t('Manage your reward', 'Belohnung verwalten')} →</a><a href="/auction-house" class="secondary-button" data-page>${t('Browse auctions','Auktionen ansehen')} →</a>` : ''}
-        ${gameMode === 'random' ? `<button class="primary-button" type="button" data-action="random">${t('New random round', 'Neue Zufallsrunde')} <span class="button-arrow">↻</span></button>` : ''}
-        <button class="${gameMode === 'random' ? 'secondary' : 'primary'}-button" type="button" data-action="share">${t("Share result", "Ergebnis teilen")} <span class="button-arrow">↗</span></button>
-        <button class="secondary-button" type="button" data-action="copy">${t("Copy text", "Text kopieren")}</button>
-        <button class="secondary-button" type="button" data-action="home">${t("Back to home", "Zur Startseite")}</button>
+        <button class="primary-button" type="button" data-action="copy">${t("Copy Results", "Ergebnis kopieren")}</button>
+        <button class="secondary-button" type="button" data-action="random">${t("Play the archive", "Archiv spielen")} <span class="button-arrow" aria-hidden="true">→</span></button>
       </div>
       <div class="data-note">${infoTip(gameMode === 'random' ? t("This round uses the auction archive. Ended auctions use their last recorded final bid.", "Diese Runde stammt aus dem Auktionsarchiv. Beendete Auktionen nutzen ihr zuletzt erfasstes Endgebot.") : t("Prices are fixed for this Daily. The original auction may continue to change.", "Gebotsstände sind für dieses Daily festgeschrieben. Die Originalauktion kann sich weiter verändern."), t('About these prices', 'Über diese Preise'))}</div>
     </section>`;
@@ -672,24 +698,14 @@ function resultRow(auction, answer, index) {
 
 function shareText() {
   const total = state.answers.reduce((sum, item) => sum + item.score, 0);
-  const streak = stats().streak;
   return [
     gameMode === 'random' ? t("JUSTIZGUESSR · FREE PLAY", "JUSTIZGUESSR · FREIES SPIEL") : `JUSTIZGUESSR #${gameNumber()}`,
     '',
     ...state.answers.map(item => `${accuracy(item.score).emoji} ${item.score}`),
     '',
     `${total.toLocaleString(uiLocale())} / ${number(5000)}`,
-    gameMode === 'daily' && streak ? `🔥 ${dayLabel(streak)} streak` : ''
+    new URL('/', window.location.origin).href
   ].filter((line, index, all) => line || all[index - 1] !== '').join('\n');
-}
-
-async function shareResult() {
-  const text = shareText();
-  if (navigator.share) {
-    try { await navigator.share({ text }); return; } catch (error) { if (error.name === 'AbortError') return; }
-  }
-  try { await navigator.clipboard.writeText(text); showToast(t("Results copied — no spoilers.", "Ergebnis kopiert — spoilerfrei.")); }
-  catch { showToast(t("Sharing is unavailable in this browser.", "Teilen ist in diesem Browser nicht verfügbar.")); }
 }
 
 async function copyResult() {
@@ -759,10 +775,7 @@ document.addEventListener('click', event => {
   if (action === 'hl-next') nextHigherLower();
   if (action === 'hl-image') higherLowerImage(event.target.closest('[data-action]'));
   if (action === 'next') nextRound();
-  if (action === 'daily-case-prompt') renderDailyCaseDialog();
-  if (action === 'daily-case-claim') claimDailyCase(event.target.closest('[data-choice]')?.dataset.choice || 'keep');
-  if (action === 'daily-case-close') dailyCaseDialog.close();
-  if (action === 'share') shareResult();
+  if (action === 'daily-case-claim') claimDailyCase(event.target.closest('[data-action]').dataset.choice);
   if (action === 'copy') copyResult();
   if (action === 'home') { closeSidebar(); renderStart(); }
   if (action === 'help') helpDialog.showModal();
@@ -773,7 +786,10 @@ document.addEventListener('click', event => {
 // A click on the dark area around any open modal (the backdrop targets the
 // dialog element itself) closes it — the standard close flows stay intact.
 document.addEventListener('click', event => {
-  if (event.target instanceof HTMLDialogElement && event.target.open) event.target.close();
+  if (event.target instanceof HTMLDialogElement && event.target.open) {
+    if (event.target === dailyCaseDialog && dailyCaseBusy) return;
+    event.target.close();
+  }
 });
 
 document.addEventListener('keydown', event => {
