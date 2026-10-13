@@ -1,0 +1,22 @@
+.house-winnings { margin: 0 0 24px; padding: 22px; border: 2px solid #b38932; border-radius: 18px; background: #f3e8c6; }
+.house-winnings > header { display: flex; justify-content: space-between; align-items: center; gap: 16px; margin-bottom: 18px; }
+.house-winnings .eyebrow { color: #775c26; margin: 0 0 6px; font-size: .65rem; }
+.house-winnings h2 { margin: 0; font-size: clamp(1.2rem,2vw,1.6rem); line-height: 1.2; letter-spacing: -.03em; }
+.house-winnings header p:not(.eyebrow) { margin: 6px 0 0; color: #64604e; font-size: .82rem; }
+.house-winnings-count { display: grid; place-items: center; flex: 0 0 auto; min-width: 42px; height: 42px; padding: 0 10px; border-radius: 50%; color: #fffaf0; background: #775c26; font-weight: 800; }
+.house-winnings-grid { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 12px; }
+.house-winnings-card { display: flex; align-items: center; gap: 14px; min-width: 0; padding: 16px; border: 1px solid #c6ad73; border-radius: 12px; background: #fffaf0; color: var(--ink); text-decoration: none; }
+.house-winnings-card:hover { background: white; border-color: var(--ink); }
+.house-winnings-art { display: grid; place-items: center; flex: 0 0 76px; width: 76px; height: 84px; color: #88652d; }
+.house-winnings-art svg { width: 100%; max-height: 84px; }
+.house-winnings-art .case-artwork { width: 100%; }
+.house-winnings-copy { min-width: 0; }
+.house-winnings-badge { display: block; color: #775c26; font-size: .6rem; font-weight: 800; letter-spacing: .06em; }
+.house-winnings-copy h3 { margin: 8px 0 10px; font-size: .93rem; line-height: 1.4; overflow-wrap: anywhere; }
+.house-winnings-action { display: inline-flex; align-items: center; gap: 10px; padding: 8px 12px; border-radius: 7px; background: var(--ink); color: #fffaf0; font-size: .78rem; font-weight: 800; }
+.house-winnings-more { margin-top: 16px; }
+.house-winnings-more summary { cursor: pointer; font-size: .85rem; font-weight: 700; }
+.house-winnings-more .house-winnings-grid { margin-top: 12px; }
+@media (max-width: 1200px) { .house-winnings-grid { grid-template-columns: repeat(2,minmax(0,1fr)); } }
+@media (max-width: 700px) { .house-winnings { padding: 16px; } .house-winnings-grid { grid-template-columns: 1fr; } }
+@media (prefers-reduced-motion: no-preference) { .house-winnings-card { transition: background .15s,border-color .15s; } }

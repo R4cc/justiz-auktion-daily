@@ -109,19 +109,19 @@ window.economyUi = (() => {
     const request = ++sequence, owner = account?.id;
     let next;
     if (path === '/auction-house') {
-      const [lots, mine, bids, archived, palettes, paletteMine, oldPurchases] = await Promise.all([
+      const [lots, mine, bids, archived, palettes, paletteMine, unopened] = await Promise.all([
         economyFlags.resales ? api.resales(200) : null,
         owner && economyFlags.resales ? api.myListings() : null,
         owner && economyFlags.resales ? api.myResaleBids() : null,
         owner && economyFlags.resales ? api.myArchivedResaleBids() : null,
         economyFlags.paletteAuctions ? api.paletteAuctions(100) : null,
         owner && economyFlags.paletteAuctions ? api.myPaletteAuctions(100) : null,
-        owner && economyFlags.palettes ? accountApi('stock-palettes') : null,
+        owner ? accountApi('auction-winnings') : null,
         window.marketTrendUi?.load(visit)
       ]);
       if ((economyFlags.resales && !lots) || (economyFlags.paletteAuctions && !palettes)) throw new Error(t('Auctions could not be loaded. Please retry.', 'Auktionen konnten nicht geladen werden. Bitte erneut versuchen.'));
       next = { lots: lots?.listings || [], mine: mine?.listings || [], bids: bids?.listings || [],
-        archivedBids: archived?.listings || [], palettes: palettes?.auctions || [], paletteMine: paletteMine?.auctions || [], oldPurchases:oldPurchases?.palettes||[] };
+        archivedBids: archived?.listings || [], palettes: palettes?.auctions || [], paletteMine: paletteMine?.auctions || [], unopenedOwner:owner, unopened:unopened?.rewards||[] };
     } else if (path === '/auctions') {
       const [lots, mine] = await Promise.all([api.paletteAuctions(), owner ? api.myPaletteAuctions(100) : null]);
       if (!lots) throw new Error(t('Auctions are unavailable. Please retry.', 'Auktionen sind nicht verfügbar. Bitte erneut versuchen.'));
@@ -248,6 +248,7 @@ window.economyUi = (() => {
   // already revealed) leave the live board and stay reachable here.
   const archiveToggle = count => `<button class="text-button archive-toggle" type="button" data-economy="archive" aria-expanded="${archiveOpen}">${archiveOpen ? t('Hide archived auctions', 'Archivierte Auktionen ausblenden') : t('Archived auctions', 'Archivierte Auktionen')} (${count})</button>`;
   function renderHouse() {
+    const unopened = account && data.unopenedOwner === account.id ? data.unopened || [] : [];
     const query = new URLSearchParams(location.search), filter = query.get('type') || 'all', stockType = query.get('stock'), palette = query.get('palette'), playersOnly = query.get('seller') === 'players';
     const palettes = (data.palettes || []).filter(lot => (!palette || lot.paletteId === palette) && (!stockType || lot.stockOffer?.category===stockType));
     const accepts = lot => !stockType || lot.item.businessType === stockType || lot.item.businessCategory === stockType;
@@ -257,6 +258,7 @@ window.economyUi = (() => {
     const cards = rows => rows.length ? `<div class="economy-grid">${rows.join('')}</div>` : `<div class="collection-empty"><p>${t('No lots here yet. Try another filter, play Daily, or list a find.', 'Noch keine Lose hier. Wähle einen anderen Filter, spiele Daily oder biete einen Fund an.')}</p><a href="/" data-page>${t('Play Daily','Daily spielen')} →</a></div>`;
     accountContent.innerHTML = `<section class="house-header" aria-labelledby="house-title">
       <div class="house-heading"><div><p class="eyebrow">${t('THE TRADING FLOOR', 'DER HANDELSPLATZ')}</p><h1 id="house-title" tabindex="-1">${t('Auction House', 'Auktionshaus')}</h1><p class="house-intro">${t('Find your next treasure. Make your next trade.', 'Entdecke deinen nächsten Schatz. Starte deinen nächsten Handel.')}</p></div><a class="house-inventory-link" href="/inventory" data-page>${t('Manage your finds', 'Funde verwalten')} <span aria-hidden="true">→</span></a></div>
+      ${window.auctionWinningsUi?.markup(unopened)||''}
       <nav class="auction-house-shortcuts${economyFlags.market ? '' : ' is-single'}" aria-label="${t('Explore trading', 'Handel entdecken')}">
         <a class="house-launch-card house-case-store-card" href="/shop" data-page>
           <span class="house-card-copy"><span class="house-card-tag">${t('MYSTERY FINDS', 'ÜBERRASCHUNGSFUNDE')}</span><strong>${t('Case Shop', 'Kisten-Shop')}</strong><span class="house-card-description">${t('One case. One mystery find. What’s inside?', 'Eine Kiste. Ein Überraschungsfund. Was steckt drin?')}</span><span class="house-card-action">${t('Explore cases', 'Kisten entdecken')} <span aria-hidden="true">→</span></span></span>
@@ -274,10 +276,9 @@ window.economyUi = (() => {
       accountContent.innerHTML += `<div class="marketplace-toolbar"><h2>${t('My listings','Meine Angebote')}</h2><a href="/inventory" data-page>${t('List a find','Fund anbieten')} →</a></div>` + cards((data.mine || []).map(lot=>lotCard(lot,false,lot.status==='active'?'mine-live':'mine-done')));
     } else if (tab === 'bids') {
       accountContent.innerHTML += `<h2>${t('My bids and winnings','Meine Gebote und Gewinne')}</h2>` + cards([
-        ...(data.oldPurchases||[]).map(purchase=>`<article class="economy-lot"><div class="economy-lot-image palette-auction-art is-${esc(purchase.offer.tier)}">${window.paletteUi.art(purchase.offer)}</div><div class="economy-lot-body"><h2>${purchase.offer.quantity}× ${esc(t(purchase.offer.name,purchase.offer.nameDe))}</h2><p>${t('Previously acquired palette · ready to reveal','Bereits erworbene Palette · bereit zum Aufdecken')}</p><a href="/auction-house?open-palette=${encodeURIComponent(purchase.id)}" data-page class="primary-button">${t('Reveal palette','Palette aufdecken')} →</a></div></article>`),
-        ...(data.paletteMine || []).map(lot=>lotCard(lot,true)),
+        ...(data.paletteMine || []).filter(lot=>!unopened.some(reward=>reward.kind==='palette'&&reward.id===lot.id)).map(lot=>lotCard(lot,true)),
         ...(data.bids || []).map(lot=>lotCard(lot,false,'bid')),
-        ...(data.archivedBids || []).map(lot=>lotCard(lot,false,'bid-done'))
+        ...(data.archivedBids || []).filter(lot=>!unopened.some(reward=>reward.kind==='case'&&reward.auctionId===lot.id)).map(lot=>lotCard(lot,false,'bid-done'))
       ]);
     } else {
       accountContent.innerHTML += `<nav class="economy-tabs lot-filters" aria-label="${t('Lot types','Losarten')}">${types.map(([id,label])=>`<button data-economy="lot-type" data-id="${id}" aria-pressed="${filter===id}">${label}</button>`).join('')}</nav><nav class="economy-tabs lot-filters" aria-label="${t('Listing sellers','Anbieter')}">${[['all',t('All sellers','Alle Anbieter')],['players',t('Other player listings only','Nur Angebote anderer Spieler')]].map(([id,label])=>`<button data-economy="lot-seller" data-id="${id}" aria-pressed="${playersOnly===(id==='players')}">${label}</button>`).join('')}</nav>${stockType?`<p>${t('Stock for','Waren für')}: ${esc(categoryName(({cars:'vehicles',toys:'collectibles'})[stockType]||stockType))} <a href="/auction-house" data-page>${t('Clear filter','Filter entfernen')}</a></p>`:''}` + cards([

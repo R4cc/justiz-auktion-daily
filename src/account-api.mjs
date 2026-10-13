@@ -1,3 +1,4 @@
+import { unopenedAuctionWinnings } from './auction-winnings.mjs';
 import { redeemReviewPack } from './review-auctions.mjs';
 import { skillEffects } from './skill-effects.mjs';
 import { skillTree, upgradeSkill } from './skill-tree.mjs';
@@ -101,6 +102,7 @@ export async function createAccountApi({ dataDir, dailyPayload, json, env = proc
           // other surface waits until a real password is set.
           if (user.must_change_password && route !== 'me') throw new AccountError('password_change_required', 403);
           if (route === 'inventory') json(response, 200, { items: accounts.inventory(user, {includeStores:url.searchParams.get('includeStores')==='1'}) });
+          else if (route === 'auction-winnings') json(response,200,{rewards:unopenedAuctionWinnings(dataDir,user,{flags})});
           else if (route === 'criminal-record') json(response,200,playerCriminalRecord(dataDir,user,{offset:url.searchParams.get('offset') || 0,limit:url.searchParams.get('limit') || 10}));
           else if(route==='skills') json(response,200,skillTree(dataDir,user));
           else if (route === 'stock-palettes' && flags.palettes) json(response,200,{palettes:stockPalettesByUser(dataDir,user)});
