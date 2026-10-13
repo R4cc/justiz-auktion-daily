@@ -5,6 +5,7 @@ A price-guessing and trading game based on public listings from [Justiz-Auktion]
 ## Features
 
 - **Daily:** Guess five auction prices and earn J€ and a sealed reward case.
+- **Auction text:** Full HTML named-character and Unicode numeric-reference support preserves punctuation, symbols and encoded angle-bracket text. Existing encoded auction and item text is repaired automatically at startup.
 - **Free play and Higher or Lower:** Practice your guesses or build a streak.
 - **Auction House:** Bid on player listings and cases, or auction your own finds.
 - **Mystery palettes:** Bid on category stock palettes in the Auction House, with price-based rarity and quantity odds. Items and amounts are drawn at opening with your current Luck. Reveal three item and quantity rolls, then restock your stores from inventory.

@@ -1,3 +1,4 @@
+import { repairSavedAuctionText } from './auction-text-migration.mjs';
 import { existsSync, mkdirSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
@@ -247,6 +248,16 @@ function openDatabase(dataDir) {
   const schemaVersion = database.prepare('PRAGMA user_version').get().user_version;
   if (schemaVersion < 9) database.exec('PRAGMA user_version = 9');
   migrateLegacyFiles(database, resolvedDataDir);
+  if (!database.prepare("SELECT 1 FROM app_state WHERE key='auction_text_entities_v1'").get()) {
+    try {
+      transaction(database, () => {
+        // Another process may have repaired this store while we waited for the lock.
+        if (!database.prepare("SELECT 1 FROM app_state WHERE key='auction_text_entities_v1'").get()) {
+          setState(database, 'auction_text_entities_v1', { updated: repairSavedAuctionText(database) });
+        }
+      });
+    } catch (error) { database.close(); throw error; }
+  }
   openDatabases.set(resolvedDataDir, database);
   return database;
 }

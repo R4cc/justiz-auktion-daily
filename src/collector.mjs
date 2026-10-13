@@ -1,3 +1,4 @@
+import { decodeHtmlEntities as decodeEntities } from './html-text.mjs';
 import { auctionSelectionCategory } from './auction-selection.mjs';
 import { createHash } from 'node:crypto';
 import { auctionGallery, cachedAuctionImages } from './auction-images.mjs';
@@ -144,79 +145,11 @@ function normalizeQueue(
   return queue;
 }
 
-function decodeEntities(
-  value = ''
-) {
-  const named = {
-    amp: '&',
-    quot: '"',
-    apos: "'",
-    lt: '<',
-    gt: '>',
-    nbsp: ' ',
-    auml: 'ä',
-    ouml: 'ö',
-    uuml: 'ü',
-    Auml: 'Ä',
-    Ouml: 'Ö',
-    Uuml: 'Ü',
-    szlig: 'ß',
-    euro: '€',
-    lowbar: '_',
-    period: '.',
-    comma: ',',
-    colon: ':',
-    sol: '/',
-    frasl: '/',
-    permil: '‰',
-    NewLine: '\n'
-  };
-
-  return value.replace(
-    /&(#x?[0-9a-f]+|[a-z]+);/gi,
-    (
-      _,
-      entity
-    ) => {
-      if (
-        entity[0] === '#'
-      ) {
-        const hex =
-          entity[1]
-            ?.toLowerCase() ===
-          'x';
-
-        return String.fromCodePoint(
-          Number.parseInt(
-            entity.slice(
-              hex
-                ? 2
-                : 1
-            ),
-            hex
-              ? 16
-              : 10
-          )
-        );
-      }
-
-      return named[
-        entity
-      ] ??
-        named[
-          entity.toLowerCase()
-        ] ??
-        `&${entity};`;
-    }
-  );
-}
-
 function cleanText(
   value = ''
 ) {
   return decodeEntities(
     value
-  )
     .replace(
       /<script\b[^>]*>[\s\S]*?<\/script>/gi,
       ' '
@@ -230,11 +163,12 @@ function cleanText(
       '\n'
     )
     .replace(
-      /<[^>]+>/g,
+      /<!--[^]*?-->|<\/?[a-z][^>]*>|<![^>]*>/gi,
       ' '
     )
+  )
     .replace(
-      /[ \t]+/g,
+      /[ \t\u00a0]+/g,
       ' '
     )
     .replace(
@@ -395,7 +329,7 @@ export function extractListingUrls(
   ) {
     const raw =
       decodeEntities(
-        match[1]
+        match[1], { attribute: true }
       );
 
     if (
@@ -460,18 +394,16 @@ export function parseAuctionPage(
   const titleFallback =
     html.match(
       /<title\b[^>]*>([\s\S]*?)<\/title>/i
-    )?.[1]
-      ?.replace(
-        /\s*\(#\d+\).*$/s,
-        ''
-      );
+    )?.[1];
 
-  const title =
+  const titleText =
     cleanText(
       heading ||
       titleFallback ||
       `Auktion #${id}`
     );
+  // Remove only the source site's own ID suffix, preserving product parentheses.
+  const title = heading ? titleText : titleText.replace(new RegExp(`\\s*\\(#${id}\\)\\s*(?:\\|\\s*Justiz-Auktion.*)?$`, 'i'), '').trim();
 
   const startBid =
     parseMoney(
@@ -532,12 +464,7 @@ export function parseAuctionPage(
     '';
 
   const description =
-    cleanText(
-      descriptionHtml
-    ).slice(
-      0,
-      1800
-    ) ||
+    Array.from(cleanText(descriptionHtml)).slice(0, 1800).join('') ||
     `${condition}. Weitere Angaben auf der Originalauktion.`;
 
   const imageUrls = [];
@@ -547,7 +474,7 @@ export function parseAuctionPage(
 
   const decodedHtml =
     decodeEntities(
-      html
+      html, { attribute: true }
     );
 
   for (
@@ -761,7 +688,7 @@ function parseHtmlAttributes(
         match[2] ??
         match[3] ??
         match[4] ??
-        ''
+        '', { attribute: true }
       );
   }
 
