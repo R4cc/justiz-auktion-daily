@@ -59,7 +59,8 @@ test('real NPC sales leave reviews and agreement likes exactly once; players rem
  assert.equal(store.reviews.find(r=>r.reviewerId==='buyer').likes,new Set(feedback.map(row=>row.npc_id)).size);assert.equal(store.reviews.find(r=>r.reviewerId==='other').likes,0);
  assert.ok(feedback.every(row=>row.paid===2*row.reference && row.sentiment==='price_high'));
  const earned=f.accounts.db(db=>db.prepare('SELECT SUM(price) total FROM business_sales WHERE id LIKE ?').get('npc:%').total);
- assert.equal(f.accounts.db(db=>db.prepare('SELECT tokens FROM users WHERE id=?').get(f.owner.id).tokens),before+earned);
+ assert.equal(f.accounts.db(db=>db.prepare('SELECT tokens FROM users WHERE id=?').get(f.owner.id).tokens),before);
+ assert.equal(businessDashboard(f.dir,f.owner,{now:now+week}).shops[0].cashReady,earned+400);
  assert.equal(businessDashboard(f.dir,f.owner,{now:now+week}).shops[0].sales,10);
  const likes=store.reviews.find(r=>r.reviewerId==='buyer').likes;
  const sale=feedback[0];f.accounts.db(db=>recordNpcStoreFeedback(db,{saleId:sale.sale_id,shopId:f.shop.id,category:'wine',paid:sale.paid,reference:sale.reference,now:sale.created_at}));

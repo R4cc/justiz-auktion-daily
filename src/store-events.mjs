@@ -6,6 +6,7 @@ import { marketIndexes } from './market.mjs';
 import { inventoryIsLocked } from './resale.mjs';
 import { pushNotification } from './notifications.mjs';
 import { recordSale } from './trader.mjs';
+import { creditStoreCash } from './store-cash.mjs';
 
 export const STORE_EVENT_INTERVAL = 24 * 3_600_000;
 export const STORE_EVENT_CHANCE = 25;
@@ -65,8 +66,11 @@ export function checkStoreEvents(dataDir, user, { now = Date.now(), random = ran
         }
       }
       const balance = db.prepare('SELECT tokens FROM users WHERE id = ?').get(player.id).tokens;
-      if (!Number.isSafeInteger(money) || !Number.isSafeInteger(balance + money) || balance + money < 0) fail('token_balance_limit', 409);
-      db.prepare('UPDATE users SET tokens = tokens + ? WHERE id = ?').run(money, player.id);
+      if (money>0) creditStoreCash(db,shop.id,money);
+      else {
+        if (!Number.isSafeInteger(money) || !Number.isSafeInteger(balance + money) || balance + money < 0) fail('token_balance_limit', 409);
+        db.prepare('UPDATE users SET tokens = tokens + ? WHERE id = ?').run(money, player.id);
+      }
       if (event.effect === 'sale') db.prepare('UPDATE businesses SET sales = sales + ?, revenue = revenue + ?, visitors = visitors + 1 WHERE id = ?').run(affected.length, money, shop.id);
       const result = { id, shopId: shop.id, shopName: shop.store_name || '', shopType: shop.type, type: event.id, titleEn: event.titleEn, titleDe: event.titleDe, bodyEn: event.bodyEn, bodyDe: event.bodyDe,
         itemsLost: 0, itemsSold: event.effect === 'sale' ? affected.length : 0, money, createdAt: now };

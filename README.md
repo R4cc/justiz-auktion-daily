@@ -18,6 +18,7 @@ A price-guessing and trading game based on public listings from [Justiz-Auktion]
 - **Skill tree:** One point per account level, including existing levels. Unlock luck, store security and review influence; future branches are coming soon.
 - **Criminal record:** Your profile lists caught theft attempts, when they were recorded, and each exact fine. Older offenses remain accessible through “Show older offenses”.
 - **Weekly Market frenzy:** A randomly timed hour of rapid pumps and crashes moves every category between up to 3× and as low as ¼ of its normal quote. The Market page shows a live countdown, and charts retain the event after normal trading returns.
+- **Collect store cash:** Each store on Your stores has its own Collect cash button with a coin animation. Customer sales, tips and positive events accumulate in that store's till; earnings enter your spendable wallet only when collected.
 - **Player hub:** A personal level crest, XP progress and earned trading milestones guide your next step. Daily, collection and skills are close at hand; friends and the criminal record have separate profile tabs.
 - **Progress and friends:** Earn XP, level up, track trading profit and compare Daily scores and collections.
 - **English and German:** Play on desktop or mobile. Guests can start guessing immediately; accounts unlock rewards and trading.

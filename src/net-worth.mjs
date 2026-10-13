@@ -4,6 +4,7 @@ import { sealedPaletteInventoryIds } from './palette-auctions.mjs';
 import { SHOP_TYPES, SHOP_SIZES } from './businesses.mjs';
 import { plotLocation } from './town-plots.mjs';
 import { AccountError } from './errors.mjs';
+import { storeCashTotal } from './store-cash.mjs';
 
 export const NET_WORTH_RANGES = Object.freeze({ '1d': 86400000, '1w': 7 * 86400000, '1m': 30 * 86400000, all: null });
 export const NET_WORTH_SAMPLE_MS = 5 * 60000;
@@ -16,6 +17,7 @@ export function ensureNetWorthSchema(db) {
     PRIMARY KEY(user_id, bucket)
   ) STRICT;
   CREATE INDEX IF NOT EXISTS net_worth_snapshots_time ON net_worth_snapshots(user_id, captured_at)`);
+  if(!db.prepare('PRAGMA table_info(net_worth_snapshots)').all().some(column=>column.name==='store_cash')) db.exec('ALTER TABLE net_worth_snapshots ADD COLUMN store_cash INTEGER NOT NULL DEFAULT 0');
 }
 export function currentNetWorth(db, userId, { now = Date.now(), indexes = marketIndexes(db, now) } = {}) {
   const user = db.prepare('SELECT tokens FROM users WHERE id=? AND npc=0').get(userId);
@@ -39,7 +41,7 @@ export function currentNetWorth(db, userId, { now = Date.now(), indexes = market
     if (size && type) businesses += Math.round(size.cost * type.costFactor * (plotLocation(db, shop.plot_id)?.priceMultiplier ?? 1));
   }
   const fineDebt=hasTable(db,'player_justice') ? db.prepare('SELECT fine_due FROM player_justice WHERE user_id=?').get(userId)?.fine_due||0 : 0;
-  const current = { cash: user.tokens, heldBids, items, businesses, sealedPalettes };
+  const current = { cash: user.tokens, storeCash:storeCashTotal(db,userId), heldBids, items, businesses, sealedPalettes };
   current.total = Object.values(current).reduce((sum, value) => sum + value, 0);
   current.total -= fineDebt; current.fineDebt=fineDebt;
   if (Object.entries(current).some(([key,value]) => !Number.isSafeInteger(value) || (key!=='total' && value < 0))) throw new AccountError('token_balance_limit', 409);
@@ -50,11 +52,11 @@ export function recordNetWorth(db, userId, { now = Date.now(), indexes } = {}) {
   const current = currentNetWorth(db, userId, { now, ...(indexes ? { indexes } : {}) });
   // One latest observation per minute keeps profile polling bounded. Keep the
   // actual observation time rather than manufacturing a bucket-start date.
-  db.prepare(`INSERT INTO net_worth_snapshots VALUES (?,?,?,?,?,?,?,?,?) ON CONFLICT(user_id,bucket) DO UPDATE SET
+  db.prepare(`INSERT INTO net_worth_snapshots(user_id,bucket,captured_at,cash,held_bids,items,businesses,sealed_palettes,total,store_cash) VALUES (?,?,?,?,?,?,?,?,?,?) ON CONFLICT(user_id,bucket) DO UPDATE SET
     captured_at=excluded.captured_at,cash=excluded.cash,held_bids=excluded.held_bids,items=excluded.items,
-    businesses=excluded.businesses,sealed_palettes=excluded.sealed_palettes,total=excluded.total
+    businesses=excluded.businesses,sealed_palettes=excluded.sealed_palettes,total=excluded.total,store_cash=excluded.store_cash
     WHERE excluded.captured_at >= net_worth_snapshots.captured_at`)
-    .run(userId, Math.floor(now / 60000), now, current.cash, current.heldBids, current.items, current.businesses, current.sealedPalettes, current.total);
+    .run(userId, Math.floor(now / 60000), now, current.cash, current.heldBids, current.items, current.businesses, current.sealedPalettes, current.total,current.storeCash);
   return current;
 }
 export function captureNetWorth(dataDir, { now = Date.now() } = {}) {

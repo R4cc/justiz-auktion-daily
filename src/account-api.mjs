@@ -22,7 +22,7 @@ import { archivedListingsBidOnByUser, cancelListing, listItem, listingsBidOnByUs
 import { maskLeaderboard } from './username-privacy.mjs';
 import { markNotificationsRead, notificationsForUser } from './notifications.mjs';
 import { businessDashboard, buyBusiness, setBusinessMargin, stockBusiness, unstockBusiness } from './businesses.mjs';
-import { spinStoreHeist, actStoreHeist, buyStoreItem, customizeStore, finishStoreHeist, reactToStore, likeStoreReview, recordStoreVisit, playerCriminalRecord, reviewStore, startStoreHeist, tipStore, visitStore } from './storefronts.mjs';
+import { collectStoreCash, spinStoreHeist, actStoreHeist, buyStoreItem, customizeStore, finishStoreHeist, reactToStore, likeStoreReview, recordStoreVisit, playerCriminalRecord, reviewStore, startStoreHeist, tipStore, visitStore } from './storefronts.mjs';
 
 const AUCTION_PAGE_SIZE = 25;
 
@@ -203,6 +203,10 @@ export async function createAccountApi({ dataDir, dailyPayload, json, env = proc
       else if (flags.businesses && route === 'businesses/stock') result = { shop: stockBusiness(dataDir, user, payload.shopId, payload.inventoryIds), user: accounts.profile(user) };
       else if (flags.businesses && route === 'businesses/margin') result = { shop: setBusinessMargin(dataDir, user, payload.shopId, payload.profitMargin), user: accounts.profile(user) };
       else if (flags.businesses && route === 'businesses/unstock') result = { shop: unstockBusiness(dataDir, user, payload.shopId, payload.inventoryId), user: accounts.profile(user) };
+      else if (flags.businesses && route === 'businesses/collect') result = {
+        collection: collectStoreCash(dataDir,user,payload), user: accounts.profile(user),
+        cashReady: accounts.db(db=>db.prepare('SELECT cash_balance FROM businesses WHERE id=? AND user_id=?').get(payload.shopId,user.id)?.cash_balance||0)
+      };
       else if (flags.businesses && route === 'businesses/profile') result = { receipt: customizeStore(dataDir, user, payload), user: accounts.profile(user) };
       else if (flags.businesses && route === 'stores/events/check') result = { ...checkStoreEvents(dataDir, user), user: accounts.profile(user) };
       else if (flags.businesses && route === 'stores/events/acknowledge') result = acknowledgeStoreEvents(dataDir, user, payload.ids);

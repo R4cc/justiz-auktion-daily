@@ -15,6 +15,7 @@ import { auctionSelectionCategory } from './auction-selection.mjs';
 import { auctionGallery } from './auction-images.mjs';
 import { recordSale, tradingTotals, acquisition, milestone, ensureTraderSchema } from './trader.mjs';
 import { levelForXp } from './progression.mjs';
+import { creditStoreCash, ensureStoreCashSchema } from './store-cash.mjs';
 
 const HOUR = 3_600_000;
 const WHOLESALE_PERIOD = 2 * HOUR;
@@ -70,7 +71,7 @@ export function ensureBusinessSchema(db, { now = Date.now() } = {}) {
     id TEXT PRIMARY KEY, user_id TEXT NOT NULL REFERENCES users(id), type TEXT NOT NULL,
     size TEXT NOT NULL, bought_at INTEGER NOT NULL, last_tick_at INTEGER NOT NULL,
     visitors INTEGER NOT NULL DEFAULT 0, sales INTEGER NOT NULL DEFAULT 0,
-    revenue INTEGER NOT NULL DEFAULT 0,
+    revenue INTEGER NOT NULL DEFAULT 0, cash_balance INTEGER NOT NULL DEFAULT 0 CHECK(cash_balance>=0),
     profit_margin INTEGER NOT NULL DEFAULT 20 CHECK(profit_margin BETWEEN 0 AND 100),
     traffic_popularity REAL NOT NULL DEFAULT 0 CHECK(traffic_popularity BETWEEN 0 AND 1.5)
   ) STRICT;
@@ -119,6 +120,7 @@ export function ensureBusinessSchema(db, { now = Date.now() } = {}) {
       db.prepare('UPDATE businesses SET traffic_popularity = ? WHERE id = ?').run(popularity, row.id);
     }
   }
+  ensureStoreCashSchema(db);
   ensureReviewSchema(db);
   ensureTownSchema(db, { now });
 }
@@ -209,8 +211,7 @@ export function advanceShop(db, row, now) {
       sales++; revenue += salePrice;
     }
   }
-  if (revenue && !Number.isSafeInteger(db.prepare('SELECT tokens FROM users WHERE id = ?').get(row.user_id).tokens + revenue)) fail('token_balance_limit', 409);
-  if (revenue) db.prepare('UPDATE users SET tokens = tokens + ? WHERE id = ?').run(revenue, row.user_id);
+  if (revenue) creditStoreCash(db,row.id,revenue);
   db.prepare(`UPDATE businesses SET visitors = visitors + ?, sales = sales + ?, revenue = revenue + ?, last_tick_at = ? WHERE id = ?`)
     .run(visitors, sales, revenue, Math.max(row.last_tick_at, until), row.id);
 }
@@ -231,7 +232,7 @@ function publicShop(db, row, now = Date.now()) {
     location: plotLocation(db, row.plot_id), name: row.store_name, motto: row.store_motto, gooseGuard: Boolean(row.goose_guard), mischiefEnabled: Boolean(row.mischief_enabled),
     ...tradingTotals(db,row.user_id,row.id),
     visitors: row.visitors, sales: row.sales, salesToday: today.sales,
-    revenue: row.revenue, revenueToday: today.revenue, profitMargin: row.profit_margin,
+    revenue: row.revenue, revenueToday: today.revenue, cashReady: row.cash_balance, profitMargin: row.profit_margin,
     buyChancePercent: Math.round((stock.length ? stock.reduce((sum, entry) => sum
       + businessItemSaleChance(shopType(row.type), row.profit_margin, entry.referencePrice), 0) / stock.length
       : businessSaleChance(shopType(row.type).conversion, row.profit_margin)) * 1000) / 10,

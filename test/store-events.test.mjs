@@ -60,17 +60,18 @@ for(const [name,roll] of [['bombing',0],['heist',3]]) test(`${name} is cosmetic,
 test('rich buyer pays frozen current shelf prices exactly once and records normal sales',async t=>{
   const f=await fixture(t), before=f.balance(), event=run(f,10);
   assert.equal(event.type,'rich_buyer');assert.equal(event.itemsSold,8);assert.equal(event.money,960);
-  assert.equal(f.balance(),before+960);assert.equal(f.query('SELECT * FROM business_sales').length,8);
+  assert.equal(f.balance(),before);assert.equal(f.query('SELECT * FROM business_sales').length,8);
   const shop=businessDashboard(f.dir,f.owner,{now:due}).shops[0];
   assert.equal(shop.sales,8);assert.equal(shop.revenue,960);assert.equal(shop.salesToday,8);assert.equal(shop.revenueToday,960);
+  assert.equal(shop.cashReady,960);
   assert.equal(shop.stock.length,0);assert.equal(f.query('SELECT * FROM account_notifications WHERE source_key LIKE ?', 'store-event:%').length,1);
-  checkStoreEvents(f.dir,f.owner,{now:due+1});assert.equal(f.balance(),before+960);
+  checkStoreEvents(f.dir,f.owner,{now:due+1});assert.equal(f.balance(),before);assert.equal(businessDashboard(f.dir,f.owner,{now:due+1}).shops[0].cashReady,960);
 });
 test('partial disasters, collector premium, fine and windfall have bounded real effects',async t=>{
   for(const [type,roll,lost,sold,money] of [['flood',35,0,0,0],['goose_rampage',45,0,0,0],['tax_raid',53,0,0,-100],['collector',65,0,3,540],['windfall',85,0,0,200]]) {
     const f=await fixture(t), before=f.balance(),event=run(f,roll);
     assert.equal(event.type,type);assert.equal(event.itemsLost,lost);assert.equal(event.itemsSold,sold);assert.equal(event.money,money);
-    assert.equal(f.balance(),before+money);assert.equal(visitStore(f.dir,f.rival,f.shop.id,{now:due}).store.stock.length,8-lost-sold);
+    assert.equal(f.balance(),before+Math.min(0,money));assert.equal(businessDashboard(f.dir,f.owner,{now:due}).shops[0].cashReady,Math.max(0,money));assert.equal(visitStore(f.dir,f.rival,f.shop.id,{now:due}).store.stock.length,8-lost-sold);
   }
   const f=await fixture(t);f.accounts.db(db=>db.prepare("UPDATE users SET tokens=7 WHERE id='owner'").run());
   assert.equal(run(f,53).money,-7);assert.equal(f.balance(),0);
@@ -101,11 +102,11 @@ test('cosmetic heists preserve guarded shelves and live player purchases',async 
   assert.equal(ended.outcome,'caught');
 });
 test('event failures roll back stock, money, check, sale history and modal result; live authority and economy reset apply',async t=>{
-  const f=await fixture(t);f.accounts.db(db=>db.prepare("UPDATE users SET tokens=? WHERE id='owner'").run(Number.MAX_SAFE_INTEGER));
+  const f=await fixture(t);f.accounts.db(db=>db.prepare('UPDATE businesses SET cash_balance=? WHERE id=?').run(Number.MAX_SAFE_INTEGER,f.shop.id));
   assert.throws(()=>run(f,10),/token_balance_limit/);
   assert.equal(f.query('SELECT * FROM business_stock').length,8);assert.equal(f.query('SELECT * FROM store_event_checks').length,0);
   assert.equal(f.query('SELECT * FROM store_events').length,0);assert.equal(f.query('SELECT * FROM business_sales').length,0);
-  f.accounts.db(db=>db.prepare("UPDATE users SET tokens=1000 WHERE id='owner'").run());run(f,85);
+  f.accounts.db(db=>db.prepare('UPDATE businesses SET cash_balance=0 WHERE id=?').run(f.shop.id));run(f,85);
   f.accounts.db(db=>db.prepare("UPDATE users SET banned=1 WHERE id='owner'").run());
   assert.throws(()=>checkStoreEvents(f.dir,f.owner,{now:due}),/login_required/);
   assert.throws(()=>acknowledgeStoreEvents(f.dir,f.owner,[],{now:due}),/invalid_store_events/);

@@ -14,6 +14,7 @@ import { recordSale, acquireItems } from './trader.mjs';
 import { ECONOMY_BALANCE } from './economy-balance.mjs';
 import { dealBlackjack, playBlackjack, publicBlackjack } from './blackjack.mjs';
 import { ensureJusticeSchema, assertPlayerFree, imposeFine, collectFine } from './justice.mjs';
+import { creditStoreCash } from './store-cash.mjs';
 
 export const GOOSE_GUARD_COST = 250;
 export const HEIST_COOLDOWN = 30 * 60000;
@@ -82,12 +83,10 @@ function store(db, shopId) {
   return row;
 }
 const otherStore = (row, user) => { if (row.user_id === user.id) fail('own_store', 409); };
-function transferMoney(db, from, to, amount) {
+function transferMoney(db, from, shopId, amount) {
   if (!Number.isSafeInteger(amount) || amount < 1) fail('invalid_store_amount');
-  const balance = db.prepare('SELECT tokens FROM users WHERE id = ?').get(to)?.tokens;
-  if (!Number.isSafeInteger(balance + amount)) fail('token_balance_limit', 409);
   if (!db.prepare('UPDATE users SET tokens = tokens - ? WHERE id = ? AND tokens >= ?').run(amount, from, amount).changes) fail('insufficient_tokens', 409);
-  db.prepare('UPDATE users SET tokens = tokens + ? WHERE id = ?').run(amount, to);
+  creditStoreCash(db,shopId,amount);
 }
 function notify(db, shop, key, titleEn, titleDe, bodyEn, bodyDe, now) {
   pushNotification(db, shop.user_id, { type: 'store', sourceKey: `store:${key}`, titleEn, titleDe, bodyEn, bodyDe,
@@ -211,7 +210,7 @@ export function buyStoreItem(dataDir, user, payload, { now = Date.now() } = {}) 
     const shop = store(db, payload.shopId); otherStore(shop, player);
     const entry = shelf(db, shop, payload.inventoryId, now);
     if (!Number.isSafeInteger(payload.expectedPrice) || payload.expectedPrice !== entry.askingPrice) fail('store_price_changed', 409);
-    transferMoney(db, player.id, shop.user_id, entry.askingPrice);
+    transferMoney(db, player.id, shop.id, entry.askingPrice);
     recordSale(db,shop.user_id,[entry.id],entry.askingPrice,`store:${id}`,now,shop.id);
     moveItem(db, shop, player, entry.id);
     acquireItems(db,player.id,[entry.id],entry.askingPrice,'purchase',now);
@@ -220,6 +219,19 @@ export function buyStoreItem(dataDir, user, payload, { now = Date.now() } = {}) 
     notify(db, shop, id, 'A player bought something!', 'Ein Spieler hat eingekauft!', `${player.username} bought ${entry.item.title} for J€ ${entry.askingPrice}.`, `${player.username} hat ${entry.item.title} für J€ ${entry.askingPrice} gekauft.`, now);
     return { id, inventoryId: entry.id, title: entry.item.title, amount: entry.askingPrice };
   }), now);
+}
+export function collectStoreCash(dataDir,user,payload,{now=Date.now()}={}) {
+  return atomic(dataDir,user,(db,player)=>receipt(db,player,payload,'collect-cash',now,id=>{
+    const shop=store(db,payload.shopId);
+    if(shop.user_id!==player.id)fail('business_not_found',404);
+    advanceShop(db,shop,now);
+    const amount=db.prepare('SELECT cash_balance FROM businesses WHERE id=?').get(shop.id).cash_balance;
+    const balance=db.prepare('SELECT tokens FROM users WHERE id=?').get(player.id).tokens;
+    if(!Number.isSafeInteger(balance+amount))fail('token_balance_limit',409);
+    db.prepare('UPDATE businesses SET cash_balance=0 WHERE id=?').run(shop.id);
+    db.prepare('UPDATE users SET tokens=tokens+? WHERE id=?').run(amount,player.id);
+    return {id,shopId:shop.id,amount};
+  }),now);
 }
 export function reviewStore(dataDir, user, { shopId, stars, comment = '' } = {}, { now = Date.now() } = {}) {
   if (!Number.isSafeInteger(stars) || stars < 1 || stars > 5 || typeof comment !== 'string' || comment.trim().length > 240) fail('invalid_store_review');
@@ -262,7 +274,7 @@ export function reactToStore(dataDir, user, { shopId, reaction } = {}, { now = D
 export function tipStore(dataDir, user, payload, { now = Date.now() } = {}) {
   if (![5, 10, 25].includes(payload?.amount)) fail('invalid_store_amount');
   return atomic(dataDir, user, (db, player) => receipt(db, player, payload, 'tip', now, id => {
-    const shop = store(db, payload.shopId); otherStore(shop, player); transferMoney(db, player.id, shop.user_id, payload.amount);
+    const shop = store(db, payload.shopId); otherStore(shop, player); transferMoney(db, player.id, shop.id, payload.amount);
     notify(db, shop, id, 'A tip for the tip jar', 'Trinkgeld für die Kasse', `${player.username} left J€ ${payload.amount}.`, `${player.username} hat J€ ${payload.amount} dagelassen.`, now);
     return { id, amount: payload.amount };
   }), now);

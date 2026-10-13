@@ -220,10 +220,12 @@ test('store stock is exclusive, category-checked, and earns once after offline t
   assert.equal(after.sales, 4);
   assert.ok(after.visitors > 0);
   assert.equal(after.revenue, 4 * 37);
-  assert.equal(f.balance('owner'), 510 + after.revenue);
+  assert.equal(f.balance('owner'), 510);
+  assert.equal(after.cashReady,after.revenue);
   closeDataStore(f.dir);
   assert.equal(businessDashboard(f.dir, f.owner, { now: later }).shops[0].revenue, after.revenue);
-  assert.equal(f.balance('owner'), 510 + after.revenue);
+  assert.equal(f.balance('owner'), 510);
+  assert.equal(businessDashboard(f.dir,f.owner,{now:later}).shops[0].cashReady,after.revenue);
   assert.equal(f.count('inventory', 'sold_at IS NOT NULL'), 4);
   assert.equal(f.count('business_stock', 'sold_price = 37'), 4);
 });

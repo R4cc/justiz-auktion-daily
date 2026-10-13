@@ -3,6 +3,7 @@ import { estimatedValueTokens, marketIndexes } from './market.mjs';
 import { inventoryIsLocked } from './resale.mjs';
 import { sealedPaletteInventoryIds } from './palette-auctions.mjs';
 import { pushNotification } from './notifications.mjs';
+import { seizeStoreCash } from './store-cash.mjs';
 
 const hasTable = (db, name) => Boolean(db.prepare("SELECT 1 FROM sqlite_schema WHERE type='table' AND name=?").get(name));
 export function ensureJusticeSchema(db) {
@@ -39,6 +40,7 @@ export function collectFine(db, userId, now) {
   const user = db.prepare('SELECT tokens FROM users WHERE id=?').get(userId);
   let due = row.fine_due, paidCash = Math.min(user.tokens, due);
   db.prepare('UPDATE users SET tokens=tokens-? WHERE id=?').run(paidCash, userId); due -= paidCash;
+  const paidStoreCash=seizeStoreCash(db,userId,due);due-=paidStoreCash;
   const seized = [], hidden = sealedPaletteInventoryIds(db), indexes = marketIndexes(db, now);
   const items = db.prepare('SELECT id,item FROM inventory WHERE user_id=? AND sold_at IS NULL').all(userId)
     .filter(item => !hidden.has(item.id)).map(item => ({...item, value: estimatedValueTokens(JSON.parse(item.item), indexes)})).sort((a,b)=>a.value-b.value||a.id.localeCompare(b.id));
@@ -90,12 +92,12 @@ export function collectFine(db, userId, now) {
   if (due && !remainingItems) {
     jailedUntil = now + jailDuration(row.offences); convertedToSentence = due; due = 0;
   }
-  if (!paidCash && !seized.length && jailedUntil===row.jailed_until) return null;
-  const result = { fine: row.fine_due, paidCash, seized, remainingFine: due, jailedUntil, convertedToSentence, offences: row.offences };
+  if (!paidCash && !paidStoreCash && !seized.length && jailedUntil===row.jailed_until) return null;
+  const result = { fine: row.fine_due, paidCash, ...(paidStoreCash?{paidStoreCash}:{}), seized, remainingFine: due, jailedUntil, convertedToSentence, offences: row.offences };
   db.prepare('UPDATE player_justice SET fine_due=?,jailed_until=?,last_result=? WHERE user_id=?').run(due,jailedUntil,JSON.stringify(result),userId);
   pushNotification(db,userId,{type:'store',sourceKey:`justice:${userId}:${row.offences}:${now}`,titleEn:jailedUntil>now?'Sent to jail':'Fine collection',titleDe:jailedUntil>now?'Haftstrafe':'Bußgeldvollstreckung',
-    bodyEn:`Paid J€ ${paidCash}; the bailiff seized ${seized.length} item(s). ${jailedUntil>now?'Your account is locked until your sentence ends.':due?'Remaining fine will be collected when assets become available.':'The fine is settled.'}`,
-    bodyDe:`J€ ${paidCash} bezahlt; der Gerichtsvollzieher hat ${seized.length} Artikel gepfändet. ${jailedUntil>now?'Dein Konto ist bis zum Ende der Haftstrafe gesperrt.':due?'Der Rest wird bei verfügbarem Vermögen eingezogen.':'Das Bußgeld ist beglichen.'}`,href:'/inventory'},now);
+    bodyEn:`Paid J€ ${paidCash+paidStoreCash}; the bailiff seized ${seized.length} item(s). ${jailedUntil>now?'Your account is locked until your sentence ends.':due?'Remaining fine will be collected when assets become available.':'The fine is settled.'}`,
+    bodyDe:`J€ ${paidCash+paidStoreCash} bezahlt; der Gerichtsvollzieher hat ${seized.length} Artikel gepfändet. ${jailedUntil>now?'Dein Konto ist bis zum Ende der Haftstrafe gesperrt.':due?'Der Rest wird bei verfügbarem Vermögen eingezogen.':'Das Bußgeld ist beglichen.'}`,href:'/inventory'},now);
   return result;
 }
 export function imposeFine(db, userId, fine, now) {

@@ -65,10 +65,11 @@ test('purchases transfer one real item and money atomically, preserve sale histo
   const f = await fixture(t), payload = f.payload(), beforeBuyer = f.balance(f.buyer), beforeOwner = f.balance(f.owner);
   const purchase = buyStoreItem(f.dir, f.buyer, payload, { now });
   assert.equal(f.itemOwner('wine-0'), f.buyer.id);
-  assert.equal(f.balance(f.buyer), beforeBuyer - 120); assert.equal(f.balance(f.owner), beforeOwner + 120);
+  assert.equal(f.balance(f.buyer), beforeBuyer - 120); assert.equal(f.balance(f.owner), beforeOwner);
   assert.equal(f.view().stock.length, 7);
   const dashboard = businessDashboard(f.dir, f.owner, { now }).shops[0];
   assert.equal(dashboard.salesToday, 1); assert.equal(dashboard.revenueToday, 120); assert.equal(dashboard.sales, 1);
+  assert.equal(dashboard.cashReady,120);
   const buyerShop = buyBusiness(f.dir, f.buyer, 'wine', 'popup', { now }).shop;
   stockBusiness(f.dir, f.buyer, buyerShop.id, ['wine-0'], { now });
   assert.deepEqual(buyStoreItem(f.dir, f.buyer, payload, { now }), purchase);
@@ -125,7 +126,8 @@ test('only verified buyers can review; editing replaces their review and tips ha
   assert.throws(() => reviewStore(f.dir, f.buyer, { ...review, comment: 'x'.repeat(241) }, { now }), /invalid_store_review/);
   const tip = { shopId: f.shop.id, amount: 25, requestId: 'store-tip-retry-0001' }, balance = f.balance(f.buyer), seller = f.balance(f.owner);
   tipStore(f.dir, f.buyer, tip, { now }); tipStore(f.dir, f.buyer, tip, { now });
-  assert.equal(f.balance(f.buyer), balance - 25); assert.equal(f.balance(f.owner), seller + 25);
+  assert.equal(f.balance(f.buyer), balance - 25); assert.equal(f.balance(f.owner), seller);
+  assert.equal(businessDashboard(f.dir,f.owner,{now}).shops[0].cashReady,145);
   assert.throws(() => tipStore(f.dir, f.buyer, { ...tip, amount: 10 }, { now }), /request_conflict/);
 });
 

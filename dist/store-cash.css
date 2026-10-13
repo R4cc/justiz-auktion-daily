@@ -1,0 +1,16 @@
+.business-cash { margin:18px 0; }
+.business-cash-button { display:grid;grid-template-columns:40px minmax(0,1fr);align-items:center;gap:14px;width:100%;min-height:84px;padding:15px 18px;border:1px solid #427348;border-radius:12px;background:linear-gradient(125deg,#245741,#397147);color:#fff7d6;text-align:left;cursor:pointer;box-shadow:0 4px 0 #15392a;font-family:inherit;transition:transform .15s,box-shadow .15s; }
+.business-cash-button:hover:not(:disabled) { transform:translateY(-2px);box-shadow:0 6px 0 #15392a; }
+.business-cash-button:active:not(:disabled) { transform:translateY(3px);box-shadow:0 1px 0 #15392a; }
+.business-cash-button:focus-visible { outline:3px solid var(--accent);outline-offset:4px; }
+.business-cash-button:disabled { cursor:default;background:#e8ebdf;border-color:#c3cbb8;color:#526452;box-shadow:0 2px 0 #c3cbb8; }
+.business-cash-button.is-collecting { background:#245741;color:#fff7d6; }
+.business-cash-button>svg { width:40px;height:40px; }
+.business-cash-copy { display:flex;flex-direction:column;gap:4px;min-width:0; }
+.business-cash-copy>span { font-size:.8rem;font-weight:700;overflow-wrap:anywhere; }
+.business-cash-copy strong { font:600 1.3rem 'DM Mono',monospace;overflow-wrap:anywhere; }
+.business-cash-status { display:block;margin-top:10px;min-height:1.5em;font-size:.7rem;line-height:1.6;color:var(--muted);overflow-wrap:anywhere; }
+.business-cash-celebration { position:fixed;z-index:100;pointer-events:none;width:0;height:0; }
+.business-cash-coin { position:absolute;display:grid;place-items:center;width:28px;height:28px;border:2px solid #b77c16;border-radius:50%;background:#ffe299;color:#795311;font:700 18px 'DM Mono',monospace;box-shadow:inset 0 0 0 2px #fff1c1; }
+.business-cash-reward { position:absolute;width:max-content;max-width:min(80vw,360px);text-align:center;overflow-wrap:anywhere;font:700 1.5rem 'DM Mono',monospace;color:#23553d;text-shadow:0 2px 0 #fffaf0,-1px -1px 0 #fffaf0; }
+@media(prefers-reduced-motion:reduce) { .business-cash-button { transition:none; }.business-cash-button:hover:not(:disabled),.business-cash-button:active:not(:disabled) { transform:none; } }

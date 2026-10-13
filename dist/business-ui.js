@@ -1,6 +1,66 @@
 window.businessUi = (() => {
   const esc = accountEscape;
   let dashboard = null, timer = null, request = 0, busy = false;
+  let collectionJob = null;
+  const collectionRequests = new Map(), cashMessages = new Map();
+  function pendingCollection(shopId) {
+    if(!account)return null;
+    const key=`jg:store-cash:${account.id}:${shopId}`;
+    try{return collectionRequests.get(key)||localStorage.getItem(key);}catch{return collectionRequests.get(key)||null;}
+  }
+  function collectCashMarkup(shop) {
+    const collecting=collectionJob?.shopId===shop.id,amount=shop.cashReady||0,pending=pendingCollection(shop.id);
+    const message=cashMessages.get(shop.id);
+    return `<div class="business-cash"><button type="button" class="business-cash-button${collecting?' is-collecting':''}" data-business="collect-cash" data-shop="${esc(shop.id)}" ${busy||(!amount&&!pending)?'disabled':''} aria-label="${esc(t('Collect cash','Kasse einsammeln'))}: ${esc(shop.name||typeName(shop.type))} · ${esc(justizEuro(amount))}"><svg viewBox="0 0 48 48" fill="none" aria-hidden="true"><path d="m18 8 6 3 6-3-4 10c10 5 14 12 13 18-1 6-7 8-15 8S10 42 9 36c-1-6 3-13 13-18L18 8Z" fill="currentColor" opacity=".2"/><path d="m18 8 6 3 6-3-4 10c10 5 14 12 13 18-1 6-7 8-15 8S10 42 9 36c-1-6 3-13 13-18L18 8Zm1 11h10" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"/><text x="24" y="36" text-anchor="middle" font-size="16" font-weight="700" fill="currentColor">€</text></svg><span class="business-cash-copy"><span>${collecting?t('Collecting…','Wird eingesammelt …'):pending?t('Retry collection','Erneut einsammeln'):amount?t('Collect cash','Kasse einsammeln'):t('Till empty','Kasse leer')}</span><strong>${justizEuro(amount)}</strong></span></button><small class="business-cash-status" role="status" aria-live="polite">${message?t(`Collected ${justizEuro(message)}!`,`${justizEuro(message)} eingesammelt!`):t('Earnings stay here until you collect.','Einnahmen bleiben hier, bis du sie einsammelst.')}</small></div>`;
+  }
+  async function cashCelebration(button,amount,job) {
+    if(!amount||!button?.isConnected||window.matchMedia('(prefers-reduced-motion: reduce)').matches)return;
+    const origin=button.getBoundingClientRect(),target=accountContent.querySelector('.business-hero-account strong')?.getBoundingClientRect();
+    const layer=document.createElement('div');layer.className='business-cash-celebration';layer.setAttribute('aria-hidden','true');job.layer=layer;
+    const x=origin.left+origin.width/2,y=origin.top+origin.height/2;
+    layer.style.left=`${x}px`;layer.style.top=`${y}px`;
+    layer.innerHTML=`<span class="business-cash-reward">+${esc(justizEuro(amount))}</span>${Array.from({length:12},()=>'<span class="business-cash-coin">€</span>').join('')}`;
+    document.body.append(layer);
+    const visibleTarget=target&&target.top>=0&&target.bottom<=innerHeight;
+    const dx=visibleTarget?target.left+target.width/2-x:0,dy=visibleTarget?target.top+target.height/2-y:-100;
+    job.animations=[layer.querySelector('.business-cash-reward').animate([{opacity:0,transform:'translate(-50%,0) scale(.7)'},{opacity:1,offset:.2,transform:'translate(-50%,-30px) scale(1.1)'},{opacity:0,transform:'translate(-50%,-100px) scale(1)'}],{duration:1250,easing:'ease-out'})];
+    for(const [i,coin] of [...layer.querySelectorAll('.business-cash-coin')].entries()){
+      const spread=(i-5.5)*12;
+      job.animations.push(coin.animate([{opacity:0,transform:'translate(-50%,-50%) scale(.4)'},{opacity:1,offset:.3,transform:`translate(${spread}px,${-55-i%3*12}px) rotate(${i*40}deg) scale(1)`},{opacity:0,transform:`translate(${dx}px,${dy}px) rotate(${i*90+360}deg) scale(.3)`}],{duration:900+i*25,delay:i*12,easing:'cubic-bezier(.2,.7,.3,1)'}));
+    }
+    await Promise.all(job.animations.map(animation=>animation.finished.catch(()=>{})));layer.remove();
+  }
+  async function collectCash(button) {
+    const shop=ownedShop(button.dataset.shop);if(busy||!account||!shop||(!shop.cashReady&&!pendingCollection(shop.id)))return;
+    const job={shopId:shop.id,owner:account.id,visit:accountVisit,animations:[]};collectionJob=job;busy=true;
+    const key=`jg:store-cash:${job.owner}:${shop.id}`;let requestId=collectionRequests.get(key);
+    try{requestId=requestId||localStorage.getItem(key);}catch{}
+    requestId=requestId||crypto.randomUUID();collectionRequests.set(key,requestId);try{localStorage.setItem(key,requestId);}catch{}
+    render();
+    const current=()=>collectionJob===job&&job.owner===account?.id&&job.visit===accountVisit;
+    try{
+      const result=await accountApi('businesses/collect',{shopId:shop.id,requestId});
+      collectionRequests.delete(key);try{localStorage.removeItem(key);}catch{}
+      if(!current())return;
+      updateAccount(result.user);cashMessages.set(shop.id,result.collection.amount);
+      const localShop=ownedShop(shop.id);if(localShop)localShop.cashReady=result.cashReady;
+      const control=accountContent.querySelector(`[data-business="collect-cash"][data-shop="${CSS.escape(shop.id)}"]`);
+      await cashCelebration(control,result.collection.amount,job);
+      // Payment is confirmed even if the follow-up statistics refresh fails.
+      if(current())await refresh(job.visit,false).catch(()=>{});
+    }catch(error){
+      if(error.code){collectionRequests.delete(key);try{localStorage.removeItem(key);}catch{}}
+      if(current())showToast(error.message);
+    }finally{
+      job.layer?.remove();
+      if(current()){
+        collectionJob=null;busy=false;render();
+        // Empty tills remain focusable through their status after collection.
+        const status=accountContent.querySelector(`[data-business="collect-cash"][data-shop="${CSS.escape(shop.id)}"]`)?.closest('.business-cash')?.querySelector('.business-cash-status');
+        if(status){status.tabIndex=-1;status.focus({preventScroll:true});}
+      }
+    }
+  }
   let restockReturnFocus = null, restockShopId = null, restockGroups = [], restockSignature = null;
   let editorShopId = null, editorReturnFocus = null, quickJob = null;
   const quickDialog = document.createElement('dialog');
@@ -114,6 +174,8 @@ window.businessUi = (() => {
     if (repaint && !busy && !restockDialog.open && !document.activeElement?.closest('[data-business-margin-form], [data-store-profile]')) render();
   }
   function stop() {
+    if(collectionJob){collectionJob.animations.forEach(animation=>animation.cancel());collectionJob.layer?.remove();collectionJob=null;busy=false;}
+    cashMessages.clear();
     if (quickJob) { quickJob.phase = 'cancelled'; cancelQuickRestock(false); }
     clearInterval(timer); timer = null; request++; dashboard = null;
     editorShopId = null; editorReturnFocus = null; editorDialog.close();
@@ -132,7 +194,7 @@ window.businessUi = (() => {
   }
   function shopCard(shop) {
     const filled = Math.min(100, Math.round(shop.stock.length / shop.capacity * 100));
-    return `<article class="business-shop business-type-${esc(shop.type)}"><div class="business-card-art"><div class="business-card-badges"><span>${esc(sizeName(shop.size))}</span><span class="business-card-state${!shop.stock.length ? ' is-empty' : ''}"><i aria-hidden="true"></i>${shop.stock.length ? t('Open for business', 'Laden geöffnet') : t('Needs stock', 'Waren fehlen')}</span></div>${storefrontArt(shop.type)}</div><div class="business-card-body"><p class="business-card-category">${esc(typeName(shop.type))}</p>${shop.location ? `<a class="business-card-address" href="/town?plot=${encodeURIComponent(shop.location.plotId)}" data-page>${shop.location.districtNumber}. ${esc(shop.location.districtName)} · ${esc(shop.location.streetName)} ↗</a>` : ''}<h2>${esc(shop.name || typeName(shop.type))}</h2>${shop.motto?`<p class="business-card-motto">${esc(shop.motto)}</p>`:''}${window.storeReputationUi?.meter(shop)||''}<dl class="business-card-stats"><div><dt>${t('Revenue today', 'Umsatz heute')}</dt><dd>${justizEuro(shop.revenueToday)}</dd></div><div><dt>${t('Sales today', 'Verkäufe heute')}</dt><dd>${number(shop.salesToday)}</dd></div></dl><div class="business-card-stock"><div><span>${t('On the shelves', 'In den Regalen')}</span><strong>${number(shop.stock.length)} <span>/ ${number(shop.capacity)}</span></strong></div><progress value="${shop.stock.length}" max="${shop.capacity}" aria-label="${esc(t('Shelf capacity used', 'Belegte Regalplätze'))}">${filled}%</progress></div><div class="business-card-details"><span>${number(shop.profitMargin)}% ${t('markup', 'Aufschlag')}</span>${shop.gooseGuard ? `<span>${t('Goose protected', 'Wachgans im Dienst')}</span>` : `<span>${number(shop.visitors)} ${t('visitors', 'Besucher')}</span>`}</div>${quickRestockMarkup(shop.id)}<div class="business-card-actions"><button class="business-edit-button" type="button" data-business="open-edit" data-shop="${esc(shop.id)}" aria-label="${esc(t('Edit store', 'Laden bearbeiten'))}: ${esc(shop.name || typeName(shop.type))}">${editIcon()}${t('Edit store', 'Laden bearbeiten')}</button><a href="/stores?shop=${encodeURIComponent(shop.id)}" data-page>${t('Open store', 'Laden öffnen')} <span aria-hidden="true">→</span></a></div></div></article>`;
+    return `<article class="business-shop business-type-${esc(shop.type)}"><div class="business-card-art"><div class="business-card-badges"><span>${esc(sizeName(shop.size))}</span><span class="business-card-state${!shop.stock.length ? ' is-empty' : ''}"><i aria-hidden="true"></i>${shop.stock.length ? t('Open for business', 'Laden geöffnet') : t('Needs stock', 'Waren fehlen')}</span></div>${storefrontArt(shop.type)}</div><div class="business-card-body"><p class="business-card-category">${esc(typeName(shop.type))}</p>${shop.location ? `<a class="business-card-address" href="/town?plot=${encodeURIComponent(shop.location.plotId)}" data-page>${shop.location.districtNumber}. ${esc(shop.location.districtName)} · ${esc(shop.location.streetName)} ↗</a>` : ''}<h2>${esc(shop.name || typeName(shop.type))}</h2>${shop.motto?`<p class="business-card-motto">${esc(shop.motto)}</p>`:''}${window.storeReputationUi?.meter(shop)||''}<dl class="business-card-stats"><div><dt>${t('Revenue today', 'Umsatz heute')}</dt><dd>${justizEuro(shop.revenueToday)}</dd></div><div><dt>${t('Sales today', 'Verkäufe heute')}</dt><dd>${number(shop.salesToday)}</dd></div></dl><div class="business-card-stock"><div><span>${t('On the shelves', 'In den Regalen')}</span><strong>${number(shop.stock.length)} <span>/ ${number(shop.capacity)}</span></strong></div><progress value="${shop.stock.length}" max="${shop.capacity}" aria-label="${esc(t('Shelf capacity used', 'Belegte Regalplätze'))}">${filled}%</progress></div><div class="business-card-details"><span>${number(shop.profitMargin)}% ${t('markup', 'Aufschlag')}</span>${shop.gooseGuard ? `<span>${t('Goose protected', 'Wachgans im Dienst')}</span>` : `<span>${number(shop.visitors)} ${t('visitors', 'Besucher')}</span>`}</div>${collectCashMarkup(shop)}${quickRestockMarkup(shop.id)}<div class="business-card-actions"><button class="business-edit-button" type="button" data-business="open-edit" data-shop="${esc(shop.id)}" aria-label="${esc(t('Edit store', 'Laden bearbeiten'))}: ${esc(shop.name || typeName(shop.type))}">${editIcon()}${t('Edit store', 'Laden bearbeiten')}</button><a href="/stores?shop=${encodeURIComponent(shop.id)}" data-page>${t('Open store', 'Laden öffnen')} <span aria-hidden="true">→</span></a></div></div></article>`;
   }
   function shopsView() {
     if (!account) return `<section class="business-guest"><h1 tabindex="-1">${t('Your stores', 'Deine Läden')}</h1><a class="primary-button" href="/login" data-page>${t('Log in to get started', 'Anmelden und loslegen')}</a></section>`;
@@ -292,6 +354,7 @@ window.businessUi = (() => {
     const button = event.target.closest('[data-business]'); if (!button || !businessSurface()) return;
     if (button.dataset.business === 'cancel-quick') { cancelQuickRestock(); return; }
     if (button.dataset.business === 'quick-restock') { await quickRestock(button); return; }
+    if (button.dataset.business === 'collect-cash') { await collectCash(button); return; }
     if (button.dataset.business === 'open-edit') { openEditor(button); return; }
     if (button.dataset.business === 'close-edit') { editorDialog.close(); return; }
     if (button.dataset.business === 'open-buy') { openTownMap(button); return; }

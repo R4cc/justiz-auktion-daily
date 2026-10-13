@@ -76,6 +76,14 @@ test('public storefronts and player interactions use feature flags, sessions, CS
   const winnerCookie = buyer.status === 200 ? buyerCookie : rivalCookie, winningPayload = buyer.status === 200 ? payload : { ...payload, requestId: 'store-http-rival-000001' };
   const replay = await post(base, 'stores/buy', winningPayload, winnerCookie);
   assert.equal(replay.status, 200); assert.equal((await view(winnerCookie)).stock.length, 2);
+  const collect={shopId:shop.id,requestId:'http-store-collect-0001',amount:999999};
+  assert.equal((await post(base,'businesses/collect',collect)).status,401);
+  assert.equal((await fetch(base+'/api/account/businesses/collect',{method:'POST',headers:{cookie:ownerCookie,'content-type':'application/json'},body:JSON.stringify(collect)})).status,403);
+  assert.equal((await post(base,'businesses/collect',collect,winnerCookie)).status,404);
+  const ownerBalance=accounts.db(db=>db.prepare('SELECT tokens FROM users WHERE id=?').get(owner.id).tokens);
+  const collected=await post(base,'businesses/collect',collect,ownerCookie);assert.equal(collected.status,200);assert.equal((await collected.json()).collection.amount,120);
+  assert.equal((await (await post(base,'businesses/collect',collect,ownerCookie)).json()).collection.amount,120);
+  assert.equal(accounts.db(db=>db.prepare('SELECT tokens FROM users WHERE id=?').get(owner.id).tokens),ownerBalance+120);
   assert.equal((await post(base, 'stores/review', { shopId: shop.id, stars: 5, comment: 'Great shop!' }, winnerCookie)).status, 200);
   assert.equal((await view(winnerCookie)).reviewCount, 1);
   assert.equal((await post(base, 'stores/visit', { shopId: shop.id }, winnerCookie)).status, 200);
@@ -119,7 +127,7 @@ test('public storefronts and player interactions use feature flags, sessions, CS
 test('disabled businesses hide authenticated store interactions', async t => {
   const { base } = await fixture(t, { ...env, FEATURE_BUSINESSES: 'false' });
   const cookie = (await post(base, 'login', { username: 'admin', password })).headers.get('set-cookie');
-  for (const route of ['stores/buy','stores/heist/start','stores/review','stores/visit','businesses/profile']) assert.equal((await post(base, route, {}, cookie)).status, 404);
+  for (const route of ['stores/buy','stores/heist/start','stores/review','stores/visit','businesses/profile','businesses/collect']) assert.equal((await post(base, route, {}, cookie)).status, 404);
   assert.equal((await fetch(`${base}/api/stores`)).status, 404);
 });
 
