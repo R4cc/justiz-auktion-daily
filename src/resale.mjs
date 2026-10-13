@@ -162,7 +162,7 @@ function serializeListing(db, row, { bids = false, now = Date.now(), indexes = m
     item: { title: item.title, ...(item.auctionId != null ? { auctionId: item.auctionId } : {}),
       ...(item.titleDe ? { titleDe: item.titleDe } : {}), image: item.image || null, price: item.price,
       ...(item.kind ? { kind: item.kind } : {}),
-      ...(item.kind === 'review-pack' ? { reviewCount: item.reviewCount, configurableStars: true, title: `${item.reviewCount} configurable reviews`, titleDe: `${item.reviewCount} frei wählbare Bewertungen` } : {}),
+      ...(item.kind === 'review-pack' ? { reviewCount: item.reviewCount, configurableStars: true, title: `${item.reviewCount} Botted Reviews`, titleDe: `${item.reviewCount} Bot-Bewertungen` } : {}),
       ...(item.caseTier ? { caseTier: item.caseTier } : {}),
       ...(item.caseType ? { caseType: item.caseType, caseBadge: item.caseBadge } : {}),
       rarity: item.rarity, businessType: businessTypeForItem(item), marketCategory: marketCategoryForItem(item),

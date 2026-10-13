@@ -39,7 +39,7 @@ export function supplyReviewAuctions(dataDir, { now = Date.now() } = {}) {
       const reviewCount = REVIEW_PACK_SIZES[Math.floor(unit(`review-size:${startsAt}`) * REVIEW_PACK_SIZES.length)];
       const price = reviewCount * REVIEW_PRICE_PER_REVIEW;
       const item = { id: inventoryId, kind: 'review-pack', reviewCount, configurableStars: true,
-        title: `${reviewCount} configurable reviews`, titleDe: `${reviewCount} frei wählbare Bewertungen`,
+        title: `${reviewCount} Botted Reviews`, titleDe: `${reviewCount} Bot-Bewertungen`,
         price, sellValue: 0, rarity: 'uncommon', createdAt: startsAt };
       db.prepare('INSERT INTO inventory (id,user_id,item,created_at) VALUES (?,?,?,?)')
         .run(inventoryId, REVIEW_SUPPLIER_ID, JSON.stringify(item), startsAt);
