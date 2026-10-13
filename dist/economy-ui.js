@@ -156,7 +156,13 @@ window.economyUi = (() => {
     if (repaint && !busy) {
       const focus = document.activeElement;
       const focusKey = focus?.dataset?.id, focusAction = focus?.dataset?.economy;
+      const houseFilter = focus?.dataset?.houseFilter, caret = houseFilter === 'search' ? focus.selectionStart : null;
       render();
+      if (!dialog.open && houseFilter) {
+        const control = accountContent.querySelector(`[data-house-filter="${houseFilter}"]`);
+        control?.focus({ preventScroll: true });
+        if (caret !== null) control?.setSelectionRange(caret, caret);
+      }
       if (!dialog.open && focusAction) [...accountContent.querySelectorAll('[data-economy]')]
         .find(el => el.dataset.economy === focusAction && el.dataset.id === focusKey)?.focus({ preventScroll: true });
       // Refresh visible bid facts without destroying an in-progress bid input.
@@ -247,46 +253,110 @@ window.economyUi = (() => {
   // Disclosure for the palette auction page: finished lots (lost, expired,
   // already revealed) leave the live board and stay reachable here.
   const archiveToggle = count => `<button class="text-button archive-toggle" type="button" data-economy="archive" aria-expanded="${archiveOpen}">${archiveOpen ? t('Hide archived auctions', 'Archivierte Auktionen ausblenden') : t('Archived auctions', 'Archivierte Auktionen')} (${count})</button>`;
-  function renderHouse() {
-    const unopened = account && data.unopenedOwner === account.id ? data.unopened || [] : [];
-    const query = new URLSearchParams(location.search), filter = query.get('type') || 'all', stockType = query.get('stock'), palette = query.get('palette'), playersOnly = query.get('seller') === 'players';
-    const palettes = (data.palettes || []).filter(lot => (!palette || lot.paletteId === palette) && (!stockType || lot.stockOffer?.category===stockType));
-    const accepts = lot => !stockType || lot.item.businessType === stockType || lot.item.businessCategory === stockType;
-    const types = [['all',t('All lots','Alle Lose')],['reviews',t('Review packs','Bewertungspakete')],['items',t('Individual items','Einzelne Gegenstände')],['stock',t('Stock bundles','Warenpakete')],['mystery',t('Mystery pallets','Überraschungspaletten')]];
-    const resaleType = lot => lot.item.kind === 'review-pack' ? 'reviews' : lot.item.kind === 'case' ? 'mystery' : lot.quantity > 1 ? 'stock' : 'items';
-    const matches = lot => accepts(lot) && (filter === 'all' || filter === resaleType(lot));
-    const cards = rows => rows.length ? `<div class="economy-grid">${rows.join('')}</div>` : `<div class="collection-empty"><p>${t('No matching lots.', 'Keine passenden Lose.')}</p></div>`;
-    accountContent.innerHTML = `<section class="house-header" aria-labelledby="house-title">
-      <div class="house-heading"><div><h1 id="house-title" tabindex="-1">${t('Auction House', 'Auktionshaus')}</h1></div><a class="house-inventory-link" href="/inventory" data-page>${t('Inventory', 'Inventar')} <span aria-hidden="true">→</span></a></div>
-      ${window.auctionWinningsUi?.markup(unopened)||''}
-      <nav class="auction-house-shortcuts${economyFlags.market ? '' : ' is-single'}" aria-label="${t('Explore trading', 'Handel entdecken')}">
-        <a class="house-launch-card house-case-store-card" href="/shop" data-page>
-          <span class="house-card-copy"><strong>${t('Case Shop', 'Kisten-Shop')}</strong><span class="house-card-action" aria-hidden="true">→</span></span>
-          <span class="house-card-art house-case-art" aria-hidden="true"><span class="house-spark house-spark-one">✦</span><span class="house-spark house-spark-two">✧</span>${caseArtwork({ caseType: 'collectors-cache', caseBadge: '?' })}<span class="house-rarity-dots"><i></i><i></i><i></i><i></i><i></i></span></span>
-        </a>
-        ${economyFlags.market ? `<a class="house-launch-card house-market-card" href="/market" data-page>
-          <span class="house-card-copy"><strong>${t('Market Trends', 'Markttrends')}</strong><span class="house-card-action" aria-hidden="true">↗</span></span>
-          <span class="house-card-art house-market-art" aria-hidden="true"><span class="house-market-badge">J€</span><svg viewBox="0 0 200 160" fill="none"><path class="house-chart-grid" d="M16 34h170M16 66h170M16 98h170M16 130h170M36 24v116m48-116v116m48-116v116m48-116v116"/><path class="house-chart-area" d="M16 118 48 97 76 108 106 69 136 80 180 32v108H16Z"/><path class="house-chart-line" d="m16 118 32-21 28 11 30-39 30 11 44-48m-26 0h26v26"/><circle class="house-chart-point" cx="106" cy="69" r="5"/></svg></span>
-        </a>` : ''}
-      </nav>
-    </section>` + economyOverviewMarkup() + `
-      <nav class="economy-tabs marketplace-tabs" aria-label="${t('Auction House sections','Auktionshaus-Bereiche')}">${[['browse',t('Browse','Entdecken')],['bids',t('My bids','Meine Gebote')],['mine',t('My listings','Meine Angebote')]].map(([id,label])=>`<button data-economy="tab" data-id="${id}" aria-pressed="${tab===id}">${label}</button>`).join('')}</nav>`;
-    if (tab !== 'browse' && !account) { accountContent.innerHTML += loginNotice(t('auctions','Auktionen')); return; }
-    if (tab === 'mine') {
-      accountContent.innerHTML += `<div class="marketplace-toolbar"><h2>${t('My listings','Meine Angebote')}</h2><a href="/inventory" data-page>${t('List a find','Fund anbieten')} →</a></div>` + cards((data.mine || []).map(lot=>lotCard(lot,false,lot.status==='active'?'mine-live':'mine-done')));
-    } else if (tab === 'bids') {
-      accountContent.innerHTML += `<h2>${t('My bids and winnings','Meine Gebote und Gewinne')}</h2>` + cards([
-        ...(data.paletteMine || []).filter(lot=>!unopened.some(reward=>reward.kind==='palette'&&reward.id===lot.id)).map(lot=>lotCard(lot,true)),
-        ...(data.bids || []).map(lot=>lotCard(lot,false,'bid')),
-        ...(data.archivedBids || []).filter(lot=>!unopened.some(reward=>reward.kind==='case'&&reward.auctionId===lot.id)).map(lot=>lotCard(lot,false,'bid-done'))
-      ]);
-    } else {
-      accountContent.innerHTML += `<nav class="economy-tabs lot-filters" aria-label="${t('Lot types','Losarten')}">${types.map(([id,label])=>`<button data-economy="lot-type" data-id="${id}" aria-pressed="${filter===id}">${label}</button>`).join('')}</nav><nav class="economy-tabs lot-filters" aria-label="${t('Listing sellers','Anbieter')}">${[['all',t('All sellers','Alle Anbieter')],['players',t('Other player listings only','Nur Angebote anderer Spieler')]].map(([id,label])=>`<button data-economy="lot-seller" data-id="${id}" aria-pressed="${playersOnly===(id==='players')}">${label}</button>`).join('')}</nav>${stockType?`<p>${t('Stock for','Waren für')}: ${esc(categoryName(({cars:'vehicles',toys:'collectibles'})[stockType]||stockType))} <a href="/auction-house" data-page>${t('Clear filter','Filter entfernen')}</a></p>`:''}` + cards([
-        ...(data.lots || []).filter(lot=>lot.sellerId!==account?.id && (!playersOnly || lot.sellerType === 'player') && matches(lot)).map(lot=>lotCard(lot,false,'other')),
-        ...((filter==='all'||filter==='mystery'||filter==='stock')&&!playersOnly ? palettes.map(lot=>lotCard(lot,true)) : [])
-      ]);
-    }
+  function houseType(lot, primary) {
+    return primary ? lot.stockOffer ? 'stock' : 'mystery'
+      : lot.item?.kind === 'review-pack' ? 'reviews' : lot.item?.kind === 'case' ? 'cases'
+        : lot.quantity > 1 ? 'stock' : 'items';
   }
+  function houseTypeLabel(type) {
+    return ({ items: t('Items', 'Artikel'), stock: t('Stock bundles', 'Warenpakete'),
+      mystery: t('Mystery palettes', 'Mystery-Paletten'), cases: t('Sealed cases', 'Versiegelte Kisten'),
+      reviews: t('Review packs', 'Bewertungspakete') })[type] || type;
+  }
+  function housePrice({ lot, primary }) {
+    return lot.currentBid ?? (primary ? lot.reserve : lot.startPrice) ?? 0;
+  }
+  function sortHouseEntries(entries, sort) {
+    return [...entries].sort((a, b) => {
+      let order = 0;
+      if (sort === 'price-asc' || sort === 'price-desc')
+        order = (housePrice(a) - housePrice(b)) * (sort === 'price-desc' ? -1 : 1);
+      else if (sort === 'type-asc' || sort === 'type-desc')
+        order = houseTypeLabel(houseType(a.lot, a.primary)).localeCompare(houseTypeLabel(houseType(b.lot, b.primary))) * (sort === 'type-desc' ? -1 : 1);
+      const endOrder = a.lot.status === 'active' && b.lot.status === 'active'
+        ? a.lot.endsAt - b.lot.endsAt : a.lot.status !== b.lot.status
+          ? a.lot.status === 'active' ? -1 : b.lot.status === 'active' ? 1 : b.lot.endsAt - a.lot.endsAt
+          : b.lot.endsAt - a.lot.endsAt;
+      return order || endOrder || `${a.primary ? 'primary' : 'resale'}:${a.lot.id}`.localeCompare(`${b.primary ? 'primary' : 'resale'}:${b.lot.id}`);
+    });
+  }
+  function houseCard({ lot, primary, view }) {
+    const type = houseType(lot, primary), price = housePrice({ lot, primary });
+    const title = primary ? name(lot) : `${lot.quantity > 1 ? `${number(lot.quantity)}× ` : ''}${t(lot.item.title, lot.item.titleDe || lot.item.title)}`;
+    const active = lot.status === 'active' && lot.endsAt > Date.now(), mine = view === 'mine-live' || view === 'mine-done';
+    const participated = view === 'bid' || view === 'bid-done';
+    const state = active && participated ? lot.leading ? t('Winning', 'Du führst') : t('Outbid', 'Überboten')
+      : !active ? lot.status === 'cancelled' ? t('Cancelled', 'Storniert')
+        : participated ? lot.won ? t('Won', 'Gewonnen') : t('Lost', 'Verloren')
+          : lot.winnerId ? t('Sold', 'Verkauft') : t('Unsold', 'Nicht verkauft')
+        : mine ? t('Your listing', 'Dein Angebot') : lot.requiredLevel > 1 ? t(`Level ${lot.requiredLevel}`, `Level ${lot.requiredLevel}`) : '';
+    const stateClass = active && participated ? lot.leading ? ' is-leading' : ' is-outbid' : !active ? ' is-ended' : mine ? ' is-owned' : '';
+    const art = primary ? paletteArtwork(lot) : lot.item.kind === 'review-pack' ? window.storeReputationUi.packArt(lot.item)
+      : lot.item.kind === 'case' ? stockLotArtwork(lot) : lot.item.image ? `<img src="${esc(lot.item.image)}" alt="" loading="lazy">` : stockLotArtwork(lot) || '<span aria-hidden="true">◇</span>';
+    const cancellable = mine && active && !lot.bidCount;
+    return `<article class="house-lot${stateClass}" data-economy="${primary ? 'primary' : 'resale'}" data-id="${esc(lot.id)}" data-house-price="${price}" data-house-type="${type}" role="button" tabindex="0" aria-label="${esc(`${t('View auction', 'Auktion ansehen')}: ${title}${state ? ` · ${state}` : ''}`)}">
+      <div class="house-lot-media">${art}<span class="house-lot-type">${houseTypeLabel(type)}</span>${state ? `<span class="house-lot-state">${state}</span>` : ''}</div>
+      <div class="house-lot-body"><h3>${esc(title)}</h3><div class="house-lot-price"><strong>${justizEuro(price)}</strong><span>${lot.currentBid == null ? t('Starting bid', 'Startgebot') : !active ? t('Final bid', 'Letztes Gebot') : t('Current bid', 'Aktuelles Gebot')}</span></div>
+      <div class="house-lot-meta">${active ? countdown(lot.endsAt) : `<time datetime="${new Date(lot.endsAt).toISOString()}">${new Date(lot.endsAt).toLocaleDateString(uiLocale())}</time>`}<span>${number(lot.bidCount)} ${lot.bidCount === 1 ? t('bid', 'Gebot') : t('bids', 'Gebote')}</span></div>
+      ${participated ? `<div class="house-lot-maximum"><span>${t('Your maximum', 'Dein Höchstgebot')}</span><strong>${justizEuro(lot.highestBid)}</strong></div>` : ''}
+      <div class="house-lot-footer">${cancellable ? `<button class="text-button" type="button" data-economy="cancel" data-id="${esc(lot.id)}">${t('Cancel listing', 'Angebot stornieren')}</button>` : ''}<span aria-hidden="true">↗</span></div></div></article>`;
+  }
+  function renderHouse() {
+    const query = new URLSearchParams(location.search);
+    const types = ['all', 'items', 'stock', 'mystery', 'cases', 'reviews'];
+    const sorts = ['ends', 'price-asc', 'price-desc', 'type-asc', 'type-desc'];
+    const type = types.includes(query.get('type')) ? query.get('type') : 'all';
+    const sort = sorts.includes(query.get('sort')) ? query.get('sort') : 'ends';
+    const seller = ['players', 'npc'].includes(query.get('seller')) ? query.get('seller') : 'all';
+    const search = (query.get('search') || '').slice(0, 100), stock = query.get('stock'), palette = query.get('palette');
+    const view = ['mine', 'bids'].includes(tab) ? tab : 'browse';
+    const unopened = account && data.unopenedOwner === account.id ? data.unopened || [] : [];
+    const key = entry => `${entry.primary ? 'primary' : 'resale'}:${entry.lot.id}`;
+    const entries = (rows, primary, view) => (rows || []).map(lot => ({ lot, primary, view }));
+    const deduplicate = rows => [...new Map(rows.map(entry => [key(entry), entry])).values()];
+    const live = lot => lot.status === 'active' && lot.endsAt > Date.now();
+    const pinned = account ? sortHouseEntries(deduplicate([
+      ...entries((data.paletteMine || []).filter(live), true, 'bid'),
+      ...entries((data.bids || []).filter(live), false, 'bid')
+    ]), sort) : [];
+    const pinnedKeys = new Set(pinned.map(key));
+    let rows = view === 'mine' ? entries(data.mine, false, 'mine')
+      : view === 'bids' ? [
+        ...entries((data.paletteMine || []).filter(lot => !live(lot) && !unopened.some(reward => reward.kind === 'palette' && reward.id === lot.id)), true, 'bid-done'),
+        ...entries((data.archivedBids || []).filter(lot => !unopened.some(reward => reward.kind === 'case' && reward.auctionId === lot.id)), false, 'bid-done')
+      ] : [
+        ...entries((data.lots || []).filter(lot => live(lot) && lot.sellerId !== account?.id), false, 'other'),
+        ...entries((data.palettes || []).filter(live), true, 'other')
+      ];
+    if (view === 'mine') rows = rows.map(entry => ({ ...entry, view: live(entry.lot) ? 'mine-live' : 'mine-done' }));
+    rows = sortHouseEntries(deduplicate(rows).filter(entry => {
+      const lot = entry.lot;
+      if (pinnedKeys.has(key(entry))) return false;
+      if (type !== 'all' && houseType(lot, entry.primary) !== type) return false;
+      if (view === 'browse' && seller !== 'all' && (entry.primary ? seller === 'players' : lot.sellerType !== (seller === 'players' ? 'player' : 'npc'))) return false;
+      if (stock && (entry.primary ? lot.stockOffer?.category !== stock : lot.item.businessType !== stock && lot.item.businessCategory !== stock)) return false;
+      if (palette && (!entry.primary || lot.paletteId !== palette)) return false;
+      const title = entry.primary ? name(lot) : t(lot.item.title, lot.item.titleDe || lot.item.title);
+      return !search.trim() || title.toLocaleLowerCase().includes(search.trim().toLocaleLowerCase());
+    }), sort);
+    const grid = rows => `<div class="house-grid">${rows.map(houseCard).join('')}</div>`;
+    const options = (items, selected) => items.map(([id, label]) => `<option value="${id}" ${selected === id ? 'selected' : ''}>${label}</option>`).join('');
+    const filtered = type !== 'all' || seller !== 'all' || search || stock || palette || sort !== 'ends';
+    accountContent.innerHTML = `<div class="auction-house"><section class="house-header" aria-labelledby="house-title"><div class="house-heading"><h1 id="house-title" tabindex="-1">${t('Auction House', 'Auktionshaus')}</h1>${account ? `<div class="house-wallet"><span>${t('Available', 'Verfügbar')}</span><strong>${justizEuro(account.tokens)}</strong></div>` : ''}</div>
+      ${pinned.length ? `<section class="house-active-bids" aria-labelledby="house-active-title"><div class="house-section-heading"><h2 id="house-active-title">${t('Active bids', 'Aktive Gebote')}</h2><span>${number(pinned.length)}</span></div>${grid(pinned)}</section>` : ''}
+      ${window.auctionWinningsUi?.markup(unopened) || ''}
+      <nav class="auction-house-shortcuts" aria-label="${t('Trading pages', 'Handelsseiten')}"><a href="/shop" data-page>${t('Case Shop', 'Kisten-Shop')} ↗</a>${economyFlags.market ? `<a href="/market" data-page>${t('Market Trends', 'Markttrends')} ↗</a>` : ''}<a href="/inventory" data-page>${t('Inventory', 'Inventar')} ↗</a></nav></section>
+      <form class="house-filters" role="search" aria-label="${t('Auction filters', 'Auktionsfilter')}">
+        <label>${t('View', 'Ansicht')}<select data-house-filter="view">${options([['browse', t('Live auctions', 'Laufende Auktionen')], ['mine', t('My listings', 'Meine Angebote')], ['bids', t('Bid history', 'Gebotsverlauf')]], view)}</select></label>
+        <label>${t('Type', 'Art')}<select data-house-filter="type">${options(types.map(id => [id, id === 'all' ? t('All types', 'Alle Arten') : houseTypeLabel(id)]), type)}</select></label>
+        <label>${t('Seller', 'Anbieter')}<select data-house-filter="seller" ${view !== 'browse' ? 'disabled' : ''}>${options([['all', t('All sellers', 'Alle Anbieter')], ['players', t('Players', 'Spieler')], ['npc', t('NPCs', 'NPCs')]], seller)}</select></label>
+        <label>${t('Sort', 'Sortieren')}<select data-house-filter="sort">${options([['ends', view === 'bids' ? t('Recently ended', 'Zuletzt beendet') : t('Ending soon', 'Endet zuerst')], ['price-asc', t('Price: low to high', 'Preis: aufsteigend')], ['price-desc', t('Price: high to low', 'Preis: absteigend')], ['type-asc', t('Type: A–Z', 'Art: A–Z')], ['type-desc', t('Type: Z–A', 'Art: Z–A')]], sort)}</select></label>
+        <label>${t('Search', 'Suchen')}<input type="search" data-house-filter="search" maxlength="100" value="${esc(search)}"></label>
+        ${filtered ? `<button class="house-clear" type="button" data-house-clear>${t('Clear filters', 'Filter entfernen')}</button>` : ''}</form>
+      ${stock || palette ? `<div class="house-filter-context">${stock ? `${t('Stock for', 'Waren für')}: ${esc(categoryName(({ cars: 'vehicles', toys: 'collectibles' })[stock] || stock))}` : esc(paletteName(palette))}</div>` : ''}
+      <section class="house-results" aria-labelledby="house-results-title"><div class="house-section-heading"><h2 id="house-results-title">${view === 'mine' ? t('My listings', 'Meine Angebote') : view === 'bids' ? t('Bid history', 'Gebotsverlauf') : t('Live auctions', 'Laufende Auktionen')}</h2><span>${number(rows.length)}</span></div>${view !== 'browse' && !account ? loginNotice(t('auctions', 'Auktionen')) : rows.length ? grid(rows) : `<p class="house-empty">${t('No matching auctions.', 'Keine passenden Auktionen.')}</p>`}</section></div>`;
+  }
+
   function render() {
     const path = currentAccountPage;
     if (path === '/auction-house') { renderHouse(); return; }
@@ -616,6 +686,39 @@ window.economyUi = (() => {
       showNear(chartPointer.x);
     }
   }
+  function updateHouseFilter(control) {
+    if (currentAccountPage !== '/auction-house') return;
+    const filter = control.dataset.houseFilter, value = control.value;
+    if (!['view', 'type', 'seller', 'sort', 'search'].includes(filter)) return;
+    const query = new URLSearchParams(location.search);
+    const defaults = { view: 'browse', type: 'all', seller: 'all', sort: 'ends', search: '' };
+    if (value === defaults[filter]) query.delete(filter); else query.set(filter, value);
+    if (filter === 'view') tab = value;
+    const caret = filter === 'search' ? control.selectionStart : null;
+    const url = '/auction-house' + (query.size ? '?' + query : '');
+    window.history[filter === 'search' ? 'replaceState' : 'pushState']({}, '', url);
+    renderHouse();
+    const replacement = accountContent.querySelector(`[data-house-filter="${filter}"]`);
+    replacement?.focus({ preventScroll: true });
+    if (caret !== null) replacement?.setSelectionRange(caret, caret);
+  }
+  document.addEventListener('change', event => {
+    if (event.target.matches('select[data-house-filter]')) updateHouseFilter(event.target);
+  });
+  document.addEventListener('input', event => {
+    if (event.target.matches('[data-house-filter="search"]')) updateHouseFilter(event.target);
+  });
+  document.addEventListener('submit', event => {
+    if (event.target.matches('.house-filters')) event.preventDefault();
+  });
+  document.addEventListener('click', event => {
+    if (currentAccountPage !== '/auction-house' || !event.target.closest('[data-house-clear]')) return;
+    const query = new URLSearchParams(location.search);
+    for (const filter of ['type', 'seller', 'sort', 'search', 'stock', 'palette']) query.delete(filter);
+    window.history.pushState({}, '', '/auction-house' + (query.size ? '?' + query : ''));
+    renderHouse();
+    accountContent.querySelector('[data-house-filter="type"]')?.focus({ preventScroll: true });
+  });
   document.addEventListener('click', async event => {
     const button = event.target.closest('[data-economy]');
     if (!button) return;
@@ -684,7 +787,7 @@ window.economyUi = (() => {
   document.addEventListener('keydown', event => {
     if (event.key !== 'Enter' && event.key !== ' ') return;
     if (event.target.closest('button, a, input, select, textarea')) return;
-    const card = event.target.closest('.economy-lot[data-economy]');
+    const card = event.target.closest('.economy-lot[data-economy], .house-lot[data-economy]');
     if (!card) return;
     event.preventDefault();
     card.click();

@@ -53,10 +53,10 @@ try{
     if([1440,390].includes(width))await page.locator('.house-winnings').screenshot({path:`/tmp/jg-winnings-${width}-${lang}.png`});
   }
   for(const tab of ['bids','mine','browse']){
-    await page.locator(`[data-economy="tab"][data-id="${tab}"]`).click();assert.equal(await page.locator('.house-winnings-card').count(),2);
+    await page.locator('[data-house-filter="view"]').selectOption(tab);assert.equal(await page.locator('.house-winnings-card').count(),2);
     if(tab==='bids')assert.ok((await page.locator('#account-content').innerText()).includes('Ordinary won item'));
   }
-  await page.locator('[data-economy="lot-type"][data-id="items"]').click();assert.equal(await page.locator('.house-winnings-card').count(),2);
+  await page.locator('[data-house-filter="type"]').selectOption('items');assert.equal(await page.locator('.house-winnings-card').count(),2);
   const trigger=page.locator(`[data-unopened-reward="case:${box.id}"]`);await trigger.focus();await page.keyboard.press('Enter');
   await page.waitForURL('**/inventory?focus=*');await page.waitForSelector('.case-reveal[open]');
   assert.notEqual(accounts.db(db=>db.prepare('SELECT opened_at FROM sealed_cases WHERE inventory_id=?').get(box.id).opened_at),null);

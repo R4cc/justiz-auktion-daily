@@ -503,7 +503,7 @@ test('bulk stock listings show category artwork in cards and the auction room', 
 
 test('market chart labels both axes, adapts short time ranges, and keeps readable history', () => {
   const context = uiContext({ t: en => en, esc: String, number: String, uiLocale: () => 'en-GB', date: String, empty: String });
-  vm.runInContext(extract(uiSource, '  function chart(', "  document.addEventListener('click'"), context);
+  vm.runInContext(extract(uiSource, '  function chart(', '  document.addEventListener('), context);
   const markup = vm.runInContext(`chart([{capturedAt:'2026-09-19T12:00:00Z',indexValue:107}])`, context);
   assert.match(markup, /<circle/); assert.match(markup, /<table>/); assert.match(markup, /107/); assert.doesNotMatch(markup, /NaN/);
   assert.match(markup, /data-market-plot tabindex="0"/);
@@ -556,7 +556,7 @@ test('auction polling accelerates around deadlines, including recently expired c
 test('market chart magnifies small intraday changes, supports narrow screens and reports period returns', () => {
   const context = uiContext({ t: en => en, esc: String, number: (value, digits = 0) => Number(value).toFixed(digits),
     uiLocale: () => 'en-GB', date: String, empty: String, window: { matchMedia: () => ({ matches: true }) } });
-  vm.runInContext(extract(uiSource, '  function marketSummary(', "  document.addEventListener('click'"), context);
+  vm.runInContext(extract(uiSource, '  function marketSummary(', '  document.addEventListener('), context);
   const points = [{ capturedAt: '2026-10-08T13:00:00Z', indexValue: 121.2 }, { capturedAt: '2026-10-08T12:00:00Z', indexValue: 120 }];
   context.points = points;
   const range = vm.runInContext('marketChartRange(points)', context);
@@ -571,36 +571,166 @@ test('market chart magnifies small intraday changes, supports narrow screens and
   assert.match(falling, /is-down/); assert.match(falling, /-1\.20/);
 });
 
-test('Auction House player filter excludes owned, NPC and primary lots and preserves type and stock filters', () => {
-  const context = uiContext({ URLSearchParams, location: { search: '?seller=players&type=stock&stock=electronics' },
-    account: { id: 'me' }, tab: 'browse', economyFlags: { market: true }, accountContent: { innerHTML: '' },
-    t: en => en, esc: String, categoryName: String, pageHeading: String, economyOverviewMarkup: () => '',
-    caseArtwork: () => '<svg></svg>',
-    traderMilestonesMarkup: () => { throw new Error('Auction House must not render milestone banner'); },
-    lotCard: lot => `<article>${lot.id}</article>`, data: { palettes: [{ id: 'primary' }], lots: [
-      { id: 'other', sellerId: 'other', sellerType: 'player', quantity: 2, item: { businessType: 'electronics' } },
-      { id: 'own', sellerId: 'me', sellerType: 'player', quantity: 2, item: { businessType: 'electronics' } },
-      { id: 'npc', sellerId: 'supply', sellerType: 'npc', quantity: 2, item: { businessType: 'electronics' } },
-      { id: 'single', sellerId: 'other', sellerType: 'player', quantity: 1, item: { businessType: 'electronics' } },
-      { id: 'wine', sellerId: 'other', sellerType: 'player', quantity: 2, item: { businessType: 'wine' } }
-    ] } });
-  vm.runInContext(extract(uiSource, '  function renderHouse(', '  function render()'), context);
+function houseContext(values = {}) {
+  const context = uiContext({account: {id: 'me'}, tab: 'browse', economyFlags: {market: true},
+    accountContent: {innerHTML: ''}, data: {}, t: en => en, esc: String, number: String,
+    categoryName: String, name: lot => lot.name, justizEuro: value => `J€ ${value}`, uiLocale: () => 'en-GB',
+    paletteArtwork: () => '<svg></svg>', stockLotArtwork: () => null, caseArtwork: () => '<svg></svg>',
+    countdown: end => `<time data-economy-end="${end}"></time>`, status: lot => lot.status,
+    loginNotice: () => '<p>Sign in</p>', economyOverviewMarkup: () => '', ...values});
+  vm.runInContext(extract(uiSource, '  function houseType(', '  function render()'), context);
+  return context;
+}
+function houseRenderer(values = {}) {
+  const context = houseContext(values);
+  vm.runInContext('houseCard = entry => `<article data-card="${entry.primary ? "primary" : "resale"}:${entry.lot.id}"></article>`', context);
+  return context;
+}
+const houseCards = html => [...html.matchAll(/data-card="([^"]+)"/g)].map(match => match[1]);
+const houseLot = (id, changes = {}) => ({id, status: 'active', endsAt: Date.now() + 3600_000,
+  currentBid: null, startPrice: 10, sellerId: 'other', sellerType: 'player', quantity: 1,
+  item: {title: id}, ...changes});
+
+test('Auction House filters other sellers, type, stock category and search together', () => {
+  const context = houseRenderer({location: {search: '?seller=players&type=stock&stock=electronics&search=camera'},
+    data: {palettes: [{id: 'primary', status: 'active', stockOffer: {category: 'electronics'}}], lots: [
+      houseLot('camera', {quantity: 2, item: {title: 'Camera', businessType: 'electronics'}}),
+      houseLot('own-camera', {sellerId: 'me', quantity: 2, item: {title: 'Camera', businessType: 'electronics'}}),
+      houseLot('npc-camera', {sellerType: 'npc', quantity: 2, item: {title: 'Camera', businessType: 'electronics'}}),
+      houseLot('single-camera', {item: {title: 'Camera', businessType: 'electronics'}}),
+      houseLot('wine-camera', {quantity: 2, item: {title: 'Camera', businessType: 'wine'}}),
+      houseLot('headphones', {quantity: 2, item: {title: 'Headphones', businessType: 'electronics'}})
+    ]}});
   vm.runInContext('renderHouse()', context);
-  let html = context.accountContent.innerHTML;
-  assert.match(html, /<article>other<\/article>/);
-  assert.doesNotMatch(html, /<article>(own|npc|primary|single|wine)<\/article>/);
-  assert.match(html, /class="house-launch-card house-case-store-card" href="\/shop"/);
-  assert.match(html, /Mystery pallets/);
-  assert.match(html, /data-economy="lot-seller" data-id="players" aria-pressed="true"/);
-  context.location.search = '?seller=all';
+  assert.deepEqual(houseCards(context.accountContent.innerHTML), ['resale:camera']);
+  for (const field of ['view', 'type', 'seller', 'sort', 'search'])
+    assert.match(context.accountContent.innerHTML, new RegExp(`data-house-filter="${field}"`));
+  context.location.search = '?seller=npc'; vm.runInContext('renderHouse()', context);
+  assert.deepEqual(houseCards(context.accountContent.innerHTML), ['resale:npc-camera']);
+  context.location.search = '?seller=players&type=mystery'; vm.runInContext('renderHouse()', context);
+  assert.deepEqual(houseCards(context.accountContent.innerHTML), []);
+});
+
+test('Auction House pins authenticated active bids above every view and filter without duplicate lots', () => {
+  const primary = {id: 'shared', status: 'active', endsAt: Date.now() + 3600_000, name: 'Hidden',
+    reserve: 20, currentBid: 30, highestBid: 30, leading: true};
+  const resale = houseLot('shared', {currentBid: 12, highestBid: 5, leading: false});
+  const context = houseRenderer({data: {paletteMine: [primary, primary], bids: [resale, resale],
+    palettes: [primary], lots: [resale, houseLot('other')], mine: [houseLot('own', {sellerId: 'me'})],
+    archivedBids: [houseLot('archived', {status: 'ended'})]}});
+  for (const view of ['browse', 'mine', 'bids']) {
+    context.tab = view;
+    context.location.search = `?view=${view}&type=cases&seller=npc&search=no-match&sort=price-asc`;
+    vm.runInContext('renderHouse()', context);
+    const html = context.accountContent.innerHTML;
+    assert.deepEqual(houseCards(html), ['resale:shared', 'primary:shared']);
+    assert.ok(html.indexOf('class="house-active-bids"') < html.indexOf('class="auction-house-shortcuts"'));
+    assert.ok(html.indexOf('class="house-active-bids"') < html.indexOf('class="house-filters"'));
+  }
+  context.account = null; vm.runInContext('renderHouse()', context);
+  assert.doesNotMatch(context.accountContent.innerHTML, /class="house-active-bids"/);
+});
+
+test('Auction House sorts pinned and browse rows separately and excludes ended bids from the pinned section', () => {
+  const bid = houseLot('bid', {currentBid: 100, highestBid: 50, leading: false});
+  const primaryBid = {id: 'bid', name: 'Primary bid', status: 'active', currentBid: 25,
+    reserve: 5, highestBid: 25, leading: true, endsAt: Date.now() + 3600_000};
+  const context = houseRenderer({location: {search: '?sort=price-asc'}, data: {
+    bids: [bid, houseLot('ended-bid', {status: 'ended', highestBid: 20})], paletteMine: [primaryBid],
+    lots: [bid, houseLot('expensive', {currentBid: 80}), houseLot('cheap', {currentBid: 1})],
+    palettes: [primaryBid]
+  }});
   vm.runInContext('renderHouse()', context);
-  html = context.accountContent.innerHTML;
-  assert.match(html, /<article>npc<\/article>/);
-  assert.match(html, /<article>primary<\/article>/);
-  assert.doesNotMatch(html, /<article>own<\/article>/);
-  context.location.search = '?seller=players&type=mystery';
-  vm.runInContext('renderHouse()', context);
-  assert.match(context.accountContent.innerHTML, /No matching lots\./);
+  assert.deepEqual(houseCards(context.accountContent.innerHTML), ['primary:bid', 'resale:bid', 'resale:cheap', 'resale:expensive']);
+  context.location.search = '?sort=price-desc'; vm.runInContext('renderHouse()', context);
+  assert.deepEqual(houseCards(context.accountContent.innerHTML), ['resale:bid', 'primary:bid', 'resale:expensive', 'resale:cheap']);
+});
+
+test('Auction House separates sealed cases, stock, review packs and primary mysteries', () => {
+  const context = houseContext();
+  const types = [
+    [houseLot('item'), false, 'items'],
+    [houseLot('stock', {quantity: 5}), false, 'stock'],
+    [houseLot('case', {quantity: 5, item: {kind: 'case'}}), false, 'cases'],
+    [houseLot('review', {quantity: 5, item: {kind: 'review-pack'}}), false, 'reviews'],
+    [{stockOffer: {category: 'electronics'}}, true, 'stock'],
+    [{}, true, 'mystery']
+  ];
+  for (const [lot, primary, expected] of types) {
+    context.lot = lot; context.primary = primary;
+    assert.equal(vm.runInContext('houseType(lot, primary)', context), expected);
+  }
+});
+
+test('Auction House price sorting keeps zero bids and starting prices, with deterministic ties', () => {
+  const entries = [
+    {lot: houseLot('zero', {currentBid: 0, startPrice: 50}), primary: false},
+    {lot: houseLot('resale-start', {startPrice: 10, endsAt: 12345}), primary: false},
+    {lot: {id: 'primary-start', currentBid: null, reserve: 5}, primary: true},
+    {lot: houseLot('tie', {currentBid: 10, endsAt: 12345}), primary: false}
+  ];
+  const context = houseContext({entries});
+  assert.deepEqual(Array.from(vm.runInContext('entries.map(housePrice)', context)), [0, 10, 5, 10]);
+  assert.deepEqual(Array.from(vm.runInContext('sortHouseEntries(entries, "price-asc").map(entry=>entry.lot.id)', context)), ['zero', 'primary-start', 'resale-start', 'tie']);
+  assert.deepEqual(Array.from(vm.runInContext('sortHouseEntries(entries, "price-desc").map(entry=>entry.lot.id)', context)), ['resale-start', 'tie', 'primary-start', 'zero']);
+  assert.deepEqual(Array.from(vm.runInContext('sortHouseEntries([...entries].reverse(), "price-asc").map(entry=>entry.lot.id)', context)), ['zero', 'primary-start', 'resale-start', 'tie']);
+  assert.deepEqual(entries.map(entry => entry.lot.id), ['zero', 'resale-start', 'primary-start', 'tie']);
+});
+
+test('Auction House sorts by type in both directions and then by deadline', () => {
+  const entries = [
+    {lot: houseLot('stock', {quantity: 2, endsAt: 10}), primary: false},
+    {lot: houseLot('later', {endsAt: 20}), primary: false},
+    {lot: houseLot('earlier', {endsAt: 5}), primary: false},
+    {lot: houseLot('case', {endsAt: 30, item: {kind: 'case'}}), primary: false}
+  ];
+  const context = houseContext({entries});
+  assert.deepEqual(Array.from(vm.runInContext('sortHouseEntries(entries, "type-asc").map(entry=>entry.lot.id)', context)), ['earlier', 'later', 'case', 'stock']);
+  assert.deepEqual(Array.from(vm.runInContext('sortHouseEntries(entries, "type-desc").map(entry=>entry.lot.id)', context)), ['stock', 'case', 'earlier', 'later']);
+  assert.deepEqual(Array.from(vm.runInContext('sortHouseEntries(entries, "ends").map(entry=>entry.lot.id)', context)), ['earlier', 'stock', 'later', 'case']);
+});
+
+test('Auction House type sorting follows the translated labels players see', () => {
+  const entries = [
+    {lot: houseLot('reviews', {item: {kind: 'review-pack'}}), primary: false},
+    {lot: {id: 'mystery', status: 'active', endsAt: Date.now() + 3600_000}, primary: true}
+  ];
+  const context = houseContext({entries});
+  assert.deepEqual(Array.from(vm.runInContext('sortHouseEntries(entries, "type-asc").map(entry=>entry.lot.id)', context)), ['mystery', 'reviews']);
+  context.t = (_en, de) => de;
+  assert.deepEqual(Array.from(vm.runInContext('sortHouseEntries(entries, "type-asc").map(entry=>entry.lot.id)', context)), ['reviews', 'mystery']);
+});
+
+test('Auction House cards show winning and outbid states for both domains without filler or hidden contents', () => {
+  const context = houseContext({window: {storeReputationUi: {packArt: () => '<svg></svg>'}}});
+  for (const primary of [true, false]) for (const leading of [true, false]) {
+    context.entry = {primary, view: 'bid', lot: {...houseLot('bid'), name: 'Sealed lot',
+      highestBid: 12, currentBid: 15, reserve: 10, leading, estimatedValueTokens: 99,
+      sellerUsername: 'Seller', contents: [{title: 'SECRET FIND'}], description: 'Promotional filler'}};
+    const html = vm.runInContext('houseCard(entry)', context);
+    assert.match(html, leading ? /Winning/ : /Outbid/);
+    assert.match(html, new RegExp(`data-economy="${primary ? 'primary' : 'resale'}"`));
+    assert.match(html, /data-id="bid"/);
+    assert.match(html, /role="button"/); assert.match(html, /tabindex="0"/);
+    assert.match(html, /J€ 15/);
+    assert.doesNotMatch(html, /SECRET FIND|Promotional filler|Market estimate|Seller:|Your highest bid|palette-seal/);
+  }
+  context.entry = {primary: false, view: 'other', lot: houseLot('public')};
+  assert.doesNotMatch(vm.runInContext('houseCard(entry)', context), /Winning|Outbid/);
+});
+
+test('Auction House minimal cards retain cancellation eligibility and archived bid outcomes', () => {
+  const context = houseContext({entry: {primary: false, view: 'mine-live', lot: houseLot('own', {bidCount: 0})}});
+  assert.match(vm.runInContext('houseCard(entry)', context), /data-economy="cancel"/);
+  context.entry.lot.bidCount = 1;
+  assert.doesNotMatch(vm.runInContext('houseCard(entry)', context), /data-economy="cancel"/);
+  context.entry.view = 'bid-done'; context.entry.lot.status = 'ended';
+  context.entry.lot.highestBid = 10; context.entry.lot.won = true;
+  assert.match(vm.runInContext('houseCard(entry)', context), /house-lot-state">Won</);
+  context.entry.lot.won = false;
+  assert.match(vm.runInContext('houseCard(entry)', context), /house-lot-state">Lost</);
+  context.entry.lot.status = 'cancelled';
+  assert.match(vm.runInContext('houseCard(entry)', context), /house-lot-state">Cancelled</);
 });
 
 test('history helper sends an encoded quick range without breaking legacy limits', async () => {
