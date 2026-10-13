@@ -45,6 +45,14 @@
 .visitor-stock-actions .primary-button>span { margin-left:auto; }
 .visitor-steal-button { color:#fff9e9;border:1px solid #363634;background:linear-gradient(120deg,#292b28,#492824);border-radius:8px;cursor:pointer;font:700 .75rem 'Manrope',sans-serif; }
 .visitor-steal-button:hover:not(:disabled) { background:#542a26; }
+.visitor-steal-label { flex:1;min-width:0;text-align:left; }
+.theft-fine-class { display:inline-flex;align-items:center;justify-content:center;flex-shrink:0;padding:4px 8px;border:1px solid currentColor;border-radius:6px;font:700 .85rem 'DM Mono',monospace;line-height:1.3;white-space:nowrap; }
+.theft-fine-class.is-level-1 { color:#235236;background:#e2eedf; }
+.theft-fine-class.is-level-2 { color:#635020;background:#f3edd5; }
+.theft-fine-class.is-level-3 { color:#82460f;background:#ffead1; }
+.theft-fine-class.is-level-4 { color:#9a3524;background:#fce0d6; }
+.theft-fine-class.is-level-5 { color:#912640;background:#f9d9e3; }
+.visitor-steal-button .theft-fine-class { font-size:.72rem;padding:3px 6px; }
 .visitor-balance-hint { color:var(--muted);font-size:.68rem;line-height:1.5; }
 .visitor-theft-status { display:flex;align-items:center;flex-wrap:wrap;gap:12px;margin-bottom:18px;border:1px solid #d6bd86;border-radius:12px;padding:14px 16px;background:#fff1d4;font-size:.75rem;line-height:1.6; }
 .visitor-theft-status>svg { width:22px;height:22px;flex-shrink:0; }.visitor-theft-status>span { flex:1;min-width:160px; }.visitor-theft-status button { min-height:44px;font-size:.75rem; }

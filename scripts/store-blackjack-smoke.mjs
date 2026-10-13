@@ -46,7 +46,14 @@ const browser = await chromium.launch({ executablePath: process.env.CHROMIUM_PAT
 try {
   const context=await browser.newContext({viewport:{width:1440,height:1000}}),page=await context.newPage(),errors=[];
   page.on('pageerror',error=>errors.push(error.message));await context.addCookies([{name:'jg_session',value:thiefToken,url:base}]);
-  let mode='win',spinRequests=0;
+  let mode='win',spinRequests=0,quotedFine=null;
+  // Exercise the five display bands, including both sides of every boundary,
+  // without changing the authoritative fine or starting a high-value theft.
+  await page.route(`**/api/stores/${wine.id}`,async route=>{
+    const response=await route.fetch(),payload=await response.json();
+    if(quotedFine!==null)for(const entry of payload.store.stock)entry.theft.fine=quotedFine;
+    await route.fulfill({response,json:payload});
+  });
   await page.route('**/api/account/stores/heist/spin',async route=>{spinRequests++;await route.continue();});
   await page.route('**/api/account/stores/heist/action',async route=>{
     const response=await route.fetch(),payload=await response.json();
@@ -67,8 +74,11 @@ try {
   const open=async()=>{await page.goto(base+`/stores?shop=${wine.id}`);await page.waitForSelector('[data-store="heist"]');await page.locator('[data-store="heist"]').first().click();await page.waitForSelector('.store-heist-dialog[open]');};
   const language=async lang=>{await page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))));const toggle=page.locator('[data-action="sidebar"]'),mobile=await toggle.isVisible();if(mobile&&await toggle.getAttribute('aria-expanded')!=='true')await toggle.click();await page.locator('#language-select').selectOption(lang);if(mobile&&await toggle.getAttribute('aria-expanded')==='true')await toggle.click();};
   const estimate=async()=>{
-    const risk=await page.locator('.blackjack-risk strong').innerText(),amounts=risk.match(/\d+/g).map(Number),actual=visitStore(dir,thief,wine.id).store.stock[0].theft.fine;
-    assert.equal(amounts.length,2);assert.ok(amounts[0]<actual&&amounts[1]>actual,'rounded range must bracket the actual fine');assert.ok(!amounts.includes(actual),'the estimate must not display the exact fine');
+    const risk=page.locator('.blackjack-risk .theft-fine-class');
+    assert.equal(await risk.innerText(),'€');
+    assert.match(await risk.getAttribute('aria-label'),/\b1\b.*\b5\b/);
+    assert.equal(await risk.getAttribute('role'),'img');
+    assert.ok(!/\d/.test(await page.locator('.blackjack-risk strong').innerText()),'potential fines use symbols rather than numbers');
   };
   await open();await estimate();assert.equal(await page.locator('.blackjack-details').evaluate(el=>el.open),false);
   assert.equal(await page.locator('.blackjack-details div').isVisible(),false);assert.equal(await page.locator('.blackjack-warning').count(),0);
@@ -78,6 +88,20 @@ try {
   await page.evaluate(()=>{document.querySelector('#language-select').value='en';document.querySelector('#language-select').dispatchEvent(new Event('change',{bubbles:true}));});
   assert.equal(await page.locator('[data-store="start-heist"]').isDisabled(),false);assert.equal(await page.locator('[data-store="choose-color"]').count(),0);await page.locator('[data-store="close-heist"]').click();
   for(const width of [1440,768,390,320]){await page.setViewportSize({width,height:900});for(const lang of ['en','de']){await language(lang);await page.locator('[data-store="heist"]').first().click();await estimate();assert.equal(await page.locator('.blackjack-details').evaluate(el=>el.open),false);assert.ok(await page.locator('.store-heist-dialog').evaluate(el=>{const r=el.getBoundingClientRect();return r.left>=0&&r.right<=innerWidth&&el.scrollWidth<=el.clientWidth+1;}));await page.screenshot({path:`/tmp/jg-blackjack-rules-${width}-${lang}.png`});await page.locator('[data-store="close-heist"]').click();}}
+  const fineBands=[[20,'€',1],[499,'€',1],[500,'€€',2],[2499,'€€',2],[2500,'€€€',3],[9999,'€€€',3],[10000,'€€€€',4],[49999,'€€€€',4],[50000,'€€€€+',5],[500000,'€€€€+',5]];
+  for(const lang of ['en','de'])for(const [fine,symbol,level] of fineBands){
+    quotedFine=fine;await language(lang);await open();
+    const badge=page.locator('.blackjack-risk .theft-fine-class'),button=page.locator('[data-store="heist"]').first();
+    assert.equal(await badge.innerText(),symbol);assert.equal(await button.locator('.theft-fine-class').innerText(),symbol);
+    assert.equal(await badge.getAttribute('aria-label'),await button.getAttribute('title'));
+    assert.match(await badge.getAttribute('aria-label'),new RegExp(`${lang==='en'?'class':'Klasse'} ${level} ${lang==='en'?'of':'von'} 5`));
+    assert.ok(await badge.evaluate(el=>{const r=el.getBoundingClientRect();return r.left>=0&&r.right<=innerWidth;}));
+    assert.ok(await page.locator('.store-heist-dialog').evaluate(el=>el.scrollWidth<=el.clientWidth+1));
+    await page.locator('[data-store="close-heist"]').click();
+    assert.ok(await button.evaluate(el=>el.scrollWidth<=el.clientWidth+1),'theft button must fit even the longest symbol and German label');
+    if(fine===50000)await page.screenshot({path:`/tmp/jg-theft-fine-class-5-320-${lang}.png`});
+  }
+  quotedFine=null;await open();await page.locator('[data-store="close-heist"]').click();
   await page.setViewportSize({width:1440,height:900});await language('en');await page.locator('[data-store="heist"]').first().click();
   const before=accounts.profile(thief).tokens;await page.locator('[data-store="start-heist"]').click();await page.waitForSelector('[data-store="hit"]');
   assert.equal(accounts.profile(thief).tokens,before);await estimate();assert.equal(await page.locator('.blackjack-card.is-hidden').count(),1);await page.waitForTimeout(300);await page.screenshot({path:'/tmp/jg-blackjack-hand.png'});
@@ -89,6 +113,7 @@ try {
   // Losing leaves the fine untouched until the private saved wheel is spun.
   reset();mode='escape';await open();await page.locator('[data-store="start-heist"]').click();await page.waitForSelector('[data-store="stand"]');await page.locator('[data-store="stand"]').click();await page.waitForSelector('[data-store="spin-police"]');
   const pending=visitStore(dir,thief,wine.id).store.heist;assert.equal(pending.outcome,'police');assert.ok(!('sector' in pending.policeWheel));assert.equal(accounts.profile(thief).tokens,before);assert.equal(spinRequests,0);
+  await estimate();
   for(const width of [1440,768,390,320])for(const lang of ['en','de']){
     await page.setViewportSize({width,height:900});await page.evaluate(lang=>{document.querySelector('#language-select').value=lang;document.querySelector('#language-select').dispatchEvent(new Event('change',{bubbles:true}));},lang);
     assert.equal(await page.locator('.police-wheel .is-caught').count(),2);assert.equal(await page.locator('.police-wheel .is-escape').count(),8);
@@ -111,5 +136,5 @@ try {
   for(const width of [1440,390,320]){await page.setViewportSize({width,height:900});for(const lang of ['en','de']){await page.evaluate(lang=>{document.querySelector('#language-select').value=lang;document.querySelector('#language-select').dispatchEvent(new Event('change',{bubbles:true}));},lang);assert.ok(await page.locator('.justice-dialog').evaluate(el=>el.scrollWidth<=el.clientWidth+1));await page.screenshot({path:`/tmp/jg-jail-${width}-${lang}.png`});}}
   await page.reload();await page.waitForSelector('.justice-dialog[open]');
   accounts.db(db=>db.prepare('UPDATE player_justice SET jailed_until=? WHERE user_id=?').run(Date.now()-1,thief.id));await page.locator('[data-justice-check]').click();await page.waitForFunction(()=>!document.querySelector('.justice-dialog').open);assert.equal((await context.request.get(base+'/api/account/inventory')).status(),200);
-  assert.deepEqual(errors,[]);await context.close();console.log('Blackjack UI passed: compact entry, collapsed rules/consequences, rounded fine estimates on entry and active hands, live language switch; free entry; private cards; hit/stand, win/push skip wheel; private persistent 80/20 wheel, escape/caught, double-click protection, reduced motion, fine after animation; persisted resume; zero-cash seizure and jail; server lock across routes; Escape/reload enforcement; release; EN/DE responsive checks at 1440/768/390/320px; no JS errors.');
+  assert.deepEqual(errors,[]);await context.close();console.log('Blackjack UI passed: compact entry, collapsed rules/consequences, all five potential-fine symbols on theft buttons and entry dialogs with boundary checks, accessible EN/DE labels, symbols on active hands and pending wheels, exact settled fines, live language switch; free entry; private cards; hit/stand, win/push skip wheel; private persistent 80/20 wheel, escape/caught, double-click protection, reduced motion, fine after animation; persisted resume; zero-cash seizure and jail; server lock across routes; Escape/reload enforcement; release; EN/DE responsive checks at 1440/768/390/320px; no JS errors.');
 } finally {await browser.close();await new Promise(resolve=>server.close(resolve));closeDataStore(dir);await rm(dir,{recursive:true,force:true});}
