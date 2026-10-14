@@ -1,7 +1,7 @@
 window.storeUi = (() => {
   const esc = accountEscape;
-  const names = { wine: ['Wine store', 'Weinhandlung'], toys: ['Toy store', 'Spielwarenladen'], electronics: ['Electronics store', 'Elektronikladen'], cars: ['Car dealership', 'Autohaus'] };
-  const symbols = { wine: 'VIN', toys: 'TOY', electronics: 'TECH', cars: 'AUTO' };
+  const names = { wine: ['Wine store', 'Weinhandlung'], toys: ['Toy store', 'Spielwarenladen'], electronics: ['Electronics store', 'Elektronikladen'], cars: ['Car dealership', 'Autohaus'], jeweler: ['Jeweler','Juwelier'], hardware: ['Hardware store','Baumarkt'] };
+  const symbols = { wine: 'VIN', toys: 'TOY', electronics: 'TECH', cars: 'AUTO', jeweler: 'GEM', hardware: 'DIY' };
   const typeName = type => names[type] ? t(...names[type]) : type;
   let data = null, timer = null, generation = 0, busy = false, game = null, gameVersion = 0, timers = [], returnFocus = null;
   let lastAction = null;

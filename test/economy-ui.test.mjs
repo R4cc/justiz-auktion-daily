@@ -488,7 +488,7 @@ test('bulk stock listings show category artwork in cards and the auction room', 
   const context = uiContext({ t: en => en, esc: String, paletteArtwork: () => '' });
   vm.runInContext(extract(uiSource, '  const stockSymbols =', '  const remaining =')
     + extract(uiSource, '  function auctionMedia(', '  function auctionContents('), context);
-  for (const type of ['wine', 'toys', 'electronics', 'cars']) {
+  for (const type of ['wine', 'toys', 'electronics', 'cars', 'jeweler', 'hardware']) {
     const listing = { item: { businessCategory: type, image: null, title: type } };
     const card = vm.runInContext(`stockLotArtwork(${JSON.stringify(listing)})`, context);
     const room = vm.runInContext(`auctionMedia(${JSON.stringify(listing)}, false)`, context);

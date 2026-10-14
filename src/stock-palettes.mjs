@@ -60,7 +60,7 @@ function pools(db, now) {
       .slice(0,50).map((item,index)=>({auctionId:item.id,title:item.title,image:auctionGallery(item)[0],
         category:auctionSelectionCategory(item),price:item.finalPrice??item.currentBid,
         rarity:RARITIES[Math.min(index,4)].id}));
-    return {id,name,nameDe,items:items.map(item=>({...item,marketCategory:marketCategoryForItem(item),...(['wine','electronics','cars','toys'].includes(id)?{businessCategory:id}:{})}))};
+    return {id,name,nameDe,items:items.map(item=>({...item,marketCategory:marketCategoryForItem(item),businessCategory:({tools:'hardware',jewellery:'jeweler'})[id]||id}))};
   });
   db.prepare('INSERT INTO stock_palette_editions VALUES (?,?)').run(date,JSON.stringify(result));
   db.prepare('DELETE FROM stock_palette_editions WHERE date<?').run(rotationDate(now-30*86400000));

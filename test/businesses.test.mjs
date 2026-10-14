@@ -271,7 +271,8 @@ test('individual wines use the same category rule as bulk stock regardless of ti
   const available = businessDashboard(f.dir, f.rival, { now: start }).inventory;
   assert.deepEqual(new Set(available.filter(item => item.type === 'wine').map(item => item.id)), new Set(items.map(item => item.id)));
   for (const item of rejected) {
-    assert.ok(!available.some(entry => entry.id === item.id));
+    assert.ok(!available.some(entry => entry.id === item.id && entry.type === 'wine'));
+    if(item.kind==='case')assert.ok(!available.some(entry=>entry.id===item.id));
     assert.throws(() => stockBusiness(f.dir, f.rival, shop.id, [item.id], { now: start }), /wrong_shop_type/);
   }
   stockBusiness(f.dir, f.rival, shop.id, items.map(item => item.id), { now: start });
@@ -347,6 +348,9 @@ test('margin changes keep earlier sales at the old price and existing stores mig
 test('profit margin preserves assortment appeal; customer feedback has bounded traffic impact even after sellout', async t => {
   const f = await fixture(t);
   const shop = buyBusiness(f.dir, f.rival, 'toys', 'tiny', { now: start }).shop;
+  // Use a stable traffic seed and a short window before both stores can sell out.
+  f.accounts.db(db=>db.prepare('UPDATE businesses SET id=? WHERE id=?').run('margin-traffic-fixture',shop.id));
+  shop.id='margin-traffic-fixture';
   f.accounts.db(db => {
     for (let n = 0; n < 25; n++) db.prepare('INSERT INTO inventory (id, user_id, item, created_at) VALUES (?, ?, ?, ?)')
       .run(`traffic-toy-${n}`, 'rival', JSON.stringify({ title: `Puzzle ${n}`, price: 100,
@@ -354,16 +358,17 @@ test('profit margin preserves assortment appeal; customer feedback has bounded t
   });
   stockBusiness(f.dir, f.rival, shop.id, Array.from({ length: 25 }, (_, n) => `traffic-toy-${n}`), { now: start });
   setBusinessMargin(f.dir, f.rival, shop.id, 0, { now: start });
-  const low = businessDashboard(f.dir, f.rival, { now: start + 7 * 24 * hour }).shops[0];
+  const low = businessDashboard(f.dir, f.rival, { now: start + 48 * hour }).shops[0];
   assert.equal(low.stock.length, 0);
   f.accounts.db(db => {
     db.prepare('UPDATE businesses SET visitors = 0, sales = 0, revenue = 0, last_tick_at = ?, profit_margin = 100 WHERE id = ?')
       .run(start, shop.id);
     db.prepare('UPDATE business_stock SET sold_at = NULL, sold_price = NULL WHERE business_id = ?').run(shop.id);
     db.prepare('DELETE FROM business_sales WHERE business_id = ?').run(shop.id);
+    db.prepare('DELETE FROM store_reviews WHERE business_id = ?').run(shop.id);
     db.prepare("UPDATE inventory SET sold_at = NULL WHERE user_id = 'rival' AND id LIKE 'traffic-toy-%'").run();
   });
-  const high = businessDashboard(f.dir, f.rival, { now: start + 7 * 24 * hour }).shops[0];
+  const high = businessDashboard(f.dir, f.rival, { now: start + 48 * hour }).shops[0];
   // Assortment is unchanged; the new review system can slightly reduce
   // foot traffic after buyers respond to the high markup.
   assert.ok(high.visitors <= low.visitors);

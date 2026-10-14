@@ -34,6 +34,8 @@ window.economyUi = (() => {
     wine: '<path d="M31 9h18v13l5 9v36a7 7 0 0 1-7 7H33a7 7 0 0 1-7-7V31l5-9V9Zm-5 31h28M35 9v13h10V9M64 34h18v10c0 8-4 12-9 12s-9-4-9-12V34Zm9 22v15m-8 3h16"/>',
     toys: '<rect x="14" y="43" width="28" height="28" rx="3"/><rect x="44" y="43" width="28" height="28" rx="3"/><rect x="29" y="13" width="28" height="28" rx="3"/><path d="M20 43v-7h7v7m9 0v-7h7m7 7v-7h7v7m9 0v-7h7v7M14 58h28m2 0h28M29 27h28"/>',
     electronics: '<path d="M17 50V39a31 31 0 0 1 62 0v11M17 48h10a5 5 0 0 1 5 5v17a5 5 0 0 1-5 5H22a8 8 0 0 1-8-8V56a8 8 0 0 1 8-8Zm62 0H69a5 5 0 0 0-5 5v17a5 5 0 0 0 5 5h5a8 8 0 0 0 8-8V56a8 8 0 0 0-8-8ZM18 39a31 31 0 0 1 62 0"/>',
+    jeweler:'<path d="m10 30 16-20h44l16 20-38 53-38-53Zm0 0h76M26 10l22 73 22-73M32 30l16-20 16 20"/>',
+    hardware:'<path d="m18 82 37-37a23 23 0 0 0 29-29L70 30 57 17 71 3a23 23 0 0 0-29 29L5 69l13 13Z"/><circle cx="18" cy="69" r="4"/>',
     cars: '<path d="m14 53 8-23a8 8 0 0 1 7-5h39a8 8 0 0 1 7 5l8 23M13 53h70a6 6 0 0 1 6 6v15H7V59a6 6 0 0 1 6-6Zm8 21v7h12v-7m30 0v7h12v-7M21 61h13m28 0h13M26 36h44"/>'
   };
   function stockLotArtwork(lot) {
@@ -334,7 +336,7 @@ window.economyUi = (() => {
       if (pinnedKeys.has(key(entry))) return false;
       if (type !== 'all' && houseType(lot, entry.primary) !== type) return false;
       if (view === 'browse' && seller !== 'all' && (entry.primary ? seller === 'players' : lot.sellerType !== (seller === 'players' ? 'player' : 'npc'))) return false;
-      if (stock && (entry.primary ? lot.stockOffer?.category !== stock : lot.item.businessType !== stock && lot.item.businessCategory !== stock)) return false;
+      if (stock && (entry.primary ? !(({jeweler:['jewellery'],hardware:['tools','other']})[stock] || [stock]).includes(lot.stockOffer?.category) : lot.item.businessType !== stock && lot.item.businessCategory !== stock)) return false;
       if (palette && (!entry.primary || lot.paletteId !== palette)) return false;
       const title = entry.primary ? name(lot) : t(lot.item.title, lot.item.titleDe || lot.item.title);
       return !search.trim() || title.toLocaleLowerCase().includes(search.trim().toLocaleLowerCase());
@@ -363,7 +365,7 @@ window.economyUi = (() => {
         <label>${t('Sort', 'Sortieren')}<select data-house-filter="sort">${options([['ends', view === 'bids' ? t('Recently ended', 'Zuletzt beendet') : t('Ending soon', 'Endet zuerst')], ['price-asc', t('Price: low to high', 'Preis: aufsteigend')], ['price-desc', t('Price: high to low', 'Preis: absteigend')], ['type-asc', t('Type: A–Z', 'Art: A–Z')], ['type-desc', t('Type: Z–A', 'Art: Z–A')]], sort)}</select></label>
         <label>${t('Search', 'Suchen')}<input type="search" data-house-filter="search" maxlength="100" value="${esc(search)}"></label>
         ${filtered ? `<button class="house-clear" type="button" data-house-clear>${t('Clear filters', 'Filter entfernen')}</button>` : ''}</form>
-      ${stock || palette ? `<div class="house-filter-context">${stock ? `${t('Stock for', 'Waren für')}: ${esc(categoryName(({ cars: 'vehicles', toys: 'collectibles' })[stock] || stock))}` : esc(paletteName(palette))}</div>` : ''}
+      ${stock || palette ? `<div class="house-filter-context">${stock ? `${t('Stock for', 'Waren für')}: ${esc(['jeweler','hardware'].includes(stock)?traderStoreLabel(stock):categoryName(({ cars: 'vehicles', toys: 'collectibles' })[stock] || stock))}` : esc(paletteName(palette))}</div>` : ''}
       <section class="house-results" aria-labelledby="house-results-title"><div class="house-section-heading"><h2 id="house-results-title">${view === 'mine' ? t('My listings', 'Meine Angebote') : view === 'bids' ? t('Bid history', 'Gebotsverlauf') : t('Live auctions', 'Laufende Auktionen')}</h2><span>${number(rows.length)}</span></div>${view !== 'browse' && !account ? loginNotice(t('auctions', 'Auktionen')) : rows.length ? grid(rows) : `<p class="house-empty">${t('No matching auctions.', 'Keine passenden Auktionen.')}</p>`}</section></div>`;
   }
 

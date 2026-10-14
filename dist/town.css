@@ -67,7 +67,7 @@
 .town-location-size{font-size:12px;color:#667466}
 .town-purchase fieldset{border:0;padding:0;margin:24px 0}
 .town-purchase legend{font-weight:800;font-size:12px;margin-bottom:12px}
-.town-type-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:10px}
+.town-type-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
 .town-type-choice{display:flex;flex-direction:column;gap:10px;align-items:center;position:relative;padding:16px 8px;border:1px solid #d8ddcc;background:#f0f2e6;border-radius:12px;text-align:center}
 .town-type-choice.is-selected{border-color:#507d53;background:#e0ead4;box-shadow:0 0 0 1px #507d53}
 .town-type-choice svg{width:34px;height:34px}
@@ -124,3 +124,4 @@
 @media(prefers-reduced-motion:reduce){.town-pin .shop-illustration{transition:none}
 }
 .town-canvas[data-zoom="3"] .town-pin:not(.is-selected):not(:focus-visible) .town-pin-name{max-width:84px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.town-pin.is-selected .town-pin-name{max-width:160px;white-space:normal;overflow:visible}
+.town-type-hint{font-size:10px;font-weight:500;color:#667466;line-height:1.4}

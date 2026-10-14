@@ -181,3 +181,5 @@
 .shop-game-stages span{font-size:8px;padding:5px}
 }
 .shop-stock-columns>section>h3,.shop-stock-heading>h3{margin:0}.shop-transfer-label{margin-right:auto;font-size:10px;font-weight:650;color:var(--shop-muted)}.shop-stepper{align-items:center}
+.shop-color-jeweler{--shop-color:#9879b0;--shop-roof:#5f4772;--choice-accent:#9879b0;--choice-tint:#ede4f3}
+.shop-color-hardware{--shop-color:#b18143;--shop-roof:#76582d;--choice-accent:#b18143;--choice-tint:#f1e7d4}

@@ -5,7 +5,7 @@ function traderCategoryLabel(id) {
   return accountEscape(labels[id]?t(...labels[id]):id);
 }
 function traderStoreLabel(id) {
-  const labels={wine:['Wine store','Weinhandlung'],toys:['Toy store','Spielwarenladen'],electronics:['Electronics store','Elektronikladen'],cars:['Car dealership','Autohaus']};
+  const labels={wine:['Wine store','Weinhandlung'],toys:['Toy store','Spielwarenladen'],electronics:['Electronics store','Elektronikladen'],cars:['Car dealership','Autohaus'],jeweler:['Jeweler','Juwelier'],hardware:['Hardware store','Baumarkt']};
   return labels[id]?t(...labels[id]):id;
 }
 function traderMilestoneState() {

@@ -31,7 +31,9 @@ export const SHOP_TYPES = [
   { id: 'wine', name: 'Wine store', nameDe: 'Weinhandlung', costFactor: 1, typicalValue: 35, conversion: .28 },
   { id: 'toys', name: 'Toy store', nameDe: 'Spielwarengeschaeft', costFactor: 1, typicalValue: 40, conversion: .28 },
   { id: 'electronics', name: 'Electronics store', nameDe: 'Elektronikladen', costFactor: 1.2, typicalValue: 120, conversion: .22 },
-  { id: 'cars', name: 'Car dealership', nameDe: 'Autohaus', costFactor: 2.5, typicalValue: 2500, conversion: .06 }
+  { id: 'cars', name: 'Car dealership', nameDe: 'Autohaus', costFactor: 2.5, typicalValue: 2500, conversion: .06 },
+  { id: 'jeweler', name: 'Jeweler', nameDe: 'Juwelier', costFactor: 1.8, typicalValue: 350, conversion: .16 },
+  { id: 'hardware', name: 'Hardware store', nameDe: 'Baumarkt', costFactor: 1.1, typicalValue: 90, conversion: .24 }
 ];
 export const SHOP_SIZES = [
   { id: 'popup', name: 'Street pop-up', nameDe: 'Strassenstand', requiredLevel: 1, cost: 1000, capacity: 10, carCapacity: 1, visitorsPerHour: 1 * ECONOMY_BALANCE.businessVisitorMultiplier },
@@ -56,14 +58,16 @@ const STOCK_BATCHES = {
   wine: { quantity: 24, budget: 576, maxPrice: 250 },
   toys: { quantity: 24, budget: 576, maxPrice: 250 },
   electronics: { quantity: 10, budget: 950, maxPrice: 1500 },
-  cars: { quantity: 2, budget: 3800, maxPrice: 25000 }
+  cars: { quantity: 2, budget: 3800, maxPrice: 25000 },
+  jeweler: { quantity: 6, budget: 2100, maxPrice: 5000 },
+  hardware: { quantity: 12, budget: 1080, maxPrice: 1500 }
 };
 
 const shopType = id => SHOP_TYPES.find(type => type.id === id);
 const shopSize = id => SHOP_SIZES.find(size => size.id === id);
 const shopCapacity = (type, size) => type === 'cars' ? size.carCapacity : size.capacity;
 const lotId = (bucket, stockId) => `${bucket}:${stockId}`;
-const marketCategory = type => type === 'cars' ? 'vehicles' : type === 'toys' ? 'collectibles' : type;
+const marketCategory = type => ({cars:'vehicles',toys:'collectibles',jeweler:'watches_jewelry',hardware:'tools'})[type] || type;
 
 export function ensureBusinessSchema(db, { now = Date.now() } = {}) {
   const migrateSales = !db.prepare("SELECT 1 FROM sqlite_schema WHERE type = 'table' AND name = 'business_sales'").get();
@@ -364,7 +368,7 @@ function archivedStock(db) {
     if (price > limits.maxPrice) continue;
     groups[type].push({ auctionId: Number(auction.id), type, title: auction.title,
       image: auctionGallery(auction)[0] || null, category,
-      marketCategory: marketCategory(type), price: Math.max(1, Math.round(price)),
+      marketCategory: marketCategoryForItem({...auction,category}) || marketCategory(type), price: Math.max(1, Math.round(price)),
       quantity: Math.max(1, Math.min(limits.quantity, Math.floor(limits.budget / price) || 1)) });
   }
   return groups;
