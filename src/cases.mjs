@@ -1,3 +1,4 @@
+import { prestigeEffects, discountedCaseCost } from './prestige-effects.mjs';
 import { readFileSync } from 'node:fs';
 import { randomInt, createHash } from 'node:crypto';
 import { auctionGallery } from './auction-images.mjs';
@@ -156,16 +157,16 @@ export function caseRewards() { return { ...GAME_REWARDS }; }
 
 // The contents rotate daily; the quote follows the market. The base-value
 // floor also protects the legacy instant-sale mode in a falling market.
-export function priceCaseCatalog(catalog, indexes = {}) {
+export function priceCaseCatalog(catalog, indexes = {}, caseDiscountPercent = 0) {
   const cases = catalog.cases.map(box => ({ ...box, cost: box.available
-    ? Math.max(1, Math.ceil(Math.max(expectedItemValue(box.items, box.weights),
-      expectedItemValue(box.items, box.weights, item => estimatedValueTokens(item, indexes))) / CASE_RETURN_TARGET)) : 0 }));
+    ? discountedCaseCost(Math.max(1, Math.ceil(Math.max(expectedItemValue(box.items, box.weights),
+      expectedItemValue(box.items, box.weights, item => estimatedValueTokens(item, indexes))) / CASE_RETURN_TARGET)),caseDiscountPercent) : 0 }));
   const poolRevision = catalog.poolRevision || catalog.revision;
   return { ...catalog, poolRevision, cases, revision: hash({ poolRevision, costs: cases.map(box => box.cost) }) };
 }
 
-export function quoteCaseCatalog(dataDir, catalog, now = Date.now()) {
-  return withDatabase(dataDir, db => priceCaseCatalog(catalog, marketIndexes(db, now)));
+export function quoteCaseCatalog(dataDir, catalog, now = Date.now(), userId = null) {
+  return withDatabase(dataDir, db => priceCaseCatalog(catalog, marketIndexes(db, now),prestigeEffects(db,userId).caseDiscountPercent));
 }
 
 // Free Daily cases use affordable archive finds, re-ranked within this pool.

@@ -1,3 +1,5 @@
+import { prestigeAccount } from './prestige.mjs';
+import { prestigeEffects } from './prestige-effects.mjs';
 import { unopenedAuctionWinnings } from './auction-winnings.mjs';
 import { redeemReviewPack, reviewPackTargets } from './review-auctions.mjs';
 import { skillEffects } from './skill-effects.mjs';
@@ -58,13 +60,13 @@ export async function createAccountApi({ dataDir, dailyPayload, json, env = proc
   const trustCloudflareIp = env.TRUST_CLOUDFLARE_IP === 'true';
   const cookie = token => `jg_session=${token}; Path=/; HttpOnly; SameSite=Strict; Max-Age=${token ? 2592000 : 0}${secure ? '; Secure' : ''}`;
   let catalog;
-  function getCatalog() {
+  function getCatalog(user=null) {
     if (!catalog || catalog.rotationDate !== rotationDate()) catalog = loadCaseCatalog(dataDir);
-    return quoteCaseCatalog(dataDir, catalog);
+    return quoteCaseCatalog(dataDir, catalog,Date.now(),user?.id);
   }
   function getStore(user=null) {
     const now = Date.now();
-    return accounts.db(db => withCaseStock(db, quoteCaseStore(loadCaseStoreCatalog(dataDir, now), marketIndexes(db, now),{luckPercent:skillEffects(db,user?.id).luckPercent}), now));
+    return accounts.db(db => withCaseStock(db, quoteCaseStore(loadCaseStoreCatalog(dataDir, now), marketIndexes(db, now),{luckPercent:skillEffects(db,user?.id).luckPercent,caseDiscountPercent:prestigeEffects(db,user?.id).caseDiscountPercent}), now));
   }
   return async (request, response, url) => {
     if (!url.pathname.startsWith('/api/account/')) return false;
@@ -76,7 +78,7 @@ export async function createAccountApi({ dataDir, dailyPayload, json, env = proc
       if (request.method === 'GET') {
         if (route === 'me') json(response, 200, { user: user ? accounts.profile(user) : null });
         else if (route === 'case-store') json(response, 200, getStore(user));
-        else if (route === 'cases') json(response, 200, accounts.db(db => withCaseStock(db, publicCaseCatalog(getCatalog()))));
+        else if (route === 'cases') json(response, 200, accounts.db(db => withCaseStock(db, publicCaseCatalog(getCatalog(user)))));
         else if (route === 'leaderboard') {
           // Public page: only signed-in viewers get uncensored names.
             const board = accounts.leaderboard(url.searchParams.get('view'));
@@ -164,6 +166,7 @@ export async function createAccountApi({ dataDir, dailyPayload, json, env = proc
         response.setHeader('set-cookie', cookie(nextToken));
         result = { user: accounts.profile(user) };
       }
+      else if(route==='prestige') result={prestige:prestigeAccount(dataDir,user,payload),user:accounts.profile(user)};
       else if(route==='skills/upgrade') result={tree:upgradeSkill(dataDir,user,payload),user:accounts.profile(user)};
       else if (route === 'stock-palettes/reveal' && flags.palettes) {
         const palette = revealStockPalette(dataDir,user,payload.id);
@@ -239,7 +242,7 @@ export async function createAccountApi({ dataDir, dailyPayload, json, env = proc
       }
       else if (route === 'cases/open') {
         if (typeof payload.revision !== 'string') throw new AccountError('catalog_changed', 409);
-        result = { item: accounts.openCase(user, getCatalog(), payload.caseId, payload.requestId, payload.revision), user: accounts.profile(user),
+        result = { item: accounts.openCase(user, getCatalog(user), payload.caseId, payload.requestId, payload.revision), user: accounts.profile(user),
           stock: accounts.db(db => withCaseStock(db, { cases: [{ id: payload.caseId }] }).cases[0].stock) };
       }
       else if (route === 'inventory/keep') result = { ...accounts.keepItem(user, payload.id), user: accounts.profile(user) };
@@ -251,9 +254,9 @@ export async function createAccountApi({ dataDir, dailyPayload, json, env = proc
         const dailyIds = dailyAuctions.map(auction => auction.id);
         result = { run: accounts.startGame(user, payload.mode,
           () => auctions || higherLowerDeck(readArchive(dataDir).auctions, Math.random, Date.now(), dailyIds).auctions,
-          caseRewards(getCatalog()), getCatalog()), user: accounts.profile(user) };
+          caseRewards(getCatalog(user)), getCatalog(user)), user: accounts.profile(user) };
       } else if (route === 'games/round/start') result = { run: accounts.startRound(user, payload.id, payload.position), user: accounts.profile(user) };
-      else if (route === 'games/answer') result = { run: accounts.answer(user, payload.id, payload.position, payload.answer, getCatalog()), user: accounts.profile(user) };
+      else if (route === 'games/answer') result = { run: accounts.answer(user, payload.id, payload.position, payload.answer, getCatalog(user)), user: accounts.profile(user) };
       else if (route === 'games/daily-case/claim') result = { item: accounts.claimDailyCase(user, payload.id), user: accounts.profile(user) };
       else if (route === 'inventory/case/open') result = { item: accounts.openSealedCase(user, payload.id), user: accounts.profile(user) };
       else throw new AccountError('not_found', 404);

@@ -69,6 +69,14 @@ function accountError(code) {
     purchase_required: t('Buy something here before leaving a review.', 'Kaufe hier etwas, bevor du eine Bewertung abgibst.'),
     invalid_store_review: t('Choose 1–5 stars and keep your review under 240 characters.', 'Wähle 1–5 Sterne und schreibe höchstens 240 Zeichen.'),
     store_settings_changed: t('Settings changed elsewhere. Reload the saved settings before applying your changes.', 'Einstellungen wurden anderswo geändert. Lade die gespeicherten Einstellungen neu.'),
+    prestige_level_required: t('Reach level 10 before Prestiging.','Erreiche vor Prestige Level 10.'),
+    prestige_changed: t('Your Prestige state changed. Refresh your profile.','Dein Prestige-Status hat sich geändert. Aktualisiere dein Profil.'),
+    prestige_buff_owned: t('You already own this permanent buff.','Du besitzt diesen dauerhaften Bonus bereits.'),
+    prestige_auction_pending: t('Finish auctions with committed bids before Prestiging.','Schließe Auktionen mit verbindlichen Geboten vor Prestige ab.'),
+    prestige_heist_pending: t('Finish active theft attempts before Prestiging.','Schließe aktive Diebstahlversuche vor Prestige ab.'),
+    prestige_justice_pending: t('Settle fines and finish your sentence before Prestiging.','Begleiche Bußgelder und verbüße deine Haftstrafe vor Prestige.'),
+    invalid_prestige: t('Choose an available Prestige buff.','Wähle einen verfügbaren Prestige-Bonus.'),
+    invalid_prestige_confirmation: t('Confirm the account reset.','Bestätige den Konto-Reset.'),
     invalid_store_profile: t('Use up to 60 characters for the name and 140 for the tagline.', 'Nutze höchstens 60 Zeichen für den Namen und 140 für den Spruch.'),
     heist_cooldown: t('The coast isn’t clear yet. Wait for the cooldown.', 'Die Luft ist noch nicht rein. Warte die Abklingzeit ab.'),
     heist_not_ready: t('This paid attempt is not ready yet. Resume it in a moment.', 'Dieser bezahlte Versuch ist noch nicht bereit. Setze ihn gleich fort.'),
@@ -308,6 +316,8 @@ function giftToast(gifts) {
     : t(`You were given ${justizEuro(total)} across ${gifts.length} gifts.`, `Du hast ${justizEuro(total)} aus ${gifts.length} Geschenken erhalten.`);
 }
 function updateAccount(user, progressionOptions) {
+  // A delayed payment reply from before Prestige cannot restore old progress.
+  if(user?.id===account?.id && (user?.prestige?.count||0)<(account?.prestige?.count||0)) return;
   if (account?.id !== user?.id || progressionOptions?.reset) accountCriminalRecord = {records:[],total:0,totalPenalties:0,hasMore:false};
   account = user; accountRevision++;
   window.inventoryItemUi?.accountChanged(user);
@@ -808,7 +818,7 @@ function renderShop() {
   const soldOut = box.stock?.remaining === 0;
   accountContent.innerHTML = `<div class="case-boutique">
     <header class="case-boutique-header">${pageHeading(t('Case Store', 'Kisten-Shop'))}${!account ? `<a href="/login" data-page>${t('Log in to buy', 'Zum Kaufen anmelden')} →</a>` : ''}<a class="secondary-button" href="/inventory" data-page>${t('Inventory', 'Inventar')} ↗</a></header>
-    ${accountStore.luckPercent?`<p class="skill-luck-notice"><strong>+${accountStore.luckPercent}% ${t('luck active','Glücksbonus aktiv')}</strong>${t('Your skill is included in the displayed odds.','Dein Skill ist in den angezeigten Chancen berücksichtigt.')}<a href="/skills" data-page>${t('Skill tree','Skillbaum')} →</a></p>`:''}
+    ${accountStore.luckPercent?`<p class="skill-luck-notice"><strong>+${accountStore.luckPercent}% ${t('luck active','Glücksbonus aktiv')}</strong>${t('Your bonuses are included in the displayed odds.','Deine Boni sind in den angezeigten Chancen berücksichtigt.')}<a href="/skills" data-page>${t('Skill tree','Skillbaum')} →</a></p>`:''}
     <section class="case-showcase case-design-${accountEscape(box.id)}" aria-label="${t('Selected case', 'Ausgewählte Kiste')}">
       <div class="case-showroom"><span class="case-stage-seal">JG / ${accountEscape(box.badge)}</span><div class="case-orbit" aria-hidden="true"></div><div class="case-showroom-rays" aria-hidden="true"></div>${caseArtwork(box)}<div class="case-pedestal" aria-hidden="true"></div><span class="case-stage-caption">${t('SEALED', 'VERSIEGELT')} · ${t('ONE ITEM', 'EIN GEGENSTAND')}</span></div>
       <div class="case-showcase-info"><span class="case-edition-label">${t('CONTENTS', 'INHALTE')} / ${accountEscape(accountStore.rotationDate)}</span><h2>${accountEscape(t(box.name, box.nameDe))}</h2>

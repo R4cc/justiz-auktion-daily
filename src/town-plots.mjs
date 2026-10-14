@@ -63,7 +63,7 @@ export function ensureTownSchema(db,{now=Date.now()}={}) {
   if (!columns.some(column=>column.name==='plot_id')) db.exec('ALTER TABLE businesses ADD COLUMN plot_id TEXT REFERENCES town_plots(id)');
   if (!columns.some(column=>column.name==='plot_since')) db.exec('ALTER TABLE businesses ADD COLUMN plot_since INTEGER NOT NULL DEFAULT 0');
   db.exec('CREATE UNIQUE INDEX IF NOT EXISTS businesses_plot ON businesses(plot_id)');
-  const existing=db.prepare('SELECT id,size FROM businesses WHERE plot_id IS NULL ORDER BY bought_at,id').all();
+  const existing=db.prepare('SELECT id,size FROM businesses WHERE plot_id IS NULL AND retired=0 ORDER BY bought_at,id').all();
   const free=db.prepare('SELECT p.* FROM town_plots p WHERE NOT EXISTS (SELECT 1 FROM businesses b WHERE b.plot_id=p.id) ORDER BY p.id').all();
   if (existing.length>free.length) throw new AccountError('town_migration_capacity',409);
   for (const shop of existing) {

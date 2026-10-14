@@ -5,7 +5,7 @@ import { advanceShop, ensureBusinessSchema, shopStock } from './businesses.mjs';
 import { marketIndexes } from './market.mjs';
 import { inventoryIsLocked } from './resale.mjs';
 import { pushNotification } from './notifications.mjs';
-import { recordSale } from './trader.mjs';
+import { recordSale, salePayout } from './trader.mjs';
 import { creditStoreCash } from './store-cash.mjs';
 
 export const STORE_EVENT_INTERVAL = 24 * 3_600_000;
@@ -61,9 +61,9 @@ export function checkStoreEvents(dataDir, user, { now = Date.now(), random = ran
         if (!db.prepare('UPDATE inventory SET sold_at = ? WHERE id = ? AND user_id = ? AND sold_at IS NULL').run(now, entry.id, player.id).changes) fail('stock_conflict', 409);
         if (!db.prepare('DELETE FROM business_stock WHERE business_id = ? AND inventory_id = ? AND sold_at IS NULL').run(shop.id, entry.id).changes) fail('stock_conflict', 409);
         if (event.effect === 'sale') {
-          const price = Math.round(entry.askingPrice * event.multiplier); money += price;
+          const price = Math.round(entry.askingPrice * event.multiplier); money += salePayout(db,player.id,[entry.id],price);
           db.prepare('INSERT INTO business_sales VALUES (?, ?, ?, ?, ?)').run(`event:${id}:${entry.id}`, shop.id, entry.id, price, now);
-          guardFees += recordSale(db,player.id,[entry.id],price,`event:${id}:${entry.id}`,now,shop.id);
+          guardFees += recordSale(db,player.id,[entry.id],salePayout(db,player.id,[entry.id],price),`event:${id}:${entry.id}`,now,shop.id);
         }
       }
       const balance = db.prepare('SELECT tokens FROM users WHERE id = ?').get(player.id).tokens;

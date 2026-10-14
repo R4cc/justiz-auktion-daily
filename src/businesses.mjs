@@ -13,7 +13,7 @@ import { sealedPaletteInventoryIds } from './palette-auctions.mjs';
 import { ensureNotificationSchema } from './notifications.mjs';
 import { auctionSelectionCategory } from './auction-selection.mjs';
 import { auctionGallery } from './auction-images.mjs';
-import { recordSale, tradingTotals, acquisition, milestone, ensureTraderSchema } from './trader.mjs';
+import { recordSale, salePayout, tradingTotals, acquisition, milestone, ensureTraderSchema } from './trader.mjs';
 import { levelForXp } from './progression.mjs';
 import { creditStoreCash, ensureStoreCashSchema } from './store-cash.mjs';
 
@@ -110,7 +110,7 @@ export function ensureBusinessSchema(db, { now = Date.now() } = {}) {
   if (guardColumns.some(column => column.name === 'goose_guard') && !guardColumns.some(column => column.name === 'security_guard')) {
     db.exec('ALTER TABLE businesses RENAME COLUMN goose_guard TO security_guard');
   }
-  for (const [name, definition] of [['popularity_factors', 'TEXT'], ['store_name', "TEXT NOT NULL DEFAULT ''"], ['store_motto', "TEXT NOT NULL DEFAULT ''"], ['security_guard', 'INTEGER NOT NULL DEFAULT 0'], ['security_guard_profit', 'INTEGER NOT NULL DEFAULT 0'], ['security_guard_fees', 'INTEGER NOT NULL DEFAULT 0 CHECK(security_guard_fees>=0)'], ['mischief_enabled','INTEGER NOT NULL DEFAULT 0 CHECK(mischief_enabled IN (0,1))']]) {
+  for (const [name, definition] of [['retired', 'INTEGER NOT NULL DEFAULT 0'], ['popularity_factors', 'TEXT'], ['store_name', "TEXT NOT NULL DEFAULT ''"], ['store_motto', "TEXT NOT NULL DEFAULT ''"], ['security_guard', 'INTEGER NOT NULL DEFAULT 0'], ['security_guard_profit', 'INTEGER NOT NULL DEFAULT 0'], ['security_guard_fees', 'INTEGER NOT NULL DEFAULT 0 CHECK(security_guard_fees>=0)'], ['mischief_enabled','INTEGER NOT NULL DEFAULT 0 CHECK(mischief_enabled IN (0,1))']]) {
     if (!db.prepare('PRAGMA table_info(businesses)').all().some(column => column.name === name)) db.exec(`ALTER TABLE businesses ADD COLUMN ${name} ${definition}`);
   }
   // Keep sale history independently of physical shelf rows: a player purchase
@@ -212,13 +212,14 @@ export function advanceShop(db, row, now) {
         .run(hour, salePrice, sold.id);
       db.prepare('INSERT INTO business_sales (id, business_id, inventory_id, price, sold_at) VALUES (?, ?, ?, ?, ?)')
           .run(`npc:${sold.id}`, row.id, sold.id, salePrice, hour);
-      guardFees += recordSale(db,row.user_id,[sold.id],salePrice,`npc:${sold.id}`,hour,row.id);
+      const payout=salePayout(db,row.user_id,[sold.id],salePrice);
+      guardFees += recordSale(db,row.user_id,[sold.id],payout,`npc:${sold.id}`,hour,row.id);
       if (!db.prepare('UPDATE inventory SET sold_at = ? WHERE id = ? AND sold_at IS NULL AND user_id = ?')
         .run(hour, sold.id, row.user_id).changes) fail('stock_conflict', 409);
       recordNpcStoreFeedback(db,{ saleId:`npc:${sold.id}`, shopId:row.id,
         category:marketCategoryForItem(sold.item) || marketCategory(row.type), paid:salePrice,
         reference:referencePrice(db,sold.item,row.type,hour), now:hour });
-      sales++; revenue += salePrice;
+      sales++; revenue += payout;
     }
   }
   if (revenue) creditStoreCash(db,row.id,revenue - guardFees);

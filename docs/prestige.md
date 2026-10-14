@@ -1,0 +1,16 @@
+# Prestige
+
+The profile offers Prestige from level 10 (8,100 XP). Each reset unlocks one chosen permanent buff. Reach level 10 again to choose another. Each of the four buffs unlocks once; bonuses do not stack through repeat selections.
+
+- Profit: an extra 25% of positive profit after recorded acquisition costs on player/NPC business sales, business sale events and resale auctions. Unknown costs and losses generate no bonus. Bonuses round down to whole J€. Buyers pay the normal price; the game funds the additional payout. Guard wages include the increased profit.
+- Stealth: a relative 25% decrease in catch chance after a failed theft. Normal 30% becomes 22.5%; guarded 50% becomes 37.5%. Quotes and authoritative starts read the thief's perk; precision is stored in basis points and frozen for the attempt. Blackjack itself is unchanged.
+- Cases: all direct case tiers cost half their normal price, rounded up to at least J€1. Case-auction winners receive the equivalent discount at settlement, without changing the seller's price or bidder escrow rules. Recorded acquisition costs reflect actual net payment. Palettes, review packs and ordinary goods receive no discount.
+- Luck: adds 25 points to the relative Luck modifier for newly drawn case and palette contents and quantities. It combines with the skill's 0/3/5/7 bonus for totals 25/28/30/32. Existing sealed rewards remain fixed; pre-generated legacy palettes retain their old skill-only draw map. Current mystery palettes apply the combined modifier at first opening.
+
+The reset sets XP to zero, clears purchased skill ranks, resets spendable money to the normal J€1,000 starting amount, retires owned inventory and shops, releases plots, discards cash registers, sealed palette winnings and unclaimed old Daily cases, and clears personal trading statistics, milestones, notifications and criminal record. Identity, credentials, sessions, friendships and earlier Prestige buffs survive. Unfinished games are discarded. Completed Daily claims and accepted economic/skill receipts remain as replay guards. Prestige cannot reclaim a Daily reward already earned that day.
+
+A fresh server check blocks Prestige while committed auction escrow, a seller auction with a high bidder, an active theft involving the player or their store, unpaid fines or jail remains. Other players' items, payments and historical receipts stay intact. Retired stores retain foreign purchase/crime references under a disabled NPC identity, have no plot, stock, cash or traffic, and cannot be visited or assigned a new plot. Retired inventory cannot be opened, sold or reclaimed.
+
+`POST /api/account/prestige` accepts `{buffId, expectedCount, requestId, confirmation:'PRESTIGE'}` under the normal human session, CSRF, forced-password and throttle rules. The profile supplies eligibility and available choices. The reset, new permanent buff and receipt commit atomically. Exact retries return the saved result without resetting later progress. Stale tabs, already-owned buffs, forged eligibility and failed writes cannot reset an account.
+
+An administrative Economy Reset preserves permanent human Prestige buffs while resetting ordinary progress. All modifiers are read from persisted account state on the server. No client-supplied costs, chances or bonuses are trusted.

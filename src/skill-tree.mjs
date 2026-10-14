@@ -1,3 +1,4 @@
+import { skillEffects } from './skill-effects.mjs';
 import { transaction, withDatabase } from './database.mjs';
 import { levelForXp } from './progression.mjs';
 import { AccountError } from './errors.mjs';
@@ -26,7 +27,7 @@ function player(db,user,now) {
 }
 export function skillSummary(db,userId,xp) {
   const ranks=skillRanks(db,userId),earned=levelForXp(xp),spent=Object.entries(ranks).reduce((sum,[id,rank])=>sum+skillCosts(id).slice(0,rank).reduce((a,b)=>a+b,0),0);
-  return {earned,spent,available:Math.max(0,earned-spent),ranks,luckPercent:LUCK_BONUSES[ranks.luck||0],securityPercent:SECURITY_BONUSES[ranks.security||0]};
+  return {earned,spent,available:Math.max(0,earned-spent),ranks,luckPercent:skillEffects(db,userId).luckPercent,securityPercent:SECURITY_BONUSES[ranks.security||0]};
 }
 function view(db,row) {
   return {...skillSummary(db,row.id,row.xp),level:levelForXp(row.xp),skills:SKILL_DEFINITIONS.map(skill=>({...skill,

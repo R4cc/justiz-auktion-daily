@@ -140,7 +140,7 @@ test('an insolvent caught thief still pays the quoted fine value to the owner wh
 test('pre-patch active hands and pending wheels preserve their original 20% risk', async t => {
   const f=await fixture(t);f.add('target');
   const {id}=startStoreHeist(f.dir,f.thief,{shopId:f.shop.id,inventoryId:'target',expectedPrice:120,expectedFine:200,requestId:'security-legacy-start-01'},{now,draw:max=>max-1});
-  f.accounts.db(db=>db.prepare('UPDATE store_heists SET chance=0,blackjack=? WHERE id=?').run(JSON.stringify({player:[2,3],dealer:[9,8],deck:[1,4,5],turn:0,outcome:'active'}),id));
+  f.accounts.db(db=>db.prepare('UPDATE store_heists SET chance=0,chance_basis_points=NULL,blackjack=? WHERE id=?').run(JSON.stringify({player:[2,3],dealer:[9,8],deck:[1,4,5],turn:0,outcome:'active'}),id));
   const lost=actStoreHeist(f.dir,f.thief,{heistId:id,action:'stand',turn:0,requestId:'security-legacy-stand-01'},{now,policeDraw:()=>250000});
   assert.equal(lost.policeWheel.catchPercent,20);closeDataStore(f.dir);
   const result=spinStoreHeist(f.dir,f.thief,{heistId:id,requestId:'security-legacy-spin-001'},{now});

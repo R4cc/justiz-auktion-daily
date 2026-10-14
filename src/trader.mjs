@@ -1,3 +1,4 @@
+import { prestigeEffects } from './prestige-effects.mjs';
 import { AccountError } from './errors.mjs';
 import { ECONOMY_BALANCE } from './economy-balance.mjs';
 
@@ -51,6 +52,17 @@ export function acquireItems(db, userId, ids, total, source, now, { reinvest = t
     milestone(db, userId, 'reinvest', now);
 }
 
+// Positive profit only; unknown historical costs cannot imply a profit.
+export function salePayout(db,userId,ids,total) {
+  const percent=prestigeEffects(db,userId).profitPercent;
+  if(!percent)return total;
+  const shares=splitCost(total,ids.length);
+  const profit=Math.max(0,ids.reduce((sum,id,index)=>{const cost=acquisition(db,id,userId).acquisitionCost;return sum+(cost===null?0:shares[index]-cost);},0));
+  const payout=total+Math.floor(profit*percent/100);
+  if(!Number.isSafeInteger(payout))throw new AccountError('token_balance_limit',409);
+  return payout;
+}
+
 export function recordSale(db, userId, ids, total, sourceId, now, businessId = null) {
   ensureTraderSchema(db);
   const shares = splitCost(total, ids.length);
@@ -92,14 +104,15 @@ export function tradingTotals(db, userId, businessId = null) {
 
 export function traderProgress(db, userId, now) {
   ensureTraderSchema(db);
+  const since=prestigeEffects(db,userId).since;
   // Existing players retain credit for their saved activity without invented costs.
-  if (db.prepare("SELECT 1 FROM account_games WHERE user_id=? AND mode='daily' AND complete=1").get(userId))
+  if (!since && db.prepare("SELECT 1 FROM account_games WHERE user_id=? AND mode='daily' AND complete=1").get(userId))
     milestone(db, userId, 'daily', now);
   if (db.prepare(`SELECT 1 FROM inventory i WHERE user_id=? AND (json_extract(item,'$.kind') IS NOT 'case'
     OR EXISTS(SELECT 1 FROM resale_auction_items r WHERE r.inventory_id=i.id)
     OR EXISTS(SELECT 1 FROM business_stock s WHERE s.inventory_id=i.id))`).get(userId)) milestone(db, userId, 'find', now);
   const hasTable = name => db.prepare("SELECT 1 FROM sqlite_schema WHERE type='table' AND name=?").get(name);
-  if (hasTable('resale_auctions') && db.prepare("SELECT 1 FROM resale_auctions WHERE seller_id=? AND settled_at IS NOT NULL AND winner_id IS NOT NULL").get(userId))
+  if (!since && hasTable('resale_auctions') && db.prepare("SELECT 1 FROM resale_auctions WHERE seller_id=? AND settled_at IS NOT NULL AND winner_id IS NOT NULL AND started_at>=?").get(userId,since))
     milestone(db, userId, 'sale', now);
   if (hasTable('businesses') && db.prepare('SELECT 1 FROM businesses WHERE user_id=? AND sales>0').get(userId))
     milestone(db, userId, 'sale', now);

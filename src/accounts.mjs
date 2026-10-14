@@ -1,3 +1,5 @@
+import { prestigeState } from './prestige.mjs';
+import { ensurePrestigeSchema, prestigeEffects } from './prestige-effects.mjs';
 import { ensureSkillsSchema, skillEffects, luckWeights } from './skill-effects.mjs';
 import { skillSummary } from './skill-tree.mjs';
 import { ensureStockPaletteSchema } from './stock-palettes.mjs';
@@ -155,7 +157,7 @@ export class Accounts {
       ensureSealedCaseSchema(db);
       ensureCaseStoreSchema(db);
       ensureStockPaletteSchema(db);
-      ensureSkillsSchema(db);
+      ensureSkillsSchema(db); ensurePrestigeSchema(db);
       const columns = db.prepare('PRAGMA table_info(users)').all().map(column => column.name);
       if (!columns.includes('npc')) db.exec('ALTER TABLE users ADD COLUMN npc INTEGER NOT NULL DEFAULT 0');
       ensureXpSchema(db);
@@ -471,7 +473,7 @@ export class Accounts {
       // Progression derives from the freshly read users.xp through the shared
       // curve — no level arithmetic lives in this class.
       return { ...publicRow, justice:justiceStatus(db,user.id,this.now()), mustChangePassword: Boolean(must_change_password),
-        progression: progressionForXp(xp), skills:skillSummary(db,user.id,xp), ...this.summary(db, user.id), heldInBids, traderStock,
+        prestige:prestigeState(db,user.id,xp,this.now()), progression: progressionForXp(xp), skills:skillSummary(db,user.id,xp), ...this.summary(db, user.id), heldInBids, traderStock,
         ...tradingTotals(db,user.id), traderMilestones: traderProgress(db,user.id,this.now()),
         admin: Boolean(row.admin), reward: reward || null, rewardsByMode, gifts, date: day(this.now()) };
     });
@@ -601,7 +603,7 @@ export class Accounts {
         if (previous.case_id !== caseId) fail('request_conflict', 409);
         return currentItemValue(JSON.parse(previous.item));
       }
-      const quoted = priceCaseCatalog(catalog, marketIndexes(db, this.now()));
+      const quoted = priceCaseCatalog(catalog, marketIndexes(db, this.now()),prestigeEffects(db,user.id).caseDiscountPercent);
       const expectedRevision = catalog.poolRevision ? quoted.revision : catalog.revision;
       if (revision !== expectedRevision || quoted.cases.some((box, i) => box.cost !== catalog.cases[i].cost)) fail('catalog_changed', 409);
       const box = catalog.cases.find(box => box.id === caseId);
@@ -630,7 +632,7 @@ export class Accounts {
         return currentItemValue(JSON.parse(previous.item));
       }
       const luckPercent=skillEffects(db,user.id).luckPercent;
-      const quote = quoteCaseStore(catalog, marketIndexes(db, this.now()),{luckPercent});
+      const quote = quoteCaseStore(catalog, marketIndexes(db, this.now()),{luckPercent,caseDiscountPercent:prestigeEffects(db,user.id).caseDiscountPercent});
       const offer = quote.cases.find(box => box.id === caseId);
       if (!offer) {
         if (['common', 'uncommon', 'rare', 'epic', 'legendary'].includes(caseId)) fail('catalog_changed', 409);
@@ -861,7 +863,7 @@ export class Accounts {
         if (target > reward.earned) db.prepare('UPDATE daily_rewards SET earned = ?, run_id = ? WHERE user_id = ? AND date = ? AND mode = ?')
           .run(target, run.id, user.id, run.date, run.mode);
       }
-      if (run.complete && run.mode === 'daily') awardXp(db, user.id, 'daily', run.id, 150, this.now());
+      if (run.complete && run.mode === 'daily') { awardXp(db, user.id, 'daily', run.id, 150, this.now()); milestone(db,user.id,'daily',this.now()); }
       this.grantDailyCase(db, user, run, catalog);
       db.prepare('UPDATE account_games SET complete = ?, payload = ? WHERE id = ?').run(Number(run.complete), JSON.stringify(run), run.id);
       return this.publicGame(run, db);

@@ -1,3 +1,4 @@
+import { prestigeEffects } from './prestige-effects.mjs';
 import { ECONOMY_BALANCE } from './economy-balance.mjs';
 // Shared db-scoped effects. No client-supplied rank or effect is authoritative.
 export const SKILL_COSTS = [1, 3, 6, 12];
@@ -24,7 +25,7 @@ export function skillRanks(db, userId) {
 }
 export function skillEffects(db, userId) {
   const ranks = skillRanks(db,userId);
-  return { luckPercent: LUCK_BONUSES[ranks.luck || 0], securityPercent: SECURITY_BONUSES[ranks.security || 0],
+  return { luckPercent: LUCK_BONUSES[ranks.luck || 0] + prestigeEffects(db,userId).luckPercent, securityPercent: SECURITY_BONUSES[ranks.security || 0],
     reviewWeight: REVIEW_WEIGHTS[ranks.influence || 0] };
 }
 
@@ -34,7 +35,7 @@ export function skillEffects(db, userId) {
 // each outcome's unnormalized weight grows by at most that factor, while the
 // normalizing total cannot shrink. This holds for any archive/value spread.
 export function luckWeights(weights, bonus = 0) {
-  if (!LUCK_BONUSES.includes(bonus)) throw new Error('invalid_luck_bonus');
+  if (![...LUCK_BONUSES,...LUCK_BONUSES.map(value=>value+25)].includes(bonus)) throw new Error('invalid_luck_bonus');
   if (!bonus) return [...weights];
   const first = weights.findIndex(weight => weight > 0);
   return weights.map((weight,index) => weight * (index > first ? 100 + bonus : 100));

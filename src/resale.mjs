@@ -1,7 +1,8 @@
+import { prestigeEffects, discountedCaseCost } from './prestige-effects.mjs';
 import { businessTypeForItem } from './stock-compatibility.mjs';
 import { resaleBidIncrement } from './economy-balance.mjs';
 import { randomUUID } from 'node:crypto';
-import { recordSale, acquireItems, milestone } from './trader.mjs';
+import { recordSale, salePayout, acquireItems, milestone } from './trader.mjs';
 import { AccountError } from './errors.mjs';
 import { transaction, withDatabase } from './database.mjs';
 import { awardXp, resaleXp } from './xp.mjs';
@@ -33,9 +34,10 @@ import { auctionEndAfterBid } from './auction-timing.mjs';
 // maximum, the leader raising their ceiling reserves only the difference,
 // an outbid refunds the previous holder's exact ceiling), and settlement
 // refunds the winner's unused ceiling and moves the visible price to the
-// seller. Normal bid transitions and settlement never create or destroy
+// seller. Without Prestige rewards, bid transitions and settlement never create or destroy
 // tokens, and the winner is never
-// charged a second time at settlement.
+// charged a second time at settlement. Prestige profit bonuses and case
+// discounts are explicit game-funded rewards, applied once at settlement.
 //
 // Runtime and lazy reads both settle due listings through the same path.
 // NPC buyers reuse placeBid, escrow and settlement; fees are out of scope.
@@ -348,19 +350,21 @@ function settleListingRow(db, row, now) {
   if (!Number.isSafeInteger(held) || held < row.current_bid) fail('escrow_inconsistent', 500);
   const items = listingInventory(db, row);
   if (!items.length || items.some(item => item.user_id !== row.seller_id || item.sold_at !== null)) fail('settlement_conflict', 409);
+  const payout=salePayout(db,row.seller_id,items.map(item=>item.id),row.current_bid);
+  const caseDiscount=items.every(item=>JSON.parse(item.item).kind==='case')?row.current_bid-discountedCaseCost(row.current_bid,prestigeEffects(db,row.winner_id).caseDiscountPercent):0;
   const seller = db.prepare('SELECT tokens, npc FROM users WHERE id = ?').get(row.seller_id);
-  if (!seller || !Number.isSafeInteger(seller.tokens + row.current_bid)) fail('token_balance_limit', 409);
+  if (!seller || !Number.isSafeInteger(seller.tokens + payout)) fail('token_balance_limit', 409);
   const winner = db.prepare('SELECT tokens FROM users WHERE id = ?').get(row.winner_id);
-  if (!winner || !Number.isSafeInteger(winner.tokens + (held - row.current_bid))) fail('token_balance_limit', 409);
+  if (!winner || !Number.isSafeInteger(winner.tokens + (held - row.current_bid + caseDiscount))) fail('token_balance_limit', 409);
   // Transfer every existing inventory row — never insert or mint copies — and
   // release the visible price to the seller and unused maximum to the winner.
   const transfer = db.prepare('UPDATE inventory SET user_id = ? WHERE id = ? AND user_id = ? AND sold_at IS NULL');
-  recordSale(db,row.seller_id,items.map(item=>item.id),row.current_bid,`resale:${row.id}`,now);
+  recordSale(db,row.seller_id,items.map(item=>item.id),payout,`resale:${row.id}`,now);
   for (const item of items) if (!transfer.run(row.winner_id, item.id, row.seller_id).changes) fail('settlement_conflict', 409);
-  acquireItems(db,row.winner_id,items.map(item=>item.id),row.current_bid,'purchase',now);
-  db.prepare('UPDATE users SET tokens = tokens + ? WHERE id = ?').run(row.current_bid, row.seller_id);
-  if (held > row.current_bid) db.prepare('UPDATE users SET tokens = tokens + ? WHERE id = ?')
-    .run(held - row.current_bid, row.winner_id);
+  acquireItems(db,row.winner_id,items.map(item=>item.id),row.current_bid-caseDiscount,'purchase',now);
+  db.prepare('UPDATE users SET tokens = tokens + ? WHERE id = ?').run(payout, row.seller_id);
+  if (held > row.current_bid || caseDiscount) db.prepare('UPDATE users SET tokens = tokens + ? WHERE id = ?')
+    .run(held - row.current_bid + caseDiscount, row.winner_id);
   if (!seller.npc) {
     const claim = db.prepare('INSERT OR IGNORE INTO resale_xp_items VALUES (?, ?)');
     const eligible = items.reduce((count, item) => count + Number(claim.run(item.id, row.id).changes), 0);

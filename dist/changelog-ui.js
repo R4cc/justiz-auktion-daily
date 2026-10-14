@@ -2,6 +2,14 @@ window.changelogUi = (() => {
   // Curated manually. Only update for a feature when the user explicitly asks.
   const entries = [
     {
+      date: '2026-10-14', title: 'Prestige',
+      changes: [
+        {en:'Prestige is available in your profile from level 10. Reset your money, items, stores, XP and skills to choose one permanent buff. Each buff unlocks once; reach level 10 again for another choice.',de:'Prestige ist im Profil ab Level 10 verfügbar. Geld, Gegenstände, Läden, XP und Skills zurücksetzen und einen dauerhaften Bonus wählen. Jeder Bonus ist einmal freischaltbar; für die nächste Wahl erneut Level 10 erreichen.'},
+        {en:'Choose 25% more positive profit on business sales and auctions, 25% lower theft catch odds, 50% lower case purchase costs, or 25% more relative Luck.',de:'Zur Wahl stehen 25% mehr positive Gewinne bei Ladenverkäufen und Auktionen, 25% geringere Fangchance bei Diebstahl, 50% niedrigere Kistenkosten oder 25% mehr relatives Glück.'},
+        {en:'Login, friends and Prestige buffs remain. Committed auctions, theft attempts and unpaid penalties must finish before a reset; claimed Daily rewards cannot be reclaimed.',de:'Login, Freunde und Prestige-Boni bleiben erhalten. Verbindliche Auktionen, Diebstahlversuche und offene Strafen müssen vor dem Reset abgeschlossen sein; erhaltene Daily-Belohnungen lassen sich nicht erneut beanspruchen.'}
+      ]
+    },
+    {
       date: '2026-10-14', title: 'Market Intelligence',
       changes: [
         {en:'Unlock Market Intelligence for 5 skill points to see how far single-item auction bids are below or above current market value.',de:'Marktkenntnis für 5 Skillpunkte freischalten: Bei Einzelauktionen wird angezeigt, wie weit Gebote unter oder über dem aktuellen Marktwert liegen.'},

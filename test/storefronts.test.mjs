@@ -227,7 +227,12 @@ test('unpaid fines protect live bidder escrow; debt blocks new theft and collect
   f.accounts.db(db=>db.prepare('UPDATE users SET tokens=250 WHERE id=?').run(f.buyer.id));const user=f.accounts.profile(f.buyer);assert.equal(user.tokens,50);assert.equal(user.justice.fineDue,0);assert.equal(f.accounts.profile(f.buyer).tokens,50);
 });
 test('abandoned hands are caught offline; insolvency causes persisted, escalating jail without permanent debt loops',async t=>{
-  const f=await fixture(t);f.accounts.db(db=>db.prepare('UPDATE users SET tokens=0 WHERE id=?').run(f.buyer.id));
+  const f=await fixture(t);f.accounts.db(db=>{
+    db.prepare('UPDATE users SET tokens=0 WHERE id=?').run(f.buyer.id);
+    // This test advances across an hour boundary to exercise jail escalation.
+    // Keep its theft target available instead of depending on random NPC sales.
+    db.prepare('UPDATE businesses SET traffic_popularity=0 WHERE id=?').run(f.shop.id);
+  });
   startStoreHeist(f.dir,f.buyer,f.payload(),{now,draw:success});const end=now+HEIST_DURATION+POLICE_WHEEL_DURATION;
   tickStoreJustice(f.dir,{now:end,policeDraw:()=>0});closeDataStore(f.dir);const status=f.accounts.profile(f.buyer).justice;
   assert.equal(status.offences,1);assert.equal(status.fineDue,0);assert.equal(status.jailedUntil,end+5*60000);assert.equal(status.lastConsequence.convertedToSentence,200);

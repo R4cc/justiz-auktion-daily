@@ -419,7 +419,7 @@ function settleStockPalette(db,row,offer,winnerId,winningBid,held,now) {
   const insert=db.prepare('INSERT INTO inventory (id,user_id,item,created_at) VALUES (?,?,?,?)');
   const rewards=draws.map((draw,position)=>{
     const inventoryIds=units.filter(unit=>unit.group_position===position).map(unit=>unit.inventory_id);
-    const original=draw.byLuck[String(luckPercent)];
+    const original=draw.byLuck[String(luckPercent > 7 ? luckPercent - 25 : luckPercent)];
     if(!original || !Number.isFinite(original.price) || !Number.isSafeInteger(draw.quantity) || draw.quantity<1 || inventoryIds.length!==draw.quantity) fail('palette_auction_inconsistent',500);
     const item={...original,paletteAuctionId:row.id,paletteEditionId:row.edition_id,rewardPosition:position,bundleCostTokens:winningBid,luckPercent};
     for(const id of inventoryIds)insert.run(id,winnerId,JSON.stringify({...item,id}),now);
