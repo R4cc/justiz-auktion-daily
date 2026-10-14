@@ -378,10 +378,9 @@ Existing routes reused:
 - `/api/resales[/:id]`, account `/resale/listings`, `/resale/bid`, `/resale/bids`,
   `/resale/bids/archived`, `/resale/cancel`.
 - `/api/market`, `/api/market/:category/history`, `/api/palettes`.
-- Admin `GET /api/account/admin/market` → `{presets, categories, history}`;
-  `POST /api/account/admin/market/adjust` accepts `{category, percent, requestId}`
-  or `{category, action: 'reset', requestId}` and returns `{adjustment, market, user}`.
-  Both require a current admin session, even when the public market flag is off.
+- Admin `GET /api/account/admin/market` → `{categories}`; read-only current
+  category indexes, requiring a current admin session even when the public
+  market flag is off. Manual market adjustment and reset routes are removed.
 - Account `/me`, `/inventory`, Daily start/answer, legacy cases/sells.
 
 Authenticated mutations retain the existing CSRF header/session handling.

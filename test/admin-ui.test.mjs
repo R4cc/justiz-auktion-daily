@@ -11,12 +11,12 @@ function fixture(overrides = {}) {
   const context = vm.createContext({
     accountContent: content, account: { id: 'admin', admin: true }, adminActiveTab: 'market', adminMarketFilter: '', adminUserFilter: '', accountBusy: false,
     accountAdmin: { playerCount: 2, users: [{ id: 'admin', username: 'Admin', tokens: 1000, admin: true }, { id: 'player', username: 'Player', tokens: 2000, banned: true }], grants: [], lastReset: null },
-    accountAdminMarket: { categories: [{ id: 'wine', name: 'Wine', nameDe: 'Wein', currentIndex: 110, multiplier: 1.1 }, { id: 'toys', name: 'Toys', nameDe: 'Spielzeug', currentIndex: 100, multiplier: 1 }], presets: [-80, -5, 5, 10], history: [] },
+    accountAdminMarket: { categories: [{ id: 'wine', name: 'Wine', nameDe: 'Wein', currentIndex: 110 }, { id: 'toys', name: 'Toys', nameDe: 'Spielzeug', currentIndex: 100 }] },
     accountCodes: [{ id: 'code-1', label: '123456', used_at: null, revoked: false }, { id: 'code-2', label: '654321', used_at: 42, revoked: false }],
     freshCodes: [], freshPasswordReset: null, accountAuctions: { query: '', total: 0, page: 1, pages: 1, auctions: [] },
     t: en => en, number: String, justizEuro: value => `J€ ${value}`, euro: String, accountEscape: escape, uiLocale: () => 'en-GB', infoTip: () => '', pageHeading: title => `<h1>${title}</h1>`, ...overrides
   });
-  vm.runInContext(fragment('function adminIcon(', 'async function loadAuctionBrowser(') + fragment('function adminMarketMarkup()', 'async function applyAdminMarketChange(') + fragment('function selectAdminTab(', 'function caseStockLabel('), context);
+  vm.runInContext(fragment('function adminIcon(', 'async function loadAuctionBrowser(') + fragment('function adminMarketMarkup()', 'function selectAdminTab(') + fragment('function selectAdminTab(', 'function caseStockLabel('), context);
   return { context, content, render: () => { vm.runInContext('renderAdmin()', context); return content.innerHTML; } };
 }
 
@@ -37,20 +37,21 @@ test('admin workspace gates private content and retains its selected tool after 
   assert.doesNotMatch(markup, /data-admin-tab|registration_codes|code-1|data-account="market-adjust"/);
 });
 
-test('market search survives a category update and shows an empty result without removing controls', () => {
+test('market overview remains searchable and read-only while the admin is busy', () => {
   const f = fixture({ adminMarketFilter: 'wein' });
   let markup = vm.runInContext('adminMarketMarkup()', f.context);
   assert.match(markup, /data-market-category="wine"[^>]* >/);
   assert.match(markup, /data-market-category="toys"[^>]*hidden/);
   assert.match(markup, /id="admin-market-search"[^>]*value="wein"/);
-  assert.match(markup, /data-account="market-reset" data-category="toys" disabled/);
-  assert.doesNotMatch(markup, /data-account="market-reset" data-category="wine" disabled/);
+  assert.match(markup, /Market overview/);assert.match(markup, />110<\/strong>/);
+  assert.doesNotMatch(markup, /<button|Manual adjustment|market-adjust|market-reset|Recent adjustments/);
   f.context.adminMarketFilter = 'missing';
   markup = vm.runInContext('adminMarketMarkup()', f.context);
   assert.match(markup, /id="admin-market-empty"[^>]* >No categories/);
   f.context.accountBusy = true;
   markup = vm.runInContext('adminMarketMarkup()', f.context);
-  assert.equal((markup.match(/data-account="market-adjust"[^>]* disabled/g) || []).length, 8);
+  assert.doesNotMatch(markup, /<button|Manual adjustment|market-adjust|market-reset/);
+  assert.match(markup, /Current index/);
 });
 
 test('admin controls escape external values and keep one-time codes and passwords reviewable', () => {

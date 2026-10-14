@@ -6,7 +6,7 @@ import path from 'node:path';
 import { Accounts } from '../src/accounts.mjs';
 import { closeDataStore } from '../src/database.mjs';
 import { buyBusiness, businessDashboard, stockBusiness, unstockBusiness } from '../src/businesses.mjs';
-import { adjustAdminMarket } from '../src/admin-economy.mjs';
+import { setMarketIndex } from '../src/market.mjs';
 import { ensureStoreSchema, listStores, visitStore, recordStoreVisit, buyStoreItem, reviewStore, reactToStore, tipStore, customizeStore,
   spinStoreHeist, POLICE_WHEEL_DURATION, playerCriminalRecord, theftQuote, startStoreHeist, finishStoreHeist, actStoreHeist, tickStoreJustice, HEIST_DURATION, HEIST_COOLDOWN, STORE_HEIST_COOLDOWN } from '../src/storefronts.mjs';
 
@@ -125,7 +125,7 @@ test('buy rejects own stock, stale quotes, missing items and insufficient funds 
   assert.throws(() => buyStoreItem(f.dir, f.buyer, f.payload(), { now }), /insufficient_tokens/);
   assert.equal(f.itemOwner('wine-0'), f.owner.id); assert.equal(f.balance(f.owner), before);
   assert.equal(f.accounts.db(db => db.prepare('SELECT COUNT(*) AS n FROM store_receipts').get().n), 0);
-  adjustAdminMarket(f.dir, f.owner, { category: 'wine', percent: -80, requestId: 'store-market-adjust-001' }, { now });
+  setMarketIndex(f.dir, 'wine', 20, { now });
   assert.equal(f.view().stock[0].price, 24);
   assert.throws(() => buyStoreItem(f.dir, f.rival, f.payload(), { now }), /store_price_changed/);
 });

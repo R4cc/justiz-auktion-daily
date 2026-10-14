@@ -58,8 +58,6 @@ function accountError(code) {
     invalid_code: t('This code is invalid or already used.', 'Dieser Code ist ungültig oder bereits verwendet.'),
     username_taken: t('That username is already taken.', 'Dieser Benutzername ist bereits vergeben.'),
     login_required: t('Please sign in again.', 'Bitte melde dich erneut an.'),
-    market_adjustment_limit: t('This would exceed the manual adjustment range. Reset this category first.', 'Damit wird der Bereich für manuelle Änderungen überschritten. Setze diese Kategorie zuerst zurück.'),
-    invalid_market_adjustment: t('Choose a valid percentage change.', 'Wähle eine gültige prozentuale Änderung.'),
     own_review: t('You cannot like your own review.', 'Du kannst deine eigene Bewertung nicht liken.'),
     review_not_found: t('This review is no longer available. Refresh the store.', 'Diese Bewertung ist nicht mehr verfügbar. Lade den Laden neu.'),
     invalid_store_reaction: t('Choose a valid reaction.', 'Wähle eine gültige Reaktion.'),
@@ -676,43 +674,16 @@ function renderAuctionDetail(auction) {
 }
 function adminMarketMarkup() {
   return `<div class="admin-section admin-market" id="admin-market-section">
-    <div class="admin-panel-heading"><div><h2>${t('Market controls', 'Marktsteuerung')}</h2></div><span class="admin-tag">${number(accountAdminMarket.categories.length)} ${t('categories', 'Kategorien')}</span></div>
-    <details class="admin-help"><summary>${t('How market adjustments work', 'So funktionieren Marktänderungen')}</summary><p>${t('Change current category prices by the selected percentage. Changes compound and persist while the market keeps moving. Reset removes the manual adjustment for that category.', 'Ändere aktuelle Kategoriepreise um den gewählten Prozentsatz. Änderungen wirken nacheinander und bleiben bestehen, während sich der Markt weiterbewegt. Zurücksetzen entfernt die manuelle Änderung für diese Kategorie.')}</p></details>
+    <div class="admin-panel-heading"><div><h2>${t('Market overview', 'Marktübersicht')}</h2></div><span class="admin-tag">${number(accountAdminMarket.categories.length)} ${t('categories', 'Kategorien')}</span></div>
     <div class="admin-toolbar"><label class="admin-search">${t('Find a category', 'Kategorie finden')}<span>${adminIcon('search')}<input id="admin-market-search" name="market-search" type="search" autocomplete="off" placeholder="${t('Search categories…', 'Kategorien durchsuchen …')}" value="${accountEscape(adminMarketFilter)}"></span></label></div>
     <div class="admin-market-categories">${accountAdminMarket.categories.map(category => {
-      const change = (category.multiplier - 1) * 100;
       const name = t(category.name, category.nameDe);
       const matches = `${category.name} ${category.nameDe}`.toLowerCase().includes(adminMarketFilter.trim().toLowerCase());
       return `<article class="admin-market-category" data-market-category="${accountEscape(category.id)}" data-market-name="${accountEscape(`${category.name} ${category.nameDe}`.toLowerCase())}" ${matches ? '' : 'hidden'}>
-      <div class="admin-category-heading"><h3 tabindex="-1">${accountEscape(name)}</h3><span class="admin-status${change > 0 ? ' is-up' : change < 0 ? ' is-down' : ''}">${change === 0 ? t('Unadjusted', 'Unverändert') : `${change > 0 ? '+' : ''}${number(change, 2)}%`}</span></div>
-      <div class="admin-category-value"><strong>${number(category.currentIndex, 2)}</strong><span>${t('Current index', 'Aktueller Index')}<small>${t('Manual adjustment', 'Manuelle Änderung')}: ${change > 0 ? '+' : ''}${number(change, 2)}%</small></span></div>
-      <div class="admin-market-controls" role="group" aria-label="${accountEscape(name)}">${accountAdminMarket.presets.map(percent => {
-        const next = category.multiplier * (1 + percent / 100);
-        return `<button type="button" class="${percent < 0 ? 'market-decrease' : 'market-increase'}" data-account="market-adjust" data-category="${accountEscape(category.id)}" data-percent="${percent}" ${accountBusy || next < .001 || next > 100 ? 'disabled' : ''} aria-label="${accountEscape(name)} ${percent > 0 ? '+' : ''}${percent}%">${percent > 0 ? '+' : ''}${percent}%</button>`;
-      }).join('')}<button type="button" data-account="market-reset" data-category="${accountEscape(category.id)}" ${accountBusy || category.multiplier === 1 ? 'disabled' : ''} aria-label="${accountEscape(name)}: ${t('Remove manual adjustment', 'Manuelle Änderung entfernen')}" title="${t('Remove manual adjustment', 'Manuelle Änderung entfernen')}">${t('Reset', 'Reset')}</button></div></article>`;
+      <div class="admin-category-heading"><h3>${accountEscape(name)}</h3></div>
+      <div class="admin-category-value"><strong>${number(category.currentIndex, 2)}</strong><span>${t('Current index', 'Aktueller Index')}</span></div></article>`;
     }).join('')}</div>
-    <p class="admin-empty" id="admin-market-empty" role="status" ${accountAdminMarket.categories.some(category => `${category.name} ${category.nameDe}`.toLowerCase().includes(adminMarketFilter.trim().toLowerCase())) ? 'hidden' : ''}>${t('No categories match this search.', 'Keine Kategorien gefunden.')}</p>
-    <details class="admin-market-history admin-history"><summary>${t('Recent adjustments', 'Letzte Änderungen')} <span>${number(accountAdminMarket.history.length)}</span></summary>${accountAdminMarket.history.length ? accountAdminMarket.history.map(entry => {
-      const category = accountAdminMarket.categories.find(category => category.id === entry.category);
-      return `<div class="admin-history-row"><div><strong>${accountEscape(category ? t(category.name, category.nameDe) : entry.category)}</strong><small>${new Date(entry.createdAt).toLocaleString(uiLocale())} · ${accountEscape(entry.username || '')}</small></div><span>${entry.action === 'reset' ? t('Reset', 'Zurücksetzen') : `${entry.percent > 0 ? '+' : ''}${number(entry.percent)}%`} · ${number(entry.beforeIndex, 2)} → ${number(entry.afterIndex, 2)}</span></div>`;
-    }).join('') : `<p class="admin-empty">${t('No manual adjustments yet.', 'Noch keine manuellen Änderungen.')}</p>`}</details></div>`;
-}
-async function applyAdminMarketChange(button, visit) {
-  if (!account?.admin) return;
-  const owner = account.id, category = button.dataset.category;
-  const action = button.dataset.account === 'market-reset' ? 'reset' : 'adjust';
-  const percent = action === 'adjust' ? Number(button.dataset.percent) : null;
-  const key = `justizguessr:pending-market-adjustment:${owner}:${category}:${action}:${percent}`;
-  let requestId; try { requestId = localStorage.getItem(key); } catch {}
-  requestId ||= crypto.randomUUID(); try { localStorage.setItem(key, requestId); } catch {}
-  for (const control of accountContent.querySelectorAll('.admin-market-controls button')) control.disabled = true;
-  const result = await accountApi('admin/market/adjust', { category, action, percent, requestId });
-  try { localStorage.removeItem(key); } catch {}
-  if (account?.id !== owner) return;
-  updateAccount(result.user);
-  if (visit !== accountVisit) return;
-  accountAdminMarket = result.market;
-  showToast(t('Market adjustment applied.', 'Marktänderung angewendet.'));
+    <p class="admin-empty" id="admin-market-empty" role="status" ${accountAdminMarket.categories.some(category => `${category.name} ${category.nameDe}`.toLowerCase().includes(adminMarketFilter.trim().toLowerCase())) ? 'hidden' : ''}>${t('No categories match this search.', 'Keine Kategorien gefunden.')}</p></div>`;
 }
 function selectAdminTab(tab, focus = false) {
   const button = accountContent.querySelector(`[data-admin-tab="${tab}"]`);
@@ -1054,7 +1025,6 @@ document.addEventListener('click', async event => {
       await navigateAccountPage('/login');
     }
     if (action === 'select-case') { accountSelectedCase = button.dataset.id; accountResult = null; renderAccountPage(); }
-    if (action === 'market-adjust' || action === 'market-reset') await applyAdminMarketChange(button, visit);
     if (action === 'buy-case') await buyStoreCase(button.dataset.id, visit);
     if (action === 'pull') { caseReveal.close(); await pullCase(visit); }
     if (action === 'open-inventory-case') {
@@ -1131,15 +1101,6 @@ document.addEventListener('click', async event => {
     if (visit === accountVisit) { if (['catalog_changed', 'case_out_of_stock'].includes(error.code)) await navigateAccountPage('/shop', false); showToast(error.message); }
   } finally {
     accountBusy = false; if (button.isConnected) button.disabled = false;
-    if ((action === 'market-adjust' || action === 'market-reset') && visit === accountVisit) {
-      const section = accountContent.querySelector('#admin-market-section');
-      if (section) {
-        section.outerHTML = adminMarketMarkup();
-        const row = accountContent.querySelector(`[data-market-category="${button.dataset.category}"]`);
-        const replacement = row?.querySelector(`[data-account="${action}"]${action === 'market-adjust' ? `[data-percent="${button.dataset.percent}"]` : ''}`);
-        (replacement && !replacement.disabled ? replacement : row?.querySelector('h3'))?.focus({ preventScroll: true });
-      }
-    }
     updateCasePurchaseButtons();
   }
 });
