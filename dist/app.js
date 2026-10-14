@@ -547,7 +547,7 @@ async function claimDailyCase(choice = 'keep') {
       updateAccount(result.user);
       dailyCaseDialog.close();
       renderResults();
-      await showDailyCaseItem(result.item, isCurrent);
+      await showDailyCaseItem(result.item, isCurrent, dailyCaseClaim.item);
     } else {
       dailyCaseDialog.close();
       renderResults();
@@ -559,7 +559,7 @@ async function claimDailyCase(choice = 'keep') {
   } finally { dailyCaseBusy = false; if (dailyCaseDialog.open && isCurrent()) renderDailyCaseDialog(); }
 }
 
-async function showDailyCaseItem(item, isCurrent) {
+async function showDailyCaseItem(item, isCurrent, sealedItem = {}) {
   caseReveal.innerHTML = `<div class="case-reveal-content rarity-${auctionEscape(item.rarity)}"><h2 id="case-reveal-title">${t('Opening case…', 'Kiste wird geöffnet …')}</h2><div class="case-window"><div class="case-marker"></div><div class="case-reel"></div></div></div>`;
   caseReveal.showModal();
   const pool = accountCatalog?.cases?.find(box => box.id === 'fundkiste')?.items || [];
@@ -567,8 +567,10 @@ async function showDailyCaseItem(item, isCurrent) {
     await spinCaseReel(caseReveal.querySelector('.case-reel'), caseReveal.querySelector('.case-window'), item,
       pool.length ? pool : [item], () => caseReveal.open && isCurrent());
   } catch { /* The awarded item is already saved; still show the result. */ }
+  const store = await accountApi('case-store').catch(() => null);
   if (!caseReveal.open || !isCurrent()) return;
-  caseReveal.innerHTML = `<div class="case-reveal-content rarity-${auctionEscape(item.rarity)}"><h2 id="case-reveal-title">${auctionEscape(item.title)}</h2>${item.image ? `<img src="${auctionEscape(item.image)}" alt="">` : ''}<p class="rarity-label">${rarityLabel(item.rarity)}</p><p>${t('Added to inventory.', 'Zum Inventar hinzugefügt.')}</p><div class="case-reveal-actions"><button class="primary-button" type="button" data-account="close-reveal">${t('View results', 'Ergebnis ansehen')}</button></div></div>`;
+  if (store) accountStore = store;
+  caseReveal.innerHTML = `<div class="case-reveal-content rarity-${auctionEscape(item.rarity)}"><h2 id="case-reveal-title">${auctionEscape(item.title)}</h2>${item.image ? `<img src="${auctionEscape(item.image)}" alt="">` : ''}<p class="rarity-label">${rarityLabel(item.rarity)}</p><p>${t('Added to inventory.', 'Zum Inventar hinzugefügt.')}</p><div class="case-reveal-actions">${caseResultActions(item, sealedItem)}</div></div>`;
   caseReveal.querySelector('[data-account="close-reveal"]').focus({ preventScroll: true });
 }
 

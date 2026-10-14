@@ -6,6 +6,7 @@ import vm from 'node:vm';
 const source = await readFile(new URL('../dist/account.js', import.meta.url), 'utf8');
 const art = await readFile(new URL('../dist/case-art.js', import.meta.url), 'utf8');
 const buySource = source.slice(source.indexOf('async function buyStoreCase('), source.indexOf('function renderLegacyShop('));
+const resultSource = source.slice(source.indexOf('function caseResultActions('), source.indexOf('function tierCard('));
 const handlerSource = source.slice(source.lastIndexOf("document.addEventListener('click', async event => {"), source.indexOf("document.addEventListener('submit', async event => {"));
 const flush = () => new Promise(resolve => setImmediate(resolve));
 const item = {id:'sealed-one',kind:'case',caseType:'lost-property',title:'Lost Property Case',titleDe:'Fundbüro-Kiste'};
@@ -14,22 +15,23 @@ const escape = value => String(value).replaceAll('&','&amp;').replaceAll('<','&l
 
 function fixture() {
   const pending = new Map(), calls = [], focused = [];
+  const store = {revision:'quote',cases:[{id:'lost-property',cost:174,stock:{remaining:4}},{id:'vault',cost:300,stock:{remaining:2}}]};
   let handler, renders = 0, shows = 0;
   const caseReveal = {open:false,innerHTML:'',showModal(){this.open=true;shows++;},close(){this.open=false;},querySelector(selector){return {focus(){focused.push(selector);}};}};
   const context = vm.createContext({
-    account:{id:'buyer',tokens:500},accountStore:{revision:'quote',cases:[]},accountSelectedStoreCase:'lost-property',
+    account:{id:'buyer',tokens:500},accountStore:store,accountSelectedStoreCase:'lost-property',
     caseStockRequest:0,accountVisit:1,currentAccountPage:'/shop',accountBusy:false,
     accountItems:[item],accountCatalog:null,traderStores:[],economyFlags:{businesses:true,resales:true},
     caseReveal,accountContent:{querySelector(){return null;},querySelectorAll(){return []; }},
     localStorage:{getItem:key=>pending.get(key),setItem:(key,value)=>pending.set(key,value),removeItem:key=>pending.delete(key)},
-    crypto:{randomUUID:()=> 'saved-purchase-request'},accountEscape:escape,rarityLabel:String,t:en=>en,euro:String,
+    crypto:{randomUUID:()=> 'saved-purchase-request'},accountEscape:escape,rarityLabel:String,t:en=>en,euro:String,justizEuro:value=>`J€ ${value}`,
     updateAccount(user){context.account=user;},renderAccountPage(){renders++;},updateCasePurchaseButtons(){},
     showToast(){},traderItemActions:()=>'<button>Keep</button>',
     document:{addEventListener(type,fn){handler=fn;}},
-    accountApi:async(route,payload)=>{calls.push({route,payload});if(route==='cases/buy')return {item,user:{id:'buyer',tokens:326},store:{revision:'quote',cases:[]}};if(route==='inventory/case/open')return {item:find,user:{id:'buyer',tokens:326}};if(route==='businesses')return {shops:[{id:'store'}]};return {items:[find]};},
+    accountApi:async(route,payload)=>{calls.push({route,payload});if(route==='cases/buy')return {item,user:{id:'buyer',tokens:326},store};if(route==='inventory/case/open')return {item:find,user:{id:'buyer',tokens:326}};if(route==='case-store')return store;if(route==='businesses')return {shops:[{id:'store'}]};return {items:[find]};},
     spinCaseReel:async()=>{}
   });
-  vm.runInContext(art+buySource+handlerSource,context);
+  vm.runInContext(art+buySource+resultSource+handlerSource,context);
   const click=(action,id)=>handler({target:{closest:()=>({dataset:{account:action,id},isConnected:false})}});
   return {context,pending,calls,caseReveal,click,focused,get renders(){return renders;},get shows(){return shows;}};
 }
@@ -76,6 +78,46 @@ test('dismissing a purchased case while the opening request is pending does not 
   const opening=f.click('open-inventory-case',item.id);await flush();
   await f.click('close-reveal');finish({item:find,user:{id:'buyer',tokens:326}});await opening;
   assert.equal(f.caseReveal.open,false);assert.equal(f.shows,0);assert.equal(f.context.accountItems[0].id,find.id);
+});
+
+test('opened inventory and purchased cases show only buy another, view in inventory and exit', async () => {
+  for (const resales of [true, false]) for (const page of ['/shop', '/inventory']) {
+    const f = fixture(); f.context.currentAccountPage = page; f.context.economyFlags.resales = resales;
+    await f.click('open-inventory-case', item.id);
+    assert.equal(f.context.accountBusy, false);
+    assert.equal((f.caseReveal.innerHTML.match(/<(?:button|a)\b/g) || []).length, 3);
+    assert.match(f.caseReveal.innerHTML, /Buy another case \(J€ 174\)/);
+    assert.match(f.caseReveal.innerHTML, /href="\/inventory\?focus=find-one" data-page>View in inventory/);
+    assert.match(f.caseReveal.innerHTML, />Exit<\/button>/);
+    assert.doesNotMatch(f.caseReveal.innerHTML, /dialog-close|Keep item|Sell now|data-trader|disabled/);
+    assert.equal(f.calls.filter(call => call.route === 'cases/buy').length, 0);
+    await f.click('buy-case', 'lost-property');
+    assert.equal(f.calls.filter(call => call.route === 'cases/buy').length, 1);
+    assert.equal(f.calls.filter(call => call.route === 'inventory/case/open').length, 1);
+    assert.match(f.caseReveal.innerHTML, /Keep sealed/);
+  }
+});
+
+test('buy another uses the opened case type and current quote, even when another showroom case is selected', async () => {
+  const f = fixture(); f.context.accountItems = [{ ...item, caseType: 'vault' }];
+  await f.click('open-inventory-case', item.id);
+  assert.match(f.caseReveal.innerHTML, /data-account="buy-case" data-id="vault"/);
+  assert.match(f.caseReveal.innerHTML, /Buy another case \(J€ 300\)/);
+  for (const [tier, caseId] of [['common','lost-property'],['epic','vault']]) {
+    const html = vm.runInContext(`caseResultActions({id:'find'}, {caseTier:'${tier}'})`, f.context);
+    assert.match(html, new RegExp(`data-id="${caseId}"`));
+  }
+});
+
+test('sold-out or unaffordable repeat purchases retain all three result actions', async () => {
+  const f = fixture(); f.context.accountStore.cases[0].stock.remaining = 0;
+  let html = vm.runInContext("caseResultActions({id:'find'}, {caseType:'lost-property'})", f.context);
+  assert.match(html, /data-id="lost-property" disabled/);
+  assert.equal((html.match(/<(?:button|a)\b/g) || []).length, 3);
+  f.context.accountStore.cases[0].stock.remaining = 2; f.context.account.tokens = 1;
+  html = vm.runInContext("caseResultActions({id:'find'}, {caseType:'lost-property'})", f.context);
+  assert.match(html, /data-id="lost-property" disabled/);
+  assert.match(html, /View in inventory/); assert.match(html, /Exit/);
 });
 
 test('case illustrations escape labels and resolve unknown IDs to a known design',()=>{

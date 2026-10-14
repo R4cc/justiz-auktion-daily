@@ -854,6 +854,7 @@ async function buyStoreCase(caseId, visit) {
   updateAccount(result.user);
   if (visit !== accountVisit) return;
   accountStore = result.store;
+  accountItems = [result.item, ...accountItems.filter(item => item.id !== result.item.id)];
   renderAccountPage();
   caseReveal.innerHTML = `<div class="case-purchase-content"><button class="dialog-close" data-account="close-reveal" aria-label="${t('Close', 'Schließen')}">×</button><div class="case-purchase-burst" aria-hidden="true">${Array.from({length: 12}, (_, i) => `<i style="--particle:${i}"></i>`).join('')}</div><p class="case-receipt-label">${t('ADDED TO INVENTORY', 'ZUM INVENTAR HINZUGEFÜGT')}</p>${caseArtwork(result.item)}<h2 id="case-reveal-title">${accountEscape(t(result.item.title, result.item.titleDe))}</h2><div class="case-reveal-actions"><button class="primary-button" data-account="open-inventory-case" data-id="${accountEscape(result.item.id)}">${t('Open case', 'Kiste öffnen')}</button><button class="secondary-button" data-account="close-reveal">${t('Keep sealed', 'Versiegelt behalten')}</button></div></div>`;
   if (!caseReveal.open) caseReveal.showModal();
@@ -877,15 +878,21 @@ function renderLegacyShop() {
     `;
 }
 function resultMarkup() {
-  return `<p class="rarity-label rarity-${accountResult.rarity}">${rarityLabel(accountResult.rarity)}</p><h2>${accountEscape(accountResult.title)}</h2>${accountResult.sold ? `<p>${t('Sold. J€ added.', 'Verkauft. J€ gutgeschrieben.')}</p>` : ''}
-    ${accountResult.sold || economyFlags.resales ? '' : `<button class="secondary-button" data-account="sell-result" data-id="${accountResult.id}">${t('Sell now', 'Sofort verkaufen')} · ${justizEuro(accountResult.sellValue)}</button>`}`;
+  return `<p class="rarity-label rarity-${accountResult.rarity}">${rarityLabel(accountResult.rarity)}</p><h2>${accountEscape(accountResult.title)}</h2>${accountResult.sold ? `<p>${t('Sold. J€ added.', 'Verkauft. J€ gutgeschrieben.')}</p>` : ''}`;
+}
+function caseResultActions(item, sealedItem = {}, legacy = false) {
+  const tiers = ['common', 'uncommon', 'rare', 'epic', 'legendary'];
+  const cases = ['lost-property', 'evidence-locker', 'seizure', 'vault', 'collectors-cache'];
+  const caseId = legacy ? item.caseId : sealedItem.caseType || cases[tiers.indexOf(sealedItem.caseTier)] || cases[0];
+  const offer = (legacy ? accountCatalog : accountStore)?.cases?.find(box => box.id === caseId);
+  const disabled = !account || !offer || offer.available === false || account.tokens < offer.cost || offer.stock?.remaining === 0;
+  return `<button class="primary-button" data-account="${legacy ? 'pull' : 'buy-case'}" data-id="${accountEscape(caseId)}" ${disabled ? 'disabled' : ''}>${t('Buy another case', 'Weitere Kiste kaufen')} (${offer ? justizEuro(offer.cost) : '—'})</button><a class="secondary-button" href="/inventory?focus=${encodeURIComponent(item.id)}" data-page>${t('View in inventory', 'Im Inventar ansehen')}</a><button class="text-button" data-account="close-reveal">${t('Exit', 'Verlassen')}</button>`;
 }
 function tierCard(rarity) {
   return `<div class="case-tier rarity-${accountEscape(rarity)}"><span class="case-tier-symbol" aria-hidden="true">◇</span><span class="rarity-label">${rarityLabel(rarity)}</span></div>`;
 }
 function revealCaseItem() {
-  const box = accountCatalog.cases.find(box => box.id === accountResult.caseId);
-  caseReveal.innerHTML = `<div class="case-reveal-content case-unboxed rarity-${accountEscape(accountResult.rarity)}"><h2 id="case-reveal-title">${accountEscape(accountResult.title)}</h2><img src="${accountEscape(accountResult.image)}" alt=""><p class="rarity-label">${rarityLabel(accountResult.rarity)}</p><p>${t('Historical real-auction value', 'Historischer Wert der echten Auktion')} ${euro(accountResult.price)}</p><p role="status">${accountResult.sold ? t('Sold. J€ added.', 'Verkauft. J€ gutgeschrieben.') : t('Added to inventory.', 'Zum Inventar hinzugefügt.')}</p><div class="case-reveal-actions">${accountResult.sold || economyFlags.resales ? '' : `<button class="secondary-button" data-account="sell-result" data-id="${accountEscape(accountResult.id)}">${t('Sell now', 'Sofort verkaufen')} · ${justizEuro(accountResult.sellValue)}</button>`}<button class="primary-button" data-account="pull" ${!account || account.tokens < box.cost || !box.available ? 'disabled' : ''}>${t('Open another case', 'Weitere Kiste öffnen')} · ${justizEuro(box.cost)}</button><button class="text-button" data-account="close-reveal" autofocus>${accountResult.sold ? t('Close', 'Schließen') : t('Keep item', 'Behalten')}</button></div></div>`;
+  caseReveal.innerHTML = `<div class="case-reveal-content case-unboxed rarity-${accountEscape(accountResult.rarity)}"><h2 id="case-reveal-title">${accountEscape(accountResult.title)}</h2><img src="${accountEscape(accountResult.image)}" alt=""><p class="rarity-label">${rarityLabel(accountResult.rarity)}</p><p>${t('Historical real-auction value', 'Historischer Wert der echten Auktion')} ${euro(accountResult.price)}</p><p role="status">${accountResult.sold ? t('Sold. J€ added.', 'Verkauft. J€ gutgeschrieben.') : t('Added to inventory.', 'Zum Inventar hinzugefügt.')}</p><div class="case-reveal-actions">${caseResultActions(accountResult, {}, true)}</div></div>`;
   if (!caseReveal.open) caseReveal.showModal();
   caseReveal.querySelector('[data-account="close-reveal"]').focus({ preventScroll: true });
 }
@@ -1058,9 +1065,10 @@ document.addEventListener('click', async event => {
       const result = await accountApi('inventory/case/open', { id: button.dataset.id });
       if (account?.id !== owner) return;
       updateAccount(result.user);
-      const [inventory, stores] = await Promise.all([accountApi('inventory?includeStores=1'), economyFlags.businesses ? accountApi('businesses') : null]);
+      const [inventory, stores, store] = await Promise.all([accountApi('inventory?includeStores=1'), economyFlags.businesses ? accountApi('businesses') : null, accountApi('case-store').catch(() => null)]);
       if (visit !== accountVisit || account?.id !== owner) return;
       accountItems = inventory.items; traderStores = stores?.shops || [];
+      if (store) accountStore = store;
       if (dialogWasOpen && !caseReveal.open) { renderAccountPage(); return; }
       renderAccountPage();
       caseReveal.innerHTML = `<div class="case-opening-content"><button class="dialog-close" data-account="close-reveal" aria-label="${t('Close', 'Schließen')}">×</button>${caseArtwork(sealedItem)}<h2 id="case-reveal-title">${t('Opening case…', 'Kiste wird geöffnet …')}</h2><div class="case-window" aria-hidden="true"><div class="case-marker"></div><div class="case-reel"></div></div><p>${t('Saved to inventory.', 'Im Inventar gespeichert.')}</p></div>`;
@@ -1071,8 +1079,8 @@ document.addEventListener('click', async event => {
         pool.length ? pool : [result.item], () => caseReveal.open && visit === accountVisit && account?.id === owner); }
       catch { /* The awarded item is already in inventory; still show it. */ }
       if (visit !== accountVisit || account?.id !== owner || !caseReveal.open) return;
-      caseReveal.innerHTML = `<div class="case-reveal-content case-unboxed rarity-${accountEscape(result.item.rarity)}"><button class="dialog-close" data-account="close-reveal" aria-label="${t('Close', 'Schließen')}">×</button><p class="case-receipt-label">${t('CASE OPENED', 'KISTE GEÖFFNET')}</p><h2 id="case-reveal-title">${accountEscape(result.item.title)}</h2>${result.item.image ? `<img src="${accountEscape(result.item.image)}" alt="">` : ''}<p class="rarity-label">${rarityLabel(result.item.rarity)}</p><p>${t('Historical real-auction value', 'Historischer Wert der echten Auktion')} ${euro(result.item.price)}</p><p>${t('Added to inventory.', 'Zum Inventar hinzugefügt.')}</p><div class="case-reveal-actions">${traderItemActions(accountItems.find(item=>item.id===result.item.id)||result.item,[accountItems.find(item=>item.id===result.item.id)||result.item])}${currentAccountPage === '/inventory' ? `<button class="primary-button" data-account="close-reveal">${t('Keep item', 'Behalten')}</button>` : `<a class="primary-button" href="/inventory" data-page>${t('Go to inventory', 'Zum Inventar')} →</a>`}</div></div>`;
-      caseReveal.querySelector('.case-reveal-actions button, .case-reveal-actions a').focus({ preventScroll: true });
+      caseReveal.innerHTML = `<div class="case-reveal-content case-unboxed rarity-${accountEscape(result.item.rarity)}"><p class="case-receipt-label">${t('CASE OPENED', 'KISTE GEÖFFNET')}</p><h2 id="case-reveal-title">${accountEscape(result.item.title)}</h2>${result.item.image ? `<img src="${accountEscape(result.item.image)}" alt="">` : ''}<p class="rarity-label">${rarityLabel(result.item.rarity)}</p><p>${t('Historical real-auction value', 'Historischer Wert der echten Auktion')} ${euro(result.item.price)}</p><p>${t('Added to inventory.', 'Zum Inventar hinzugefügt.')}</p><div class="case-reveal-actions">${caseResultActions(result.item, sealedItem)}</div></div>`;
+      caseReveal.querySelector('[data-account="close-reveal"]').focus({ preventScroll: true });
     }
     if (action === 'sell' || action === 'sell-all' || action === 'sell-result') {
       const owner = account.id, result = await accountApi(action === 'sell-all' ? 'inventory/sell-all' : 'inventory/sell', { id: button.dataset.id });
