@@ -2,12 +2,13 @@ import { transaction, withDatabase } from './database.mjs';
 import { levelForXp } from './progression.mjs';
 import { AccountError } from './errors.mjs';
 import { assertPlayerFree } from './justice.mjs';
-import { ensureSkillsSchema, skillRanks, SKILL_COSTS, LUCK_BONUSES, SECURITY_BONUSES } from './skill-effects.mjs';
+import { ensureSkillsSchema, skillRanks, skillCosts, LUCK_BONUSES, SECURITY_BONUSES } from './skill-effects.mjs';
 
 export const SKILL_DEFINITIONS = [
   { id:'luck', name:'Fortune finder', nameDe:'Glückspilz', available:true },
   { id:'security', name:'Store guardian', nameDe:'Ladenwächter', available:true },
   { id:'influence', name:'Trusted voice', nameDe:'Starke Stimme', available:true },
+  { id:'market-intelligence', name:'Market Intelligence', nameDe:'Marktkenntnis', available:true },
   { id:'negotiation', name:'Negotiation', nameDe:'Verhandlung', available:false },
   { id:'logistics', name:'Logistics', nameDe:'Logistik', available:false },
   { id:'appraisal', name:'Appraisal', nameDe:'Wertermittlung', available:false },
@@ -24,12 +25,12 @@ function player(db,user,now) {
   return row;
 }
 export function skillSummary(db,userId,xp) {
-  const ranks=skillRanks(db,userId),earned=levelForXp(xp),spent=Object.entries(ranks).reduce((sum,[id,rank])=>sum+SKILL_COSTS.slice(0,rank).reduce((a,b)=>a+b,0),0);
+  const ranks=skillRanks(db,userId),earned=levelForXp(xp),spent=Object.entries(ranks).reduce((sum,[id,rank])=>sum+skillCosts(id).slice(0,rank).reduce((a,b)=>a+b,0),0);
   return {earned,spent,available:Math.max(0,earned-spent),ranks,luckPercent:LUCK_BONUSES[ranks.luck||0],securityPercent:SECURITY_BONUSES[ranks.security||0]};
 }
 function view(db,row) {
   return {...skillSummary(db,row.id,row.xp),level:levelForXp(row.xp),skills:SKILL_DEFINITIONS.map(skill=>({...skill,
-    ranks:SKILL_COSTS.map((cost,index)=>({rank:index+1,cost,available:skill.available && index<3,
+    ranks:skillCosts(skill.id).map((cost,index)=>({rank:index+1,cost,available:skill.available && index<3,
       ...(skill.id==='luck'&&index<3?{bonus:LUCK_BONUSES[index+1]}:skill.id==='security'&&index<3?{bonus:SECURITY_BONUSES[index+1]}:{})}))}))};
 }
 export function skillTree(dataDir,user,{now=Date.now()}={}) {
@@ -45,9 +46,10 @@ export function upgradeSkill(dataDir,user,{skillId,rank,requestId}={}, {now=Date
     if(!skill)fail('invalid_skill',400);
     if(!skill.available || rank===4)fail('skill_coming_soon');
     if(!Number.isSafeInteger(rank)||rank<1||rank>3)fail('invalid_skill_rank',400);
+    if(rank>skillCosts(skillId).length)fail('skill_coming_soon');
     const summary=skillSummary(db,row.id,row.xp);
     if(rank!==(summary.ranks[skillId]||0)+1)fail('skill_rank_changed');
-    const cost=SKILL_COSTS[rank-1];if(summary.available<cost)fail('insufficient_skill_points');
+    const cost=skillCosts(skillId)[rank-1];if(summary.available<cost)fail('insufficient_skill_points');
     db.prepare(`INSERT INTO user_skills VALUES (?,?,?,?) ON CONFLICT(user_id,skill_id)
       DO UPDATE SET rank=excluded.rank,updated_at=excluded.updated_at`).run(row.id,skillId,rank,now);
     db.prepare('INSERT INTO skill_purchases VALUES (?,?,?,?,?,?)').run(row.id,requestId,skillId,rank,cost,now);

@@ -268,6 +268,15 @@ window.economyUi = (() => {
   function housePrice({ lot, primary }) {
     return lot.currentBid ?? (primary ? lot.reserve : lot.startPrice) ?? 0;
   }
+  function individualMarketValue(lot, primary = false) {
+    if (primary || lot.quantity !== 1 || ['case', 'review-pack'].includes(lot.item?.kind)
+      || !Number.isFinite(lot.estimatedValueTokens) || lot.estimatedValueTokens <= 0) return '';
+    const value = lot.estimatedValueTokens, price = housePrice({ lot, primary: false });
+    const percent = Math.round((value - price) / value * 1000) / 10;
+    const unlocked = (account?.skills?.ranks?.['market-intelligence'] || 0) >= 1;
+    return `<div class="listing-market-value"><span>${t('Market value', 'Marktwert')}: <strong>${justizEuro(value)}</strong></span>${unlocked
+      ? `<span class="listing-market-comparison ${percent > 0 ? 'is-below' : percent < 0 ? 'is-above' : 'is-equal'}">${percent === 0 ? t('At market value', 'Zum Marktwert') : `${number(Math.abs(percent), 1)}% ${percent > 0 ? t('below market', 'unter Marktwert') : t('above market', 'über Marktwert')}`}</span>` : ''}</div>`;
+  }
   function sortHouseEntries(entries, sort) {
     return [...entries].sort((a, b) => {
       let order = 0;
@@ -299,6 +308,7 @@ window.economyUi = (() => {
     return `<article class="house-lot${stateClass}" data-economy="${primary ? 'primary' : 'resale'}" data-id="${esc(lot.id)}" data-house-price="${price}" data-house-type="${type}" role="button" tabindex="0" aria-label="${esc(`${t('View auction', 'Auktion ansehen')}: ${title}${state ? ` · ${state}` : ''}`)}">
       <div class="house-lot-media">${art}<span class="house-lot-type">${houseTypeLabel(type)}</span>${state ? `<span class="house-lot-state">${state}</span>` : ''}</div>
       <div class="house-lot-body"><h3>${esc(title)}</h3><div class="house-lot-price"><strong>${justizEuro(price)}</strong><span>${lot.currentBid == null ? t('Starting bid', 'Startgebot') : !active ? t('Final bid', 'Letztes Gebot') : t('Current bid', 'Aktuelles Gebot')}</span></div>
+      ${individualMarketValue(lot, primary)}
       <div class="house-lot-meta">${active ? countdown(lot.endsAt) : `<time datetime="${new Date(lot.endsAt).toISOString()}">${new Date(lot.endsAt).toLocaleDateString(uiLocale())}</time>`}<span>${number(lot.bidCount)} ${lot.bidCount === 1 ? t('bid', 'Gebot') : t('bids', 'Gebote')}</span></div>
       ${participated ? `<div class="house-lot-maximum"><span>${t('Your maximum', 'Dein Höchstgebot')}</span><strong>${justizEuro(lot.highestBid)}</strong></div>` : ''}
       <div class="house-lot-footer">${cancellable ? `<button class="text-button" type="button" data-economy="cancel" data-id="${esc(lot.id)}">${t('Cancel listing', 'Angebot stornieren')}</button>` : ''}<span aria-hidden="true">↗</span></div></div></article>`;

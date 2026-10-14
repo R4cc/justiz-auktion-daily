@@ -1,6 +1,6 @@
 # Skill tree, first chapter
 
-The sidebar links to `/skills`. The available branches are Luck multiplier, Increased security and Increased influence. Six other branches are visibly locked and marked Coming soon. Available branches have ranks I–III costing **1, 3 and 6 points**, cumulatively 10 for a completed branch. Rank IV is Coming soon and displays its future cost of 12 points; the domain and database prevent unlocking it now.
+The sidebar links to `/skills`. The available branches are Luck multiplier, Increased security, Increased influence and Market Intelligence. Six other branches are visibly locked and marked Coming soon. The original three branches have ranks I–III costing **1, 3 and 6 points**, cumulatively 10 for a completed branch. Their rank IV is Coming soon and displays its future cost of 12 points; the domain and database prevent unlocking it now. Market Intelligence has one available rank costing **5 points**.
 
 Points are derived from the current persisted XP through the shared level curve: **earned = current account level**, including one point at level 1. Existing accounts receive credit immediately without a claim or one-time grant migration. Available points equal earned points minus cumulative costs of purchased ranks. XP level-ups therefore grant exactly one extra point; repeated profile reads, upgrades and reloads cannot duplicate points. The current level cap of 20 provides 20 total points, so players choose how to distribute them. Upgrades do not cost J€ or change XP. No respec is offered in this first chapter; Economy Reset clears ranks and purchase receipts along with XP.
 
@@ -27,6 +27,10 @@ Paid Case Shop draws, legacy direct case draws, newly prepared Daily contents an
 Security increases fines for new theft attempts at **all stores owned by the skilled player** by 10%, 20% or 30%. The minimum fine and district protection form the baseline, then the skill is applied once. The separate, toggleable Security Guard changes the catch chance after a loss from 30% to 50%; it does not increase fine size. Visitor quotes and authoritative heist starts read the owner's current rank. Stale fines are rejected; already-started heists retain their saved fine. Blackjack shuffling, cards, dealer rules, payouts and outcomes are unaffected. The thief's own Security skill does not protect someone else's store.
 
 Influence gives verified reviews more weight in a store's aggregate reputation. Its three ranks use qualitative labels and descriptions; no exact influence percentage is displayed or serialized in the tree/profile. Existing reviews respond to the author's current rank. Individual star ratings, verified-purchase gating, one editable review per customer and banned-author exclusions stay intact. Both store directory and store detail use the same weighted reputation read model. This first pass affects reputation; it does not add a separate NPC sales bonus.
+
+## Market Intelligence
+
+Market Intelligence adds a comparison badge to individual item cards in the Auction House. The percentage is `(live market value − visible bid) / live market value × 100`, rounded to one decimal place. Before any bids, the starting price is used. Overpriced bids show an above-market percentage, and equal values show “At market value.” The current market value remains visible to everyone, including guests. Batch stock, sealed cases, review packs and primary palettes receive no comparison. The badge follows the signed-in account's persisted rank and current listing quotes; it never uses a hidden proxy maximum or a private palette outcome. This is a display skill and does not modify quotes or bids.
 
 ## Routes and verification
 

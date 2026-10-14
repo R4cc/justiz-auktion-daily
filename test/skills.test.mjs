@@ -30,7 +30,28 @@ test('points backfill from fresh XP at every level, accrue once, and are account
   assert.equal(f.accounts.profile(f.user).skills.available,level);
  }
  f.upgrade('luck',1);assert.equal(f.tree().available,19);assert.equal(skillTree(f.dir,{id:'other'},{now}).available,1);
- assert.equal(f.tree().skills.filter(s=>s.available).length,3);assert.equal(f.tree().skills.filter(s=>!s.available).length,6);
+ assert.equal(f.tree().skills.filter(s=>s.available).length,4);assert.equal(f.tree().skills.filter(s=>!s.available).length,6);
+});
+test('Market Intelligence has one rank costing five points, with exact mixed-branch accounting and safe retries',async t=>{
+ const f=await fixture(t,900); // Level four is one point short.
+ const definition=f.tree().skills.find(skill=>skill.id==='market-intelligence');
+ assert.equal(definition.name,'Market Intelligence');assert.equal(definition.ranks.length,1);
+ assert.deepEqual(definition.ranks[0],{rank:1,cost:5,available:true});
+ assert.throws(()=>f.upgrade('market-intelligence',1),/insufficient_skill_points/);
+ f.accounts.db(db=>db.prepare("UPDATE users SET xp=1600 WHERE id='buyer'").run());
+ assert.equal(f.upgrade('market-intelligence',1).available,0);
+ assert.equal(f.upgrade('market-intelligence',1).spent,5);
+ assert.equal(f.accounts.profile(f.user).skills.ranks['market-intelligence'],1);
+ assert.equal(f.accounts.profile(f.user).skills.spent,5);
+ assert.throws(()=>f.upgrade('market-intelligence',1,'stale-intelligence-request-001'),/skill_rank_changed/);
+ assert.throws(()=>f.upgrade('market-intelligence',2),/skill_coming_soon/);
+ assert.throws(()=>f.upgrade('luck',1),/insufficient_skill_points/);
+ assert.equal(skillTree(f.dir,{id:'other'},{now}).ranks['market-intelligence'],undefined);
+ f.accounts.db(db=>db.prepare("UPDATE users SET xp=36100 WHERE id='buyer'").run());
+ for(let rank=1;rank<=3;rank++)f.upgrade('luck',rank);
+ assert.equal(f.tree().spent,15);assert.equal(f.tree().available,5);
+ f.accounts.resetEconomy({id:'owner',admin:true},'RESET ECONOMY');
+ assert.equal(f.tree().spent,0);assert.equal(f.tree().ranks['market-intelligence'],undefined);
 });
 test('rank costs are 1, 3, 6, then locked 12; retries, stale tabs and forged fields cannot overspend',async t=>{
  const f=await fixture(t);const before=f.accounts.profile(f.user).tokens;
@@ -136,6 +157,11 @@ test('HTTP skill mutations enforce CSRF/session and personalized quotes include 
  assert.equal((await fetch(base+'/api/account/skills')).status,401);assert.equal((await post(payload,true,'')).status,401);assert.equal((await post(payload,false)).status,403);
  const first=await post(payload);assert.equal(first.status,200);const result=await first.json();assert.equal(result.tree.available,19);assert.equal(result.user.skills.luckPercent,3);
  assert.equal((await(await post(payload)).json()).tree.available,19);assert.equal((await post({...payload,requestId:'http-stale-rank-0001'})).status,409);
+ const intelligence={skillId:'market-intelligence',rank:1,requestId:'http-market-intelligence-001',cost:0,points:999,userId:'owner'};
+ const unlocked=await(await post(intelligence)).json();assert.equal(unlocked.tree.available,14);assert.equal(unlocked.user.skills.ranks['market-intelligence'],1);
+ assert.equal((await(await post(intelligence)).json()).tree.available,14);
+ assert.equal(skillTree(f.dir,{id:'owner'},{now}).ranks['market-intelligence'],undefined);
+ assert.equal((await post({...intelligence,rank:2,requestId:'http-market-rank-two-001'})).status,409);
  const personal=await(await fetch(base+'/api/account/case-store',{headers:{cookie}})).json(),guest=await(await fetch(base+'/api/account/case-store')).json();
  assert.equal(personal.luckPercent,3);assert.equal(guest.luckPercent,0);assert.deepEqual(personal.cases.map(c=>c.cost),guest.cases.map(c=>c.cost));
  const palettes=await(await fetch(base+'/api/stock-palettes',{headers:{cookie}})).json();assert.equal(palettes.offers[0].luckPercent,3);

@@ -35,6 +35,11 @@
 .auction-house .house-lot-price { display: grid; gap: 3px; margin-top: auto; }
 .auction-house .house-lot-price strong { overflow-wrap: anywhere; font: 600 1.2rem/1.4 'DM Mono', monospace; letter-spacing: -.035em; }
 .auction-house .house-lot-price span { color: var(--muted); font-size: .65rem; line-height: 1.5; }
+.listing-market-value { display: grid; gap: 6px; margin-top: 10px; font-size: .7rem; line-height: 1.5; color: var(--muted); overflow-wrap: anywhere; }
+.listing-market-value strong { color: var(--ink); }
+.listing-market-comparison { justify-self: start; max-width: 100%; padding: 4px 8px; border-radius: 6px; font-weight: 700; background: #eee9dd; color: #655c4c; }
+.listing-market-comparison.is-below { color: #275c40; background: #deeedc; }
+.listing-market-comparison.is-above { color: #9b4638; background: #f5e2dc; }
 .auction-house .house-lot-meta { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 6px 12px; margin-top: 14px; color: #667164; font-size: .67rem; line-height: 1.5; }
 .auction-house .house-lot-meta [data-economy-end] { color: #42584a; font-weight: 700; }
 .auction-house .house-lot-maximum { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 4px 12px; margin-top: 12px; padding-top: 12px; border-top: 1px solid #e3e6dc; color: var(--muted); font-size: .65rem; line-height: 1.5; }

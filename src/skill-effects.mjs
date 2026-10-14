@@ -1,6 +1,7 @@
 import { ECONOMY_BALANCE } from './economy-balance.mjs';
 // Shared db-scoped effects. No client-supplied rank or effect is authoritative.
 export const SKILL_COSTS = [1, 3, 6, 12];
+export const skillCosts = id => id === 'market-intelligence' ? [5] : SKILL_COSTS;
 export const LUCK_BONUSES = [0, 3, 5, 7];
 export const SECURITY_BONUSES = [0, 10, 20, 30];
 const REVIEW_WEIGHTS = [100, 125, 150, 175];

@@ -121,6 +121,13 @@ precedes runtime startup in `server.mjs`.
   and keyed by the drop window, so repeated ticks/restarts never duplicate an
   item, and expired windows are never backfilled. Ordinary resale escrow and
   settlement transfer the same inventory row to the winner.
+- Regular NPC item supply (under `FEATURE_RESALES`): `supplyNpcItemAuctions`
+  adds one archive-backed single-item listing every 30 minutes. Four original
+  two-hour windows stay open, with staggered ends and restart-safe creation.
+  Starting prices vary deterministically from 65% to 135% of the live market
+  value at creation. These lots use ordinary NPC buyer interest and resale
+  escrow/settlement. Half-price bargain events retain their separate schedule,
+  price and player-only automatic-bidding policy.
 - Primary sweep: bounded 100 by default (maximum 1000), independent transaction
   per lot; corrupt domain state is reported and other lots can settle.
 - Market trends (under `FEATURE_MARKET`): each category records a price point

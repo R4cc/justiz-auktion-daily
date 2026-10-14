@@ -2,6 +2,14 @@ window.changelogUi = (() => {
   // Curated manually. Only update for a feature when the user explicitly asks.
   const entries = [
     {
+      date: '2026-10-14', title: 'Market Intelligence',
+      changes: [
+        {en:'Unlock Market Intelligence for 5 skill points to see how far single-item auction bids are below or above current market value.',de:'Marktkenntnis für 5 Skillpunkte freischalten: Bei Einzelauktionen wird angezeigt, wie weit Gebote unter oder über dem aktuellen Marktwert liegen.'},
+        {en:'Current market value is visible on individual item listings for everyone.',de:'Der aktuelle Marktwert wird bei Einzelangeboten für alle angezeigt.'},
+        {en:'Added regular NPC item listings with varied starting prices below and above market value. The six daily half-price bargain events remain active.',de:'Regelmäßige NPC-Einzelangebote mit wechselnden Startpreisen unter und über dem Marktwert hinzugefügt. Die sechs täglichen Schnäppchenaktionen zum halben Marktwert bleiben aktiv.'}
+      ]
+    },
+    {
       date: '2026-10-14', title: 'New Stores',
       changes: [
         {en:'Added Jeweler stores for jewelry and watches, and Hardware stores for tools and Other items.',de:'Juweliere für Schmuck und Uhren sowie Baumärkte für Werkzeuge und sonstige Artikel hinzugefügt.'},

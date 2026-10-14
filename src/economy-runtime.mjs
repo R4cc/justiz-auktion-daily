@@ -14,6 +14,7 @@ import { AccountError } from './errors.mjs';
 import { tickBusinesses } from './businesses.mjs';
 import { supplyCaseAuctions } from './case-supply.mjs';
 import { supplyBargainAuctions } from './bargain-auctions.mjs';
+import { supplyNpcItemAuctions } from './npc-item-supply.mjs';
 
 // The board targets ten concurrent one-hour lots. One drop window every
 // duration/target (six minutes) keeps their ends evenly staggered, and a lot
@@ -76,6 +77,7 @@ export function tickEconomy(dataDir, { now = Date.now(), flags = featureFlags() 
     run('resaleSettlement', () => settleDueListings(dataDir, { now }));
     run('caseSupply', () => supplyCaseAuctions(dataDir, { now }));
     run('bargainSupply', () => supplyBargainAuctions(dataDir, { now }));
+    run('itemSupply', () => supplyNpcItemAuctions(dataDir, { now }));
     if (flags.businesses) run('reviewSupply', () => supplyReviewAuctions(dataDir, { now }));
     run('buyers', () => tickNpcBuyers(dataDir, { now }));
     run('paletteBuyers', () => tickPaletteBuyers(dataDir, { now }));

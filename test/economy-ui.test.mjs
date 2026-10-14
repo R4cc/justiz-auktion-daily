@@ -758,3 +758,33 @@ test('chart range switching rejects stale responses from the previous period', a
   assert.equal(context.history[0].indexValue, 110);
   assert.equal(context.historyLoading, false);
 });
+
+test('single-item cards show live market value for guests and percentage comparisons only with Market Intelligence', () => {
+  const context = houseContext({entry: {primary: false, view: 'other', lot: houseLot('camera', {estimatedValueTokens: 200, currentBid: 100, startPrice: 150})}});
+  const html = () => vm.runInContext('houseCard(entry)', context);
+  assert.match(html(), /Market value.*J€ 200/); assert.doesNotMatch(html(), /listing-market-comparison/);
+  context.account = null;
+  assert.match(html(), /Market value.*J€ 200/); assert.doesNotMatch(html(), /listing-market-comparison/);
+  context.account = {id: 'me', skills: {ranks: {'market-intelligence': 1}}};
+  assert.match(html(), /50% below market/); assert.match(html(), /is-below/);
+  context.entry.lot.currentBid = 250;
+  assert.match(html(), /25% above market/); assert.match(html(), /is-above/);
+  context.entry.lot.currentBid = 200;
+  assert.match(html(), /At market value/);
+  context.entry.lot.currentBid = null;
+  assert.match(html(), /25% below market/); // Starting price, never the maximum proxy bid.
+  context.entry.lot.currentBid = 100; context.entry.lot.estimatedValueTokens = 400;
+  assert.match(html(), /75% below market/); // Fresh live quote updates the comparison.
+  context.t = (_en, de) => de;
+  assert.match(html(), /75% unter Marktwert/); assert.match(html(), /Marktwert/);
+  context.account = {id: 'other', skills: {ranks: {}}};
+  assert.doesNotMatch(html(), /listing-market-comparison/);
+});
+
+test('Market Intelligence excludes batches, cases, review packs, primary palettes and missing values', () => {
+  const context = houseContext({account: {skills: {ranks: {'market-intelligence': 1}}}});
+  for (const [primary, changes] of [[false, {quantity: 2}], [false, {item: {kind: 'case'}}], [false, {item: {kind: 'review-pack'}}], [true, {}], [false, {estimatedValueTokens: 0}], [false, {estimatedValueTokens: null}]]) {
+    context.entry = {primary, lot: houseLot('excluded', {estimatedValueTokens: 200, ...changes})};
+    assert.equal(vm.runInContext('individualMarketValue(entry.lot, entry.primary)', context), '');
+  }
+});
