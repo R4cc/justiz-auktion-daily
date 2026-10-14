@@ -5,11 +5,11 @@ import vm from 'node:vm';
 
 const source = await readFile(new URL('../dist/business-ui.js', import.meta.url), 'utf8');
 const helpers = source.slice(source.indexOf('  function groupedRestockItems('),
-  source.indexOf('  function updateRestockSelection('));
+  source.indexOf('  function quickRestockMarkup('));
 const context = vm.createContext({});
 vm.runInContext(`${helpers}\nthis.groupedRestockItems = groupedRestockItems; this.autoRestockCounts = autoRestockCounts;`, context);
 
-test('restock modal groups copies and auto fill maximizes title variety within capacity', () => {
+test('stock transfers group copies and auto fill maximizes title variety within capacity', () => {
   const items = [
     { id: 'a1', title: 'Apple', price: 10 }, { id: 'a2', title: 'Apple', price: 10 },
     { id: 'b1', title: 'Banana', price: 12 }, { id: 'b2', title: 'Banana', price: 12 },
@@ -25,53 +25,14 @@ test('restock modal groups copies and auto fill maximizes title variety within c
   assert.equal(context.autoRestockCounts(groups, [], 10).reduce((sum, count) => sum + count, 0), 6);
 });
 
-test('stock manager keeps add and remove controls together with capacity checks', () => {
-  assert.match(source, /data-business="open-restock" data-shop=/);
-  assert.match(source, /id="business-restock-form"/);
-  assert.match(source, /type="number" name="quantity"/);
-  assert.match(source, /data-business="auto-restock"/);
-  assert.match(source, /business-stock-manager/);
-  assert.match(source, /business-available-title/);
-  assert.match(source, /business-shelves-title/);
-  assert.match(source, /data-business="unstock" data-shop=/);
-  assert.match(source, /selected > space/);
-  assert.doesNotMatch(source, /shop\.stock\.length >= shop\.capacity\) return/);
-  assert.doesNotMatch(source, /business-stock-form|business-bid-form|business-tabs/);
-});
-
-test('store cards lead with daily results and edit actions; complete controls remain in the editor at capacity', () => {
-  const cardSource = source.slice(source.indexOf('  function shopCard('), source.indexOf('  function shopsView('));
-  const shop = { id: 'shop-1', type: 'toys', size: 'tiny', capacity: 1,
-    profitMargin: 45, buyChancePercent: 22.8, visitors: 11, popularity: 1,
-    variety: 1, value: 120, sales: 2, salesToday: 1, revenue: 300, revenueToday: 174,
-    stock: [{ id: 'unit-1', item: { title: 'Puzzle' }, referencePrice: 120, askingPrice: 174 }] };
-  const context = vm.createContext({ window: {}, dashboard: { inventory: [], shops: [shop] }, editorShopId: shop.id,
-    esc: String, t: en => en, number: String, justizEuro: value => `J€ ${value}`, infoTip: text => `<span class="info-tip">${text}</span>`,
-    quickRestockMarkup: () => '', typeName: () => 'Toy store', sizeName: () => 'Small shop', storefrontArt: () => '', editIcon: () => '', typeIcon: () => '' });
-  Object.assign(context,{collectionJobs:new Map(),cashMessages:new Map(),busy:false,pendingCollection:()=>null});
-  const cashSource=source.slice(source.indexOf('  function collectCashMarkup('),source.indexOf('  async function cashCelebration('));
-  vm.runInContext(`${cashSource}\n${cardSource}\nthis.shopCard = shopCard;`, context);
-  const markup = context.shopCard(shop);
-  for (const label of ['Sales today', 'Revenue today']) assert.match(markup, new RegExp(`<dt>${label}</dt>`));
-  assert.match(markup, /<progress value="1" max="1"/);
-  assert.match(markup, /data-business="open-edit" data-shop="shop-1"/);
-  assert.match(markup, /href="\/stores\?shop=shop-1"/);
-  assert.doesNotMatch(markup, /<form|data-business-margin-form|data-store-profile/);
-
-  // Settings move to an editor without dropping any of the existing controls.
-  const editor = { innerHTML: '' };
-  Object.assign(context, { editorDialog: editor, syncEditor: () => {} });
-  const editorSource = source.slice(source.indexOf('  function renderEditor('), source.indexOf('  function syncEditor('));
-  vm.runInContext(`${editorSource}\nrenderEditor();`, context);
-  assert.match(editor.innerHTML, /data-business-margin-form data-shop="shop-1"/);
-  assert.match(editor.innerHTML, /name="profitMargin"[^>]*value="45"/);
-  assert.match(editor.innerHTML, /data-store-profile data-shop="shop-1"/);
-  assert.match(editor.innerHTML, /name="storeName"/);
-  assert.match(editor.innerHTML, /name="motto"/);
-  assert.match(editor.innerHTML, /name="securityGuard"/);
-  assert.match(editor.innerHTML, /data-business="open-restock" data-shop="shop-1"/);
-  assert.doesNotMatch(editor.innerHTML, /data-business="open-restock"[^>]*disabled/);
-  assert.match(source, /accountApi\('businesses\/margin'/);
-  for (const label of ['Visitors', 'Popularity', 'Total sales', 'Total revenue', 'Buying rate', 'Markup over estimate'])
-    assert.ok(source.includes(`t('${label}'`));
+test('shared task surfaces stage stock and save all settings atomically', () => {
+  assert.match(source,/data-shop-settings/);
+  assert.match(source,/data-shop-stock/);
+  assert.match(source,/removeIds:d.remove/);
+  assert.match(source,/businesses\/stock\/transfer/);
+  assert.match(source,/businesses\/settings/);
+  assert.match(source,/expected:d.expected/);
+  assert.doesNotMatch(source,/duration: 6500|businesses\/unstock|businesses\/margin|data-store-profile/);
+  assert.match(source,/quickJobs.has\(shop.id\)/);
+  assert.match(source,/localStorage.setItem\(key,id\)/);
 });

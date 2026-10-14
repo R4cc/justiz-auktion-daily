@@ -2,25 +2,6 @@
 .visitor-storefront { --shop-color:var(--store-color);--shop-roof:#99826b; }
 .visitor-breadcrumbs { display:flex;justify-content:space-between;gap:16px;flex-wrap:wrap;margin-bottom:18px;font-size:.75rem;font-weight:700; }
 .visitor-breadcrumbs a { color:var(--muted);text-underline-offset:4px; }
-.visitor-storefront .visitor-hero { display:grid;grid-template-columns:minmax(0,1fr) 240px;gap:24px;padding:32px;margin:0 0 28px;border:1px solid #183e36;border-radius:22px;background:radial-gradient(ellipse at 95% 0%,#42695688,transparent 60%),#163f36;color:#fff9e9;box-shadow:0 7px 0 #183e3612; }
-.visitor-storefront .visitor-hero>div { padding:0;min-width:0; }
-.visitor-hero .eyebrow { display:flex;align-items:center;flex-wrap:wrap;gap:8px;color:#c9dfcd;font-size:.65rem;margin:0 0 12px; }
-.visitor-hero h1 { color:inherit;font-size:clamp(1.8rem,3vw,2.7rem);line-height:1.15;margin:0 0 18px;letter-spacing:-.04em; }
-.visitor-owner { display:flex;align-items:center;gap:10px;min-width:0; }
-.visitor-owner>span { display:grid;place-items:center;flex:none;width:38px;height:38px;border:1px solid #e7bd6e77;border-radius:12px;background:#e7bd6e18;color:#e7bd6e;font-weight:800; }
-.visitor-owner small { display:block;color:#c9dfcd;font-size:.65rem;margin-bottom:3px; }
-.visitor-owner strong { display:block;overflow-wrap:anywhere;font-size:.85rem; }
-.visitor-motto { color:#e1ebdf;font-size:.85rem;line-height:1.65;margin:18px 0 0; }
-.visitor-hero-chips { display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:20px; }
-.visitor-hero-chips>* { display:inline-flex;align-items:center;gap:6px;min-height:34px;padding:7px 9px;border:1px solid #ffffff35;border-radius:9px;color:#e6efdc;text-decoration:none;font-size:.68rem; }
-.visitor-hero-chips svg { width:15px;height:15px;flex-shrink:0; }
-.visitor-hero-chips .visitor-guard { color:#ffdea0;border-color:#e7bd6e77; }
-.visitor-address { display:inline-block;color:#c9dfcd;font-size:.7rem;line-height:1.7;margin-top:16px;text-underline-offset:4px;overflow-wrap:anywhere; }
-.visitor-hero-art { display:flex;align-items:center;justify-content:center;flex-direction:column;position:relative; }
-.visitor-shop-illustration { position:relative;width:210px;padding:16px 8px;background:radial-gradient(ellipse,#e7bd6e24,transparent 70%); }
-.visitor-shop-illustration>svg { display:block;width:100%;height:auto; }
-.visitor-shop-illustration>span { position:absolute;left:28px;bottom:37px;display:grid;place-items:center;width:37px;height:37px;background:#fffaf0;border:1px solid #d1c29b;border-radius:10px;color:var(--store-color); }
-.visitor-shop-sign { color:#e7bd6e;border:1px solid #e7bd6e66;border-radius:6px;font:500 .56rem 'DM Mono',monospace;letter-spacing:.08em;padding:8px 10px;text-align:center;line-height:1.5; }
 .visitor-section-heading { display:flex;justify-content:space-between;align-items:center;gap:18px;margin-bottom:18px; }
 .visitor-section-heading .eyebrow { color:var(--red);font-size:.6rem;margin:0 0 7px; }
 .visitor-section-heading h2 { font-size:1.3rem;line-height:1.3;margin:0; }
@@ -70,16 +51,9 @@
 .visitor-empty { grid-column:1/-1;display:flex;align-items:center;flex-direction:column;padding:44px 20px;border:1px dashed #b4c4ac;border-radius:16px;background:#f1f1e5;text-align:center; }
 .visitor-empty>svg { width:42px;height:42px;margin-bottom:18px;color:var(--store-color); }.visitor-empty h3 { font-size:1.05rem;margin:0; }.visitor-empty p { color:var(--muted);font-size:.8rem;line-height:1.6; }.visitor-empty a { min-height:44px;font-size:.8rem; }
 .visitor-storefront a:focus-visible,.visitor-storefront button:focus-visible,.visitor-review-compose summary:focus-visible { outline:3px solid #b17a26;outline-offset:3px; }
-@media(max-width:760px) { .visitor-storefront .visitor-hero { grid-template-columns:minmax(0,1fr) 145px;padding:24px;gap:18px; }.visitor-shop-illustration { width:145px; }.visitor-shop-illustration>span { width:27px;height:27px;bottom:31px;left:22px; }.visitor-shop-illustration>span svg { width:19px;height:19px; }.visitor-shop-sign { font-size:.45rem;padding:7px; }.visitor-hero h1 { font-size:2rem; } }
-@media(max-width:520px) { .visitor-storefront .visitor-hero { display:flex;flex-direction:column-reverse;padding:22px;gap:16px;border-radius:18px; }.visitor-hero-art { width:100%;flex-direction:row;gap:12px; }.visitor-shop-illustration { width:116px;padding:6px;flex-shrink:0; }.visitor-shop-illustration>span { left:17px;bottom:17px;width:24px;height:24px; }.visitor-shop-illustration>span svg { width:17px;height:17px; }.visitor-shop-sign { max-width:120px;font-size:.5rem; }.visitor-hero h1 { font-size:1.7rem; }.visitor-hero-chips>* { font-size:.65rem; }.visitor-storefront .store-shelf-grid { grid-template-columns:minmax(0,1fr); }.visitor-stock-media { height:170px; }.visitor-stock-media>img { padding-top:38px; }.visitor-reactions { padding:18px; }.visitor-reaction-buttons { display:grid;grid-template-columns:1fr;width:100%; }.visitor-reaction-buttons button { justify-content:flex-start; }.visitor-reaction-buttons small { margin-left:auto; }.visitor-storefront .visitor-reviews { padding:18px; }.visitor-section-heading { gap:10px; }.visitor-section-heading>span { font-size:.65rem; }.visitor-section-heading .eyebrow { font-size:.55rem; }.visitor-review-compose { padding:0 12px; } }
+@media(max-width:520px) { .visitor-storefront .store-shelf-grid { grid-template-columns:minmax(0,1fr); }.visitor-stock-media { height:170px; }.visitor-stock-media>img { padding-top:38px; }.visitor-reactions { padding:18px; }.visitor-reaction-buttons { display:grid;grid-template-columns:1fr;width:100%; }.visitor-reaction-buttons button { justify-content:flex-start; }.visitor-reaction-buttons small { margin-left:auto; }.visitor-storefront .visitor-reviews { padding:18px; }.visitor-section-heading { gap:10px; }.visitor-section-heading>span { font-size:.65rem; }.visitor-section-heading .eyebrow { font-size:.55rem; }.visitor-review-compose { padding:0 12px; } }
 
 .visitor-review-compose .store-star-picker { gap:3px; }
 
-.visitor-hero-chips .visitor-rating-link { min-height:44px; }
-.visitor-storefront .visitor-reviews { scroll-margin-top:140px; }
 
-@media (min-width:601px) and (max-width:950px) {
-  .store-owner-supply > .section-title-row { grid-column:1/-1; }
-  .store-owner-supply .store-owner-capacity { grid-column:1;grid-row:2; }
-  .store-owner-supply dl { grid-column:2;grid-row:2/4; }
-}
+.visitor-storefront .visitor-reviews { scroll-margin-top:140px; }

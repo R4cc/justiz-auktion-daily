@@ -1,0 +1,14 @@
+// Shared identity and navigation for the town, portfolio and storefronts.
+window.shopUi = (() => {
+  const names={wine:['Wine store','Weinhandlung'],toys:['Toy store','Spielwarenladen'],electronics:['Electronics store','Elektronikladen'],cars:['Car dealership','Autohaus']};
+  const sizes={popup:['Street pop-up','Straßenstand'],tiny:['Small shop','Kleiner Laden'],medium:['Medium shop','Mittlerer Laden'],large:['Large shop','Großer Laden']};
+  const typeName=id=>names[id]?t(...names[id]):id,sizeName=id=>sizes[id]?t(...sizes[id]):id,esc=accountEscape;
+  function art(type){return `<span class="shop-illustration shop-color-${esc(type)}">${window.townArtwork.storefront()}<span class="shop-product">${window.townArtwork.icon(type)}</span></span>`;}
+  function address(shop){const p=shop.location||shop;return p.districtName?`${p.districtNumber||''}. ${p.districtName} · ${p.streetName||''}`:'';}
+  function returnTo(){const value=new URLSearchParams(location.search).get('returnTo');try{const url=new URL(value||'/businesses',location.origin);return url.origin===location.origin&&['/town','/businesses','/stores'].includes(url.pathname)?url.pathname+url.search:'/businesses';}catch{return '/businesses';}}
+  function href(shop,tab='overview'){return `/stores?${new URLSearchParams({shop:shop.id,...(tab==='overview'?{}:{tab}),returnTo:location.pathname==='/town'?location.pathname+location.search:location.pathname==='/businesses'?'/businesses':returnTo()})}`;}
+  function header(shop){return `<header class="shop-header shop-color-${esc(shop.type)}"><div class="shop-identity"><span class="shop-kicker">${esc(typeName(shop.type))} · ${esc(sizeName(shop.size))}</span><h1 tabindex="-1">${esc(shop.name||typeName(shop.type))}</h1>${shop.motto?`<p>${esc(shop.motto)}</p>`:''}${address(shop)?`<a href="/town?plot=${encodeURIComponent(shop.location?.plotId||shop.plotId||'')}" data-page>${esc(address(shop))} ↗</a>`:''}${window.storeReputationUi?.meter(shop)||''}</div>${art(shop.type)}</header>`;}
+  function card(shop,action='visit'){return `<article class="shop-card shop-color-${esc(shop.type)}"><div class="shop-card-picture">${art(shop.type)}<span class="shop-badge">${esc(typeName(shop.type))}</span></div><div class="shop-card-content"><h2>${esc(shop.name||typeName(shop.type))}</h2><small>${esc(address(shop)||shop.owner||'')}</small>${window.storeReputationUi?.meter(shop)||''}<a class="primary-button" href="${esc(href(shop))}" data-page>${action==='manage'?t('Manage store','Laden verwalten'):t('Visit store','Laden besuchen')} →</a></div></article>`;}
+  function handoff(){const id=new URLSearchParams(location.search).get('returnShop');return id?`<a class="shop-handoff" href="/stores?${new URLSearchParams({shop:id,tab:'stock',returnTo:returnTo()})}" data-page>← ${t('Return to store stock','Zurück zum Ladenbestand')}</a>`:'';}
+  return {handoff,typeName,sizeName,art,address,header,card,href,returnTo};
+})();

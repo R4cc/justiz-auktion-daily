@@ -5,7 +5,7 @@ import { plotLocation } from './town-plots.mjs';
 import { randomInt, randomUUID } from 'node:crypto';
 import { withDatabase, transaction } from './database.mjs';
 import { AccountError } from './errors.mjs';
-import { advanceShop, ensureBusinessSchema, shopStock, SHOP_TYPES } from './businesses.mjs';
+import { advanceShop, ensureBusinessSchema, shopStock, SHOP_TYPES, applyBusinessStock } from './businesses.mjs';
 import { marketIndexes } from './market.mjs';
 import { inventoryIsLocked } from './resale.mjs';
 import { pushNotification } from './notifications.mjs';
@@ -287,6 +287,23 @@ export function customizeStore(dataDir, user, payload, { now = Date.now() } = {}
     db.prepare('UPDATE businesses SET store_name = ?, store_motto = ?, security_guard = ?, mischief_enabled = ? WHERE id = ?').run(payload.name.trim(), payload.motto.trim(), Number(payload.securityGuard), payload.mischiefEnabled === undefined ? shop.mischief_enabled : Number(payload.mischiefEnabled), shop.id);
     return { id, amount: 0 };
   }), now);
+}
+export function saveStoreSettings(dataDir,user,payload,{now=Date.now()}={}) {
+  if(typeof payload?.name!=='string'||payload.name.trim().length>60||typeof payload.motto!=='string'||payload.motto.trim().length>140||typeof payload.securityGuard!=='boolean'||!Number.isSafeInteger(payload.profitMargin)||payload.profitMargin<0||payload.profitMargin>100)fail('invalid_store_profile');
+  return atomic(dataDir,user,(db,player)=>receipt(db,player,payload,'settings',now,id=>{
+    const shop=store(db,payload.shopId);if(shop.user_id!==player.id)fail('business_not_found',404);
+    const saved={name:shop.store_name,motto:shop.store_motto,securityGuard:Boolean(shop.security_guard),profitMargin:shop.profit_margin};
+    if(payload.expected&&Object.keys(saved).some(key=>payload.expected[key]!==saved[key]))fail('store_settings_changed',409);
+    advanceShop(db,shop,now);
+    db.prepare('UPDATE businesses SET store_name=?,store_motto=?,security_guard=?,profit_margin=? WHERE id=?').run(payload.name.trim(),payload.motto.trim(),Number(payload.securityGuard),payload.profitMargin,shop.id);
+    return {id,amount:0};
+  }),now);
+}
+export function saveStoreStock(dataDir,user,payload,{now=Date.now()}={}) {
+  return atomic(dataDir,user,(db,player)=>receipt(db,player,payload,'stock-transfer',now,id=>{
+    applyBusinessStock(db,player,payload.shopId,payload.addIds,payload.removeIds,now);
+    return {id,amount:0,added:payload.addIds.length,removed:payload.removeIds.length};
+  }),now);
 }
 export function startStoreHeist(dataDir, user, payload, { now = Date.now(), draw = randomInt, policeDraw = randomInt } = {}) {
   return atomic(dataDir, user, (db, player) => receipt(db, player, payload, 'heist', now, id => {

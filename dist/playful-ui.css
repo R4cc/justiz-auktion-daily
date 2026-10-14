@@ -106,9 +106,6 @@
 .skill-emblem { transform: rotate(-5deg); }
 .skill-available-points > span { box-shadow: 0 3px 0 #bfa76555; }
 
-.business-shop { box-shadow: 0 5px 0 var(--game-shadow); }
-.business-card-art { background: radial-gradient(ellipse at 50% 5%, #fff3d1, #e4ebdc); }
-.business-add-card { background: #fff5d9; border-color: #c7a967; }
 .business-cash-button:not(:disabled) { box-shadow: 0 4px 0 #bfa25066, inset 0 1px 0 #ffffff60; }
 .visitor-stock-card { border-bottom: 4px solid var(--rarity, #a7b791); }
 .visitor-reaction-buttons button[aria-pressed="true"] { box-shadow: inset 0 0 0 2px #e7c46e; }
@@ -119,7 +116,7 @@
 .xp-feedback.is-level-up { border-color: #ffe8a7; box-shadow: 0 5px 0 #a6753450, 0 0 0 5px #efbd6140; }
 
 @media (prefers-reduced-motion: no-preference) {
-  .daily-mode, .profile-milestone, .business-shop, .auction-house .house-lot,
+  .daily-mode, .profile-milestone, .auction-house .house-lot,
   .inventory-find.collection-item, .business-cash-button, .site-nav a {
     transition: transform .16s ease, box-shadow .16s ease, border-color .16s ease;
   }
@@ -134,7 +131,7 @@
   }
 }
 @media (hover: hover) and (pointer: fine) and (prefers-reduced-motion: no-preference) {
-  .daily-mode:hover, .profile-milestone:hover, .business-shop:hover,
+  .daily-mode:hover, .profile-milestone:hover,
   .auction-house .house-lot:hover, .inventory-find.collection-item:hover {
     transform: translateY(-3px);
     box-shadow: 0 6px 0 var(--game-shadow);
@@ -147,10 +144,10 @@
   .business-cash-button:not(:disabled):active { transform: translateY(2px); }
 }
 @media (prefers-reduced-motion: reduce) {
-  .daily-mode, .profile-milestone, .business-shop, .auction-house .house-lot,
+  .daily-mode, .profile-milestone, .auction-house .house-lot,
   .inventory-find.collection-item, .business-cash-button, .site-nav a,
   .reveal-panel, .xp-feedback.is-level-up { animation: none; transition: none; }
-  .daily-mode:hover, .profile-milestone:hover, .business-shop:hover,
+  .daily-mode:hover, .profile-milestone:hover,
   .auction-house .house-lot:hover, .inventory-find.collection-item:hover,
   .business-cash-button:not(:disabled):hover { transform: none; }
 }

@@ -4,7 +4,7 @@ import { readFile } from 'node:fs/promises';
 import vm from 'node:vm';
 
 const source=await readFile(new URL('../dist/business-ui.js',import.meta.url),'utf8');
-const flow=source.slice(source.indexOf('  const esc ='),source.indexOf('  let restockReturnFocus'));
+const flow=source.slice(source.indexOf('  const esc ='),source.indexOf('  const ui='));
 function fixture() {
   const calls=[],storage=new Map(),updates=[],pending=[];
   const shops=[{id:'a',cashReady:10},{id:'b',cashReady:20},{id:'c',cashReady:30}];

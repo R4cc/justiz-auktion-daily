@@ -248,13 +248,13 @@ export function businessDashboard(dataDir, user, { now = Date.now() } = {}) {
   tickBusinesses(dataDir, { now });
   return withDatabase(dataDir, db => transaction(db, () => {
     ensureBusinessSchema(db, { now }); activeUser(db, user); advanceShops(db, now, user.id);
-    const sealed = sealedPaletteInventoryIds(db);
+    const sealed = sealedPaletteInventoryIds(db), indexes=marketIndexes(db,now);
     return { types: SHOP_TYPES, sizes: SHOP_SIZES, maxStores: MAX_STORES_PER_USER,
       shops: db.prepare('SELECT * FROM businesses WHERE user_id = ? ORDER BY bought_at, id').all(user.id).map(row => publicShop(db, row, now)),
       inventory: db.prepare('SELECT id, item FROM inventory WHERE user_id = ? AND sold_at IS NULL ORDER BY created_at DESC').all(user.id)
         .filter(row => !db.prepare('SELECT 1 FROM business_stock WHERE inventory_id = ? AND sold_at IS NULL').get(row.id)
           && !inventoryIsLocked(db, row.id) && !sealed.has(row.id))
-        .map(row => ({ id: row.id, title: JSON.parse(row.item).title, type: stockType(JSON.parse(row.item)), price: JSON.parse(row.item).price }))
+        .map(row => { const item=JSON.parse(row.item);return { ...item, id:row.id, type:stockType(item), estimatedValueTokens:estimatedValueTokens(item,indexes), ...acquisition(db,row.id,user.id) }; })
         .filter(item => item.type) };
   }));
 }
@@ -291,46 +291,39 @@ export function setBusinessMargin(dataDir, user, shopId, profitMargin, { now = D
   }));
 }
 
-export function stockBusiness(dataDir, user, shopId, inventoryIds, { now = Date.now() } = {}) {
-  if (!Array.isArray(inventoryIds) || !inventoryIds.length || inventoryIds.length > 150 || new Set(inventoryIds).size !== inventoryIds.length) fail('invalid_stock');
-  return withDatabase(dataDir, db => transaction(db, () => {
-    ensureBusinessSchema(db, { now }); activeUser(db, user); advanceShops(db, now, user.id);
-    const shop = db.prepare('SELECT * FROM businesses WHERE id = ? AND user_id = ?').get(shopId, user.id);
-    if (!shop) fail('business_not_found', 404);
-    if (shopStock(db, shop.id, shop.type, shop.profit_margin, now).length + inventoryIds.length > shopCapacity(shop.type, shopSize(shop.size))) fail('business_full', 409);
-    const sealed = sealedPaletteInventoryIds(db);
-    marketIndexes(db, now);
-    for (const id of inventoryIds) {
-      const row = db.prepare('SELECT item FROM inventory WHERE id = ? AND user_id = ? AND sold_at IS NULL').get(id, user.id);
-      if (!row) fail('item_not_found', 404);
-      const item = JSON.parse(row.item);
-      if (stockType(item) !== shop.type) fail('wrong_shop_type', 409);
-      if (sealed.has(id) || inventoryIsLocked(db, id) || db.prepare('SELECT 1 FROM business_stock WHERE inventory_id = ?').get(id)) fail('item_locked', 409);
-      if (!Number.isFinite(item.price) || item.price <= 0) fail('invalid_stock', 409);
-      const askingPrice = shelfPrice(db, item, shop.type, shop.profit_margin, now);
-      db.prepare('INSERT INTO business_stock (inventory_id, business_id, stocked_at, asking_price) VALUES (?, ?, ?, ?)')
-        .run(id, shop.id, now, askingPrice);
-    }
-    milestone(db,user.id,'find',now);
-    const stock = shopStock(db, shop.id, shop.type, shop.profit_margin, now);
-    db.prepare('UPDATE businesses SET traffic_popularity = ? WHERE id = ?')
-      .run(shopMetrics(db, shop, stock, now).popularity, shop.id);
-    return publicShop(db, db.prepare('SELECT * FROM businesses WHERE id = ?').get(shop.id), now);
-  }));
+// Db-scoped stock transfer, shared by legacy actions and the atomic editor.
+export function applyBusinessStock(db, user, shopId, addIds, removeIds, now) {
+  for(const ids of [addIds,removeIds])if(!Array.isArray(ids)||ids.length>150||new Set(ids).size!==ids.length||ids.some(id=>typeof id!=='string'||id.length>100))fail('invalid_stock');
+  if(!addIds.length&&!removeIds.length||addIds.some(id=>removeIds.includes(id)))fail('invalid_stock');
+  ensureBusinessSchema(db,{now});activeUser(db,user);advanceShops(db,now,user.id);
+  const shop=db.prepare('SELECT * FROM businesses WHERE id=? AND user_id=?').get(shopId,user.id);
+  if(!shop)fail('business_not_found',404);
+  const stock=shopStock(db,shop.id,shop.type,shop.profit_margin,now);
+  for(const id of removeIds)if(!stock.some(entry=>entry.id===id))fail('stock_not_found',409);
+  if(stock.length-removeIds.length+addIds.length>shopCapacity(shop.type,shopSize(shop.size)))fail('business_full',409);
+  const sealed=sealedPaletteInventoryIds(db);marketIndexes(db,now);
+  // Validate the entire draft before changing a single shelf position.
+  const additions=addIds.map(id=>{
+    const row=db.prepare('SELECT item FROM inventory WHERE id=? AND user_id=? AND sold_at IS NULL').get(id,user.id);
+    if(!row)fail('item_not_found',404);
+    const item=JSON.parse(row.item);
+    if(stockType(item)!==shop.type)fail('wrong_shop_type',409);
+    if(sealed.has(id)||inventoryIsLocked(db,id)||db.prepare('SELECT 1 FROM business_stock WHERE inventory_id=?').get(id))fail('item_locked',409);
+    if(!Number.isFinite(item.price)||item.price<=0)fail('invalid_stock',409);
+    return {id,price:shelfPrice(db,item,shop.type,shop.profit_margin,now)};
+  });
+  for(const id of removeIds)db.prepare('DELETE FROM business_stock WHERE business_id=? AND inventory_id=? AND sold_at IS NULL').run(shop.id,id);
+  for(const entry of additions)db.prepare('INSERT INTO business_stock(inventory_id,business_id,stocked_at,asking_price) VALUES(?,?,?,?)').run(entry.id,shop.id,now,entry.price);
+  if(addIds.length)milestone(db,user.id,'find',now);
+  db.prepare('UPDATE businesses SET traffic_popularity=? WHERE id=?').run(shopMetrics(db,shop,shopStock(db,shop.id,shop.type,shop.profit_margin,now),now).popularity,shop.id);
+  return publicShop(db,db.prepare('SELECT * FROM businesses WHERE id=?').get(shop.id),now);
 }
-
-export function unstockBusiness(dataDir, user, shopId, inventoryId, { now = Date.now() } = {}) {
-  return withDatabase(dataDir, db => transaction(db, () => {
-    ensureBusinessSchema(db, { now }); activeUser(db, user); advanceShops(db, now, user.id);
-    const shop = db.prepare('SELECT * FROM businesses WHERE id = ? AND user_id = ?').get(shopId, user.id);
-    if (!shop) fail('business_not_found', 404);
-    if (!db.prepare('DELETE FROM business_stock WHERE business_id = ? AND inventory_id = ? AND sold_at IS NULL')
-      .run(shop.id, inventoryId).changes) fail('stock_not_found', 404);
-    const stock = shopStock(db, shop.id, shop.type, shop.profit_margin, now);
-    db.prepare('UPDATE businesses SET traffic_popularity = ? WHERE id = ?')
-      .run(shopMetrics(db, shop, stock, now).popularity, shop.id);
-    return publicShop(db, db.prepare('SELECT * FROM businesses WHERE id = ?').get(shop.id), now);
-  }));
+export function stockBusiness(dataDir,user,shopId,inventoryIds,{now=Date.now()}={}) {
+  if(!Array.isArray(inventoryIds)||!inventoryIds.length)fail('invalid_stock');
+  return withDatabase(dataDir,db=>transaction(db,()=>applyBusinessStock(db,user,shopId,inventoryIds,[],now)));
+}
+export function unstockBusiness(dataDir,user,shopId,inventoryId,{now=Date.now()}={}) {
+  return withDatabase(dataDir,db=>transaction(db,()=>applyBusinessStock(db,user,shopId,[],[inventoryId],now)));
 }
 
 function createStockListing(db, { id, stock, startsAt, endsAt, reserve, currentBid = null, bidderId = null }) {

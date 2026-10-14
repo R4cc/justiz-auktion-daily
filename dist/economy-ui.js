@@ -342,7 +342,7 @@ window.economyUi = (() => {
     const grid = rows => `<div class="house-grid">${rows.map(houseCard).join('')}</div>`;
     const options = (items, selected) => items.map(([id, label]) => `<option value="${id}" ${selected === id ? 'selected' : ''}>${label}</option>`).join('');
     const filtered = type !== 'all' || seller !== 'all' || search || stock || palette || sort !== 'ends';
-    accountContent.innerHTML = `<div class="auction-house"><section class="house-header" aria-labelledby="house-title"><div class="house-heading"><div><h1 id="house-title" tabindex="-1">${t('Auction House', 'Auktionshaus')}</h1><a class="house-inventory-link" href="/inventory" data-page>${t('Inventory', 'Inventar')} ↗</a></div></div>
+    accountContent.innerHTML = (window.shopUi?.handoff()||'') + `<div class="auction-house"><section class="house-header" aria-labelledby="house-title"><div class="house-heading"><div><h1 id="house-title" tabindex="-1">${t('Auction House', 'Auktionshaus')}</h1><a class="house-inventory-link" href="/inventory" data-page>${t('Inventory', 'Inventar')} ↗</a></div></div>
       <nav class="auction-house-shortcuts${economyFlags.market ? '' : ' is-single'}" aria-label="${t('Explore trading', 'Handel entdecken')}">
         <a class="house-launch-card house-case-store-card" href="/shop" data-page>
           <span class="house-card-copy"><strong>${t('Case Shop', 'Kisten-Shop')}</strong><span class="house-card-action" aria-hidden="true">→</span></span>
