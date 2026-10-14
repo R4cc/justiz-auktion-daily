@@ -1,0 +1,61 @@
+// Optional real-API browser regression for store security and fine compensation.
+import assert from 'node:assert/strict';
+import { createServer } from 'node:http';
+import { readFile,mkdtemp,rm } from 'node:fs/promises';
+import { fileURLToPath } from 'node:url';
+import path from 'node:path';
+import { Accounts } from '../src/accounts.mjs';
+import { createAccountApi } from '../src/account-api.mjs';
+import { createEconomyApi } from '../src/economy-api.mjs';
+import { closeDataStore,upsertAuctions } from '../src/database.mjs';
+import { buyBusiness,stockBusiness,businessDashboard } from '../src/businesses.mjs';
+import { customizeStore,visitStore,startStoreHeist } from '../src/storefronts.mjs';
+import { acquireItems } from '../src/trader.mjs';
+import { featureFlags } from '../src/features.mjs';
+const {chromium}=await import(process.env.PLAYWRIGHT_MODULE||'/home/lxadm/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules/playwright/index.mjs');
+const root=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..'),dir=await mkdtemp('/tmp/jg-security-guard-ui-');
+const env={ADMIN_USERNAME:'admin',ADMIN_PASSWORD:'security-browser-password',COOKIE_SECURE:'false'},flags=featureFlags(env);
+const json=(res,status,value)=>{res.writeHead(status,{'content-type':'application/json'});res.end(JSON.stringify(value));};
+const seed=JSON.parse(await readFile(path.join(root,'seed/auctions.json'),'utf8'));upsertAuctions(dir,seed.auctions);
+const api=await createAccountApi({dataDir:dir,json,env,flags,dailyPayload:async()=>({auctions:seed.auctions.slice(0,5)})}),accounts=new Accounts(dir,{flags});
+const adminToken=await accounts.login({username:'admin',password:env.ADMIN_PASSWORD}),owner=accounts.user(adminToken);
+accounts.db(db=>db.prepare('UPDATE users SET tokens=1000000,xp=36100 WHERE id=?').run(owner.id));
+const thiefToken=await accounts.register({username:'guard-check-thief',password:env.ADMIN_PASSWORD,code:accounts.codes(owner,1)[0]}),thief=accounts.user(thiefToken);
+const shop=buyBusiness(dir,owner,'wine','popup').shop;
+accounts.db(db=>{for(let n=0;n<3;n++){const id='security-wine-'+n;db.prepare('INSERT INTO inventory(id,user_id,item,created_at) VALUES(?,?,?,?)').run(id,owner.id,JSON.stringify({title:'Guard wine '+n,price:100,marketCategory:'wine',rarity:'rare',image:'/favicon.png'}),Date.now());acquireItems(db,owner.id,[id],100,'purchase',Date.now());}});
+stockBusiness(dir,owner,shop.id,['security-wine-0','security-wine-1','security-wine-2']);
+customizeStore(dir,owner,{shopId:shop.id,name:'Guarded shop',motto:'',securityGuard:false,mischiefEnabled:true,requestId:'guard-browser-profile-001'});
+const economy=createEconomyApi({dataDir:dir,json,flags,accounts});
+const server=createServer(async(req,res)=>{try{const url=new URL(req.url,'http://localhost');if(await api(req,res,url)||await economy(req,res,url))return;if(url.pathname.startsWith('/api/'))return json(res,404,{error:'not_found'});const filename=url.pathname==='/'||!path.extname(url.pathname)?'/index.html':url.pathname,buf=await readFile(path.join(root,'dist',filename));res.writeHead(200,{'content-type':filename.endsWith('.js')?'text/javascript':filename.endsWith('.css')?'text/css':'text/html'});res.end(buf);}catch(error){json(res,500,{error:error.message});}});
+await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));const base=`http://127.0.0.1:${server.address().port}`;
+const browser=await chromium.launch({executablePath:process.env.CHROMIUM_PATH||'/opt/google/chrome/chrome',headless:true,args:['--no-sandbox']});
+try {
+ const ownerContext=await browser.newContext({viewport:{width:1440,height:1000}}),thiefContext=await browser.newContext({viewport:{width:1440,height:1000}});
+ await ownerContext.addCookies([{name:'jg_session',value:adminToken,url:base}]);await thiefContext.addCookies([{name:'jg_session',value:thiefToken,url:base}]);
+ const page=await ownerContext.newPage(),visitor=await thiefContext.newPage(),errors=[];for(const target of [page,visitor])target.on('pageerror',error=>errors.push(error.message));
+ const language=(target,lang)=>target.evaluate(lang=>{const select=document.querySelector('#language-select');select.value=lang;select.dispatchEvent(new Event('change',{bubbles:true}));},lang);
+ const openEditor=async()=>{await page.goto(base+'/businesses');await page.locator('[data-business="open-edit"]').click();await page.locator('[name="securityGuard"]').waitFor();};
+ const toggle=async active=>{const checkbox=page.locator('[name="securityGuard"]');assert.equal(await checkbox.isEnabled(),true);await checkbox.setChecked(active);const saved=page.waitForResponse(response=>response.url().endsWith('/api/account/businesses/profile'));await page.locator('[data-store-profile] button[type="submit"]').click();assert.equal((await saved).status(),200);await page.waitForFunction(()=>!document.querySelector('[data-store-profile] button[type="submit"]').disabled);assert.equal(businessDashboard(dir,owner).shops[0].securityGuard,active);};
+ await openEditor();assert.equal(await page.locator('[name="securityGuard"]').isChecked(),false);
+ for(const width of [1440,768,390,320])for(const lang of ['en','de']){await page.setViewportSize({width,height:1000});await language(page,lang);assert.match(await page.locator('[data-editor-guard]').innerText(),/5%.*50%/);assert.doesNotMatch(await page.locator('[data-editor-guard]').innerText(),/250|Wachgans|Goose/);assert.ok(await page.locator('.business-editor-dialog').evaluate(el=>el.scrollWidth<=el.clientWidth+1));await page.screenshot({path:`/tmp/jg-security-guard-manage-${width}-${lang}.png`,fullPage:true});}
+ await page.setViewportSize({width:1440,height:1000});await language(page,'en');await toggle(true);
+ await page.locator('[name="securityGuard"]').uncheck();await language(page,'de');assert.equal(await page.locator('[name="securityGuard"]').isChecked(),false);await language(page,'en');await toggle(false);
+ await visitor.goto(base+`/stores?shop=${shop.id}`);await visitor.locator('[data-store="heist"]').first().click();assert.match(await visitor.locator('.blackjack-intro-copy').innerText(),/70%.*30%/);await visitor.locator('[data-store="close-heist"]').click();
+ await toggle(true);
+ const post=async(route,data)=>{const response=await thiefContext.request.post(base+'/api/account/'+route,{data,headers:{'x-requested-with':'JUSTIZGUESSR'}});assert.equal(response.status(),200,await response.text());return response.json();};
+ await post('stores/buy',{shopId:shop.id,inventoryId:'security-wine-0',expectedPrice:120,requestId:'guard-browser-sale-0001'});
+ const state=businessDashboard(dir,owner).shops[0];assert.equal(state.securityGuardFees,1);assert.equal(state.cashReady,119);assert.equal(state.realizedTradingProfit,19);
+ await visitor.goto(base+`/stores?shop=${shop.id}`);await visitor.locator('[data-store="heist"]').first().click();
+ for(const width of [1440,768,390,320])for(const lang of ['en','de']){await visitor.setViewportSize({width,height:1000});await language(visitor,lang);assert.match(await visitor.locator('.blackjack-intro-copy').innerText(),/50%.*50%/);assert.ok(await visitor.locator('.store-heist-dialog').evaluate(el=>el.scrollWidth<=el.clientWidth+1));}
+ await language(visitor,'en');await visitor.locator('[data-store="close-heist"]').click();
+ const entry=visitStore(dir,thief,shop.id).store.stock[0],attempt=startStoreHeist(dir,thief,{shopId:shop.id,inventoryId:entry.id,expectedPrice:entry.price,expectedFine:entry.theft.fine,expectedPoliceCatchPercent:50,requestId:'guard-browser-heist-001'},{draw:max=>max-1});
+ accounts.db(db=>db.prepare('UPDATE store_heists SET blackjack=? WHERE id=?').run(JSON.stringify({player:[2,3],dealer:[9,8],deck:[1,4,5],turn:0,outcome:'active'}),attempt.id));
+ await visitor.route('**/api/account/stores/heist/action',async route=>{const response=await route.fetch(),payload=await response.json();if(payload.heist?.outcome==='police')accounts.db(db=>db.prepare('UPDATE store_heists SET roll=350000 WHERE id=?').run(attempt.id));await route.fulfill({response,json:payload});});
+ await visitor.reload();await visitor.locator('[data-store="resume"]').click();await visitor.locator('[data-store="stand"]').click();await visitor.locator('[data-store="spin-police"]').waitFor();
+ assert.match(await visitor.locator('.police-wheel-odds').innerText(),/50%/);assert.equal(await visitor.locator('.police-wheel path.is-caught').count(),5);
+ const before=accounts.profile(owner).tokens;await visitor.emulateMedia({reducedMotion:'reduce'});await visitor.locator('[data-store="spin-police"]').click();await visitor.waitForFunction(()=>document.querySelector('.blackjack-status')?.textContent.includes('Caught!'));
+ assert.equal(accounts.profile(owner).tokens,before+entry.theft.fine);assert.equal(entry.theft.fine,200);assert.match(await visitor.locator('.blackjack-consequence').innerText(),/paid to the store owner/);
+ await openEditor();assert.match(await page.locator('[data-editor-stats]').innerText(),/Guard costs paid/);await toggle(false);assert.equal(businessDashboard(dir,owner).shops[0].securityGuardFees,1);
+ await page.goto(base+'/changelog');await page.locator('.changelog-entry h2').first().waitFor();assert.equal(await page.locator('.changelog-entry h2').first().innerText(),'Security Guard');assert.equal(await page.locator('.changelog-entry').first().locator('ul li').count(),4);
+ assert.deepEqual(errors,[]);console.log('Security Guard browser smoke passed: owner-only management toggle and draft preservation; 5% profit fee on a real sale; normal 30% and guarded 50% intro/wheel; real caught fine credited to owner; deactivation and dated notes; EN/DE at 1440/768/390/320px, no overflow or JS errors.');
+} finally {await browser.close();await new Promise(resolve=>server.close(resolve));closeDataStore(dir);await rm(dir,{recursive:true,force:true});}

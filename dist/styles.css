@@ -1419,7 +1419,7 @@ body { padding-left: var(--sidebar-width); }
 .store-front > div:last-child { padding: 1.5rem; }
 .store-front .page-heading { margin-bottom: 0; }
 .store-front h1 { overflow-wrap: anywhere; }
-.store-goose { color: #795018; font-weight: 700; font-size: .8rem; }
+.store-security-guard { color: #795018; font-weight: 700; font-size: .8rem; }
 .store-reviews { background: #fffcf4; border: 1px solid var(--line); border-radius: 10px; padding: 1.2rem; margin: 1.5rem 0; }
 .store-shelves h2, .store-reviews h2 { font-size: 1.1rem; }
 .store-shelf-card { display: flex; flex-direction: column; border: 1px solid var(--line); background: white; border-radius: 10px; overflow: hidden; }

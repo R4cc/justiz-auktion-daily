@@ -25,7 +25,7 @@ for(const [n,type] of types.entries()){
  const entries=type==='wine'?[['wine-0','Wachau Riesling',100,'rare'],['wine-1','Wachau Riesling',100,'rare'],['wine-2','Wachau Riesling',100,'rare'],['wine-premium','Wachau Riesling',200,'legendary']]:[[type+'-0',type==='toys'?'Wooden puzzle':type==='cars'?'Compact city car':'Large television',100,'common']];
  accounts.db(db=>{for(const [id,title,price,rarity] of entries)db.prepare('INSERT INTO inventory(id,user_id,item,created_at) VALUES(?,?,?,?)').run(id,owner.id,JSON.stringify({title,price,rarity,businessCategory:type,marketCategory:type==='toys'?'collectibles':type==='cars'?'vehicles':type,image:type==='electronics'?'/assets/tv.jpg':null}),now);});
  stockBusiness(dir,owner,shop.id,entries.map(([id])=>id),{now});
- customizeStore(dir,owner,{shopId:shop.id,name:type==='wine'?'The Cork & Crown <img src=x>':type+' treasures',motto:'Small treasures. Bigger stories.',gooseGuard:type==='wine',requestId:'visitor-profile-'+type+'-0001'},{now});
+ customizeStore(dir,owner,{shopId:shop.id,name:type==='wine'?'The Cork & Crown <img src=x>':type+' treasures',motto:'Small treasures. Bigger stories.',securityGuard:type==='wine',requestId:'visitor-profile-'+type+'-0001'},{now});
 }
 const empty=buyBusiness(dir,{id:'seller-0'},'wine','popup',{now}).shop;
 // Freeze only this fixture's passive NPC ticks, while real buyer transactions run.

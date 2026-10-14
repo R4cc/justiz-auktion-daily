@@ -88,7 +88,7 @@ test('new-store grace, empty shelves, failed rolls and skipped days cannot be fa
   assert.equal(checkStoreEvents(f.dir,f.owner,{now:due+31*STORE_EVENT_INTERVAL,random:()=>{throw Error('empty stock');}}).events.length,1);
 });
 test('cosmetic heists preserve guarded shelves and live player purchases',async t=>{
-  const f=await fixture(t);f.accounts.db(db=>db.prepare('UPDATE businesses SET goose_guard=1').run());
+  const f=await fixture(t);f.accounts.db(db=>db.prepare('UPDATE businesses SET security_guard=1').run());
   assert.equal(run(f,3,0).type,'heist');assert.equal(f.query('SELECT * FROM inventory WHERE sold_at IS NULL').length,9);
   const g=await fixture(t);g.accounts.db(db=>db.prepare('UPDATE businesses SET mischief_enabled=1').run());
   buyStoreItem(g.dir,g.rival,{shopId:g.shop.id,inventoryId:'wine-0',expectedPrice:120,requestId:'event-purchase-0001'},{now});

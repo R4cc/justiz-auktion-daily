@@ -130,7 +130,7 @@ test('theft is available in every player store and legacy owner opt-out cannot b
   const f=await fixture(t);f.add('wine',undefined,'unknown',{...item,marketCategory:'wine'});const shop=buyBusiness(f.dir,f.seller,'wine','popup',{now}).shop;stockBusiness(f.dir,f.seller,shop.id,['wine'],{now});
   const view=()=>visitStore(f.dir,f.buyer,shop.id,{now}).store;
   assert.equal(shop.mischiefEnabled,false);assert.ok(view().stock[0].theft);
-  const profile={shopId:shop.id,name:'Trader store',motto:'',gooseGuard:false,mischiefEnabled:false,requestId:'legacy-mischief-test-001'};
+  const profile={shopId:shop.id,name:'Trader store',motto:'',securityGuard:false,mischiefEnabled:false,requestId:'legacy-mischief-test-001'};
   assert.throws(()=>customizeStore(f.dir,f.buyer,profile,{now}),/forbidden/);
   customizeStore(f.dir,f.seller,profile,{now});assert.ok(view().stock[0].theft);
   const entry=view().stock[0],payload={shopId:shop.id,inventoryId:'wine',expectedPrice:entry.price,expectedFine:entry.theft.fine,requestId:'all-player-theft-001'};

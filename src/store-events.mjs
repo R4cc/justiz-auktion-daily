@@ -55,6 +55,7 @@ export function checkStoreEvents(dataDir, user, { now = Date.now(), random = ran
       const id = randomUUID(), affected = event.effect === 'sale'
         ? stock.slice(0, Math.min(event.maxItems ?? stock.length, Math.ceil(stock.length * event.fraction))) : [];
       let money = event.effect === 'gift' ? 200 : event.effect === 'fine' ? -Math.min(100, db.prepare('SELECT tokens FROM users WHERE id = ?').get(player.id).tokens) : 0;
+      let guardFees = 0;
       for (const entry of affected) {
         if (inventoryIsLocked(db, entry.id)) fail('item_locked', 409);
         if (!db.prepare('UPDATE inventory SET sold_at = ? WHERE id = ? AND user_id = ? AND sold_at IS NULL').run(now, entry.id, player.id).changes) fail('stock_conflict', 409);
@@ -62,11 +63,11 @@ export function checkStoreEvents(dataDir, user, { now = Date.now(), random = ran
         if (event.effect === 'sale') {
           const price = Math.round(entry.askingPrice * event.multiplier); money += price;
           db.prepare('INSERT INTO business_sales VALUES (?, ?, ?, ?, ?)').run(`event:${id}:${entry.id}`, shop.id, entry.id, price, now);
-          recordSale(db,player.id,[entry.id],price,`event:${id}:${entry.id}`,now,shop.id);
+          guardFees += recordSale(db,player.id,[entry.id],price,`event:${id}:${entry.id}`,now,shop.id);
         }
       }
       const balance = db.prepare('SELECT tokens FROM users WHERE id = ?').get(player.id).tokens;
-      if (money>0) creditStoreCash(db,shop.id,money);
+      if (money>0) creditStoreCash(db,shop.id,money - guardFees);
       else {
         if (!Number.isSafeInteger(money) || !Number.isSafeInteger(balance + money) || balance + money < 0) fail('token_balance_limit', 409);
         db.prepare('UPDATE users SET tokens = tokens + ? WHERE id = ?').run(money, player.id);

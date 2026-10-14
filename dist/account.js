@@ -74,7 +74,6 @@ function accountError(code) {
     heist_not_ready: t('This paid attempt is not ready yet. Resume it in a moment.', 'Dieser bezahlte Versuch ist noch nicht bereit. Setze ihn gleich fort.'),
     police_spin_not_ready: t('The police wheel is available after a blackjack loss.', 'Das Polizeirad ist nach einer Blackjack-Niederlage verfügbar.'),
     heist_not_found: t('This attempt is no longer available.', 'Dieser Versuch ist nicht mehr verfügbar.'),
-    guard_permanent: t('Your goose guard is already hired permanently.', 'Deine Wachgans ist schon dauerhaft eingestellt.'),
     invalid_plot: t('Choose a valid plot on the town map.', 'Wähle ein gültiges Grundstück auf dem Stadtplan.'),
     plot_not_found: t('This plot does not exist.', 'Dieses Grundstück gibt es nicht.'),
     plot_occupied: t('Someone just took this plot. Choose another location.', 'Jemand hat dieses Grundstück gerade gekauft. Wähle einen anderen Standort.'),

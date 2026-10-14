@@ -89,7 +89,7 @@ test('public storefronts and player interactions use feature flags, sessions, CS
   assert.equal((await post(base, 'stores/visit', { shopId: shop.id }, winnerCookie)).status, 200);
   assert.equal((await post(base, 'stores/react', { shopId: shop.id, reaction: 'bell' }, winnerCookie)).status, 200);
   assert.ok((await view(winnerCookie)).stock[0].theft);
-  assert.equal((await post(base, 'businesses/profile', {shopId:shop.id,name:'API shop',motto:'',gooseGuard:false,mischiefEnabled:true,requestId:'enable-mischief-http-001'}, ownerCookie)).status, 200);
+  assert.equal((await post(base, 'businesses/profile', {shopId:shop.id,name:'API shop',motto:'',securityGuard:false,mischiefEnabled:true,requestId:'enable-mischief-http-001'}, ownerCookie)).status, 200);
   const start = await post(base, 'stores/heist/start', { ...payload, inventoryId: 'http-wine-1', expectedFine:200, requestId: 'store-http-heist-000001' }, winnerCookie);
   assert.equal(start.status, 200);
   const { heist } = await start.json();

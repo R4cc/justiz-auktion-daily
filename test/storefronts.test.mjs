@@ -38,12 +38,12 @@ const success = max => max-1;
 test('theft fines halve across values, guards, districts and security with a 1.5x value floor', () => {
   for (const value of [1, 5, 10, 99, 100, 1000, 1000000]) for (const guard of [false, true])
     for (const district of [.65, 1, 1.8]) for (const security of [0, 10, 20, 30]) {
-      const oldBase = Math.max(20, Math.ceil(value * 4 * (guard ? 2 : 1) * Math.max(1, 1 / district)));
+      const oldBase = Math.max(20, Math.ceil(value * 4 * Math.max(1, 1 / district)));
       const oldFine = Math.ceil(oldBase * (100 + security) / 100);
       const quote = theftQuote(value, guard, district, security);
       assert.ok(Math.abs(quote.fine - oldFine / 2) <= 1);
       assert.ok(quote.fine >= Math.ceil(value * 1.5));
-      assert.equal(quote.policeCatchPercent, 20);
+      assert.equal(quote.policeCatchPercent, guard ? 50 : 30);
     }
   assert.equal(theftQuote(100, false).fine, 200);
   assert.equal(theftQuote(1, false).fine, 10);
@@ -53,7 +53,7 @@ test('theft fines halve across values, guards, districts and security with a 1.5
 
 test('public store directory filters, paginates and masks guests; visits and reactions count once per day', async t => {
   const f = await fixture(t);
-  const profile = { shopId: f.shop.id, name: 'The Cork & Goose', motto: 'Unexpected finds', gooseGuard: false, requestId: 'store-profile-000001' };
+  const profile = { shopId: f.shop.id, name: 'The Cork & Goose', motto: 'Unexpected finds', securityGuard: false, requestId: 'store-profile-000001' };
   customizeStore(f.dir, f.owner, profile, { now });
   buyBusiness(f.dir, f.rival, 'electronics', 'popup', { now });
   const all = listStores(f.dir, null, { now, limit: 1 });
@@ -147,21 +147,21 @@ test('only verified buyers can review; editing replaces their review and tips ha
   assert.throws(() => tipStore(f.dir, f.buyer, { ...tip, amount: 10 }, { now }), /request_conflict/);
 });
 
-test('goose guard is owner-only, charges once, increases the fine without changing cards and rolls back on unaffordable setup', async t => {
-  const f = await fixture(t), profile = { shopId: f.shop.id, name: 'HONK', motto: '', gooseGuard: true, requestId: 'store-goose-retry-0001' };
+test('security guard is owner-only, freely toggleable, changes catch odds and leaves fines unchanged', async t => {
+  const f = await fixture(t), profile = { shopId:f.shop.id, name:'Security', motto:'', securityGuard:true, requestId:'store-guard-activate-001' };
   assert.throws(() => customizeStore(f.dir, f.buyer, profile, { now }), /forbidden/);
-  const unguarded = f.view().stock[0].theft.fine, balance = f.balance(f.owner);
+  const before = f.view().stock[0].theft, balance = f.balance(f.owner);
+  assert.equal(before.policeCatchPercent, 30);
   customizeStore(f.dir, f.owner, profile, { now }); customizeStore(f.dir, f.owner, profile, { now });
-  assert.equal(f.balance(f.owner), balance - 250); assert.equal(f.view().gooseGuard, true);
-  assert.ok(f.view().stock[0].theft.fine === unguarded * 2);
-  const buyerBalance = f.balance(f.buyer);
-  assert.throws(() => startStoreHeist(f.dir, f.buyer, f.payload(), { now }), /store_risk_changed/);
-  assert.equal(f.balance(f.buyer), buyerBalance);
-  assert.throws(() => customizeStore(f.dir, f.owner, { ...profile, gooseGuard: false, requestId: 'unguard-attempt-00001' }, { now }), /guard_permanent/);
-  const other = buyBusiness(f.dir, f.owner, 'wine', 'popup', { now }).shop;
-  f.accounts.db(db => db.prepare('UPDATE users SET tokens = 0 WHERE id = ?').run(f.owner.id));
-  assert.throws(() => customizeStore(f.dir, f.owner, { ...profile, shopId: other.id, requestId: 'new-goose-attempt-0001' }, { now }), /insufficient_tokens/);
-  assert.equal(visitStore(f.dir, f.owner, other.id, { now }).store.gooseGuard, false);
+  assert.equal(f.balance(f.owner), balance); assert.equal(f.view().securityGuard, true);
+  assert.equal(f.view().stock[0].theft.fine, before.fine);
+  assert.equal(f.view().stock[0].theft.policeCatchPercent, 50);
+  assert.throws(() => startStoreHeist(f.dir,f.buyer,{...f.payload(),expectedPoliceCatchPercent:30},{now,draw:success}), /store_risk_changed/);
+  customizeStore(f.dir,f.owner,{...profile,securityGuard:false,requestId:'store-guard-deactivate-001'},{now});
+  assert.equal(f.view().securityGuard,false); assert.equal(f.view().stock[0].theft.policeCatchPercent,30);
+  f.accounts.db(db=>db.prepare('UPDATE users SET tokens=0 WHERE id=?').run(f.owner.id));
+  customizeStore(f.dir,f.owner,{...profile,requestId:'store-guard-rehire-0001'},{now});
+  assert.equal(f.view().securityGuard,true); assert.equal(f.balance(f.owner),0);
 });
 
 function setHand(f,id,{player=[9,8],dealer=[6,10],deck}={}) {
@@ -360,9 +360,9 @@ test('loss stages a private persisted wheel; escape is free, has no loot, and ca
  const f=await fixture(t),id=startStoreHeist(f.dir,f.buyer,f.payload(),{now,draw:success}).id;
  setHand(f,id,{player:[2,3],dealer:[9,8]});
  let draws=0;const payload={heistId:id,action:'stand',turn:0,requestId:'loss-wheel-stage-00001'};
- const lost=actStoreHeist(f.dir,f.buyer,payload,{now,policeDraw:max=>{draws++;assert.equal(max,1000000);return 200000;}});
+ const lost=actStoreHeist(f.dir,f.buyer,payload,{now,policeDraw:max=>{draws++;assert.equal(max,1000000);return 300000;}});
  assert.equal(lost.outcome,'police');assert.equal(lost.blackjack.outcome,'lose');assert.equal(lost.policeWheel.spun,false);
- assert.equal(lost.policeWheel.catchPercent,20);assert.equal(lost.expiresAt,now+POLICE_WHEEL_DURATION);
+ assert.equal(lost.policeWheel.catchPercent,30);assert.equal(lost.expiresAt,now+POLICE_WHEEL_DURATION);
  assert.ok(!('sector' in lost.policeWheel));assert.ok(!JSON.stringify(lost).includes('roll'));
  assert.equal(f.balance(f.buyer),100000);assert.equal(playerCriminalRecord(f.dir,f.buyer,{now}).total,0);
  assert.deepEqual(actStoreHeist(f.dir,f.buyer,payload,{now,policeDraw:()=>{throw Error('reroll');}}),lost);
@@ -370,15 +370,15 @@ test('loss stages a private persisted wheel; escape is free, has no loot, and ca
  assert.throws(()=>spinStoreHeist(f.dir,f.rival,{heistId:id,requestId:'foreign-wheel-spin-001'},{now}),/heist_not_found/);
  const request={heistId:id,requestId:'escape-wheel-spin-0001',roll:0,outcome:'caught',catchPercent:100};
  const result=spinStoreHeist(f.dir,f.buyer,request,{now:now+1000});
- assert.equal(result.outcome,'escaped');assert.equal(result.policeWheel.sector,2);assert.equal(result.policeWheel.spun,true);assert.equal(result.consequence,null);
+ assert.equal(result.outcome,'escaped');assert.equal(result.policeWheel.sector,3);assert.equal(result.policeWheel.spun,true);assert.equal(result.consequence,null);
  assert.equal(f.balance(f.buyer),100000);assert.equal(f.itemOwner('wine-0'),f.owner.id);assert.equal(f.accounts.profile(f.buyer).justice.offences,0);
  assert.deepEqual(spinStoreHeist(f.dir,f.buyer,request,{now:now+2000}),result);
  assert.deepEqual(spinStoreHeist(f.dir,f.buyer,{...request,requestId:'second-wheel-spin-001'},{now:now+2000}),result);
  assert.equal(playerCriminalRecord(f.dir,f.buyer,{now}).total,0);
 });
 
-test('wheel catches only the first 20% of its roll range and winning/pushed hands never create or spin it',async t=>{
- for(const [roll,caught] of [[0,true],[199999,true],[200000,false],[999999,false]]){
+test('wheel catches only the first 30% of its roll range and winning/pushed hands never create or spin it',async t=>{
+ for(const [roll,caught] of [[0,true],[299999,true],[300000,false],[999999,false]]){
   const f=await fixture(t),id=startStoreHeist(f.dir,f.buyer,f.payload(),{now,draw:success}).id;
   assert.throws(()=>spinStoreHeist(f.dir,f.buyer,{heistId:id,requestId:'too-early-spin-000001'},{now}),/police_spin_not_ready/);
   setHand(f,id,{player:[2,3],dealer:[9,8]});

@@ -1,3 +1,6 @@
+import { AccountError } from './errors.mjs';
+import { ECONOMY_BALANCE } from './economy-balance.mjs';
+
 // Private ownership accounting. Callers own the enclosing economy transaction.
 // Costs never enter item JSON, which also supplies public auction snapshots.
 export function ensureTraderSchema(db) {
@@ -15,6 +18,9 @@ export function ensureTraderSchema(db) {
     user_id TEXT NOT NULL REFERENCES users(id), step TEXT NOT NULL, completed_at INTEGER NOT NULL,
     PRIMARY KEY(user_id, step)
   ) STRICT`);
+  if (!db.prepare('PRAGMA table_info(trader_sales)').all().some(column => column.name === 'guard_fee')) {
+    db.exec('ALTER TABLE trader_sales ADD COLUMN guard_fee INTEGER NOT NULL DEFAULT 0 CHECK(guard_fee>=0)');
+  }
 }
 
 export function milestone(db, userId, step, now) {
@@ -48,22 +54,37 @@ export function acquireItems(db, userId, ids, total, source, now, { reinvest = t
 export function recordSale(db, userId, ids, total, sourceId, now, businessId = null) {
   ensureTraderSchema(db);
   const shares = splitCost(total, ids.length);
-  const insert = db.prepare('INSERT OR IGNORE INTO trader_sales VALUES (?, ?, ?, ?, ?, ?, ?, ?)');
+  const insert = db.prepare(`INSERT OR IGNORE INTO trader_sales
+    (source_id,inventory_id,user_id,proceeds,cost,reward,business_id,sold_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`);
+  let guardFees = 0;
   ids.forEach((id, index) => {
     const basis = acquisition(db, id, userId);
-    insert.run(sourceId, id, userId, shares[index], basis.acquisitionCost,
+    const inserted = insert.run(sourceId, id, userId, shares[index], basis.acquisitionCost,
       Number(basis.acquisitionSource === 'reward'), businessId, now);
+    if (!inserted.changes || !businessId || basis.acquisitionCost === null) return;
+    const shop = db.prepare('SELECT security_guard,security_guard_profit,security_guard_fees FROM businesses WHERE id=? AND user_id=?').get(businessId,userId);
+    if (!shop?.security_guard) return;
+    const profit = shop.security_guard_profit + shares[index] - basis.acquisitionCost;
+    if (!Number.isSafeInteger(profit)) throw new AccountError('token_balance_limit',409);
+    // Carry fractional fees across sales and toggles. Losses offset later profit;
+    // previously paid wages are not refunded. Historical/unknown costs stay unknown.
+    const target = Math.floor(Math.max(0, profit) / (100 / ECONOMY_BALANCE.securityGuardProfitPercent));
+    const fee = Math.max(0, target - shop.security_guard_fees);
+    db.prepare('UPDATE businesses SET security_guard_profit=?,security_guard_fees=security_guard_fees+? WHERE id=?').run(profit,fee,businessId);
+    db.prepare('UPDATE trader_sales SET guard_fee=? WHERE source_id=? AND inventory_id=?').run(fee,sourceId,id);
+    guardFees += fee;
   });
   milestone(db, userId, 'sale', now);
+  return guardFees;
 }
 
 export function tradingTotals(db, userId, businessId = null) {
   ensureTraderSchema(db);
-  const rows = db.prepare(`SELECT proceeds,cost,reward FROM trader_sales WHERE user_id=?
+  const rows = db.prepare(`SELECT proceeds,cost,reward,guard_fee FROM trader_sales WHERE user_id=?
     AND (? IS NULL OR business_id=?)`).all(userId, businessId, businessId);
   return {
-    realizedTradingProfit: rows.filter(row => row.cost !== null && !row.reward).reduce((sum, row) => sum + row.proceeds - row.cost, 0),
-    rewardProceeds: rows.filter(row => row.reward).reduce((sum, row) => sum + row.proceeds, 0),
+    realizedTradingProfit: rows.filter(row => row.cost !== null && !row.reward).reduce((sum, row) => sum + row.proceeds - row.cost - row.guard_fee, 0),
+    rewardProceeds: rows.filter(row => row.reward).reduce((sum, row) => sum + row.proceeds - row.guard_fee, 0),
     unknownCostSales: rows.filter(row => row.cost === null).length,
     trackedSales: rows.length
   };

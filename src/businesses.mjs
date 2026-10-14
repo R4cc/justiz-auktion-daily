@@ -102,7 +102,11 @@ export function ensureBusinessSchema(db, { now = Date.now() } = {}) {
   if (!db.prepare('PRAGMA table_info(businesses)').all().some(column => column.name === 'profit_margin')) {
     db.exec('ALTER TABLE businesses ADD COLUMN profit_margin INTEGER NOT NULL DEFAULT 30 CHECK(profit_margin BETWEEN 0 AND 100)');
   }
-  for (const [name, definition] of [['store_name', "TEXT NOT NULL DEFAULT ''"], ['store_motto', "TEXT NOT NULL DEFAULT ''"], ['goose_guard', 'INTEGER NOT NULL DEFAULT 0'], ['mischief_enabled','INTEGER NOT NULL DEFAULT 0 CHECK(mischief_enabled IN (0,1))']]) {
+  const guardColumns = db.prepare('PRAGMA table_info(businesses)').all();
+  if (guardColumns.some(column => column.name === 'goose_guard') && !guardColumns.some(column => column.name === 'security_guard')) {
+    db.exec('ALTER TABLE businesses RENAME COLUMN goose_guard TO security_guard');
+  }
+  for (const [name, definition] of [['store_name', "TEXT NOT NULL DEFAULT ''"], ['store_motto', "TEXT NOT NULL DEFAULT ''"], ['security_guard', 'INTEGER NOT NULL DEFAULT 0'], ['security_guard_profit', 'INTEGER NOT NULL DEFAULT 0'], ['security_guard_fees', 'INTEGER NOT NULL DEFAULT 0 CHECK(security_guard_fees>=0)'], ['mischief_enabled','INTEGER NOT NULL DEFAULT 0 CHECK(mischief_enabled IN (0,1))']]) {
     if (!db.prepare('PRAGMA table_info(businesses)').all().some(column => column.name === name)) db.exec(`ALTER TABLE businesses ADD COLUMN ${name} ${definition}`);
   }
   // Keep sale history independently of physical shelf rows: a player purchase
@@ -180,7 +184,7 @@ function shopMetrics(db, row, stock, at) {
 
 export function advanceShop(db, row, now) {
   let stock = shopStock(db, row.id, row.type, row.profit_margin, now);
-  let visitors = 0, sales = 0, revenue = 0;
+  let visitors = 0, sales = 0, revenue = 0, guardFees = 0;
   const until = Math.floor(now / HOUR) * HOUR;
   const plotTraffic = plotLocation(db, row.plot_id)?.trafficMultiplier ?? 1;
   for (let hour = row.last_tick_at + HOUR; hour <= until; hour += HOUR) {
@@ -202,7 +206,7 @@ export function advanceShop(db, row, now) {
         .run(hour, salePrice, sold.id);
       db.prepare('INSERT INTO business_sales (id, business_id, inventory_id, price, sold_at) VALUES (?, ?, ?, ?, ?)')
           .run(`npc:${sold.id}`, row.id, sold.id, salePrice, hour);
-      recordSale(db,row.user_id,[sold.id],salePrice,`npc:${sold.id}`,hour,row.id);
+      guardFees += recordSale(db,row.user_id,[sold.id],salePrice,`npc:${sold.id}`,hour,row.id);
       if (!db.prepare('UPDATE inventory SET sold_at = ? WHERE id = ? AND sold_at IS NULL AND user_id = ?')
         .run(hour, sold.id, row.user_id).changes) fail('stock_conflict', 409);
       recordNpcStoreFeedback(db,{ saleId:`npc:${sold.id}`, shopId:row.id,
@@ -211,7 +215,7 @@ export function advanceShop(db, row, now) {
       sales++; revenue += salePrice;
     }
   }
-  if (revenue) creditStoreCash(db,row.id,revenue);
+  if (revenue) creditStoreCash(db,row.id,revenue - guardFees);
   db.prepare(`UPDATE businesses SET visitors = visitors + ?, sales = sales + ?, revenue = revenue + ?, last_tick_at = ? WHERE id = ?`)
     .run(visitors, sales, revenue, Math.max(row.last_tick_at, until), row.id);
 }
@@ -229,7 +233,7 @@ function publicShop(db, row, now = Date.now()) {
     FROM business_sales WHERE business_id = ? AND sold_at >= ? AND sold_at < ?`)
     .get(row.id, dayStart, dayStart + 24 * HOUR);
   return { id: row.id, type: row.type, size: row.size, boughtAt: row.bought_at,
-    location: plotLocation(db, row.plot_id), name: row.store_name, motto: row.store_motto, gooseGuard: Boolean(row.goose_guard), mischiefEnabled: Boolean(row.mischief_enabled),
+    location: plotLocation(db, row.plot_id), name: row.store_name, motto: row.store_motto, securityGuard: Boolean(row.security_guard), securityGuardProfitPercent: ECONOMY_BALANCE.securityGuardProfitPercent, securityGuardFees: row.security_guard_fees, mischiefEnabled: Boolean(row.mischief_enabled),
     ...tradingTotals(db,row.user_id,row.id),
     visitors: row.visitors, sales: row.sales, salesToday: today.sales,
     revenue: row.revenue, revenueToday: today.revenue, cashReady: row.cash_balance, profitMargin: row.profit_margin,

@@ -18,7 +18,7 @@ test('standard deck, ace adjustment, naturals, soft 17, busts and ties use ordin
   const drawFor=(prefix)=>{const target=[...prefix,...Array.from({length:52},(_,n)=>n).filter(n=>!prefix.includes(n))],deck=Array.from({length:52},(_,n)=>n);return max=>{const i=max-1,j=deck.indexOf(target[i]);[deck[i],deck[j]]=[deck[j],deck[i]];return j;};};
   assert.equal(dealBlackjack(drawFor([0,2,9,3])).outcome,'win');assert.equal(dealBlackjack(drawFor([2,0,3,9])).outcome,'lose');assert.equal(dealBlackjack(drawFor([0,13,9,22])).outcome,'push');
 });
-test('fair cards retain normal odds; the police wheel reduces expected loss fines by 80% and makes ordinary theft profitable',t=>{
+test('fair cards retain normal odds; security guards raise catch risk without changing fair card odds or fine amounts',t=>{
   let seed=918271;const draw=max=>{seed=(Math.imul(seed,1664525)+1013904223)>>>0;return Math.floor(seed/4294967296*max);};
   const counts={win:0,lose:0,push:0},runs=60000,upcards=Array(52).fill(0);
   for(let n=0;n<runs;n++){
@@ -35,10 +35,11 @@ test('fair cards retain normal odds; the police wheel reduces expected loss fine
   assert.ok(rates.win>.40&&rates.win<.46,JSON.stringify(rates));assert.ok(rates.lose>.46&&rates.lose<.52);assert.ok(rates.push>.06&&rates.push<.12);
   assert.ok(upcards.every(count=>Math.abs(count-runs/52)<runs/52*.15));
   for(const value of [1,50,100,1000,1000000])for(const guard of [true,false])for(const location of [.65,1,1.8]){
-    const quote=theftQuote(value,guard,location);assert.ok(!('chancePercent' in quote));assert.equal(quote.policeCatchPercent,20);assert.ok(Math.abs(rates.lose*quote.fine*POLICE_CATCH_PERCENT/100/(rates.lose*quote.fine)-.2)<1e-10);
+    const quote=theftQuote(value,guard,location);assert.ok(!('chancePercent' in quote));assert.equal(quote.policeCatchPercent,guard?50:30);assert.ok(Math.abs(rates.lose*quote.fine*quote.policeCatchPercent/100/(rates.lose*quote.fine)-(guard?.5:.3))<1e-10);
   }
   const ordinary=theftQuote(100,false,1),guarded=theftQuote(100,true,1);
   assert.ok(rates.win*100-rates.lose*ordinary.fine*POLICE_CATCH_PERCENT/100>0);
-  assert.ok(guarded.fine>ordinary.fine);
+  assert.equal(guarded.fine,ordinary.fine);
+  assert.equal(guarded.policeCatchPercent,50); assert.equal(ordinary.policeCatchPercent,30);
   assert.equal(jailDuration(1),5*60000);assert.equal(jailDuration(2),15*60000);assert.equal(jailDuration(3),45*60000);assert.equal(jailDuration(100),24*3600000);
 });

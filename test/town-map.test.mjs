@@ -190,8 +190,9 @@ test('district theft odds appear in quotes, reject stale odds and freeze into pa
   assert.equal(f.balance(f.buyer), before);
   const attempt = startStoreHeist(f.dir, f.buyer, { ...payload, expectedFine:200 }, { now, draw:max => max-1 });
   assert.equal(f.balance(f.buyer), before);
-  customizeStore(f.dir, f.owner, {shopId:shops[0].id,name:'Goose',motto:'',gooseGuard:true,requestId:'town-goose-profile-001'}, { now });
-  assert.equal(stock(shops[0]).theft.fine, 400);
+  customizeStore(f.dir, f.owner, {shopId:shops[0].id,name:'Goose',motto:'',securityGuard:true,requestId:'town-goose-profile-001'}, { now });
+  assert.equal(stock(shops[0]).theft.fine, 200);
+  assert.equal(stock(shops[0]).theft.policeCatchPercent, 50);
   assert.equal(f.accounts.db(db => db.prepare('SELECT fee FROM store_heists WHERE id=?').get(attempt.id).fee), 200);
 });
 

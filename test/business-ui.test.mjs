@@ -68,7 +68,7 @@ test('store cards lead with daily results and edit actions; complete controls re
   assert.match(editor.innerHTML, /data-store-profile data-shop="shop-1"/);
   assert.match(editor.innerHTML, /name="storeName"/);
   assert.match(editor.innerHTML, /name="motto"/);
-  assert.match(editor.innerHTML, /name="gooseGuard"/);
+  assert.match(editor.innerHTML, /name="securityGuard"/);
   assert.match(editor.innerHTML, /data-business="open-restock" data-shop="shop-1"/);
   assert.doesNotMatch(editor.innerHTML, /data-business="open-restock"[^>]*disabled/);
   assert.match(source, /accountApi\('businesses\/margin'/);

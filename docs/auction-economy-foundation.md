@@ -35,7 +35,7 @@ live prices and shared demand. Automatic news publication is dormant.
   last-hour returns, category selection and a native SVG chart with 1h, 1d,
   1 week and 1 month filters, opening/high/low quotes and period gain/loss.
   The chart scales to the selected prices and supports touch and keyboard inspection.
-- `/businesses`: owner management, storefront name/tagline, margins, stock and goose guard.
+- `/businesses`: owner management, storefront name/tagline, margins, stock and a toggleable security guard (5% of tracked store profits while active).
 - `/stores`: searchable player store directory and shareable `?shop=ID` storefronts,
   shelf purchases, verified reviews, reactions, tips and red-or-black player theft.
 - `/profile`: XP, level, progress and remaining XP; level 20 is terminal.
@@ -296,7 +296,7 @@ Public `GET /api/stores?query=&type=&offset=0&limit=24` returns
 `{stores,total,offset,limit}` (limit capped at 48). `GET /api/stores/:id` returns
 `{store}`. Authenticated CSRF-protected POST routes under `/api/account/`:
 
-- `businesses/profile`: `{shopId,name,motto,gooseGuard,requestId}`.
+- `businesses/profile`: `{shopId,name,motto,securityGuard,requestId}`.
 - `stores/visit`: `{shopId}`; `stores/react`: `{shopId,reaction}` where reaction
   is `applause`, `joke` or `bell`.
 - `stores/buy`: `{shopId,inventoryId,expectedPrice,requestId}`.
@@ -463,7 +463,7 @@ elapsed NPC sales settle before the current-stock event. Randomness comes from
 Node's cryptographic generator. The check timestamp, inventory disposal, payout,
 sale history, event result and notification commit together or all roll back.
 
-New bombing, heist, flood and goose events are cosmetic and preserve every stock item. Rich buyers pay all shelf prices; collectors buy up to three items for 150% of their current shelf price. Tax raids remove up to J€100 without overdrawing; windfalls add J€200. Persisted old results are returned unchanged. Player theft is available at every other human-owned store. The legacy `mischiefEnabled` flag no longer blocks it. The goose guard still halves player theft chance. Both color choices have identical disclosed, security-weighted odds. Attempt fees target at most 30% expected live market value, keeping even the current maximum store/collector cash-out below the fee in expectation.
+New bombing, heist, flood and goose events are cosmetic and preserve every stock item. Rich buyers pay all shelf prices; collectors buy up to three items for 150% of their current shelf price. Tax raids remove up to J€100 without overdrawing; windfalls add J€200. Persisted old results are returned unchanged. Player theft is available at every other human-owned store. The legacy `mischiefEnabled` flag no longer blocks it. The security guard still halves player theft chance. Both color choices have identical disclosed, security-weighted odds. Attempt fees target at most 30% expected live market value, keeping even the current maximum store/collector cash-out below the fee in expectation.
 
 The EN/DE owner modal appears on `/stores` and `/businesses` and survives reload
 or navigation until `POST /api/account/stores/events/acknowledge` receives its
