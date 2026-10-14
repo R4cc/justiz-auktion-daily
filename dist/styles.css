@@ -1455,7 +1455,7 @@ button.store-review-like:hover, .store-review-like.is-liked { color: var(--ink);
 .house-inventory-link { flex: none; display: inline-flex; align-items: center; gap: 12px; min-height: 44px; font-size: .8rem; font-weight: 800; text-underline-offset: 4px; }
 .auction-house-shortcuts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; }
 .auction-house-shortcuts.is-single { grid-template-columns: minmax(0, 1fr); }
-.house-launch-card { position: relative; isolation: isolate; display: flex; align-items: center; min-width: 0; min-height: 228px; overflow: hidden; padding: 26px; border: 1px solid #ae7840; border-radius: 18px; background: radial-gradient(ellipse at 90% 30%, #fae3a3 0, transparent 65%), #f3d29c; color: #4c301c; text-decoration: none; box-shadow: 0 5px 0 #b68248, 0 12px 24px #183e3610; transition: transform .18s ease, box-shadow .18s ease; }
+.house-launch-card { position: relative; isolation: isolate; display: flex; align-items: center; min-width: 0; min-height: 188px; overflow: hidden; padding: 20px; border: 1px solid #ae7840; border-radius: 18px; background: radial-gradient(ellipse at 90% 30%, #fae3a3 0, transparent 65%), #f3d29c; color: #4c301c; text-decoration: none; box-shadow: 0 5px 0 #b68248, 0 12px 24px #183e3610; transition: transform .18s ease, box-shadow .18s ease; }
 .house-launch-card::before { content: ''; position: absolute; z-index: -1; inset: 8px; border: 1px solid #7c4e2926; border-radius: 12px; pointer-events: none; }
 .house-launch-card:hover { transform: translateY(-3px); box-shadow: 0 8px 0 #b68248, 0 16px 28px #183e3618; }
 .house-launch-card:active { transform: translateY(3px); box-shadow: 0 2px 0 #b68248; }
@@ -1467,7 +1467,7 @@ button.store-review-like:hover, .store-review-like.is-liked { color: var(--ink);
 .house-card-action { display: inline-flex; align-items: center; gap: 12px; margin-top: 20px; padding: 10px 13px; border: 1px solid #4c301c33; border-radius: 7px; background: #fff8e0; font-size: .75rem; font-weight: 800; }
 .house-card-action > span { font-size: 1rem; line-height: 1; }
 .house-card-art { position: relative; display: grid; place-items: center; flex: 0 0 42%; min-width: 0; align-self: stretch; }
-.house-case-art .case-object { width: 155%; max-width: none; margin: 0 -28%; transform: rotate(-8deg); transition: transform .18s ease; }
+.house-case-art .case-object { width: 155%; max-width: 196px; margin: 0 -28%; transform: rotate(-8deg); transition: transform .18s ease; }
 .house-launch-card:hover .case-object { transform: rotate(-4deg) translateY(-4px); }
 .house-spark { position: absolute; color: #89542a; font-size: 28px; }
 .house-spark-one { top: 8%; right: 8%; }
@@ -1485,7 +1485,7 @@ button.store-review-like:hover, .store-review-like.is-liked { color: var(--ink);
 .house-market-card .house-card-tag { color: #c1d9b9; }
 .house-market-card .house-card-description { color: #dfebd6; }
 .house-market-card .house-card-action { border-color: #a4c98055; background: #dbedab; color: #183e36; }
-.house-market-art svg { width: 120%; max-width: none; overflow: visible; }
+.house-market-art svg { width: 120%; max-width: 176px; overflow: visible; }
 .house-chart-grid { stroke: #b0d59f26; stroke-width: 1; }
 .house-chart-area { fill: #b7df8920; }
 .house-chart-line { stroke: #d7ee99; stroke-width: 4; stroke-linecap: round; stroke-linejoin: round; }
@@ -1493,16 +1493,16 @@ button.store-review-like:hover, .store-review-like.is-liked { color: var(--ink);
 .house-market-badge { position: absolute; top: -5px; right: 0; display: grid; place-items: center; width: 37px; height: 37px; border: 1px solid #b2d59188; border-radius: 50%; background: #244f3c; color: #d7ee99; font: 500 13px 'DM Mono', monospace; transform: rotate(12deg); }
 .house-market-caption { position: absolute; bottom: 0; color: #c1d9b9; font: 500 8px 'DM Mono', monospace; letter-spacing: .08em; text-align: center; }
 @media (max-width: 1100px) {
-  .house-launch-card { padding: 22px; }
+  .house-launch-card { padding: 18px; }
   .house-card-art { flex-basis: 35%; }
 }
 @media (max-width: 700px) {
   .house-heading { align-items: flex-start; flex-direction: column; gap: 12px; margin-bottom: 18px; }
   .house-inventory-link { min-height: 44px; }
   .auction-house-shortcuts { grid-template-columns: minmax(0, 1fr); gap: 18px; }
-  .house-launch-card { min-height: 200px; }
+  .house-launch-card { min-height: 164px; }
   .house-card-art { flex-basis: 38%; }
-  .house-card-copy > strong { font-size: 28px; }
+  .house-card-copy > strong { font-size: 24px; }
 }
 @media (prefers-reduced-motion: reduce) {
   .house-launch-card, .house-case-art .case-object { transition: none; }
