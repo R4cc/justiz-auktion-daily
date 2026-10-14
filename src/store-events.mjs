@@ -7,6 +7,7 @@ import { inventoryIsLocked } from './resale.mjs';
 import { pushNotification } from './notifications.mjs';
 import { recordSale, salePayout } from './trader.mjs';
 import { creditStoreCash } from './store-cash.mjs';
+import { ensureStoreActivitySchema } from './store-event-schema.mjs';
 
 export const STORE_EVENT_INTERVAL = 24 * 3_600_000;
 export const STORE_EVENT_CHANCE = 25;
@@ -23,14 +24,7 @@ export const STORE_EVENTS = [
 const fail = (code, status = 400) => { throw new AccountError(code, status); };
 export function ensureStoreEventSchema(db) {
   ensureBusinessSchema(db);
-  db.exec(`CREATE TABLE IF NOT EXISTS store_event_checks (
-    business_id TEXT PRIMARY KEY REFERENCES businesses(id), checked_at INTEGER NOT NULL
-  ) STRICT;
-  CREATE TABLE IF NOT EXISTS store_events (
-    id TEXT PRIMARY KEY, business_id TEXT NOT NULL REFERENCES businesses(id), owner_id TEXT NOT NULL REFERENCES users(id),
-    result TEXT NOT NULL, created_at INTEGER NOT NULL, acknowledged_at INTEGER
-  ) STRICT;
-  CREATE INDEX IF NOT EXISTS store_events_pending ON store_events(owner_id, acknowledged_at, created_at)`);
+  ensureStoreActivitySchema(db);
 }
 function owner(db, user) {
   const row = db.prepare('SELECT id, tokens FROM users WHERE id = ? AND npc = 0 AND banned = 0 AND must_change_password = 0').get(user?.id || '');

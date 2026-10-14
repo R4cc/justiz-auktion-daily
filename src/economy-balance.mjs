@@ -18,6 +18,8 @@ export const ECONOMY_BALANCE = Object.freeze({
   theftPoliceCatchPercent: 30,
   securityGuardCatchPercent: 50,
   securityGuardProfitPercent: 5,
+  npcStoreTheftDailyPercent: 2,
+  npcStoreGuardReductionPercent: 60,
   businessDefaultMargin: 20,
   reviewPricePerReview: 60,
   purchasedReviewWeight: .25,
@@ -32,6 +34,11 @@ export const ECONOMY_BALANCE = Object.freeze({
   npcPaletteMinimum: .64,
   npcPaletteMaximum: .84
 });
+
+export function npcStoreTheftChance(securityGuard, locationMultiplier = 1) {
+  return Math.round(ECONOMY_BALANCE.npcStoreTheftDailyPercent * locationMultiplier *
+    (securityGuard ? (100 - ECONOMY_BALANCE.npcStoreGuardReductionPercent) / 100 : 1) * 100) / 100;
+}
 
 export const GAME_REWARDS = Object.freeze(Object.fromEntries(
   ['daily', 'dailyScoreBonus', 'higherLowerPerCorrect', 'higherLowerMax', 'minimumStreak']

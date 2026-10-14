@@ -3,7 +3,7 @@ import { ensureReviewSchema, recordNpcStoreFeedback } from './store-reviews.mjs'
 import { businessTypeForItem } from './stock-compatibility.mjs';
 export { businessTypeForItem } from './stock-compatibility.mjs';
 import { ensureTownSchema, availableTownPlot, plotLocation } from './town-plots.mjs';
-import { ECONOMY_BALANCE } from './economy-balance.mjs';
+import { ECONOMY_BALANCE, npcStoreTheftChance } from './economy-balance.mjs';
 import { createHash, randomUUID } from 'node:crypto';
 import { withDatabase, transaction } from './database.mjs';
 import { AccountError } from './errors.mjs';
@@ -241,6 +241,7 @@ function publicShop(db, row, now = Date.now()) {
     .get(row.id, dayStart, dayStart + 24 * HOUR);
   const {factors,...metrics}=shopMetrics(db,row,stock,now);
   return { id: row.id, type: row.type, size: row.size, boughtAt: row.bought_at,
+    npcTheftChancePercent: npcStoreTheftChance(row.security_guard, plotLocation(db,row.plot_id)?.theftMultiplier ?? 1),
     location: plotLocation(db, row.plot_id), name: row.store_name, motto: row.store_motto, securityGuard: Boolean(row.security_guard), securityGuardProfitPercent: ECONOMY_BALANCE.securityGuardProfitPercent, securityGuardFees: row.security_guard_fees, mischiefEnabled: Boolean(row.mischief_enabled),
     ...tradingTotals(db,row.user_id,row.id),
     visitors: row.visitors, sales: row.sales, salesToday: today.sales,
