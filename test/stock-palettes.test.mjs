@@ -135,7 +135,13 @@ test('instant purchase HTTP route is removed; legacy purchases remain owner-only
  assert.equal((await post('stock-palettes/reveal',{id:purchase.id},tokens[1])).status,404);
  assert.equal((await fetch(base+'/api/account/stock-palettes')).status,401);
  assert.equal((await post('stock-palettes/reveal',{id:purchase.id},tokens[0],false)).status,403);
- const revealed=await post('stock-palettes/reveal',{id:purchase.id});assert.equal(revealed.status,200);assert.equal((await revealed.json()).palette.rewards.reduce((sum,r)=>sum+r.quantity,0),6);
+ const revealed=await post('stock-palettes/reveal',{id:purchase.id});assert.equal(revealed.status,200);
+ const opened=await revealed.json();assert.equal(opened.palette.rewards.reduce((sum,r)=>sum+r.quantity,0),6);
+ assert.equal(opened.valuation.costTokens,purchase.cost);
+ const inventory=f.accounts.inventory(f.user),values=opened.palette.rewards.map(reward=>inventory.find(item=>item.id===reward.inventoryIds[0]).estimatedValueTokens);
+ assert.deepEqual(opened.valuation.rewards.map(reward=>reward.unitValueTokens),values);
+ assert.equal(opened.valuation.totalValueTokens,opened.palette.rewards.reduce((sum,reward,index)=>sum+reward.quantity*values[index],0));
+ assert.equal(opened.valuation.profitLossTokens,opened.valuation.totalValueTokens-purchase.cost);
  await post('stock-palettes/reveal',{id:purchase.id});assert.equal(f.count(),6);
  flags.palettes=false;assert.equal((await fetch(base+'/api/stock-palettes')).status,404);assert.equal((await post('stock-palettes/buy',payload)).status,404);
  assert.equal((await fetch(base+'/api/account/stock-palettes',{headers:{cookie:'jg_session='+tokens[0]}})).status,404);

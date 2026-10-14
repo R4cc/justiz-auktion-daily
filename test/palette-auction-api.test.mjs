@@ -8,7 +8,7 @@ import { createAccountApi } from '../src/account-api.mjs';
 import { createEconomyApi } from '../src/economy-api.mjs';
 import { paletteBidIncrement } from '../src/palette-auctions.mjs';
 import { featureFlags } from '../src/features.mjs';
-import { setMarketIndex } from '../src/market.mjs';
+import { setMarketIndex, estimatedValueTokens, marketIndexes, marketCategoryForItem } from '../src/market.mjs';
 import { closeDataStore, upsertAuctions, withDatabase } from '../src/database.mjs';
 
 // HTTP contract tests for the primary palette auction exposure layer and the
@@ -203,6 +203,17 @@ test('winner reveal over HTTP stays deadline-gated, winner-only and repeat-stabl
   const repeat = await (await fetch(`${base}/api/account/${revealRoute}`, { headers: { cookie: winner.cookie } })).json();
   assert.deepEqual(repeat, reveal); // same snapshots, no state change
   assert.equal(rows(dir, 'SELECT id FROM inventory').length, 3); // retrieval never mints
+  const quote=reveal.valuation;
+  assert.equal(quote.costTokens,reveal.reveal.bundleCostTokens);
+  const indexes=withDatabase(dir,db=>marketIndexes(db));
+  assert.deepEqual(quote.rewards.map(reward=>reward.unitValueTokens),reveal.reveal.rewards.map(reward=>estimatedValueTokens(reward.item,indexes)));
+  assert.equal(quote.totalValueTokens,quote.rewards.reduce((sum,reward)=>sum+reward.totalValueTokens,0));
+  assert.equal(quote.profitLossTokens,quote.totalValueTokens-quote.costTokens);
+  for(const reward of reveal.reveal.rewards)setMarketIndex(dir,marketCategoryForItem(reward.item),150);
+  const repriced=await (await fetch(`${base}/api/account/${revealRoute}`,{headers:{cookie:winner.cookie}})).json();
+  assert.deepEqual(repriced.reveal,reveal.reveal,'market changes never rewrite the reveal');
+  assert.notDeepEqual(repriced.valuation.rewards,quote.rewards,'reopening quotes the current market');
+  assert.equal(repriced.valuation.costTokens,quote.costTokens);assert.equal(rows(dir,'SELECT id FROM inventory').length,3);
 });
 
 test('admin creation route is admin-only, idempotent and injection-proof', async t => {

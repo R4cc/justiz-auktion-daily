@@ -12,6 +12,7 @@ import { caseRewards, loadCaseCatalog, publicCaseCatalog, quoteCaseCatalog, rota
 import { loadCaseStoreCatalog, quoteCaseStore } from './case-store.mjs';
 import { withCaseStock } from './case-stock.mjs';
 import { marketIndexes } from './market.mjs';
+import { paletteMarketValue } from './palette-valuation.mjs';
 import { readArchive } from './database.mjs';
 import { higherLowerDeck } from './higher-lower.mjs';
 import { auctionGallery } from './auction-images.mjs';
@@ -119,12 +120,13 @@ export async function createAccountApi({ dataDir, dailyPayload, json, env = proc
           }
           else if (flags.paletteAuctions && route.startsWith('palette-auctions/') && route.endsWith('/rewards')) {
             // Winner-only reveal; the domain owns every rule (deadline,
-            // settlement, non-winner genericity) — this branch only decodes
-            // the id safely, like the resale detail route.
+            // settlement, non-winner genericity). Add the live valuation
+            // separately so market changes cannot rewrite the saved reveal.
             const raw = route.slice('palette-auctions/'.length, -'/rewards'.length);
             let id = raw;
             try { id = decodeURIComponent(raw); } catch { /* keep raw */ }
-            json(response, 200, { reveal: getPaletteAuctionRewards(dataDir, user, id) });
+            const reveal = getPaletteAuctionRewards(dataDir, user, id);
+            json(response, 200, { reveal, valuation: accounts.db(db => paletteMarketValue(db, reveal)) });
           }
           else throw new AccountError('not_found', 404);
         }
@@ -163,7 +165,10 @@ export async function createAccountApi({ dataDir, dailyPayload, json, env = proc
         result = { user: accounts.profile(user) };
       }
       else if(route==='skills/upgrade') result={tree:upgradeSkill(dataDir,user,payload),user:accounts.profile(user)};
-      else if (route === 'stock-palettes/reveal' && flags.palettes) result={palette:revealStockPalette(dataDir,user,payload.id),user:accounts.profile(user)};
+      else if (route === 'stock-palettes/reveal' && flags.palettes) {
+        const palette = revealStockPalette(dataDir,user,payload.id);
+        result = { palette, valuation: accounts.db(db => paletteMarketValue(db, palette)), user: accounts.profile(user) };
+      }
       else if (route === 'notifications/read') result = markNotificationsRead(dataDir, user.id, payload.ids);
       else if (route === 'admin/market/adjust') result = { adjustment: adjustAdminMarket(dataDir, user, payload), market: adminMarketDashboard(dataDir, user), user: accounts.profile(user) };
       else if (route === 'admin/grant-tokens') result = { grant: accounts.grantTokens(user, payload.amount, payload.requestId), user: accounts.profile(user) };
