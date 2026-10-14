@@ -1,3 +1,4 @@
+import { syncUserStatistics } from './user-statistics.mjs';
 import { ensureStoreSchema } from './storefronts.mjs';
 import { withDatabase, transaction } from './database.mjs';
 import { levelForXp } from './progression.mjs';
@@ -39,6 +40,7 @@ export function prestigeAccount(dataDir, user, { buffId, expectedCount, requestI
     if (state.buffs.includes(buffId)) fail('prestige_buff_owned');
     if (levelForXp(row.xp) < 10) fail('prestige_level_required');
     if (state.blocked) fail(state.blocked);
+    syncUserStatistics(db,row.id,now);
     // Preserve foreign purchase and crime receipts by retiring assets instead
     // of deleting rows referenced by another player's history.
     const retired = 'npc-prestige-retired';

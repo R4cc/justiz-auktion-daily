@@ -2,6 +2,14 @@ window.changelogUi = (() => {
   // Curated manually. Only update for a feature when the user explicitly asks.
   const entries = [
     {
+      date: '2026-10-14', title: 'Profile Statistics',
+      changes: [
+        {en:'Added a Statistics tab next to Overview with grouped money, cases, trading, business, theft and game totals.',de:'Statistiken-Tab neben der Übersicht mit gruppierten Summen zu Geld, Kisten, Handel, Läden, Diebstahl und Spielen hinzugefügt.'},
+        {en:'Track money earned and spent, cases opened and their value and costs, stolen and sold items, auction wins, store visitors, best scores and more.',de:'Verdientes und ausgegebenes Geld, geöffnete Kisten mit Werten und Kosten, gestohlene und verkaufte Artikel, Auktionssiege, Ladenbesucher, Bestwerte und mehr verfolgen.'},
+        {en:'Receipt-backed lifetime totals survive Prestige. Bid deposits, refunds and cash collection do not inflate earnings; older missing costs are identified.',de:'Beleggestützte Gesamtsummen bleiben bei Prestige erhalten. Gebotskautionen, Erstattungen und Kassenleerungen erhöhen Einnahmen nicht doppelt; fehlende ältere Kosten werden gekennzeichnet.'}
+      ]
+    },
+    {
       date: '2026-10-14', title: 'Prestige',
       changes: [
         {en:'Prestige is available in your profile from level 10. Reset your money, items, stores, XP and skills to choose one permanent buff. Each buff unlocks once; reach level 10 again for another choice.',de:'Prestige ist im Profil ab Level 10 verfügbar. Geld, Gegenstände, Läden, XP und Skills zurücksetzen und einen dauerhaften Bonus wählen. Jeder Bonus ist einmal freischaltbar; für die nächste Wahl erneut Level 10 erreichen.'},

@@ -1,3 +1,5 @@
+import { randomUUID } from 'node:crypto';
+import { statisticEvent } from './statistics-ledger.mjs';
 import { AccountError } from './errors.mjs';
 import { estimatedValueTokens, marketIndexes } from './market.mjs';
 import { inventoryIsLocked } from './resale.mjs';
@@ -93,6 +95,7 @@ export function collectFine(db, userId, now) {
     jailedUntil = now + jailDuration(row.offences); convertedToSentence = due; due = 0;
   }
   if (!paidCash && !paidStoreCash && !seized.length && jailedUntil===row.jailed_until) return null;
+  if(paidCash+paidStoreCash>0)statisticEvent(db,userId,`fine:${row.offences}:cash:${randomUUID()}`,'out:fine',{amount:paidCash+paidStoreCash,at:now});
   const result = { fine: row.fine_due, paidCash, ...(paidStoreCash?{paidStoreCash}:{}), seized, remainingFine: due, jailedUntil, convertedToSentence, offences: row.offences };
   db.prepare('UPDATE player_justice SET fine_due=?,jailed_until=?,last_result=? WHERE user_id=?').run(due,jailedUntil,JSON.stringify(result),userId);
   pushNotification(db,userId,{type:'store',sourceKey:`justice:${userId}:${row.offences}:${now}`,titleEn:jailedUntil>now?'Sent to jail':'Fine collection',titleDe:jailedUntil>now?'Haftstrafe':'Bußgeldvollstreckung',

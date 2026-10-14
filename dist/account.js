@@ -4,6 +4,7 @@ let accountStore = null;
 let caseStockRequest = 0;
 let accountSelectedStoreCase = 'lost-property';
 let account = null, accountCatalog = null, accountItems = [], accountCodes = [], freshCodes = [], freshPasswordReset = null;
+let accountStatistics = null;
 let accountCriminalRecord = { records:[],total:0,totalPenalties:0,hasMore:false };
 let accountFriends = { friends: [], date: '' }, accountAdmin = { playerCount: 0, users: [], grants: [], lastReset: null };
 let accountLeaderboard = { date: '', leaders: [] }, adminUserFilter = '';
@@ -318,6 +319,7 @@ function giftToast(gifts) {
 function updateAccount(user, progressionOptions) {
   // A delayed payment reply from before Prestige cannot restore old progress.
   if(user?.id===account?.id && (user?.prestige?.count||0)<(account?.prestige?.count||0)) return;
+  if (account?.id !== user?.id || progressionOptions?.reset) accountStatistics=null;
   if (account?.id !== user?.id || progressionOptions?.reset) accountCriminalRecord = {records:[],total:0,totalPenalties:0,hasMore:false};
   account = user; accountRevision++;
   window.inventoryItemUi?.accountChanged(user);
@@ -438,8 +440,8 @@ async function navigateAccountPage(path, push = true) {
       const result = await accountApi('leaderboard?view=' + (new URLSearchParams(location.search).get('view') === 'collection' ? 'collection' : 'daily')); if (visit !== accountVisit) return; accountLeaderboard = result;
     }
     if (path === '/profile' && account) {
-      const [friends, record] = await Promise.all([accountApi('friends'),accountApi('criminal-record')]);
-      if (visit !== accountVisit || account?.id !== owner) return; accountFriends = friends; accountCriminalRecord = record;
+      const [friends, record, statistics] = await Promise.all([accountApi('friends'),accountApi('criminal-record'),accountApi('statistics')]);
+      if (visit !== accountVisit || account?.id !== owner) return; accountFriends = friends; accountCriminalRecord = record; accountStatistics = statistics;
     }
     if (path === '/admin' && account?.admin) {
       const auctionQuery = `admin/auctions?query=${encodeURIComponent(accountAuctions.query || '')}&page=${accountAuctions.page}`;
