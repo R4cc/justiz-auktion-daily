@@ -112,6 +112,15 @@ precedes runtime startup in `server.mjs`.
   other settlement branch. Failures are reported without hidden rewards.
 - Primary and resale sweeps run before supply/NPC bidding. Existing lazy
   settlement remains as a correctness fallback for reads.
+- Bargain drops (under `FEATURE_RESALES`): `supplyBargainAuctions` creates six
+  one-item NPC listings per UTC day, at a stable varied time within each
+  four-hour slot. Each lasts one hour and starts at 50% of its live market quote
+  at creation, rounded to whole J€ (minimum 1). Items come from the collected
+  archive and retain their original value and source identity. Human bids can
+  raise the price; automatic NPC buyers skip these listings. Creation is atomic
+  and keyed by the drop window, so repeated ticks/restarts never duplicate an
+  item, and expired windows are never backfilled. Ordinary resale escrow and
+  settlement transfer the same inventory row to the winner.
 - Primary sweep: bounded 100 by default (maximum 1000), independent transaction
   per lot; corrupt domain state is reported and other lots can settle.
 - Market trends (under `FEATURE_MARKET`): each category records a price point

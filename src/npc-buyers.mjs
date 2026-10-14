@@ -10,6 +10,7 @@ export { NPC_BUYERS, SPECIAL_NPC_BUYERS } from './npc-roster.mjs';
 import { NPC_BUYERS, ensureNpcBuyer } from './npc-roster.mjs';
 export { NPC_BALANCE } from './npc-roster.mjs';
 import { npcAudienceKey, npcDemand } from './npc-demand.mjs';
+import { BARGAIN_SUPPLIER_ID } from './bargain-auctions.mjs';
 
 export const NPC_COHORT_SIZE = 16;
 export const PALETTE_SHOWUP_MS = 5 * 60_000;
@@ -80,10 +81,10 @@ export function tickNpcBuyers(dataDir, { now = Date.now(), unit = deterministicU
     const auctions = db.prepare(`SELECT a.*, i.item,
       (SELECT COUNT(*) FROM resale_auction_items ai WHERE ai.auction_id = a.id) AS quantity
       FROM resale_auctions a JOIN inventory i ON i.id = a.inventory_id
-      WHERE a.status = 'active' AND a.seller_id != 'npc-stock-supply'
+      WHERE a.status = 'active' AND a.seller_id NOT IN ('npc-stock-supply', ?)
         AND COALESCE(json_extract(i.item, '$.kind'), '') NOT IN ('case','review-pack')
         AND a.ends_at > ? AND NOT EXISTS
-      (SELECT 1 FROM resale_npc_interest n WHERE n.auction_id = a.id) ORDER BY a.started_at, a.id LIMIT 200`).all(now);
+      (SELECT 1 FROM resale_npc_interest n WHERE n.auction_id = a.id) ORDER BY a.started_at, a.id LIMIT 200`).all(BARGAIN_SUPPLIER_ID, now);
     const insert = db.prepare(`INSERT OR IGNORE INTO resale_npc_interest
       (auction_id, npc_id, max_bid, next_bid_at, created_at, active) VALUES (?, ?, ?, ?, ?, ?)`);
     for (const row of auctions) {
@@ -106,9 +107,9 @@ export function tickNpcBuyers(dataDir, { now = Date.now(), unit = deterministicU
     FROM resale_npc_interest n JOIN resale_auctions a ON a.id = n.auction_id
     JOIN inventory i ON i.id = a.inventory_id
     WHERE n.active = 1 AND n.next_bid_at <= ? AND a.status = 'active'
-      AND a.seller_id != 'npc-stock-supply' AND a.ends_at > ?
+      AND a.seller_id NOT IN ('npc-stock-supply', ?) AND a.ends_at > ?
       AND COALESCE(json_extract(i.item, '$.kind'), '') NOT IN ('case','review-pack')
-    ORDER BY n.next_bid_at, n.auction_id, n.npc_id LIMIT 1000`).all(now, now));
+    ORDER BY n.next_bid_at, n.auction_id, n.npc_id LIMIT 1000`).all(now, BARGAIN_SUPPLIER_ID, now));
   const touched = new Set();
   const demandCache = new Map();
   const liveIndexes = withDatabase(dataDir, db => marketIndexes(db, now));
