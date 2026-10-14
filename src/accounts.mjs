@@ -24,7 +24,7 @@ import { estimatedValueTokens, marketIndexes } from './market.mjs';
 import { recordNetWorth, currentNetWorth } from './net-worth.mjs';
 import { progressionForXp } from './progression.mjs';
 import { ensureNotificationSchema, pushNotification } from './notifications.mjs';
-import { ensureBusinessSchema, businessTypeForItem } from './businesses.mjs';
+import { ensureBusinessSchema, businessTypeForItem, restockPrestigeStores } from './businesses.mjs';
 import { acquisition, acquireItems, recordSale, tradingTotals, traderProgress, milestone } from './trader.mjs';
 import { dailyAnswer, publicRunAuctions, startDailyRound } from './game-rounds.mjs';
 
@@ -567,7 +567,8 @@ export class Accounts {
     this.db(db => db.prepare('DELETE FROM friendships WHERE user_a = ? AND user_b = ?').run(...pair));
   }
   inventory(user, { includeStores = false } = {}) {
-    return this.db(db => {
+    return this.atomic(db => {
+      if (this.flags.businesses) restockPrestigeStores(db,this.now(),user.id);
       const indexes = this.flags.resales || this.flags.market ? marketIndexes(db, this.now()) : null;
       const locked = lockedInventoryIds(db);
       const sealed = sealedPaletteInventoryIds(db);

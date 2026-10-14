@@ -16,6 +16,7 @@ import { auctionGallery } from './auction-images.mjs';
 import { recordSale, salePayout, tradingTotals, acquisition, milestone, ensureTraderSchema } from './trader.mjs';
 import { levelForXp } from './progression.mjs';
 import { creditStoreCash, ensureStoreCashSchema } from './store-cash.mjs';
+import { ensurePrestigeSchema } from './prestige-effects.mjs';
 
 const HOUR = 3_600_000;
 const WHOLESALE_PERIOD = 2 * HOUR;
@@ -231,6 +232,62 @@ function advanceShops(db, now, userId = null) {
   const rows = userId ? db.prepare('SELECT * FROM businesses WHERE user_id = ?').all(userId)
     : db.prepare('SELECT * FROM businesses').all();
   for (const row of rows) advanceShop(db, row, now);
+}
+
+// Called inside the owner's inventory transaction and the economy runtime.
+// Move existing, unlocked stock only; preserve basis and never buy supplies.
+export function restockPrestigeStores(db, now, userId = null) {
+  ensurePrestigeSchema(db);
+  const shops = db.prepare(`SELECT b.* FROM businesses b JOIN users u ON u.id=b.user_id
+    JOIN user_prestige p ON p.user_id=b.user_id
+    WHERE b.retired=0 AND u.npc=0 AND u.banned=0 AND (? IS NULL OR b.user_id=?)
+    AND EXISTS (SELECT 1 FROM json_each(p.buffs) WHERE value='restocker')
+    ORDER BY b.bought_at,b.id`).all(userId,userId);
+  const owners = new Map();
+  for (const shop of shops) {
+    // Settle elapsed sales before adding stock acquired in the present.
+    advanceShop(db,shop,now);
+    const stock = shopStock(db,shop.id,shop.type,shop.profit_margin,now);
+    const space = shopCapacity(shop.type,shopSize(shop.size)) - stock.length;
+    if (space <= 0) continue;
+    if (!owners.has(shop.user_id)) owners.set(shop.user_id,[]);
+    owners.get(shop.user_id).push({shop,space,titles:new Set(stock.map(entry=>entry.item.title)),added:0});
+  }
+  if (!owners.size) return 0;
+  const sealed = sealedPaletteInventoryIds(db);
+  const insert = db.prepare('INSERT INTO business_stock(inventory_id,business_id,stocked_at,asking_price) VALUES(?,?,?,?)');
+  let stocked = 0;
+  for (const [ownerId,states] of owners) {
+    const pools = new Map(), types = new Set(states.map(state=>state.shop.type));
+    for (const row of db.prepare(`SELECT i.id,i.item FROM inventory i WHERE i.user_id=? AND i.sold_at IS NULL
+      AND i.created_at<=? AND NOT EXISTS (SELECT 1 FROM business_stock s WHERE s.inventory_id=i.id)
+      ORDER BY i.created_at,i.id`).all(ownerId,now)) {
+      const item = JSON.parse(row.item), type = stockType(item);
+      if (!types.has(type) || sealed.has(row.id) || !Number.isFinite(item.price) || item.price <= 0 || inventoryIsLocked(db,row.id)) continue;
+      if (!pools.has(type)) pools.set(type,[]);
+      pools.get(type).push({id:row.id,item});
+    }
+    // Round-robin prevents one store taking all available stock of its type.
+    let moved;
+    do {
+      moved = false;
+      for (const state of states) {
+        const pool = pools.get(state.shop.type);
+        if (!state.space || !pool?.length) continue;
+        const varied = pool.findIndex(entry=>!state.titles.has(entry.item.title));
+        const [entry] = pool.splice(varied < 0 ? 0 : varied,1);
+        insert.run(entry.id,state.shop.id,now,shelfPrice(db,entry.item,state.shop.type,state.shop.profit_margin,now));
+        state.titles.add(entry.item.title); state.space--; state.added++; stocked++; moved=true;
+      }
+    } while (moved);
+    for (const state of states) if (state.added) {
+      const metrics = shopMetrics(db,state.shop,shopStock(db,state.shop.id,state.shop.type,state.shop.profit_margin,now),now);
+      db.prepare('UPDATE businesses SET traffic_popularity=?,popularity_factors=? WHERE id=?')
+        .run(metrics.popularity,JSON.stringify(metrics.factors),state.shop.id);
+    }
+    if (states.some(state=>state.added)) milestone(db,ownerId,'find',now);
+  }
+  return stocked;
 }
 
 function publicShop(db, row, now = Date.now()) {
@@ -468,6 +525,7 @@ export function tickBusinesses(dataDir, { now = Date.now() } = {}) {
   withDatabase(dataDir, db => transaction(db, () => {
     ensureBusinessSchema(db, { now });
     advanceShops(db, now);
+    restockPrestigeStores(db, now);
   }));
   return supply;
 }

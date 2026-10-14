@@ -47,7 +47,7 @@ try {
  accounts.db(db=>db.prepare('UPDATE users SET xp=8100 WHERE id=?').run(owner.id));await go();
  for(const width of [3840,1440,768,390,320])for(const lang of ['en','de']){
   await page.setViewportSize({width,height:1000});await language(lang);await page.locator('[data-prestige="open"]').click();await page.waitForSelector('.prestige-dialog[open]');
-  assert.equal(await page.locator('.prestige-choice').count(),4);assert.equal(await page.locator('.prestige-confirm input').isChecked(),false);
+  assert.equal(await page.locator('.prestige-choice').count(),5);assert.equal(await page.locator('.prestige-confirm input').isChecked(),false);
   assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1),`${width} ${lang} profile overflow`);
   assert.ok(await page.locator('.prestige-dialog').evaluate(el=>el.scrollWidth<=el.clientWidth+1),`${width} ${lang} dialog clipping`);
   assert.ok(await page.locator('.prestige-choice').evaluateAll(els=>els.every(el=>el.scrollWidth<=el.clientWidth+1)));
@@ -69,8 +69,8 @@ try {
  assert.match(await page.locator('.prestige-owned').innerText(),/50% case costs/);
  const headers={cookie:'jg_session='+token};const personal=await(await fetch(base+'/api/account/case-store',{headers})).json(),guest=await(await fetch(base+'/api/account/case-store')).json();
  for(let n=0;n<personal.cases.length;n++)assert.equal(personal.cases[n].cost,Math.ceil(guest.cases[n].cost/2));
- accounts.db(db=>db.prepare('UPDATE users SET xp=8100 WHERE id=?').run(owner.id));await go();await page.locator('[data-prestige="open"]').click();assert.equal(await page.locator('.prestige-choice').count(),3);assert.equal(await page.locator('input[value="cases"]').count(),0);
- await page.locator('input[value="luck"]').check();await page.locator('input[name="confirmation"]').check();await page.locator('.prestige-dialog button[type="submit"]').click();await page.waitForSelector('.prestige-dialog',{state:'detached'});await page.waitForFunction(()=>document.querySelector('.profile-prestige h2')?.textContent.includes('2 / 4'));
+ accounts.db(db=>db.prepare('UPDATE users SET xp=8100 WHERE id=?').run(owner.id));await go();await page.locator('[data-prestige="open"]').click();assert.equal(await page.locator('.prestige-choice').count(),4);assert.equal(await page.locator('input[value="cases"]').count(),0);
+ await page.locator('input[value="luck"]').check();await page.locator('input[name="confirmation"]').check();await page.locator('.prestige-dialog button[type="submit"]').click();await page.waitForSelector('.prestige-dialog',{state:'detached'});await page.waitForFunction(()=>document.querySelector('.profile-prestige h2')?.textContent.includes('2 / 5'));
  assert.equal(accounts.profile(owner).skills.luckPercent,25);assert.equal(accounts.profile(owner).prestige.caseDiscountPercent,50);
  await page.setViewportSize({width:320,height:1000});await language('de');await page.locator('.profile-prestige').screenshot({path:'/tmp/jg-prestige-profile-320-de.png'});
  await page.goto(base+'/shop');await page.waitForSelector('.case-boutique');assert.match(await page.locator('.skill-luck-notice').innerText(),/25%/);

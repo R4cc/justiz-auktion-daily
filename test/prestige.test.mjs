@@ -52,11 +52,11 @@ test('fresh level, once-per-buff guards, expected-cycle and receipt checks preve
  assert.throws(()=>f.prestige('stealth',0,'prestige-stale-request-001'),/prestige_changed/);
  assert.throws(()=>f.prestige('profit',1),/prestige_buff_owned/);
  assert.throws(()=>f.prestige('stealth',1),/prestige_level_required/);
- for(const [index,buff] of ['stealth','cases','luck'].entries()){f.level();f.prestige(buff,index+1);}
- assert.equal(f.accounts.profile(f.user).prestige.count,4);assert.deepEqual(f.accounts.profile(f.user).prestige.choices,[]);
+ for(const [index,buff] of ['stealth','cases','luck','restocker'].entries()){f.level();f.prestige(buff,index+1);}
+ assert.equal(f.accounts.profile(f.user).prestige.count,5);assert.deepEqual(f.accounts.profile(f.user).prestige.choices,[]);
  assert.equal(f.accounts.profile(f.other).prestige.count,0);
- f.accounts.resetEconomy({id:f.other.id,admin:true},'RESET ECONOMY');assert.equal(f.accounts.profile(f.user).prestige.count,4);assert.equal(f.accounts.profile(f.user).prestige.luckPercent,25);
- assert.throws(()=>prestigeAccount(f.dir,f.user,{buffId:'profit',expectedCount:4,requestId:'invalid-confirmation-001'},{now}),/invalid_prestige_confirmation/);
+ f.accounts.resetEconomy({id:f.other.id,admin:true},'RESET ECONOMY');assert.equal(f.accounts.profile(f.user).prestige.count,5);assert.equal(f.accounts.profile(f.user).prestige.luckPercent,25);
+ assert.throws(()=>prestigeAccount(f.dir,f.user,{buffId:'profit',expectedCount:5,requestId:'invalid-confirmation-001'},{now}),/invalid_prestige_confirmation/);
 });
 
 test('active escrow, auctions, theft, jail and debt block resetting and transaction failure restores all progress',async t=>{
