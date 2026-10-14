@@ -191,7 +191,9 @@ export async function createAccountApi({ dataDir, dailyPayload, json, env = proc
       else if (flags.businesses && route === 'businesses/unstock') result = { shop: unstockBusiness(dataDir, user, payload.shopId, payload.inventoryId), user: accounts.profile(user) };
       else if (flags.businesses && route === 'businesses/collect') result = {
         collection: collectStoreCash(dataDir,user,payload), user: accounts.profile(user),
-        cashReady: accounts.db(db=>db.prepare('SELECT cash_balance FROM businesses WHERE id=? AND user_id=?').get(payload.shopId,user.id)?.cash_balance||0)
+        cashReady: accounts.db(db=>db.prepare('SELECT cash_balance FROM businesses WHERE id=? AND user_id=?').get(payload.shopId,user.id)?.cash_balance||0),
+        // Receipt order lets overlapping collections ignore stale wallet snapshots.
+        collectionVersion: accounts.db(db=>db.prepare('SELECT COALESCE(MAX(rowid),0) AS version FROM store_receipts WHERE user_id=?').get(user.id).version)
       };
       else if (flags.businesses && route === 'businesses/profile') result = { receipt: customizeStore(dataDir, user, payload), user: accounts.profile(user) };
       else if (flags.businesses && route === 'stores/events/check') result = { ...checkStoreEvents(dataDir, user), user: accounts.profile(user) };

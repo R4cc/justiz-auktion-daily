@@ -81,8 +81,11 @@ test('public storefronts and player interactions use feature flags, sessions, CS
   assert.equal((await fetch(base+'/api/account/businesses/collect',{method:'POST',headers:{cookie:ownerCookie,'content-type':'application/json'},body:JSON.stringify(collect)})).status,403);
   assert.equal((await post(base,'businesses/collect',collect,winnerCookie)).status,404);
   const ownerBalance=accounts.db(db=>db.prepare('SELECT tokens FROM users WHERE id=?').get(owner.id).tokens);
-  const collected=await post(base,'businesses/collect',collect,ownerCookie);assert.equal(collected.status,200);assert.equal((await collected.json()).collection.amount,120);
-  assert.equal((await (await post(base,'businesses/collect',collect,ownerCookie)).json()).collection.amount,120);
+  const collected=await post(base,'businesses/collect',collect,ownerCookie);assert.equal(collected.status,200);
+  const paid=await collected.json();assert.equal(paid.collection.amount,120);assert.ok(paid.collectionVersion>0);
+  const retry=await (await post(base,'businesses/collect',collect,ownerCookie)).json();
+  assert.equal(retry.collection.amount,120);assert.equal(retry.collectionVersion,paid.collectionVersion);
+  assert.equal(retry.user.tokens,paid.user.tokens);
   assert.equal(accounts.db(db=>db.prepare('SELECT tokens FROM users WHERE id=?').get(owner.id).tokens),ownerBalance+120);
   assert.equal((await post(base, 'stores/review', { shopId: shop.id, stars: 5, comment: 'Great shop!' }, winnerCookie)).status, 200);
   assert.equal((await view(winnerCookie)).reviewCount, 1);

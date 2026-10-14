@@ -10,7 +10,7 @@
 .business-cash-copy>span { font-size:.8rem;font-weight:700;overflow-wrap:anywhere; }
 .business-cash-copy strong { font:600 1.3rem 'DM Mono',monospace;overflow-wrap:anywhere; }
 .business-cash-status { display:block;margin-top:10px;min-height:1.5em;font-size:.7rem;line-height:1.6;color:var(--muted);overflow-wrap:anywhere; }
-.business-cash-celebration { position:fixed;z-index:100;pointer-events:none;width:0;height:0; }
-.business-cash-coin { position:absolute;display:grid;place-items:center;width:28px;height:28px;border:2px solid #b77c16;border-radius:50%;background:#ffe299;color:#795311;font:700 18px 'DM Mono',monospace;box-shadow:inset 0 0 0 2px #fff1c1; }
-.business-cash-reward { position:absolute;width:max-content;max-width:min(80vw,360px);text-align:center;overflow-wrap:anywhere;font:700 1.5rem 'DM Mono',monospace;color:#23553d;text-shadow:0 2px 0 #fffaf0,-1px -1px 0 #fffaf0; }
+.business-cash-celebration { position:fixed;inset:0;z-index:100;pointer-events:none;overflow:hidden;contain:strict; }
+.business-cash-coin { position:absolute;left:var(--cash-x);top:var(--cash-y);display:grid;place-items:center;width:24px;height:24px;border:2px solid #b77c16;border-radius:50%;background:radial-gradient(circle at 30% 25%,#fff6bb,#f6ce58 65%,#dfa92b);color:#795311;font:700 15px 'DM Mono',monospace;box-shadow:inset 0 0 0 2px #fff1c1,2px 3px 0 #9f6b2140; }
+.business-cash-reward { position:absolute;left:var(--cash-x);top:var(--cash-y);width:max-content;max-width:min(80vw,360px);text-align:center;overflow-wrap:anywhere;font:700 1.2rem 'DM Mono',monospace;color:#23553d;text-shadow:0 2px 0 #fffaf0,-1px -1px 0 #fffaf0; }
 @media(prefers-reduced-motion:reduce) { .business-cash-button { transition:none; }.business-cash-button:hover:not(:disabled),.business-cash-button:active:not(:disabled) { transform:none; } }

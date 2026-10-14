@@ -1,7 +1,8 @@
 window.businessUi = (() => {
   const esc = accountEscape;
   let dashboard = null, timer = null, request = 0, busy = false;
-  let collectionJob = null;
+  const collectionJobs = new Map(), cashCelebrations = new Set();
+  let collectionVersion = 0;
   const collectionRequests = new Map(), cashMessages = new Map();
   function pendingCollection(shopId) {
     if(!account)return null;
@@ -9,58 +10,73 @@ window.businessUi = (() => {
     try{return collectionRequests.get(key)||localStorage.getItem(key);}catch{return collectionRequests.get(key)||null;}
   }
   function collectCashMarkup(shop) {
-    const collecting=collectionJob?.shopId===shop.id,amount=shop.cashReady||0,pending=pendingCollection(shop.id);
+    const collecting=collectionJobs.has(shop.id),amount=shop.cashReady||0,pending=pendingCollection(shop.id);
     const message=cashMessages.get(shop.id);
-    return `<div class="business-cash"><button type="button" class="business-cash-button${collecting?' is-collecting':''}" data-business="collect-cash" data-shop="${esc(shop.id)}" ${busy||(!amount&&!pending)?'disabled':''} aria-label="${esc(t('Collect cash','Kasse einsammeln'))}: ${esc(shop.name||typeName(shop.type))} · ${esc(justizEuro(amount))}"><svg viewBox="0 0 48 48" fill="none" aria-hidden="true"><path d="m18 8 6 3 6-3-4 10c10 5 14 12 13 18-1 6-7 8-15 8S10 42 9 36c-1-6 3-13 13-18L18 8Z" fill="currentColor" opacity=".2"/><path d="m18 8 6 3 6-3-4 10c10 5 14 12 13 18-1 6-7 8-15 8S10 42 9 36c-1-6 3-13 13-18L18 8Zm1 11h10" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"/><text x="24" y="36" text-anchor="middle" font-size="16" font-weight="700" fill="currentColor">€</text></svg><span class="business-cash-copy"><span>${collecting?t('Collecting…','Wird eingesammelt …'):pending?t('Retry collection','Erneut einsammeln'):amount?t('Collect cash','Kasse einsammeln'):t('Register empty','Kasse leer')}</span><strong>${justizEuro(amount)}</strong></span></button><small class="business-cash-status" role="status" aria-live="polite">${message?t(`Collected ${justizEuro(message)}!`,`${justizEuro(message)} eingesammelt!`):infoTip(t('Earnings stay here until you collect.','Einnahmen bleiben hier, bis du sie einsammelst.'),t('About store cash','Über die Ladenkasse'))}</small></div>`;
+    return `<div class="business-cash"><button type="button" class="business-cash-button${collecting?' is-collecting':''}" data-business="collect-cash" data-shop="${esc(shop.id)}" ${collecting||(!amount&&!pending)?'disabled':''} aria-label="${esc(t('Collect cash','Kasse einsammeln'))}: ${esc(shop.name||typeName(shop.type))} · ${esc(justizEuro(amount))}"><svg viewBox="0 0 48 48" fill="none" aria-hidden="true"><path d="m18 8 6 3 6-3-4 10c10 5 14 12 13 18-1 6-7 8-15 8S10 42 9 36c-1-6 3-13 13-18L18 8Z" fill="currentColor" opacity=".2"/><path d="m18 8 6 3 6-3-4 10c10 5 14 12 13 18-1 6-7 8-15 8S10 42 9 36c-1-6 3-13 13-18L18 8Zm1 11h10" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"/><text x="24" y="36" text-anchor="middle" font-size="16" font-weight="700" fill="currentColor">€</text></svg><span class="business-cash-copy"><span>${collecting?t('Collecting…','Wird eingesammelt …'):pending?t('Retry collection','Erneut einsammeln'):amount?t('Collect cash','Kasse einsammeln'):t('Register empty','Kasse leer')}</span><strong>${justizEuro(amount)}</strong></span></button><small class="business-cash-status" role="status" aria-live="polite">${message?t(`Collected ${justizEuro(message)}!`,`${justizEuro(message)} eingesammelt!`):infoTip(t('Earnings stay here until you collect.','Einnahmen bleiben hier, bis du sie einsammelst.'),t('About store cash','Über die Ladenkasse'))}</small></div>`;
   }
   async function cashCelebration(button,amount,job) {
     if(!amount||!button?.isConnected||window.matchMedia('(prefers-reduced-motion: reduce)').matches)return;
-    const origin=button.getBoundingClientRect(),target=accountContent.querySelector('.business-hero-account strong')?.getBoundingClientRect();
+    const origin=button.getBoundingClientRect(),coinOrigin=button.querySelector('svg')?.getBoundingClientRect()||origin;
     const layer=document.createElement('div');layer.className='business-cash-celebration';layer.setAttribute('aria-hidden','true');job.layer=layer;
-    const x=origin.left+origin.width/2,y=origin.top+origin.height/2;
-    layer.style.left=`${x}px`;layer.style.top=`${y}px`;
-    layer.innerHTML=`<span class="business-cash-reward">+${esc(justizEuro(amount))}</span>${Array.from({length:12},()=>'<span class="business-cash-coin">€</span>').join('')}`;
-    document.body.append(layer);
-    const visibleTarget=target&&target.top>=0&&target.bottom<=innerHeight;
-    const dx=visibleTarget?target.left+target.width/2-x:0,dy=visibleTarget?target.top+target.height/2-y:-100;
-    job.animations=[layer.querySelector('.business-cash-reward').animate([{opacity:0,transform:'translate(-50%,0) scale(.7)'},{opacity:1,offset:.2,transform:'translate(-50%,-30px) scale(1.1)'},{opacity:0,transform:'translate(-50%,-100px) scale(1)'}],{duration:1250,easing:'ease-out'})];
-    for(const [i,coin] of [...layer.querySelectorAll('.business-cash-coin')].entries()){
-      const spread=(i-5.5)*12;
-      job.animations.push(coin.animate([{opacity:0,transform:'translate(-50%,-50%) scale(.4)'},{opacity:1,offset:.3,transform:`translate(${spread}px,${-55-i%3*12}px) rotate(${i*40}deg) scale(1)`},{opacity:0,transform:`translate(${dx}px,${dy}px) rotate(${i*90+360}deg) scale(.3)`}],{duration:900+i*25,delay:i*12,easing:'cubic-bezier(.2,.7,.3,1)'}));
+    layer.style.setProperty('--cash-x',`${coinOrigin.left+coinOrigin.width/2}px`);
+    layer.style.setProperty('--cash-y',`${coinOrigin.top+coinOrigin.height/2}px`);
+    layer.innerHTML=`<span class="business-cash-reward">+${esc(justizEuro(amount))}</span>${Array.from({length:14},()=>'<span class="business-cash-coin">€</span>').join('')}`;
+    document.body.append(layer);cashCelebrations.add(job);
+    try {
+      const reward=layer.querySelector('.business-cash-reward'),width=reward.getBoundingClientRect().width;
+      reward.style.left=`${Math.max(12+width/2,Math.min(innerWidth-12-width/2,origin.left+origin.width/2))}px`;
+      job.animations=[reward.animate([{opacity:0,transform:'translate(-50%,0) scale(.9)'},{opacity:1,offset:.2,transform:'translate(-50%,-18px) scale(1)'},{opacity:0,transform:'translate(-50%,-48px) scale(.95)'}],{duration:480,easing:'ease-out'})];
+      for(const [i,coin] of [...layer.querySelectorAll('.business-cash-coin')].entries()){
+        const dx=(i-6.5)*16,height=40+i%5*11,fall=36+i%4*12,spin=(i%2?1:-1)*(180+i*27);
+        job.animations.push(coin.animate([{opacity:0,transform:'translate(-50%,-50%) scale(.4)'},{opacity:1,offset:.14,transform:`translate(${dx*.2}px,${-height*.55}px) rotate(${spin*.15}deg) scale(1)`},{opacity:1,offset:.45,transform:`translate(${dx*.6}px,${-height}px) rotate(${spin*.45}deg) scale(1)`},{opacity:0,transform:`translate(${dx}px,${fall}px) rotate(${spin}deg) scale(.7)`}],{duration:380+i%4*35,delay:i%3*8,easing:'linear'}));
+      }
+      await Promise.all(job.animations.map(animation=>animation.finished.catch(()=>{})));
+    } finally { layer.remove();cashCelebrations.delete(job); }
+  }
+  function paintCashControl(shopId) {
+    const shop=ownedShop(shopId);if(!shop)return;
+    for(const control of accountContent.querySelectorAll(`[data-business="collect-cash"][data-shop="${CSS.escape(shopId)}"]`)){
+      const wrapper=control.closest('.business-cash'),focused=wrapper.contains(document.activeElement);
+      const replacement=document.createElement('div');replacement.innerHTML=collectCashMarkup(shop);
+      const next=replacement.firstElementChild;wrapper.replaceWith(next);
+      if(focused){const status=next.querySelector('.business-cash-status');status.tabIndex=-1;status.focus({preventScroll:true});}
     }
-    await Promise.all(job.animations.map(animation=>animation.finished.catch(()=>{})));layer.remove();
+  }
+  function paintCashBalance() {
+    for(const value of accountContent.querySelectorAll('.business-hero-account strong, .economy-overview-primary strong'))value.textContent=justizEuro(account.tokens);
   }
   async function collectCash(button) {
-    const shop=ownedShop(button.dataset.shop);if(busy||!account||!shop||(!shop.cashReady&&!pendingCollection(shop.id)))return;
-    const job={shopId:shop.id,owner:account.id,visit:accountVisit,animations:[]};collectionJob=job;busy=true;
+    const shop=ownedShop(button.dataset.shop);if(!account||!shop||collectionJobs.has(shop.id)||(!shop.cashReady&&!pendingCollection(shop.id)))return;
+    const job={shopId:shop.id,owner:account.id,visit:accountVisit,animations:[]};collectionJobs.set(shop.id,job);request++;
     const key=`jg:store-cash:${job.owner}:${shop.id}`;let requestId=collectionRequests.get(key);
     try{requestId=requestId||localStorage.getItem(key);}catch{}
     requestId=requestId||crypto.randomUUID();collectionRequests.set(key,requestId);try{localStorage.setItem(key,requestId);}catch{}
-    render();
-    const current=()=>collectionJob===job&&job.owner===account?.id&&job.visit===accountVisit;
+    paintCashControl(shop.id);
+    const current=()=>collectionJobs.get(shop.id)===job&&job.owner===account?.id&&job.visit===accountVisit;
     try{
       const result=await accountApi('businesses/collect',{shopId:shop.id,requestId});
       collectionRequests.delete(key);try{localStorage.removeItem(key);}catch{}
       if(!current())return;
-      updateAccount(result.user);cashMessages.set(shop.id,result.collection.amount);
+      request++;
+      // Concurrent replies may arrive out of order; keep the newest server balance.
+      if((result.collectionVersion||0)>=collectionVersion){collectionVersion=result.collectionVersion||0;updateAccount(result.user);paintCashBalance();}
+      cashMessages.set(shop.id,result.collection.amount);
       const localShop=ownedShop(shop.id);if(localShop)localShop.cashReady=result.cashReady;
       const control=accountContent.querySelector(`[data-business="collect-cash"][data-shop="${CSS.escape(shop.id)}"]`);
-      await cashCelebration(control,result.collection.amount,job);
-      // Payment is confirmed even if the follow-up statistics refresh fails.
-      if(current())await refresh(job.visit,false).catch(()=>{});
+      // The spill never gates the next collection, including another store.
+      void cashCelebration(control,result.collection.amount,job).catch(()=>{});
     }catch(error){
       if(error.code){collectionRequests.delete(key);try{localStorage.removeItem(key);}catch{}}
       if(current())showToast(error.message);
     }finally{
-      job.layer?.remove();
       if(current()){
-        collectionJob=null;busy=false;render();
-        // Empty tills remain focusable through their status after collection.
-        const status=accountContent.querySelector(`[data-business="collect-cash"][data-shop="${CSS.escape(shop.id)}"]`)?.closest('.business-cash')?.querySelector('.business-cash-status');
-        if(status){status.tabIndex=-1;status.focus({preventScroll:true});}
+        collectionJobs.delete(shop.id);request++;paintCashControl(shop.id);
+        // Refresh statistics independently of the payment and visual feedback.
+        if(!collectionJobs.size)void refresh(job.visit,false).then(()=>{if(job.owner===account?.id&&job.visit===accountVisit)paintCashBalance();}).catch(()=>{});
       }
     }
   }
+
   let restockReturnFocus = null, restockShopId = null, restockGroups = [], restockSignature = null;
   let editorShopId = null, editorReturnFocus = null, quickJob = null;
   const quickDialog = document.createElement('dialog');
@@ -174,7 +190,9 @@ window.businessUi = (() => {
     if (repaint && !busy && !restockDialog.open && !document.activeElement?.closest('[data-business-margin-form], [data-store-profile]')) render();
   }
   function stop() {
-    if(collectionJob){collectionJob.animations.forEach(animation=>animation.cancel());collectionJob.layer?.remove();collectionJob=null;busy=false;}
+    collectionJobs.clear();collectionVersion=0;
+    for(const job of cashCelebrations){job.animations.forEach(animation=>animation.cancel());job.layer?.remove();}
+    cashCelebrations.clear();
     cashMessages.clear();
     if (quickJob) { quickJob.phase = 'cancelled'; cancelQuickRestock(false); }
     clearInterval(timer); timer = null; request++; dashboard = null;

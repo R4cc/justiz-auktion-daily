@@ -37,7 +37,8 @@ const browser=await chromium.launch({executablePath:process.env.CHROMIUM_PATH||'
 try{
   const context=await browser.newContext({viewport:{width:1440,height:1000}}),page=await context.newPage(),errors=[],requests=[];
   page.on('pageerror',error=>errors.push(error.message));await context.addCookies([{name:'jg_session',value:token,url:base}]);
-  let loseResponse=false,loseRefresh=false;
+  let loseResponse=false,loseRefresh=false,holdFirst=true,releaseFirst,markFirstPaid;
+  const firstReply=new Promise(resolve=>{releaseFirst=resolve;}),firstPaid=new Promise(resolve=>{markFirstPaid=resolve;}),replies=[];
   await page.route('**/api/account/businesses',async route=>{
     if(loseRefresh){loseRefresh=false;return route.abort('failed');}
     await route.continue();
@@ -45,28 +46,48 @@ try{
   await page.route('**/api/account/businesses/collect',async route=>{
     requests.push(route.request().postDataJSON());
     if(loseResponse){loseResponse=false;await route.fetch();return route.abort('failed');}
-    await route.continue();
+    if(holdFirst){holdFirst=false;const response=await route.fetch();replies[0]=await response.json();markFirstPaid();await firstReply;return route.fulfill({response});}
+    const response=await route.fetch();replies.push(await response.json());await route.fulfill({response});
   });
   const button=index=>page.locator(`[data-business="collect-cash"][data-shop="${shops[index].id}"]`);
   const load=async()=>{await page.goto(base+'/businesses');await page.waitForSelector('[data-business="collect-cash"]');};
   await load();assert.equal(await page.locator('[data-business="collect-cash"]').count(),3);
   assert.equal(balance(),before);assert.equal(till(0),61);assert.equal(till(1),36);assert.equal(till(2),0);
   assert.ok(await button(0).isEnabled());assert.ok(await button(2).isDisabled());
-  await button(0).dblclick();await page.waitForSelector('.business-cash-celebration',{state:'attached'});
-  assert.equal(await page.locator('.business-cash-coin').count(),12);assert.equal(requests.length,1);
-  await page.waitForTimeout(250);await page.screenshot({path:'/tmp/jg-store-cash-burst-1440.png'});
-  await page.locator('.business-cash-celebration').waitFor({state:'detached'});await page.waitForFunction(()=>!document.querySelector('.business-cash-button.is-collecting'));
-  assert.equal(balance(),before+61);assert.equal(till(0),0);assert.equal(till(1),36);assert.ok(await button(0).isDisabled());
+  // Hold the first response after payment. Other registers must remain usable.
+  await button(0).evaluate(el=>{el.click();el.click();});
+  await page.waitForFunction(()=>document.querySelector('.business-cash-button.is-collecting'));
+  await firstPaid;assert.ok(await button(1).isEnabled());await button(1).click();
+  await page.waitForSelector('.business-cash-celebration',{state:'attached'});
+  const pauseSpills=()=>page.evaluate(()=>document.querySelectorAll('.business-cash-celebration').forEach(el=>el.getAnimations({subtree:true}).forEach(animation=>{animation.pause();animation.currentTime=180;})));
+  await pauseSpills();
+  assert.equal(requests.length,2,'both requests dispatch without waiting for an animation or another reply');
+  assert.equal(till(0),0);assert.equal(till(1),0);assert.equal(balance(),before+97);
+  assert.match(await button(1).innerText(),/Register empty/);
+  assert.match(await button(0).innerText(),/Collecting/);
+  assert.equal(await page.evaluate(()=>account.tokens),before+97);
+  releaseFirst();
+  await page.waitForFunction(()=>!document.querySelector('.business-cash-button.is-collecting'));
+  await pauseSpills();
+  assert.equal(await page.locator('.business-cash-coin').count(),28);
+  assert.ok(replies[1].collectionVersion>replies[0].collectionVersion,'receipts order wallet snapshots');
+  assert.equal(await page.evaluate(()=>account.tokens),before+97,'delayed older reply cannot reduce wallet');
+  assert.ok(await button(0).isDisabled());assert.ok(await button(1).isDisabled());
   assert.match(await button(0).locator('..').innerText(),/Collected J€ 61/);
-  assert.equal(await button(0).locator('..').locator('.business-cash-status').evaluate(el=>el===document.activeElement),true);
+  assert.equal(await button(1).locator('..').locator('.business-cash-status').evaluate(el=>el===document.activeElement),true,'another completion cannot steal focus');
+  assert.ok(await page.locator('.business-cash-celebration').evaluateAll(layers=>layers.every(el=>el.getAnimations({subtree:true}).every(animation=>animation.effect.getComputedTiming().endTime<=510))),'every spill finishes in about half a second');
+  await page.screenshot({path:'/tmp/jg-store-cash-burst-1440.png'});
+  await page.evaluate(()=>document.querySelectorAll('.business-cash-celebration').forEach(el=>el.getAnimations({subtree:true}).forEach(animation=>animation.finish())));
+  await page.waitForFunction(()=>!document.querySelector('.business-cash-celebration'));
   // The server pays, but the response is lost. Reload and retry the same key.
   tipStore(dir,buyer,{shopId:shops[0].id,amount:25,requestId:'cash-ui-retry-tip-1'});await load();loseResponse=true;
   await button(0).click();await page.waitForFunction(()=>[...document.querySelectorAll('[data-business="collect-cash"]')].some(el=>el.textContent.includes('Retry collection')));
-  assert.equal(balance(),before+86);assert.equal(till(0),0);await load();assert.ok(await button(0).isEnabled());
+  assert.equal(balance(),before+122);assert.equal(till(0),0);await load();assert.ok(await button(0).isEnabled());
   await button(0).click();await page.waitForSelector('.business-cash-celebration',{state:'attached'});await page.locator('.business-cash-celebration').waitFor({state:'detached'});
-  assert.equal(requests[1].requestId,requests[2].requestId);assert.equal(balance(),before+86);assert.equal(till(1),36);
+  assert.equal(requests[2].requestId,requests[3].requestId);assert.equal(balance(),before+122);assert.equal(till(1),0);
   // Long values and every individual control fit in both languages.
-  accounts.db(db=>db.prepare('UPDATE businesses SET cash_balance=? WHERE id=?').run(1000000000000,shops[2].id));await load();
+  accounts.db(db=>db.prepare('UPDATE businesses SET cash_balance=? WHERE id=?').run(1000000000000,shops[2].id));
+  buyStoreItem(dir,buyer,{shopId:shops[1].id,inventoryId:'toys-1',expectedPrice:36,requestId:'cash-ui-keyboard-buy'});await load();
   for(const width of [1440,768,390,320])for(const lang of ['en','de']){
     await page.setViewportSize({width,height:1000});await page.evaluate(lang=>{const select=document.querySelector('#language-select');select.value=lang;select.dispatchEvent(new Event('change',{bubbles:true}));},lang);
     assert.equal(await page.locator('[data-business="collect-cash"]').count(),3);
@@ -77,15 +98,15 @@ try{
   }
   await page.emulateMedia({reducedMotion:'reduce'});loseRefresh=true;await button(1).press('Enter');
   await page.waitForFunction(()=>!document.querySelector('.business-cash-button.is-collecting'));assert.equal(await page.locator('.business-cash-celebration').count(),0);
-  assert.equal(balance(),before+122);assert.equal(till(1),0);assert.equal(till(2),1000000000000);
+  assert.equal(balance(),before+158);assert.equal(till(1),0);assert.equal(till(2),1000000000000);
   assert.ok(await button(1).isDisabled(),'confirmed collection remains accurate when the statistics refresh fails');
   assert.match(await button(1).locator('..').innerText(),/36.*eingesammelt/);
   await page.emulateMedia({reducedMotion:'no-preference'});await button(2).press('Enter');
   await page.waitForSelector('.business-cash-celebration',{state:'attached'});
   assert.ok(await page.locator('.business-cash-reward').evaluate(el=>el.getBoundingClientRect().width<=innerWidth));
   await page.locator('.business-cash-celebration').waitFor({state:'detached'});
-  assert.equal(till(2),0);assert.equal(balance(),before+122+1000000000000);
+  assert.equal(till(2),0);assert.equal(balance(),before+158+1000000000000);
   assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1),'large collected wallet must fit');
   assert.deepEqual(errors,[]);await context.close();
-  console.log('Store cash UI passed: one button per store, sales/tips held until click, coin burst on server success, independent tills, empty disabled, double-click paid once, lost response survives reload and retries same receipt, keyboard/focus, reduced motion, long balances, EN/DE 1440/768/390/320px without overflow or JS errors.');
+  console.log('Store cash UI passed: one button per store, sales/tips held until click, half-second coin spill, concurrent collections with out-of-order replies, immediate wallet/control updates during animations, empty disabled, double-click paid once, lost response survives reload and retries same receipt, keyboard/focus, reduced motion, long balances, EN/DE 1440/768/390/320px without overflow or JS errors.');
 }finally{await browser.close();await new Promise(resolve=>server.close(resolve));closeDataStore(dir);await rm(dir,{recursive:true,force:true});}
