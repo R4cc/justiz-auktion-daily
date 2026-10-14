@@ -40,7 +40,7 @@ window.changelogUi = (() => {
       title: 'Balance Patch',
       changes: [
         { en: 'Store visitors increased by 25% across all store sizes.', de: '25% mehr Ladenbesucher bei allen Ladengrößen.' },
-        { en: 'Reviews affect popularity and visitor traffic 25% more strongly.', de: 'Bewertungen beeinflussen Beliebtheit und Besucherzahlen um 25% stärker.' },
+        { en: 'Reviews affect popularity and visitor traffic 150% more strongly.', de: 'Bewertungen beeinflussen Beliebtheit und Besucherzahlen um 150% stärker.' },
         { en: 'Theft fines reduced by 50%, with a minimum of 1.5× the item’s value.', de: 'Diebstahlbußgelder um 50% gesenkt, mindestens jedoch das 1,5-Fache des Warenwerts.' },
         { en: 'NPCs consider bids on normal-item auctions 20% more frequently.', de: 'NPCs bieten bei Auktionen gewöhnlicher Gegenstände 20% häufiger.' },
         { en: 'Daily completion pays J€1,000 at every score. Case rarity still depends on score.', de: 'Jedes abgeschlossene Daily zahlt J€1.000, unabhängig von der Punktzahl. Die Kistenseltenheit hängt weiterhin von der Punktzahl ab.' }

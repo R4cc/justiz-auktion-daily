@@ -66,7 +66,7 @@ Cash pays fines first, then the bailiff seizes inventory at current market estim
 ## Balance patch — 14 October 2026
 
 - Base hourly visitors for every store size increase by 25%: 1.25 / 2.5 / 6.25 / 13.75 before popularity and district multipliers. Fractional visitors retain deterministic hourly rounding.
-- Positive and negative review effects on popularity and traffic are 25% stronger: the review multiplier ranges from −12.5% to +12.5% before the existing popularity cap and confidence prior.
+- Positive and negative review effects on popularity and traffic are 150% stronger than the original baseline (the earlier +25% effect doubled): the review multiplier ranges from −25% to +25% before the existing popularity cap and confidence prior.
 - New theft quotes halve fines, including the small-item floor (J€20 → J€10), with an explicit minimum of 1.5× live item value. Districts and Security skill still apply; accepted attempts retain their saved quotes.
 - Normal-item resale NPCs consider bids 1.2× as often: their initial and repeat delays are divided by 1.2. Existing interest uses the new repeat delay after its next due tick. Budgets, demand and sealed-palette bidding slots retain their existing rules.
 - Daily games completed after the patch pay exactly J€1,000, including runs started earlier. Completed receipts are preserved; retries cannot pay twice. Case rarity still uses the existing score-based weights.

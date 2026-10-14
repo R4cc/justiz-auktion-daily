@@ -116,8 +116,8 @@ test('paid-review weight is capped, Influence remains stronger, and traffic cann
       db.prepare('INSERT INTO store_review_packs(inventory_id,review_count,business_id,redeemed_by,redeemed_at) VALUES(?,?,?,?,?)').run('extra-'+i,30,f.shop.id,f.owner.id,start+hour);
     }
     const multiplier=reviewTrafficMultiplier(db,f.shop.id,start+hour);
-    assert.ok(multiplier<=1.043 && multiplier>=1);
-    assert.equal(reviewTrafficMultiplier(db,f.shop.id,start),1-2/21*.0625);
+    assert.ok(multiplier<=1+1/12 && multiplier>=1);
+    assert.equal(reviewTrafficMultiplier(db,f.shop.id,start),1-2/21*.125);
     const rating=weightedStoreRating(db,f.shop.id);assert.equal(rating.count,3001);
     assert.ok(Math.abs(rating.average-51/11)<1e-10);
     const summary=storeReputation(db,{id:f.shop.id,traffic_popularity:1.5},start+hour);
@@ -240,7 +240,7 @@ test('positive and negative paid ratings share one symmetric influence cap and p
     };
     for(let i=0;i<100;i++)add('negative-'+i,1);
     let rating=storeReputation(db,{id:f.shop.id,traffic_popularity:1},start+hour);
-    assert.equal(rating.rating,1);assert.equal(rating.reviewDistribution[0].count,3000);assert.ok(Math.abs(reviewTrafficMultiplier(db,f.shop.id,start+hour)-(1-1/24))<1e-10);
+    assert.equal(rating.rating,1);assert.equal(rating.reviewDistribution[0].count,3000);assert.ok(Math.abs(reviewTrafficMultiplier(db,f.shop.id,start+hour)-(1-1/12))<1e-10);
     assert.equal(reviewTrafficMultiplier(db,f.shop.id,start),1);
     for(let i=0;i<100;i++)add('positive-'+i,5);
     rating=storeReputation(db,{id:f.shop.id,traffic_popularity:1},start+hour);

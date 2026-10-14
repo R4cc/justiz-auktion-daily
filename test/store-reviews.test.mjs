@@ -24,13 +24,13 @@ async function fixture(t, margin=20) {
   t.after(async()=>{closeDataStore(dir);await rm(dir,{recursive:true,force:true});});
   return {dir,accounts,owner,buyer,other,shop,buy,review,view,like};
 }
-test('positive and negative reviews affect public popularity and traffic 25% more strongly', async t => {
+test('positive and negative reviews affect public popularity and traffic 150% more strongly than the original baseline', async t => {
   const f = await fixture(t);
   f.accounts.db(db => db.prepare('UPDATE businesses SET traffic_popularity=1 WHERE id=?').run(f.shop.id));
   f.buy(f.buyer);
   for (const stars of [1, 3, 5]) {
     f.review(f.buyer, stars);
-    const expected = 1 + (stars - 3) / 21 * .0625;
+    const expected = 1 + (stars - 3) / 21 * .125;
     const view = f.view();
     assert.ok(Math.abs(view.popularity - expected) < 1e-12);
     const dashboard = businessDashboard(f.dir, f.owner, { now }).shops[0];

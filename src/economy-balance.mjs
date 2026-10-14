@@ -22,7 +22,7 @@ export const ECONOMY_BALANCE = Object.freeze({
   reviewPricePerReview: 60,
   purchasedReviewWeight: .25,
   purchasedReviewWeightCap: 10,
-  reviewTrafficMaxBonus: .125,
+  reviewTrafficMaxBonus: .25,
   businessVisitorMultiplier: 1.25,
   npcResaleActivityMultiplier: 1.2,
   businessMarginElasticity: 3,
