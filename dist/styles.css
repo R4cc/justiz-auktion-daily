@@ -1042,8 +1042,7 @@ button:focus-visible, a:focus-visible { outline: 3px solid var(--red); outline-o
 }
 
 /* Auction floor: paper tickets and sealed finds. */
-.palette-win-banner, .market-guidance { padding: 24px; border: 1px solid var(--line); border-radius: 16px; background: #e8ebdd; margin: 24px 0; }
-.market-guidance { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 4px 18px; padding: 14px 20px; margin: 18px 0 0; border-radius: 12px; }
+.palette-win-banner { padding: 24px; border: 1px solid var(--line); border-radius: 16px; background: #e8ebdd; margin: 24px 0; }
 .palette-win-banner { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 20px; border: 2px solid #b94c25; }
 .palette-win-banner h2 { margin: 8px 0; }
 .palette-seal { display: flex; gap: 10px; margin: 20px 0; }
@@ -1070,7 +1069,6 @@ button:focus-visible, a:focus-visible { outline: 3px solid var(--red); outline-o
 .palette-ledger-verdict.is-even { background: #e8ebdd; color: var(--ink); }
 .palette-ledger-note { margin: 12px 0 0; color: var(--muted); font-size: 12px; line-height: 1.6; }
 .economy-effects a { padding: 10px 12px; background: #e8ebdd; border-radius: 8px; font-size: 12px; }
-.market-guidance p { max-width: 75ch; line-height: 1.7; }
 .market-history-table { max-height: 280px; overflow: auto; }
 .market-history-table table { width: 100%; border-collapse: collapse; text-align: left; }
 .market-history-table th, .market-history-table td { padding: 10px; border-bottom: 1px solid var(--line); }
