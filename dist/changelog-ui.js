@@ -62,17 +62,20 @@ window.changelogUi = (() => {
   ];
 
   function render() {
-    const dates = new Intl.DateTimeFormat(t('en-GB', 'de-AT'), {
-      day: 'numeric', month: 'long', year: 'numeric', timeZone: 'UTC'
-    });
+    const releases = new Map();
+    for (const entry of entries) {
+      if (!releases.has(entry.date)) releases.set(entry.date, []);
+      releases.get(entry.date).push(entry);
+    }
     accountContent.innerHTML = `<div class="changelog-page">
-      <header class="changelog-heading"><h1 tabindex="-1">Changelog</h1><span class="changelog-seal" aria-hidden="true">✦</span></header>
-      <ol class="changelog-list">${entries.map(entry => `<li class="changelog-entry">
-        <time datetime="${accountEscape(entry.date)}">${accountEscape(dates.format(new Date(`${entry.date}T00:00:00Z`)))}</time>
-        <div class="changelog-copy">${entry.title ? `<h2>${accountEscape(entry.title)}</h2>` : ''}${entry.changes
+      <header class="changelog-heading"><h1 tabindex="-1"><span aria-hidden="true"># </span>Changelog</h1></header>
+      <ol class="changelog-list">${[...releases].map(([date, updates]) => `<li class="changelog-release">
+        <h2><span aria-hidden="true">## </span><time datetime="${accountEscape(date)}">${accountEscape(date)}</time></h2>
+        <ol class="changelog-sections">${updates.map(entry => `<li class="changelog-entry">
+        <div class="changelog-copy">${entry.title ? `<h3><span aria-hidden="true">### </span>${accountEscape(entry.title)}</h3>` : ''}${entry.changes
           ? `<ul>${entry.changes.map(change => `<li>${accountEscape(t(change.en, change.de))}</li>`).join('')}</ul>`
-          : `<p>${accountEscape(t(entry.en, entry.de))}</p>`}</div>
-      </li>`).join('')}</ol>
+          : `<ul><li>${accountEscape(t(entry.en, entry.de))}</li></ul>`}</div>
+      </li>`).join('')}</ol></li>`).join('')}</ol>
     </div>`;
   }
 
