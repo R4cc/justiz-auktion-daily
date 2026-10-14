@@ -782,7 +782,7 @@ window.economyUi = (() => {
           endsAt: new Date(Date.now() + 900_000).toISOString() });
         if (visit !== accountVisit||owner!==account?.id) return;
         updateAccount(result.user);
-        const inventory = await accountApi('inventory?includeStores=1');
+        const inventory = await accountApi('inventory');
         if (visit !== accountVisit||owner!==account?.id) return;
         accountItems = inventory.items;
         renderAccountPage();
@@ -799,7 +799,7 @@ window.economyUi = (() => {
         updateAccount(result.user); busy = false; await refresh(currentAccountPage, visit, true);
       }
     } catch (error) { if(visit===accountVisit&&viewerId===account?.id){
-      if(action==='quick-list'){try{const inventory=await accountApi('inventory?includeStores=1');if(visit===accountVisit&&viewerId===account?.id){accountItems=inventory.items;renderAccountPage();}}catch{}}
+      if(action==='quick-list'){try{const inventory=await accountApi('inventory');if(visit===accountVisit&&viewerId===account?.id){accountItems=inventory.items;renderAccountPage();}}catch{}}
       if(visit===accountVisit&&viewerId===account?.id)showToast(error.message);
     } }
     finally { if (visit === accountVisit) busy = false; if (button.isConnected) button.disabled = false; }

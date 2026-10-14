@@ -8,7 +8,7 @@ import { Accounts } from '../src/accounts.mjs';
 import { createAccountApi } from '../src/account-api.mjs';
 import { createEconomyApi } from '../src/economy-api.mjs';
 import { closeDataStore, upsertAuctions } from '../src/database.mjs';
-import { buyBusiness, stockBusiness } from '../src/businesses.mjs';
+import { buyBusiness, stockBusiness, unstockBusiness, businessDashboard } from '../src/businesses.mjs';
 import { listItem } from '../src/resale.mjs';
 import { loadCaseStoreCatalog, quoteCaseStore } from '../src/case-store.mjs';
 import { marketIndexes } from '../src/market.mjs';
@@ -57,16 +57,23 @@ try {
   await page.goto(base+'/inventory');await page.waitForSelector('#account-content a[href="/login"]');assert.equal(await page.locator('.inventory-summary').count(),0);
   await context.addCookies([{name:'jg_session',value:token,url:base}]);await page.reload();await page.waitForSelector('.inventory-category-cards');
   const card=id=>page.locator(`[data-inventory-category="${id}"]`),count=async id=>parseInt(await card(id).locator('.inventory-category-copy > strong').innerText());
-  assert.equal(await count('all'),39);assert.equal(await count('wine'),5);assert.equal(await count('electronics'),3);assert.equal(await count('books_media'),2);assert.equal(await count('other'),1);assert.equal(await count('cases'),2);assert.equal(await count('tools'),26);
+  assert.equal(await count('all'),37);assert.equal(await count('wine'),3);assert.equal(await count('electronics'),3);assert.equal(await count('books_media'),2);assert.equal(await count('other'),1);assert.equal(await count('cases'),2);assert.equal(await count('tools'),26);
   assert.equal(await page.locator('.inventory-category-card').count(),7);
-  // Five duplicate wines span two shelf copies, one listing and two available copies.
-  await card('wine').click();assert.equal(await page.locator('[data-inventory-filter="category"]').inputValue(),'wine');assert.equal(await page.locator('.inventory-grid .collection-item').count(),3);
-  assert.equal(await count('wine'),5);assert.equal(await card('wine').getAttribute('aria-pressed'),'true');
+  assert.equal(await page.locator('[data-inventory-filter="state"] option[value="stores"]').count(),0);
+  assert.ok(await page.evaluate(()=>accountItems.every(item=>!item.storeId)));
+  assert.equal(businessDashboard(dir,owner).shops.find(shop=>shop.id===wine.id).stock.length,2);
+  await page.goto(base+'/inventory?state=stores&category=wine');await page.waitForSelector('.inventory-summary');assert.equal(await count('wine'),3);assert.equal(await page.locator('[data-inventory-filter="state"]').inputValue(),'all');assert.equal(new URL(page.url()).searchParams.has('state'),false);assert.equal(new URL(page.url()).searchParams.get('category'),'wine');assert.equal(await page.locator('[data-inventory-card="wine-0"]').count(),0);
+  unstockBusiness(dir,owner,wine.id,'wine-0');await page.reload();await page.waitForSelector('.inventory-summary');assert.equal(await count('all'),38);assert.equal(await count('wine'),4);assert.ok(await page.evaluate(()=>accountItems.some(item=>item.id==='wine-0'&&!item.storeId)));
+  stockBusiness(dir,owner,wine.id,['wine-0']);await page.goto(base+'/inventory');await page.waitForSelector('.inventory-summary');assert.equal(await count('all'),37);assert.ok(await page.evaluate(()=>!accountItems.some(item=>item.id==='wine-0')));
+
+  // Two shelf copies are excluded; one listed and two available wines remain.
+  await card('wine').click();assert.equal(await page.locator('[data-inventory-filter="category"]').inputValue(),'wine');assert.equal(await page.locator('.inventory-grid .collection-item').count(),2);
+  assert.equal(await count('wine'),3);assert.equal(await card('wine').getAttribute('aria-pressed'),'true');
   assert.equal(await card('wine').evaluate(el=>el===document.activeElement),true);
   assert.ok((await page.locator('.inventory-grid h3').allTextContents()).every(title=>title==='Riesling'));
-  await page.locator('[data-inventory-filter="state"]').selectOption('available');assert.equal(await page.locator('.inventory-grid .collection-item').count(),1);assert.equal(await page.locator('.item-count').innerText(),'×2');assert.equal(await count('wine'),5);
+  await page.locator('[data-inventory-filter="state"]').selectOption('available');assert.equal(await page.locator('.inventory-grid .collection-item').count(),1);assert.equal(await page.locator('.item-count').innerText(),'×2');assert.equal(await count('wine'),3);
   await page.locator('[data-inventory-filter="rarity"]').selectOption('rare');await card('electronics').click();assert.ok(page.url().includes('state=available')&&page.url().includes('rarity=rare')&&page.url().includes('category=electronics'));assert.equal(await page.locator('.inventory-grid .collection-item').count(),1);assert.equal(await count('electronics'),3);
-  await page.locator('[data-inventory-filter="category"]').selectOption('wine');assert.equal(await card('wine').getAttribute('aria-pressed'),'true');assert.equal(await page.locator('.inventory-grid').count(),0);assert.equal(await count('wine'),5);
+  await page.locator('[data-inventory-filter="category"]').selectOption('wine');assert.equal(await card('wine').getAttribute('aria-pressed'),'true');assert.equal(await page.locator('.inventory-grid').count(),0);assert.equal(await count('wine'),3);
   await page.goto(base+'/inventory');await page.waitForSelector('.inventory-summary');
   await card('cases').click();assert.equal(await page.locator('[data-inventory-filter="category"]').inputValue(),'cases');assert.equal(await count('cases'),2);assert.ok(await page.locator('.sealed-case-item').count()>0);assert.equal(await page.locator('.inventory-grid .collection-item:not(.sealed-case-item)').count(),0);
   await card('other').click();assert.deepEqual(await page.locator('.inventory-grid h3').allTextContents(),['Miscellaneous find']);
@@ -81,7 +88,7 @@ try {
       const hidden=!(await page.locator('#language-select').isVisible());if(hidden)await page.locator('[data-action="sidebar"]').click();await page.locator('#language-select').selectOption(lang);if(hidden)await page.keyboard.press('Escape');
       assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1),`${width} ${lang} page overflow`);
       assert.ok(await page.locator('.inventory-category-card').evaluateAll(cards=>cards.every(el=>el.scrollWidth<=el.clientWidth+1)),`${width} ${lang} card overflow`);
-      assert.equal(await count('wine'),5);assert.equal(await count('all'),39);
+      assert.equal(await count('wine'),3);assert.equal(await count('all'),37);
       await card('wine').click();assert.equal(await page.locator('[data-inventory-filter="category"]').inputValue(),'wine');
       await page.evaluate(()=>window.scrollTo(0,0));
       if([1440,390,320].includes(width))await page.screenshot({path:`/tmp/jg-inventory-categories-${width}-${lang}.png`,fullPage:true});
@@ -90,8 +97,8 @@ try {
   }
   // Counts update after an inventory transfer and do not count a sold row.
   const opened=await accounts.openSealedCase(owner,accounts.inventory(owner).find(item=>item.kind==='case').id);
-  await page.reload();await page.waitForSelector('.inventory-summary');assert.equal(await count('cases'),1);assert.equal(await count('all'),39);assert.ok(opened.id);
-  await page.route('**/api/account/inventory?includeStores=1',route=>route.fulfill({json:{items:[]}}));await page.reload();await page.waitForSelector('.inventory-summary');assert.equal(await count('all'),0);assert.equal(await page.locator('.inventory-category-card').count(),1);assert.equal(await page.locator('.inventory-grid').count(),0);
+  await page.reload();await page.waitForSelector('.inventory-summary');assert.equal(await count('cases'),1);assert.equal(await count('all'),37);assert.ok(opened.id);
+  await page.route('**/api/account/inventory',route=>route.fulfill({json:{items:[]}}));await page.reload();await page.waitForSelector('.inventory-summary');assert.equal(await count('all'),0);assert.equal(await page.locator('.inventory-category-card').count(),1);assert.equal(await page.locator('.inventory-grid').count(),0);
   assert.deepEqual(errors,[]);
-  console.log('Inventory category UI passed: raw copy totals across available/listed/store stock; sealed cases and uncategorized items; card/dropdown synchronization; preserved state/rarity; keyboard and focus; pagination reset; cleared item focus; refreshed counts after opening a case; guest and empty inventory; EN/DE at 1440/1024/768/600/390/320px; no overflow or JS errors.');
+  console.log('Inventory category UI passed: raw copy totals across available/listed items excluding store stock; sealed cases and uncategorized items; card/dropdown synchronization; preserved state/rarity; keyboard and focus; pagination reset; cleared item focus; refreshed counts after opening a case; guest and empty inventory; EN/DE at 1440/1024/768/600/390/320px; no overflow or JS errors.');
 }finally{await browser.close();await new Promise(resolve=>server.close(resolve));closeDataStore(dir);await rm(dir,{recursive:true,force:true});}
