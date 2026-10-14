@@ -1,4 +1,4 @@
-import { storePopularity, storeReputation } from './store-reputation.mjs';
+import { storePopularity, storeReputation, storePopularityBreakdown } from './store-reputation.mjs';
 import { ensureReviewSchema, recordNpcStoreFeedback } from './store-reviews.mjs';
 import { businessTypeForItem } from './stock-compatibility.mjs';
 export { businessTypeForItem } from './stock-compatibility.mjs';
@@ -106,7 +106,7 @@ export function ensureBusinessSchema(db, { now = Date.now() } = {}) {
   if (guardColumns.some(column => column.name === 'goose_guard') && !guardColumns.some(column => column.name === 'security_guard')) {
     db.exec('ALTER TABLE businesses RENAME COLUMN goose_guard TO security_guard');
   }
-  for (const [name, definition] of [['store_name', "TEXT NOT NULL DEFAULT ''"], ['store_motto', "TEXT NOT NULL DEFAULT ''"], ['security_guard', 'INTEGER NOT NULL DEFAULT 0'], ['security_guard_profit', 'INTEGER NOT NULL DEFAULT 0'], ['security_guard_fees', 'INTEGER NOT NULL DEFAULT 0 CHECK(security_guard_fees>=0)'], ['mischief_enabled','INTEGER NOT NULL DEFAULT 0 CHECK(mischief_enabled IN (0,1))']]) {
+  for (const [name, definition] of [['popularity_factors', 'TEXT'], ['store_name', "TEXT NOT NULL DEFAULT ''"], ['store_motto', "TEXT NOT NULL DEFAULT ''"], ['security_guard', 'INTEGER NOT NULL DEFAULT 0'], ['security_guard_profit', 'INTEGER NOT NULL DEFAULT 0'], ['security_guard_fees', 'INTEGER NOT NULL DEFAULT 0 CHECK(security_guard_fees>=0)'], ['mischief_enabled','INTEGER NOT NULL DEFAULT 0 CHECK(mischief_enabled IN (0,1))']]) {
     if (!db.prepare('PRAGMA table_info(businesses)').all().some(column => column.name === name)) db.exec(`ALTER TABLE businesses ADD COLUMN ${name} ${definition}`);
   }
   // Keep sale history independently of physical shelf rows: a player purchase
@@ -120,8 +120,8 @@ export function ensureBusinessSchema(db, { now = Date.now() } = {}) {
     marketIndexes(db, Date.now());
     for (const row of db.prepare('SELECT * FROM businesses').all()) {
       const stock = shopStock(db, row.id, row.type, row.profit_margin);
-      const popularity = shopMetrics(db, row, stock, Date.now()).popularity;
-      db.prepare('UPDATE businesses SET traffic_popularity = ? WHERE id = ?').run(popularity, row.id);
+      const metrics=shopMetrics(db,row,stock,Date.now());
+      db.prepare('UPDATE businesses SET traffic_popularity=?,popularity_factors=? WHERE id=?').run(metrics.popularity,JSON.stringify(metrics.factors),row.id);
     }
   }
   ensureStoreCashSchema(db);
@@ -177,9 +177,11 @@ function shopMetrics(db, row, stock, at) {
     sum + referencePrice(db, entry.item, row.type, at), 0) / stock.length) : 0;
   const capacity = shopCapacity(row.type, size);
   const fill = stock.length / capacity;
+  const varietyFactor=.65+.15*Math.min(4,variety), valueFactor=.8+.2*Math.min(2,value/type.typicalValue), fillFactor=.65+.35*fill;
   const popularity = stock.length ? Math.min(1.5, Math.max(.3,
-    (.65 + .15 * Math.min(4, variety)) * (.8 + .2 * Math.min(2, value / type.typicalValue)) * (.65 + .35 * fill))) : 0;
-  return { variety, value, popularity: Math.round(popularity * 100) / 100, capacity };
+    varietyFactor * valueFactor * fillFactor)) : 0;
+  return { variety, value, popularity: Math.round(popularity * 100) / 100, capacity,
+    factors:{version:1,varietyFactor,valueFactor,fillFactor,variety,count:stock.length,capacity,updatedAt:at,basePopularity:Math.round(popularity*100)/100} };
 }
 
 export function advanceShop(db, row, now) {
@@ -232,6 +234,7 @@ function publicShop(db, row, now = Date.now()) {
   const today = db.prepare(`SELECT COUNT(*) AS sales, COALESCE(SUM(price), 0) AS revenue
     FROM business_sales WHERE business_id = ? AND sold_at >= ? AND sold_at < ?`)
     .get(row.id, dayStart, dayStart + 24 * HOUR);
+  const {factors,...metrics}=shopMetrics(db,row,stock,now);
   return { id: row.id, type: row.type, size: row.size, boughtAt: row.bought_at,
     location: plotLocation(db, row.plot_id), name: row.store_name, motto: row.store_motto, securityGuard: Boolean(row.security_guard), securityGuardProfitPercent: ECONOMY_BALANCE.securityGuardProfitPercent, securityGuardFees: row.security_guard_fees, mischiefEnabled: Boolean(row.mischief_enabled),
     ...tradingTotals(db,row.user_id,row.id),
@@ -240,7 +243,8 @@ function publicShop(db, row, now = Date.now()) {
     buyChancePercent: Math.round((stock.length ? stock.reduce((sum, entry) => sum
       + businessItemSaleChance(shopType(row.type), row.profit_margin, entry.referencePrice), 0) / stock.length
       : businessSaleChance(shopType(row.type).conversion, row.profit_margin)) * 1000) / 10,
-    ...shopMetrics(db, row, stock, now), ...storeReputation(db, row, now),
+    ...metrics, ...storeReputation(db, row, now),
+    popularityBreakdown:storePopularityBreakdown(db,row,plotLocation(db,row.plot_id),now),
     stock: stock.map(entry=>({...entry,...acquisition(db,entry.id,row.user_id)})) };
 }
 
@@ -315,7 +319,8 @@ export function applyBusinessStock(db, user, shopId, addIds, removeIds, now) {
   for(const id of removeIds)db.prepare('DELETE FROM business_stock WHERE business_id=? AND inventory_id=? AND sold_at IS NULL').run(shop.id,id);
   for(const entry of additions)db.prepare('INSERT INTO business_stock(inventory_id,business_id,stocked_at,asking_price) VALUES(?,?,?,?)').run(entry.id,shop.id,now,entry.price);
   if(addIds.length)milestone(db,user.id,'find',now);
-  db.prepare('UPDATE businesses SET traffic_popularity=? WHERE id=?').run(shopMetrics(db,shop,shopStock(db,shop.id,shop.type,shop.profit_margin,now),now).popularity,shop.id);
+  const metrics=shopMetrics(db,shop,shopStock(db,shop.id,shop.type,shop.profit_margin,now),now);
+  db.prepare('UPDATE businesses SET traffic_popularity=?,popularity_factors=? WHERE id=?').run(metrics.popularity,JSON.stringify(metrics.factors),shop.id);
   return publicShop(db,db.prepare('SELECT * FROM businesses WHERE id=?').get(shop.id),now);
 }
 export function stockBusiness(dataDir,user,shopId,inventoryIds,{now=Date.now()}={}) {

@@ -31,3 +31,31 @@ export function storeReputation(db, shop, now) {
     purchasedReviewInfluenceCapped: rating.purchasedCount * PURCHASED_REVIEW_WEIGHT >= PURCHASED_REVIEW_WEIGHT_CAP, reviewDistribution: distribution,
     reviewTrafficBonusPercent: Math.round((multiplier - 1) * 1000) / 10 };
 }
+
+// Explain the stored assortment score, rather than inventing a new score from
+// shelves that may have changed through sales since the last stock transfer.
+export function storePopularityBreakdown(db, shop, location, now) {
+  const percent=value=>Math.round(value/MAX_STORE_POPULARITY*100);
+  const stockPercent=percent(shop.traffic_popularity);
+  let snapshot=null;
+  try {snapshot=JSON.parse(shop.popularity_factors||'null');}catch{}
+  const recorded=snapshot?.version===1&&snapshot.basePopularity===shop.traffic_popularity;
+  const factors=[];
+  let basePercent=stockPercent;
+  if(recorded){
+    basePercent=percent(.65);
+    if(!snapshot.count)factors.push({id:'empty_shelves',points:-basePercent});
+    else {
+      const varietyPercent=percent(snapshot.varietyFactor),valuePercent=percent(snapshot.varietyFactor*snapshot.valueFactor);
+      factors.push({id:'variety',points:varietyPercent-basePercent,count:snapshot.variety},
+        {id:'stock_value',points:valuePercent-varietyPercent},
+        {id:'shelf_fill',points:stockPercent-valuePercent,count:snapshot.count,capacity:snapshot.capacity});
+    }
+  }
+  const multiplier=reviewTrafficMultiplier(db,shop.id,now);
+  const totalPercent=percent(Math.min(MAX_STORE_POPULARITY,Math.max(0,shop.traffic_popularity*multiplier)));
+  factors.push({id:'reviews',points:totalPercent-stockPercent,direction:Math.sign(multiplier-1)});
+  const trafficMultiplier=location?.trafficMultiplier??1;
+  return {basePercent,baseLabel:recorded?'base':'recorded_stock',factors,totalPercent,
+    recordedAt:recorded?snapshot.updatedAt:null,trafficMultiplier,visitorEffectPercent:Math.round((trafficMultiplier-1)*100)};
+}

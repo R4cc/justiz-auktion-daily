@@ -54,3 +54,20 @@
 
 .review-pack-card .section-title-row { justify-content:space-between; }
 .review-pack-card .info-tip > button { width:24px; }
+.shop-popularity-breakdown { font-size:12px;border:1px solid #d8ddcc;border-radius:10px;background:#f3f4e8;margin:0 0 20px; }
+.shop-card-content>.shop-popularity-breakdown { margin:0; }
+.shop-popularity-breakdown summary { padding:12px 14px;cursor:pointer;font-weight:750;color:#244d40; }
+.shop-popularity-breakdown summary:focus-visible { outline:3px solid #bc862a;outline-offset:2px; }
+.shop-popularity-explanation { padding:0 14px 14px; }
+.shop-popularity-explanation dl { margin:0; }
+.shop-popularity-explanation dl>div { display:flex;justify-content:space-between;align-items:baseline;gap:16px;padding:7px 0; }
+.shop-popularity-explanation dt { min-width:0;overflow-wrap:anywhere; }
+.shop-popularity-explanation dd { margin:0;flex-shrink:0;font-weight:800;font-variant-numeric:tabular-nums; }
+.shop-popularity-explanation dd small { font-weight:500;font-size:10px; }
+.shop-popularity-total { border-top:1px solid #d8ddcc;margin-top:5px;font-weight:800; }
+.shop-popularity-traffic { display:flex;justify-content:space-between;gap:14px;flex-wrap:wrap;border-top:1px solid #d8ddcc;margin-top:6px;padding:12px 0; }
+.shop-popularity-explanation .is-positive { color:#2c7044; }
+.shop-popularity-explanation .is-negative { color:#a13d2b; }
+.shop-popularity-explanation .is-neutral { color:#667466; }
+@media(min-width:650px) { .shop-surface>.shop-popularity-breakdown .shop-popularity-explanation { max-width:560px; } }
+.shop-popularity-legacy { display:block;font-size:10px;color:#667466;line-height:1.5;margin:0 0 8px; }
