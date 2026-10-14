@@ -155,6 +155,20 @@ window.storeUi = (() => {
     if(draft&&form){form.closest('details').open=draft.open;form.elements.comment.value=draft.comment;const star=form.querySelector(`input[name="stars"][value="${draft.stars}"]`);if(star)star.checked=true;}
     showEvents();
   }
+  function navigateOwnerTab(destination, push = true) {
+    const store = data?.store;
+    if (currentAccountPage !== '/stores' || !pageLoaded || destination.pathname !== '/stores' ||
+        !account || account.mustChangePassword || account.justice?.jailed || !store?.own ||
+        store.ownerId !== account.id || destination.searchParams.get('shop') !== store.id ||
+        !window.businessUi.ownedShop(store.id)) return false;
+    const tab = destination.searchParams.get('tab') || 'overview';
+    if (!['overview','stock','reviews','settings'].includes(tab)) return false;
+    const href = destination.pathname + destination.search;
+    if (push && location.pathname + location.search !== href) history.pushState({}, '', href);
+    render();
+    accountContent.querySelector('.shop-tabs [aria-current="page"]')?.focus({preventScroll:true});
+    return true;
+  }
   async function mutate(route, payload, retry = false) {
     let key;
     if (retry) {
@@ -337,5 +351,5 @@ window.storeUi = (() => {
     finally { if (visit === accountVisit) { busy = false; if (button.isConnected) button.disabled = false; if(review&&saved){render();accountContent.querySelector('.store-review-form button[type="submit"]')?.focus({preventScroll:true});} } }
   });
   document.addEventListener('jg:language', () => { if(heistDialog.open&&!game?.spinning){if(game?.attempt)paintBlackjack();else if(game?.entry)heistIntro(game.entry);} if (currentAccountPage === '/stores') render(); if (eventDialog.open) showEvents(true); });
-  return { load, stop, render, loadEvents, showEvents, reviews:store=>`<section class="store-reviews">${window.storeReputationUi?.histogram(store)||''}${reviewList(store)}</section>` };
+  return { load, stop, render, navigateOwnerTab, loadEvents, showEvents, reviews:store=>`<section class="store-reviews">${window.storeReputationUi?.histogram(store)||''}${reviewList(store)}</section>` };
 })();

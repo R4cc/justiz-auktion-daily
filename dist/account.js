@@ -378,6 +378,9 @@ async function navigateAccountPage(path, push = true) {
     if (!push) history.replaceState({}, '', destination.pathname + destination.search);
   }
   path = destination.pathname;
+  // Moving between an owner's loaded store tabs is local navigation. Keep the
+  // page's refresh timer, drafts and pending writes alive instead of reloading.
+  if (window.storeUi?.navigateOwnerTab?.(destination, push)) return;
   caseReveal.close(); auctionReveal.close();
   if (typeof traderStockDialog !== 'undefined') traderStockDialog.close();
   document.querySelector('.daily-case-dialog')?.close();
