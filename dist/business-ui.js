@@ -42,9 +42,6 @@ window.businessUi = (() => {
       if(focused){const status=next.querySelector('.business-cash-status');status.tabIndex=-1;status.focus({preventScroll:true});}
     }
   }
-  function paintCashBalance() {
-    for(const value of accountContent.querySelectorAll('.business-hero-account strong, .economy-overview-primary strong'))value.textContent=justizEuro(account.tokens);
-  }
   async function collectCash(button) {
     const shop=ownedShop(button.dataset.shop);if(!account||!shop||collectionJobs.has(shop.id)||(!shop.cashReady&&!pendingCollection(shop.id)))return;
     const job={shopId:shop.id,owner:account.id,visit:accountVisit,animations:[]};collectionJobs.set(shop.id,job);request++;
@@ -59,7 +56,7 @@ window.businessUi = (() => {
       if(!current())return;
       request++;
       // Concurrent replies may arrive out of order; keep the newest server balance.
-      if((result.collectionVersion||0)>=collectionVersion){collectionVersion=result.collectionVersion||0;updateAccount(result.user);paintCashBalance();}
+      if((result.collectionVersion||0)>=collectionVersion){collectionVersion=result.collectionVersion||0;updateAccount(result.user);}
       cashMessages.set(shop.id,result.collection.amount);
       const localShop=ownedShop(shop.id);if(localShop)localShop.cashReady=result.cashReady;
       const control=accountContent.querySelector(`[data-business="collect-cash"][data-shop="${CSS.escape(shop.id)}"]`);
@@ -72,7 +69,7 @@ window.businessUi = (() => {
       if(current()){
         collectionJobs.delete(shop.id);request++;paintCashControl(shop.id);
         // Refresh statistics independently of the payment and visual feedback.
-        if(!collectionJobs.size)void refresh(job.visit,false).then(()=>{if(job.owner===account?.id&&job.visit===accountVisit)paintCashBalance();}).catch(()=>{});
+        if(!collectionJobs.size)void refresh(job.visit,false).catch(()=>{});
       }
     }
   }
@@ -218,7 +215,7 @@ window.businessUi = (() => {
     if (!account) return `<section class="business-guest"><h1 tabindex="-1">${t('Your stores', 'Deine Läden')}</h1><a class="primary-button" href="/login" data-page>${t('Sign in', 'Anmelden')}</a></section>`;
     const shops = dashboard?.shops || [], max = dashboard?.maxStores || 3, canBuy = shops.length < max;
     const total = key => shops.reduce((sum, shop) => sum + shop[key], 0);
-    return `<div class="business-portfolio"><header class="business-hero"><div><h1 tabindex="-1">${t('Your stores', 'Deine Läden')}</h1><a href="/town" data-page>${t('Town map', 'Stadtplan')} <span aria-hidden="true">↗</span></a></div><div class="business-hero-account"><span class="business-location-count">${shops.length} / ${max} ${t('locations', 'Standorte')}</span><div class="business-location-dots" aria-hidden="true">${Array.from({length:max},(_,n)=>`<span class="${n < shops.length ? 'is-owned' : ''}">${String(n+1).padStart(2,'0')}</span>`).join('')}</div><small>${t('Balance', 'Guthaben')}</small><strong>${justizEuro(account.tokens)}</strong></div></header><dl class="business-portfolio-stats"><div><dt>${t('Revenue today', 'Umsatz heute')}</dt><dd>${justizEuro(total('revenueToday'))}</dd></div><div><dt>${t('Items on shelves', 'Artikel im Regal')}</dt><dd>${number(shops.reduce((sum, shop) => sum + shop.stock.length, 0))}</dd></div><div><dt>${t('Sales today', 'Verkäufe heute')}</dt><dd>${number(total('salesToday'))}</dd></div></dl><section class="business-owned"><div class="business-portfolio-heading"><div><h2>${t('Stores', 'Läden')}</h2></div><button class="business-new-button" type="button" data-business="open-buy" ${canBuy ? '' : 'disabled'}><span aria-hidden="true">＋</span>${canBuy ? t('Open a store', 'Laden eröffnen') : t('All locations filled', 'Alle Standorte belegt')}</button></div><div class="business-shop-grid">${shops.map(shopCard).join('')}${canBuy ? `<button class="business-add-card" type="button" data-business="open-buy"><span class="business-add-icon" aria-hidden="true">＋</span><strong>${t('Open a store','Laden eröffnen')}</strong></button>` : ''}</div></section></div>`;
+    return `<div class="business-portfolio"><header class="business-hero"><div><h1 tabindex="-1">${t('Your stores', 'Deine Läden')}</h1><a href="/town" data-page>${t('Town map', 'Stadtplan')} <span aria-hidden="true">↗</span></a></div><div class="business-hero-account"><span class="business-location-count">${shops.length} / ${max} ${t('locations', 'Standorte')}</span><div class="business-location-dots" aria-hidden="true">${Array.from({length:max},(_,n)=>`<span class="${n < shops.length ? 'is-owned' : ''}">${String(n+1).padStart(2,'0')}</span>`).join('')}</div></div></header><dl class="business-portfolio-stats"><div><dt>${t('Revenue today', 'Umsatz heute')}</dt><dd>${justizEuro(total('revenueToday'))}</dd></div><div><dt>${t('Items on shelves', 'Artikel im Regal')}</dt><dd>${number(shops.reduce((sum, shop) => sum + shop.stock.length, 0))}</dd></div><div><dt>${t('Sales today', 'Verkäufe heute')}</dt><dd>${number(total('salesToday'))}</dd></div></dl><section class="business-owned"><div class="business-portfolio-heading"><div><h2>${t('Stores', 'Läden')}</h2></div><button class="business-new-button" type="button" data-business="open-buy" ${canBuy ? '' : 'disabled'}><span aria-hidden="true">＋</span>${canBuy ? t('Open a store', 'Laden eröffnen') : t('All locations filled', 'Alle Standorte belegt')}</button></div><div class="business-shop-grid">${shops.map(shopCard).join('')}${canBuy ? `<button class="business-add-card" type="button" data-business="open-buy"><span class="business-add-icon" aria-hidden="true">＋</span><strong>${t('Open a store','Laden eröffnen')}</strong></button>` : ''}</div></section></div>`;
   }
   function shelfGroups(stock) {
     const groups = new Map();

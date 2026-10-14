@@ -1,4 +1,5 @@
 let accountAdminMarket = { categories: [], presets: [], history: [] };
+let accountRevision = 0;
 let accountStore = null;
 let caseStockRequest = 0;
 let accountSelectedStoreCase = 'lost-property';
@@ -174,8 +175,25 @@ function sidebarLinkMarkup(route, label) {
   };
   return `<svg class="nav-icon" data-nav-icon="${accountEscape(route)}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">${icons[route] || icons['/profile']}</svg><span class="nav-link-label">${accountEscape(label)}</span>`;
 }
+function renderPersistentWallet(user) {
+  const wallet = document.getElementById('persistent-wallet');
+  if (!wallet) return;
+  wallet.hidden = !user;
+  document.body.classList.toggle('has-wallet', Boolean(user));
+  const amount = wallet.querySelector('#wallet-amount'), value = user ? justizEuro(user.tokens) : '';
+  // Avoid repeated announcements; keep bid-dialog balances live without replacing input drafts.
+  for (const node of [amount, ...document.querySelectorAll('[data-available-balance]')]) {
+    if (node.textContent !== value) node.textContent = value;
+  }
+  if (!user) { wallet.removeAttribute('title'); wallet.removeAttribute('aria-label'); return; }
+  wallet.querySelector('.wallet-label').textContent = t('Available', 'Verfügbar');
+  wallet.setAttribute('aria-label', t('Available balance', 'Verfügbares Guthaben'));
+  wallet.title = t(`${value} available to spend. Held bids and store registers are separate.`, `${value} zum Ausgeben verfügbar. Hinterlegte Gebote und Ladenkassen sind separat.`);
+  wallet.classList.toggle('is-long', value.length > 17);
+}
 function updateNavigation() {
   renderPersistentProgression(account);
+  renderPersistentWallet(account);
   const labels = { '/': 'Daily', '/shop': t('Case Store', 'Kisten-Shop'), '/palettes': t('Mystery palettes', 'Mystery-Paletten'), '/skills': t('Skill tree', 'Skillbaum'), '/auctions': t('Palette Auctions', 'Paletten-Auktionen'), '/auction-house': t('Auction House', 'Auktionshaus'), '/marketplace': t('Auction House', 'Auktionshaus'), '/market': t('Stock Market', 'Aktienmarkt'), '/businesses': t('Your stores', 'Deine Läden'), '/stores': t('Visit stores', 'Läden besuchen'), '/town': t('Town map', 'Stadtplan'), '/inventory': t('Inventory', 'Inventar'), '/leaderboard': t('Leaderboard', 'Rangliste'), '/profile': t('Profile', 'Profil'), '/admin': 'Admin', '/changelog': 'Changelog' };
   for (const link of document.querySelectorAll('.site-nav a')) {
     if (link.id !== 'header-auth') {
@@ -258,10 +276,10 @@ async function loadNotifications(showFresh = true) {
     // The open inbox already shows fresh entries in the same top-right area;
     // avoid stacking transient notification toasts over the panel.
     if (showFresh && notificationPanel.hidden) for (const entry of result.fresh || []) showNotificationToast(entry);
-    // Sales can settle while any page is open. Refresh the visible XP alongside the inbox.
+    // Sales and refunds can settle on any page. Refresh money and XP together.
     if (showFresh && !document.hidden) {
-      const session = await accountApi('me');
-      if (request === notificationRequest && account?.id === owner && session.user?.id === owner) updateAccount(session.user);
+      const revision = accountRevision, session = await accountApi('me');
+      if (request === notificationRequest && account?.id === owner && revision === accountRevision) updateAccount(session.user);
     }
   } catch { /* Session refresh handles authentication failures elsewhere. */ }
   finally { if (request === notificationRequest) notificationBusy = false; }
@@ -280,6 +298,8 @@ function startNotifications(user) {
   loadNotifications(true);
   notificationTimer = setInterval(() => { if (!document.hidden) loadNotifications(true); }, 30_000);
 }
+window.addEventListener('focus', () => loadNotifications(true));
+document.addEventListener('visibilitychange', () => { if (!document.hidden) loadNotifications(true); });
 function giftToast(gifts) {
   const total = gifts.reduce((sum, gift) => sum + gift.amount, 0);
   return gifts.length === 1
@@ -288,7 +308,7 @@ function giftToast(gifts) {
 }
 function updateAccount(user, progressionOptions) {
   if (account?.id !== user?.id || progressionOptions?.reset) accountCriminalRecord = {records:[],total:0,totalPenalties:0,hasMore:false};
-  account = user;
+  account = user; accountRevision++;
   window.inventoryItemUi?.accountChanged(user);
   window.justiceUi?.sync(user);
   window.netWorthUi?.accountChanged();
@@ -440,7 +460,6 @@ function pageHeading(title, text) {
 function economyOverviewMarkup() {
   if (!account) return '';
   return `<section class="economy-overview" aria-label="${t('Economy overview', 'Wirtschaftsübersicht')}">
-    <div class="economy-overview-primary"><span>${t('AVAILABLE J€', 'VERFÜGBARE J€')}</span><strong>${justizEuro(account.tokens)}</strong></div>
     <div><span>${t('J€ HELD IN BIDS', 'J€ IN GEBOTEN')}</span><strong>${justizEuro(account.heldInBids || 0)}</strong></div>
     <div><span>${t('ESTIMATED STOCK VALUE', 'GESCHÄTZTER WARENWERT')}</span><strong>${justizEuro(account.inventoryMarketValue || 0)}</strong></div><div><span>${t('REALIZED TRADING PROFIT', 'REALISIERTER HANDELSGEWINN')}</span><strong>${justizEuro(account.realizedTradingProfit || 0)}</strong></div>
   </section><p class="data-note">${t('Reward proceeds', 'Belohnungserlöse')}: ${justizEuro(account.rewardProceeds || 0)} · ${t('Sales with unknown cost', 'Verkäufe mit unbekannten Kosten')}: ${number(account.unknownCostSales || 0)}. ${t('Profit covers tracked item sales; store investment and theft fines are separate. Estimates are not cash.', 'Gewinn umfasst erfasste Warenverkäufe; Ladeninvestitionen und Diebstahlbußgelder sind separat. Schätzwerte sind kein Guthaben.')}</p>`;
@@ -787,7 +806,7 @@ function renderShop() {
   accountSelectedStoreCase = box.id;
   const soldOut = box.stock?.remaining === 0;
   accountContent.innerHTML = `<div class="case-boutique">
-    <header class="case-boutique-header">${pageHeading(t('Case Store', 'Kisten-Shop'))}<div class="case-wallet">${account ? `<span>${t('Available', 'Verfügbar')}</span><strong>${justizEuro(account.tokens)}</strong>` : `<a href="/login" data-page>${t('Log in to buy', 'Zum Kaufen anmelden')} →</a>`}</div><a class="secondary-button" href="/inventory" data-page>${t('Inventory', 'Inventar')} ↗</a></header>
+    <header class="case-boutique-header">${pageHeading(t('Case Store', 'Kisten-Shop'))}${!account ? `<a href="/login" data-page>${t('Log in to buy', 'Zum Kaufen anmelden')} →</a>` : ''}<a class="secondary-button" href="/inventory" data-page>${t('Inventory', 'Inventar')} ↗</a></header>
     ${accountStore.luckPercent?`<p class="skill-luck-notice"><strong>+${accountStore.luckPercent}% ${t('luck active','Glücksbonus aktiv')}</strong>${t('Your skill is included in the displayed odds.','Dein Skill ist in den angezeigten Chancen berücksichtigt.')}<a href="/skills" data-page>${t('Skill tree','Skillbaum')} →</a></p>`:''}
     <section class="case-showcase case-design-${accountEscape(box.id)}" aria-label="${t('Selected case', 'Ausgewählte Kiste')}">
       <div class="case-showroom"><span class="case-stage-seal">JG / ${accountEscape(box.badge)}</span><div class="case-orbit" aria-hidden="true"></div><div class="case-showroom-rays" aria-hidden="true"></div>${caseArtwork(box)}<div class="case-pedestal" aria-hidden="true"></div><span class="case-stage-caption">${t('SEALED', 'VERSIEGELT')} · ${t('ONE ITEM', 'EIN GEGENSTAND')}</span></div>
@@ -836,7 +855,7 @@ function renderLegacyShop() {
   const caseName = box => t(box.name, box.nameDe || box.name);
   const result = accountResult?.caseId === box.id ? accountResult : null;
   accountContent.innerHTML = pageHeading(t('Themed cases', 'Themen-Kisten')) +
-    `<div class="shop-balance">${account ? `${justizEuro(account.tokens)} ${t('available', 'verfügbar')}` : `${t('Browse the cases. Log in to earn J€ and open one.', 'Entdecke die Kisten. Melde dich an, um J€ zu verdienen und eine zu öffnen.')} <a href="/login" data-page>${t('Log in', 'Anmelden')} →</a>`}</div>
+    `${!account ? `<div class="shop-balance">${t('Browse the cases. Log in to earn J€ and open one.', 'Entdecke die Kisten. Melde dich an, um J€ zu verdienen und eine zu öffnen.')} <a href="/login" data-page>${t('Log in', 'Anmelden')} →</a></div>` : ''}
     <p class="shop-edition"><span>${t('DAILY EDITION', 'TAGESAUSGABE')} · ${accountCatalog.rotationDate}</span>${infoTip(t('New finds at 00:00 UTC. Contents stay fixed; prices follow the market.', 'Neue Fundstücke um 00:00 UTC. Die Inhalte bleiben gleich; Preise folgen dem Markt.'), t('Edition timing', 'Ausgabenwechsel'))}</p>
     <p class="case-store-stock" data-case-stock="${accountEscape(box.id)}">${accountEscape(caseStockLabel(box))}</p>
     <div class="case-options">${accountCatalog.cases.map(option => `<button class="case-option case-theme-${option.category} ${box.id === option.id ? 'is-selected' : ''} ${option.available ? '' : 'is-restocking'}" data-account="select-case" data-id="${option.id}" aria-pressed="${box.id === option.id}"><span class="case-art" aria-hidden="true"><b>${option.badge}</b></span><span><strong>${caseName(option)}</strong><small>${option.available ? justizEuro(option.cost) : t('Restocking', 'Wird aufgefüllt')}</small></span></button>`).join('')}</div>

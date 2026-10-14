@@ -112,14 +112,12 @@ test('inventory shows one estimate, acquisition cost and historical source detai
  assert.match(html,/Estimated market value · J€ 125/);assert.match(html,/Acquisition cost/);assert.match(html,/J€ 80/);assert.match(html,/Historical real-auction value/);assert.match(html,/market\?category=electronics/);
 });
 
-test('economy overview prominently shows J€, active bids and inventory value', () => {
+test('economy overview keeps trading stats without duplicating the persistent wallet', () => {
   const context = uiContext({ account: { tokens: 1319, heldInBids: 300, inventoryMarketValue: 2840 },
     t: en => en, number: String, justizEuro: value => `J€ ${value}` });
   vm.runInContext(extract(accountSource, 'function economyOverviewMarkup(', 'function loginNotice('), context);
   const markup = vm.runInContext('economyOverviewMarkup()', context);
-  assert.match(markup, /economy-overview-primary/);
-  assert.match(markup, /AVAILABLE J€/);
-  assert.match(markup, /J€ 1319/);
+  assert.doesNotMatch(markup, /economy-overview-primary|AVAILABLE J€|J€ 1319/);
   assert.match(markup, /J€ HELD IN BIDS[\s\S]*J€ 300/);
   assert.match(markup, /ESTIMATED STOCK VALUE[\s\S]*J€ 2840/);
   assert.match(accountSource, /renderInventory\(\)[\s\S]*economyOverviewMarkup\(\)/);
@@ -242,7 +240,7 @@ test('marketplace tabs show one context at a time with ended history inside its 
   assert.deepEqual(cards(), ['rival']);
   assert.match(html, /Browse auctions/);
   assert.match(html, /Sell an item/);
-  assert.match(html, /Available <strong>J€ 500<\/strong>/);
+  assert.doesNotMatch(html, /Available <strong>J€ 500<\/strong>/);
   assert.match(html, /1 active bid\b/);
   assert.match(html, /<strong>1<\/strong> active listing/);
   assert.doesNotMatch(html, /data-view="mine-live"|data-view="mine-done"|data-view="bid"|archive-toggle/);
