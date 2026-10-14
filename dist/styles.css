@@ -1838,7 +1838,7 @@ button.store-review-like:hover, .store-review-like.is-liked { color: var(--ink);
 }
 
 /* One available balance in the persistent app chrome. */
-.persistent-wallet { display:flex;flex:none;align-items:center;gap:11px;min-width:0;padding:12px;border:1px solid #cbb477;border-radius:10px;background:linear-gradient(110deg,#fff8df,#f0e8c9);color:var(--ink);box-shadow:0 3px 0 #183e360b; }
+.persistent-wallet { display:flex;flex:none;align-self:stretch;width:100%;align-items:center;gap:11px;min-width:0;padding:12px;border:1px solid #cbb477;border-radius:10px;background:linear-gradient(110deg,#fff8df,#f0e8c9);color:var(--ink);box-shadow:0 3px 0 #183e360b; }
 .wallet-coin { display:grid;place-items:center;flex:none;width:29px;height:29px;border:2px solid #b88933;border-radius:50%;background:#f6d67c;box-shadow:inset 0 0 0 2px #fff0b2;color:#73501c;font:700 18px 'DM Mono',monospace; }
 .wallet-copy { min-width:0; }
 .wallet-label { display:block;color:#59634a;font-size:.65rem;font-weight:700;line-height:1.2; }
