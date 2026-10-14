@@ -358,7 +358,7 @@ window.businessUi = (() => {
   function render() {
     if (currentAccountPage === '/stores') { window.storeUi.render(); return; }
     if (currentAccountPage !== '/businesses') return;
-    accountContent.innerHTML = economyOverviewMarkup() + traderMilestonesMarkup() + shopsView();
+    accountContent.innerHTML = economyOverviewMarkup() + shopsView();
     if (editorDialog.open) syncEditor();
     window.storeUi.showEvents();
   }
