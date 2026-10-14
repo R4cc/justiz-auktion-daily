@@ -80,7 +80,7 @@ test('Daily deadlines survive resume/restart and late guesses score zero with st
   }
   assert.equal(run.complete, true);
   assert.equal(reopened.profile(f.alice).daily.score, 1000);
-  assert.ok(run.earned < 350);
+  assert.equal(run.earned, 1000);
 });
 
 test('concurrent temporary logins consume the password once and a password change revokes old sessions', async t => {

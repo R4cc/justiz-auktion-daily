@@ -3,6 +3,17 @@ window.changelogUi = (() => {
   const entries = [
     {
       date: '2026-10-14',
+      title: 'Balance Patch',
+      changes: [
+        { en: 'Store visitors increased by 25% across all store sizes.', de: '25% mehr Ladenbesucher bei allen Ladengrößen.' },
+        { en: 'Reviews affect popularity and visitor traffic 25% more strongly.', de: 'Bewertungen beeinflussen Beliebtheit und Besucherzahlen um 25% stärker.' },
+        { en: 'Theft fines reduced by 50%, with a minimum of 1.5× the item’s value.', de: 'Diebstahlbußgelder um 50% gesenkt, mindestens jedoch das 1,5-Fache des Warenwerts.' },
+        { en: 'NPCs consider bids on normal-item auctions 20% more frequently.', de: 'NPCs bieten bei Auktionen gewöhnlicher Gegenstände 20% häufiger.' },
+        { en: 'Daily completion pays J€1,000 at every score. Case rarity still depends on score.', de: 'Jedes abgeschlossene Daily zahlt J€1.000, unabhängig von der Punktzahl. Die Kistenseltenheit hängt weiterhin von der Punktzahl ab.' }
+      ]
+    },
+    {
+      date: '2026-10-14',
       en: 'Added a Changelog page in the sidebar with dated updates.',
       de: 'Changelog mit datierten Änderungen zur Seitenleiste hinzugefügt.'
     }
@@ -16,7 +27,9 @@ window.changelogUi = (() => {
       <header class="changelog-heading"><h1 tabindex="-1">Changelog</h1><span class="changelog-seal" aria-hidden="true">✦</span></header>
       <ol class="changelog-list">${entries.map(entry => `<li class="changelog-entry">
         <time datetime="${accountEscape(entry.date)}">${accountEscape(dates.format(new Date(`${entry.date}T00:00:00Z`)))}</time>
-        <p>${accountEscape(t(entry.en, entry.de))}</p>
+        <div class="changelog-copy">${entry.title ? `<h2>${accountEscape(entry.title)}</h2>` : ''}${entry.changes
+          ? `<ul>${entry.changes.map(change => `<li>${accountEscape(t(change.en, change.de))}</li>`).join('')}</ul>`
+          : `<p>${accountEscape(t(entry.en, entry.de))}</p>`}</div>
       </li>`).join('')}</ol>
     </div>`;
   }

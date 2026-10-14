@@ -163,13 +163,13 @@ test('street traffic changes actual hourly visitors and applies only after migra
       visitors[street] = db.prepare('SELECT visitors FROM businesses').get().visitors;
     });
   }
-  assert.equal(visitors.side, 1000);
+  assert.ok(visitors.side >= 1200 && visitors.side <= 1300);
   assert.ok(visitors.main > visitors.side * 1.4); assert.ok(visitors.residential < visitors.side * .75);
   const f = await fixture(t), shop = buyBusiness(f.dir, f.owner, 'wine', null, { now, plotId: 'leopoldstadt-3' }).shop;
   f.accounts.db(db => {
     db.prepare('UPDATE businesses SET traffic_popularity=1,plot_since=? WHERE id=?').run(now + 2 * hour, shop.id);
     advanceShop(db, db.prepare('SELECT * FROM businesses').get(), now + hour);
-    assert.equal(db.prepare('SELECT visitors FROM businesses').get().visitors, 5);
+    assert.ok([6, 7].includes(db.prepare('SELECT visitors FROM businesses').get().visitors));
   });
 });
 
@@ -183,16 +183,16 @@ test('district theft odds appear in quotes, reject stale odds and freeze into pa
   }
   f.accounts.db(db => db.prepare('UPDATE businesses SET mischief_enabled=1').run());
   const stock = shop => visitStore(f.dir, f.buyer, shop.id, { now }).store.stock[0];
-  assert.equal(stock(shops[0]).theft.fine, 400); assert.equal(stock(shops[1]).theft.fine, 616);
+  assert.equal(stock(shops[0]).theft.fine, 200); assert.equal(stock(shops[1]).theft.fine, 308);
   const payload = { shopId:shops[0].id, inventoryId:'wine-0', expectedPrice:120, expectedFine:100, requestId:'town-heist-attempt-001' };
   const before = f.balance(f.buyer);
   assert.throws(() => startStoreHeist(f.dir, f.buyer, payload, { now }), /store_risk_changed/);
   assert.equal(f.balance(f.buyer), before);
-  const attempt = startStoreHeist(f.dir, f.buyer, { ...payload, expectedFine:400 }, { now, draw:max => max-1 });
+  const attempt = startStoreHeist(f.dir, f.buyer, { ...payload, expectedFine:200 }, { now, draw:max => max-1 });
   assert.equal(f.balance(f.buyer), before);
   customizeStore(f.dir, f.owner, {shopId:shops[0].id,name:'Goose',motto:'',gooseGuard:true,requestId:'town-goose-profile-001'}, { now });
-  assert.equal(stock(shops[0]).theft.fine, 800);
-  assert.equal(f.accounts.db(db => db.prepare('SELECT fee FROM store_heists WHERE id=?').get(attempt.id).fee), 400);
+  assert.equal(stock(shops[0]).theft.fine, 400);
+  assert.equal(f.accounts.db(db => db.prepare('SELECT fee FROM store_heists WHERE id=?').get(attempt.id).fee), 200);
 });
 
 test('public town HTTP routes respect feature flags and sessions; simultaneous claims cannot charge the losing request', async t => {

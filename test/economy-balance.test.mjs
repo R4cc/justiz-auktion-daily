@@ -41,19 +41,19 @@ const complete = (f, mode, length, correct = true) => {
 test('Higher or Lower pays only improvements; a failed attempt never blocks Daily', async t => {
   const f = await fixture(t);
   assert.equal(complete(f, 'higher-lower', 5, false).earned, 0);
-  assert.equal(complete(f, 'daily', 5).earned, 350);
+  assert.equal(complete(f, 'daily', 5).earned, 1000);
   const first = complete(f, 'higher-lower', 5); // 3 correct, then miss
   assert.equal(first.earned, 75);
   assert.equal(complete(f, 'higher-lower', 5).earned, 0);
   assert.equal(complete(f, 'higher-lower', 7).earned, 50); // best rises to 125
   assert.equal(complete(f, 'higher-lower', 16).earned, 125); // cap 250
   assert.equal(complete(f, 'higher-lower', 16).earned, 0);
-  assert.equal(f.balance('seller'), 100600);
+  assert.equal(f.balance('seller'), 101250);
   assert.equal(f.accounts.profile(f.user('seller')).rewardsByMode['higher-lower'].earned, 250);
   closeDataStore(f.dir);
   const reopened = new Accounts(f.dir, { now: () => now });
   assert.equal(playAnswer(reopened, f.user('seller'), first.id, 3, 'lower').earned, 75);
-  assert.equal(f.balance('seller'), 100600);
+  assert.equal(f.balance('seller'), 101250);
 });
 
 test('legacy reward receipts migrate once and keep paid currency and frozen run rates', async t => {
@@ -71,11 +71,52 @@ test('legacy reward receipts migrate once and keep paid currency and frozen run 
   new Accounts(f.dir, { now: () => now });
   assert.equal(f.balance('seller'), 100160);
   assert.equal(complete(f, 'higher-lower', 7).earned, 0); // smaller than already paid legacy amount
-  assert.equal(complete(f, 'daily', 5).earned, 350);
+  assert.equal(complete(f, 'daily', 5).earned, 1000);
   closeDataStore(f.dir);
   new Accounts(f.dir, { now: () => now });
-  assert.equal(f.balance('seller'), 100510);
+  assert.equal(f.balance('seller'), 101160);
   assert.equal(f.accounts.db(db => db.prepare('SELECT COUNT(*) AS n FROM daily_rewards').get().n), 2);
+});
+
+test('Daily pays exactly 1000 at zero, mixed and perfect scores, including saved pre-patch runs', async t => {
+  for (const score of [0, 3000, 5000]) {
+    const f = await fixture(t), user = f.user('seller');
+    const answers = deck.slice(0, 5).map((lot, n) => score === 5000 || score === 3000 && n % 2 === 0 ? lot.actualBid : null);
+    let run = f.accounts.startGame(user, 'daily', () => deck.slice(0, 5));
+    run = playAnswer(f.accounts, user, run.id, 0, answers[0]);
+    // Simulate a game started before deployment, with its old reward snapshot.
+    f.accounts.db(db => {
+      const saved = JSON.parse(db.prepare('SELECT payload FROM account_games WHERE id=?').get(run.id).payload);
+      saved.rewards = { ...saved.rewards, daily: 200, dailyScoreBonus: 150 };
+      db.prepare('UPDATE account_games SET payload=? WHERE id=?').run(JSON.stringify(saved), run.id);
+    });
+    closeDataStore(f.dir);
+    const resumed = f.accounts.startGame(user, 'daily', () => { throw new Error('must not reroll'); });
+    assert.equal(resumed.rewards.daily, 1000);
+    assert.equal(resumed.rewards.dailyScoreBonus, 0);
+    for (let n = 1; n < 5; n++) run = playAnswer(f.accounts, user, run.id, n, answers[n]);
+    assert.equal(run.earned, 1000);
+    assert.equal(f.balance('seller'), 101000);
+    assert.equal(f.accounts.db(db => db.prepare('SELECT score FROM daily_case_rewards WHERE run_id=?').get(run.id).score), score);
+    assert.equal(f.accounts.db(db => db.prepare('SELECT COUNT(*) AS count FROM daily_case_rewards WHERE run_id=?').get(run.id).count), 1);
+    closeDataStore(f.dir);
+    assert.equal(playAnswer(f.accounts, user, run.id, 4, answers[4]).earned, 1000);
+    assert.equal(f.balance('seller'), 101000);
+  }
+});
+
+test('already paid Daily receipts keep their original payout on retries', async t => {
+  const f = await fixture(t), run = complete(f, 'daily', 5);
+  f.accounts.db(db => {
+    const saved = JSON.parse(db.prepare('SELECT payload FROM account_games WHERE id=?').get(run.id).payload);
+    saved.earned = 350; saved.rewards = { ...saved.rewards, daily: 200, dailyScoreBonus: 150 };
+    db.prepare('UPDATE account_games SET payload=? WHERE id=?').run(JSON.stringify(saved), run.id);
+    db.prepare('UPDATE daily_rewards SET earned=350 WHERE run_id=?').run(run.id);
+    db.prepare("UPDATE users SET tokens=100350 WHERE id='seller'").run();
+  });
+  closeDataStore(f.dir);
+  assert.equal(playAnswer(f.accounts, f.user('seller'), run.id, 4, deck[4].actualBid).earned, 350);
+  assert.equal(f.balance('seller'), 100350);
 });
 
 test('case quotes remove hot-market arbitrage and reject stale offers without a debit', async t => {

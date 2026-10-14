@@ -1,8 +1,8 @@
 // Shared economic targets. Values are game currency, never real-money prices.
 export const ECONOMY_BALANCE = Object.freeze({
   startingTokens: 1000,
-  daily: 200,
-  dailyScoreBonus: 150,
+  daily: 1000,
+  dailyScoreBonus: 0,
   dailyCaseMaxItemValue: 1000,
   higherLowerPerCorrect: 25,
   higherLowerMax: 250,
@@ -13,12 +13,16 @@ export const ECONOMY_BALANCE = Object.freeze({
   wholesaleReserveRate: .85,
   // Fair blackjack is balanced through the loss fine, never deck manipulation.
   theftFineMultiplier: 4,
+  theftFineScale: .5,
+  theftFineMinimumMultiplier: 1.5,
   theftPoliceCatchPercent: 20,
   businessDefaultMargin: 20,
   reviewPricePerReview: 60,
   purchasedReviewWeight: .25,
   purchasedReviewWeightCap: 10,
-  reviewTrafficMaxBonus: .10,
+  reviewTrafficMaxBonus: .125,
+  businessVisitorMultiplier: 1.25,
+  npcResaleActivityMultiplier: 1.2,
   businessMarginElasticity: 3,
   npcResaleMinimum: .60,
   npcResaleMaximum: .96,

@@ -125,7 +125,8 @@ function moveItem(db, shop, player, inventoryId) {
 }
 export function theftQuote(referencePrice, gooseGuard, locationMultiplier = 1, securityPercent = 0) {
   const baseFine = Math.max(20, Math.ceil(referencePrice * ECONOMY_BALANCE.theftFineMultiplier * (gooseGuard ? 2 : 1) * Math.max(1, 1 / locationMultiplier)));
-  const fine=Math.ceil(baseFine*(100+securityPercent)/100);
+  const fine = Math.max(Math.ceil(referencePrice * ECONOMY_BALANCE.theftFineMinimumMultiplier),
+    Math.ceil(Math.ceil(baseFine * (100 + securityPercent) / 100) * ECONOMY_BALANCE.theftFineScale));
   return { fine, policeCatchPercent: POLICE_CATCH_PERCENT, rules: 'single-deck-s17' };
 }
 function publicCard(db, shop, viewer, now) {

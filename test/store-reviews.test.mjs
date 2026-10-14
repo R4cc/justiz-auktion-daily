@@ -24,6 +24,21 @@ async function fixture(t, margin=20) {
   t.after(async()=>{closeDataStore(dir);await rm(dir,{recursive:true,force:true});});
   return {dir,accounts,owner,buyer,other,shop,buy,review,view,like};
 }
+test('positive and negative reviews affect public popularity and traffic 25% more strongly', async t => {
+  const f = await fixture(t);
+  f.accounts.db(db => db.prepare('UPDATE businesses SET traffic_popularity=1 WHERE id=?').run(f.shop.id));
+  f.buy(f.buyer);
+  for (const stars of [1, 3, 5]) {
+    f.review(f.buyer, stars);
+    const expected = 1 + (stars - 3) / 21 * .0625;
+    const view = f.view();
+    assert.ok(Math.abs(view.popularity - expected) < 1e-12);
+    const dashboard = businessDashboard(f.dir, f.owner, { now }).shops[0];
+    assert.equal(dashboard.popularity, view.popularity);
+    assert.equal(view.reviewTrafficBonusPercent, Math.round((expected - 1) * 1000) / 10);
+  }
+});
+
 test('Influence support grows on existing reviews; player likes are unique, removable and self-like protected',async t=>{
  const f=await fixture(t);f.buy(f.buyer);f.review(f.buyer,4,'Fair price');
  assert.equal(f.view().reviews[0].likes,0);f.like(f.other);f.like(f.other);

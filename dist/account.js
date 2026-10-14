@@ -584,11 +584,11 @@ function renderLeaderboard() {
 }
 function rewardNote() {
   if (!account) return t('Log in before playing to earn J€.', 'Melde dich vor dem Spielen an, um J€ zu verdienen.');
-  const rewards = accountCatalog?.rewards || { daily: 200, dailyScoreBonus: 150, higherLowerMax: 250 };
+  const rewards = accountCatalog?.rewards || { daily: 1000, dailyScoreBonus: 0, higherLowerMax: 250 };
   const daily = account.rewardsByMode?.daily?.earned || 0;
   const higherLower = account.rewardsByMode?.['higher-lower']?.earned || 0;
-  return t(`Daily pays ${justizEuro(rewards.daily)}–${justizEuro(rewards.daily + (rewards.dailyScoreBonus || 0))} plus one case. Higher or Lower pays up to ${justizEuro(rewards.higherLowerMax)} separately; better streaks pay the difference. Earned today: ${justizEuro(daily + higherLower)}. Resets at 00:00 UTC.`,
-    `Das Daily zahlt ${justizEuro(rewards.daily)}–${justizEuro(rewards.daily + (rewards.dailyScoreBonus || 0))} und eine Kiste. Higher or Lower zahlt separat bis zu ${justizEuro(rewards.higherLowerMax)}; bessere Serien zahlen die Differenz. Heute verdient: ${justizEuro(daily + higherLower)}. Reset um 00:00 UTC.`);
+  return t(`Daily pays ${justizEuro(rewards.daily)} plus one case. Higher or Lower pays up to ${justizEuro(rewards.higherLowerMax)} separately; better streaks pay the difference. Earned today: ${justizEuro(daily + higherLower)}. Resets at 00:00 UTC.`,
+    `Das Daily zahlt ${justizEuro(rewards.daily)} und eine Kiste. Higher or Lower zahlt separat bis zu ${justizEuro(rewards.higherLowerMax)}; bessere Serien zahlen die Differenz. Heute verdient: ${justizEuro(daily + higherLower)}. Reset um 00:00 UTC.`);
 }
 function rewardBanner() { return `<p class="reward-note">${accountEscape(rewardNote())}</p>`; }
 function criminalRecordMarkup() {

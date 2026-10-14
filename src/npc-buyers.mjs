@@ -64,6 +64,15 @@ export function npcBidAmount(interest, npc, now, unit = deterministicUnit) {
   return Math.min(interest.max_bid, minimum + jump);
 }
 
+// More frequent consideration of ordinary resale lots, including existing ones.
+// Sealed palette slots and buyer price ceilings retain their own rules.
+export function npcResaleBidDelay(npc, endsAt = Infinity, now = 0) {
+  const baseline = endsAt - now <= 120_000
+    ? Math.round(10_000 + npc.patience * 20_000 + (1 - npc.aggressiveness) * 10_000)
+    : npc.delaySeconds * 1000;
+  return Math.round(baseline / ECONOMY_BALANCE.npcResaleActivityMultiplier);
+}
+
 export function tickNpcBuyers(dataDir, { now = Date.now(), unit = deterministicUnit } = {}) {
   seedNpcBuyers(dataDir, { now });
   withDatabase(dataDir, db => transaction(db, () => {
@@ -83,7 +92,7 @@ export function tickNpcBuyers(dataDir, { now = Date.now(), unit = deterministicU
       for (const npc of npcCohort(audience)) {
         const value = npcValuation(item, indexes, npc, audience, unit, Math.max(1, row.quantity));
         const bulkDiscount = Math.max(.75, 1 - Math.log2(Math.max(1, row.quantity)) * .04);
-        insert.run(row.id, npc.id, Math.max(1, Math.floor(value.maxBid * bulkDiscount)), now + npc.delaySeconds * 1000, now, Number(value.interested));
+        insert.run(row.id, npc.id, Math.max(1, Math.floor(value.maxBid * bulkDiscount)), now + npcResaleBidDelay(npc), now, Number(value.interested));
       }
     }
     db.prepare(`UPDATE resale_npc_interest SET active = 0 WHERE active = 1 AND auction_id IN
@@ -119,8 +128,7 @@ export function tickNpcBuyers(dataDir, { now = Date.now(), unit = deterministicU
       * demandCache.get(interest.auction_id)));
     interest.max_bid = liveCeiling;
     const minimum = interest.current_bid === null ? interest.start_price : interest.current_bid + resaleBidIncrement(interest.start_price);
-    const lastMinuteDelay = Math.round(10_000 + npc.patience * 20_000 + (1 - npc.aggressiveness) * 10_000);
-    const delay = interest.ends_at - now <= 120_000 ? lastMinuteDelay : npc.delaySeconds * 1000;
+    const delay = npcResaleBidDelay(npc, interest.ends_at, now);
     if (minimum > interest.max_bid) {
       // Demand may recover as purchases age or rival bids settle; do not permanently
       // disable an otherwise interested buyer merely because demand is low now.

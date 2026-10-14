@@ -6,7 +6,7 @@ import path from 'node:path';
 import { Accounts } from '../src/accounts.mjs';
 import { withDatabase, closeDataStore } from '../src/database.mjs';
 import { npcItemKey, npcAudienceKey, npcDemand, NPC_DEMAND_WINDOW_MS } from '../src/npc-demand.mjs';
-import { npcCohort, npcValuation, seedNpcBuyers, tickNpcBuyers, NPC_BUYERS } from '../src/npc-buyers.mjs';
+import { npcCohort, npcValuation, npcResaleBidDelay, seedNpcBuyers, tickNpcBuyers, NPC_BUYERS, PALETTE_SHOWUP_MS } from '../src/npc-buyers.mjs';
 import { listItem, placeBid, settleAuction, cancelListing } from '../src/resale.mjs';
 import { setMarketIndex } from '../src/market.mjs';
 
@@ -25,6 +25,32 @@ async function fixture(t) {
   };
   return {dir,read,write,add,demand:(item,time=now,exclude='')=>withDatabase(dir,db=>npcDemand(db,item,time,exclude))};
 }
+
+test('normal-item buyers consider bids 20% more often on new and existing interest', async t => {
+  const f = await fixture(t), lot = f.add('activity-item', { price: 1000, marketCategory: 'electronics' }, now, 1);
+  tickNpcBuyers(f.dir, { now, unit });
+  let interests = f.read('SELECT * FROM resale_npc_interest WHERE auction_id=?', lot.id);
+  assert.ok(interests.length > 0);
+  for (const row of interests) {
+    const npc = NPC_BUYERS.find(entry => entry.id === row.npc_id);
+    assert.equal(row.next_bid_at - now, Math.round(npc.delaySeconds * 1000 / 1.2));
+  }
+  // Existing buyers whose old timer is due adopt the new repeat cadence.
+  f.write('UPDATE resale_npc_interest SET next_bid_at=? WHERE auction_id=?', now, lot.id);
+  tickNpcBuyers(f.dir, { now, unit });
+  interests = f.read('SELECT * FROM resale_npc_interest WHERE auction_id=?', lot.id);
+  assert.ok(interests.some(row => row.last_bid_at === now));
+  for (const row of interests.filter(entry => entry.next_bid_at > now)) {
+    const npc = NPC_BUYERS.find(entry => entry.id === row.npc_id);
+    assert.equal(row.next_bid_at - now, Math.round(npc.delaySeconds * 1000 / 1.2));
+  }
+  for (const npc of NPC_BUYERS) {
+    const before = Math.round(10000 + npc.patience * 20000 + (1 - npc.aggressiveness) * 10000);
+    assert.equal(npcResaleBidDelay(npc), Math.round(npc.delaySeconds * 1000 / 1.2));
+    assert.equal(npcResaleBidDelay(npc, now + 120000, now), Math.round(before / 1.2));
+  }
+  assert.equal(PALETTE_SHOWUP_MS, 300000);
+});
 
 test('audience identity ignores owners, price of acquisition, batch size and listing UUID; refreshes every six hours',()=>{
   const item={auctionId:12,title:'Laptop',price:1000,marketCategory:'electronics'};

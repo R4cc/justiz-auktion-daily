@@ -27,13 +27,29 @@ async function fixture(t) {
   accounts.db(db=>db.prepare('UPDATE businesses SET mischief_enabled=1 WHERE id=?').run(shop.id));
   t.after(async () => { closeDataStore(dir); await rm(dir, { recursive: true, force: true }); });
   let next = 0;
-  const payload = (inventoryId = 'wine-0') => ({ shopId: shop.id, inventoryId, expectedPrice: 120, expectedFine:400, requestId: `store-request-${++next}-0001` });
+  const payload = (inventoryId = 'wine-0') => ({ shopId: shop.id, inventoryId, expectedPrice: 120, expectedFine:200, requestId: `store-request-${++next}-0001` });
   const balance = user => accounts.db(db => db.prepare('SELECT tokens FROM users WHERE id = ?').get(user.id).tokens);
   const itemOwner = id => accounts.db(db => db.prepare('SELECT user_id FROM inventory WHERE id = ?').get(id).user_id);
   const view = (user = buyer, at = now) => visitStore(dir, user, shop.id, { now: at }).store;
   return { dir, accounts, owner, buyer, rival, shop, payload, balance, itemOwner, view };
 }
 const success = max => max-1;
+
+test('theft fines halve across values, guards, districts and security with a 1.5x value floor', () => {
+  for (const value of [1, 5, 10, 99, 100, 1000, 1000000]) for (const guard of [false, true])
+    for (const district of [.65, 1, 1.8]) for (const security of [0, 10, 20, 30]) {
+      const oldBase = Math.max(20, Math.ceil(value * 4 * (guard ? 2 : 1) * Math.max(1, 1 / district)));
+      const oldFine = Math.ceil(oldBase * (100 + security) / 100);
+      const quote = theftQuote(value, guard, district, security);
+      assert.ok(Math.abs(quote.fine - oldFine / 2) <= 1);
+      assert.ok(quote.fine >= Math.ceil(value * 1.5));
+      assert.equal(quote.policeCatchPercent, 20);
+    }
+  assert.equal(theftQuote(100, false).fine, 200);
+  assert.equal(theftQuote(1, false).fine, 10);
+  // The floor is enforced even if a future security discount reduces the quote.
+  assert.equal(theftQuote(100, false, 1, -50).fine, 150);
+});
 
 test('public store directory filters, paginates and masks guests; visits and reactions count once per day', async t => {
   const f = await fixture(t);
@@ -181,21 +197,21 @@ test('hit and stand are authoritative, stale turns cannot consume cards, pushes 
   const lost=actStoreHeist(f.dir,f.buyer,{heistId:id,action:'stand',turn:1,won:true,dealer:[26],requestId:'stand-final-hand-00001'},{now,policeDraw:()=>0});
   assert.equal(lost.outcome,'police');
   const result=spinStoreHeist(f.dir,f.buyer,{heistId:id,requestId:'stand-final-spin-00001'},{now});
-  assert.equal(result.outcome,'caught');assert.equal(result.consequence.paidCash,400);assert.equal(f.balance(f.buyer),99600);
+  assert.equal(result.outcome,'caught');assert.equal(result.consequence.paidCash,200);assert.equal(f.balance(f.buyer),99800);
   const g=await fixture(t),tie=startStoreHeist(g.dir,g.buyer,g.payload(),{now,draw:success}).id;setHand(g,tie,{player:[9,7],dealer:[22,20]});
   assert.equal(action(g,tie).outcome,'push');assert.equal(g.balance(g.buyer),100000);assert.equal(g.itemOwner('wine-0'),g.owner.id);
 });
 test('no-money losses seize available inventory, cancel unbid listings, remove shelved stock and return excess value',async t=>{
   const f=await fixture(t);f.accounts.db(db=>{
     db.prepare('UPDATE users SET tokens=0 WHERE id=?').run(f.buyer.id);
-    for(const [id,price] of [['small',50],['listed',100],['shelved',100],['large',500]])db.prepare('INSERT INTO inventory VALUES (?,?,?,?,NULL)').run(id,f.buyer.id,JSON.stringify({title:id,price,marketCategory:'wine'}),now);
+    for(const [id,price] of [['small',25],['listed',50],['shelved',50],['large',250]])db.prepare('INSERT INTO inventory VALUES (?,?,?,?,NULL)').run(id,f.buyer.id,JSON.stringify({title:id,price,marketCategory:'wine'}),now);
   });
   // A store can hold debtor-owned inventory; property itself is not inventory.
   f.accounts.db(db=>db.prepare('UPDATE users SET tokens=100000 WHERE id=?').run(f.buyer.id));
   const own=buyBusiness(f.dir,f.buyer,'wine','popup',{now}).shop;f.accounts.db(db=>db.prepare('UPDATE users SET tokens=0 WHERE id=?').run(f.buyer.id));stockBusiness(f.dir,f.buyer,own.id,['shelved'],{now});
   const {listItem}=await import('../src/resale.mjs');const listed=listItem(f.dir,f.buyer,{inventoryId:'listed',startPrice:100,endsAt:new Date(now+3600000).toISOString()},{now});
   const id=startStoreHeist(f.dir,f.buyer,f.payload(),{now,draw:success}).id;setHand(f,id,{player:[2,3],dealer:[9,8]});
-  const result=action(f,id);assert.equal(result.outcome,'caught');assert.equal(result.consequence.seized.length,4);assert.equal(result.consequence.remainingFine,0);assert.equal(f.balance(f.buyer),350);
+  const result=action(f,id);assert.equal(result.outcome,'caught');assert.equal(result.consequence.seized.length,4);assert.equal(result.consequence.remainingFine,0);assert.equal(f.balance(f.buyer),175);
   assert.equal(f.accounts.db(db=>db.prepare('SELECT status FROM resale_auctions WHERE id=?').get(listed.id).status),'cancelled');
   assert.equal(businessDashboard(f.dir,f.buyer,{now}).shops[0].stock.length,0);assert.equal(result.consequence.jailedUntil,0);
 });
@@ -204,17 +220,17 @@ test('unpaid fines protect live bidder escrow; debt blocks new theft and collect
   const {listItem,placeBid}=await import('../src/resale.mjs');const listed=listItem(f.dir,f.buyer,{inventoryId:'pledged',startPrice:100,endsAt:new Date(now+3600000).toISOString()},{now});placeBid(f.dir,f.rival,listed.id,200,{now});
   f.accounts.db(db=>db.prepare('UPDATE users SET tokens=0 WHERE id=?').run(f.buyer.id));
   const id=startStoreHeist(f.dir,f.buyer,f.payload(),{now,draw:success}).id;setHand(f,id,{player:[2,3],dealer:[9,8]});const result=action(f,id);
-  assert.equal(result.consequence.remainingFine,400);assert.equal(f.accounts.profile(f.buyer).justice.fineDue,400);assert.equal(f.accounts.profile(f.buyer).justice.jailed,false);
-  const {netWorthHistory}=await import('../src/net-worth.mjs');const worth=netWorthHistory(f.dir,f.buyer,{now});assert.equal(worth.current.fineDebt,400);assert.equal(worth.current.total,-300);assert.equal(worth.points.at(-1).total,-300);
+  assert.equal(result.consequence.remainingFine,200);assert.equal(f.accounts.profile(f.buyer).justice.fineDue,200);assert.equal(f.accounts.profile(f.buyer).justice.jailed,false);
+  const {netWorthHistory}=await import('../src/net-worth.mjs');const worth=netWorthHistory(f.dir,f.buyer,{now});assert.equal(worth.current.fineDebt,200);assert.equal(worth.current.total,-100);assert.equal(worth.points.at(-1).total,-100);
   assert.equal(f.itemOwner('pledged'),f.buyer.id);assert.equal(f.accounts.db(db=>db.prepare('SELECT max_bid FROM resale_auctions WHERE id=?').get(listed.id).max_bid),200);
   assert.throws(()=>startStoreHeist(f.dir,f.buyer,f.payload('wine-1'),{now:now+HEIST_COOLDOWN}),/unpaid_fine/);
-  f.accounts.db(db=>db.prepare('UPDATE users SET tokens=450 WHERE id=?').run(f.buyer.id));const user=f.accounts.profile(f.buyer);assert.equal(user.tokens,50);assert.equal(user.justice.fineDue,0);assert.equal(f.accounts.profile(f.buyer).tokens,50);
+  f.accounts.db(db=>db.prepare('UPDATE users SET tokens=250 WHERE id=?').run(f.buyer.id));const user=f.accounts.profile(f.buyer);assert.equal(user.tokens,50);assert.equal(user.justice.fineDue,0);assert.equal(f.accounts.profile(f.buyer).tokens,50);
 });
 test('abandoned hands are caught offline; insolvency causes persisted, escalating jail without permanent debt loops',async t=>{
   const f=await fixture(t);f.accounts.db(db=>db.prepare('UPDATE users SET tokens=0 WHERE id=?').run(f.buyer.id));
   startStoreHeist(f.dir,f.buyer,f.payload(),{now,draw:success});const end=now+HEIST_DURATION+POLICE_WHEEL_DURATION;
   tickStoreJustice(f.dir,{now:end,policeDraw:()=>0});closeDataStore(f.dir);const status=f.accounts.profile(f.buyer).justice;
-  assert.equal(status.offences,1);assert.equal(status.fineDue,0);assert.equal(status.jailedUntil,end+5*60000);assert.equal(status.lastConsequence.convertedToSentence,400);
+  assert.equal(status.offences,1);assert.equal(status.fineDue,0);assert.equal(status.jailedUntil,end+5*60000);assert.equal(status.lastConsequence.convertedToSentence,200);
   assert.throws(()=>visitStore(f.dir,f.buyer,f.shop.id,{now:end+1}),/player_jailed/);
   tickStoreJustice(f.dir,{now:end+1});assert.equal(f.accounts.profile(f.buyer).justice.offences,1);
   const next=now+HEIST_COOLDOWN+1;startStoreHeist(f.dir,f.buyer,f.payload('wine-1'),{now:next,draw:success});tickStoreJustice(f.dir,{now:next+HEIST_DURATION+POLICE_WHEEL_DURATION,policeDraw:()=>0});
@@ -270,16 +286,29 @@ test('winning transfer and fine collection failures roll back all consequences a
 });
 
 
+test('a pre-patch accepted theft keeps its saved fine through settlement and retries', async t => {
+  const f = await fixture(t), id = startStoreHeist(f.dir, f.buyer, f.payload(), { now, draw: success }).id;
+  f.accounts.db(db => db.prepare('UPDATE store_heists SET fee=400 WHERE id=?').run(id));
+  setHand(f, id, { player: [2,3], dealer: [9,8] });
+  const result = action(f, id);
+  assert.equal(result.outcome, 'caught');
+  assert.equal(result.fine, 400);
+  assert.equal(f.balance(f.buyer), 99600);
+  closeDataStore(f.dir);
+  assert.equal(action(f, id).fine, 400);
+  assert.equal(f.balance(f.buyer), 99600);
+});
+
 test('criminal record captures each caught attempt at settlement, exact fines and no duplicate on retries or collection',async t=>{
  const f=await fixture(t),records=(user=f.buyer,options={})=>playerCriminalRecord(f.dir,user,{now,...options});
  assert.equal(records().total,0);
  const id=startStoreHeist(f.dir,f.buyer,f.payload(),{now,draw:success}).id;
  assert.equal(records().total,0);setHand(f,id,{player:[2,3],dealer:[9,8]});
  const at=now+6000;assert.equal(action(f,id,'stand',0,at).outcome,'caught');
- const first=records();assert.equal(first.total,1);assert.equal(first.totalPenalties,400);
- assert.deepEqual(first.records[0],{id,fine:400,attemptedAt:now,recordedAt:at,legacyFee:false,abandoned:false,crime:'attempted_theft'});
+ const first=records();assert.equal(first.total,1);assert.equal(first.totalPenalties,200);
+ assert.deepEqual(first.records[0],{id,fine:200,attemptedAt:now,recordedAt:at,legacyFee:false,abandoned:false,crime:'attempted_theft'});
  action(f,id,'stand',0,at);f.accounts.profile(f.buyer);f.accounts.profile(f.buyer);
- assert.equal(records().total,1);assert.equal(f.balance(f.buyer),99600);assert.equal(records(f.owner).total,0);
+ assert.equal(records().total,1);assert.equal(f.balance(f.buyer),99800);assert.equal(records(f.owner).total,0);
  closeDataStore(f.dir);assert.equal(records().records[0].recordedAt,at);
  f.accounts.resetEconomy(f.owner,'RESET ECONOMY');assert.equal(records().total,0);
 });
@@ -356,7 +385,7 @@ test('wheel catches only the first 20% of its roll range and winning/pushed hand
   const lost=actStoreHeist(f.dir,f.buyer,{heistId:id,action:'stand',turn:0,requestId:'wheel-boundary-loss-01'},{now,policeDraw:()=>roll});
   assert.equal(lost.outcome,'police');assert.equal(f.balance(f.buyer),100000);
   const result=spinStoreHeist(f.dir,f.buyer,{heistId:id,requestId:'wheel-boundary-spin-01'},{now});
-  assert.equal(result.outcome,caught?'caught':'escaped');assert.equal(f.balance(f.buyer),caught?99600:100000);
+  assert.equal(result.outcome,caught?'caught':'escaped');assert.equal(f.balance(f.buyer),caught?99800:100000);
   assert.equal(playerCriminalRecord(f.dir,f.buyer,{now}).total,caught?1:0);
  }
  for(const tie of [false,true]){
@@ -377,7 +406,7 @@ test('pending and abandoned wheels expire to their saved result once even offlin
   tickStoreJustice(f.dir,{now:now+POLICE_WHEEL_DURATION,policeDraw:()=>{throw Error('reroll');}});
   closeDataStore(f.dir);
   const final=f.view().heist;assert.equal(final.outcome,roll===0?'caught':'escaped');assert.equal(final.policeWheel.autoSpun,true);
-  tickStoreJustice(f.dir,{now:now+POLICE_WHEEL_DURATION+1});assert.equal(f.balance(f.buyer),roll===0?99600:100000);
+  tickStoreJustice(f.dir,{now:now+POLICE_WHEEL_DURATION+1});assert.equal(f.balance(f.buyer),roll===0?99800:100000);
   assert.equal(f.itemOwner('wine-0'),f.owner.id);
  }
  const f=await fixture(t);startStoreHeist(f.dir,f.buyer,f.payload(),{now,draw:success});

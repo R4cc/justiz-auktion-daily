@@ -10,7 +10,7 @@ import { dailyCaseWeights, drawItem, tokenValue, priceCaseCatalog, dailyRewardCa
 import { chooseCaseTier, ensureSealedCaseSchema, insertSealedCase, prepareMysteryCase, prepareSealedCase } from './sealed-cases.mjs';
 import { ensureCaseStoreSchema, quoteCaseStore, STORE_CASES } from './case-store.mjs';
 import { consumeCaseStock } from './case-stock.mjs';
-import { ECONOMY_BALANCE, GAME_REWARDS, scoreReward } from './economy-balance.mjs';
+import { ECONOMY_BALANCE, GAME_REWARDS } from './economy-balance.mjs';
 import { scoreGuess } from './core.mjs';
 import { AccountError } from './errors.mjs';
 import { ensureResaleSchema, inventoryIsLocked, lockedInventoryIds } from './resale.mjs';
@@ -40,7 +40,7 @@ const collectibleIdentity = item => JSON.stringify([item.auctionId, item.title, 
 const rewardRates = value => ({
   ...Object.fromEntries(Object.entries(DEFAULT_REWARDS).filter(([key]) => key !== 'dailyScoreBonus').map(([key, fallback]) =>
     [key, Number.isSafeInteger(value?.[key]) && value[key] > 0 ? value[key] : fallback])),
-  // Existing runs retain their saved flat payout. New default runs carry the bonus.
+  // Higher-or-Lower keeps its saved per-run rates.
   ...(Number.isSafeInteger(value?.dailyScoreBonus) && value.dailyScoreBonus >= 0 ? { dailyScoreBonus: value.dailyScoreBonus } : {})
 });
 
@@ -775,7 +775,10 @@ export class Accounts {
       if (auctions.length < 2 || (mode === 'daily' && auctions.length !== 5)) fail('game_unavailable', 503);
       const run = { id: randomUUID(), date: day(this.now()), mode, auctions, answers: [], streak: 0, complete: false, earned: 0,
         rewards: rewardRates(rewards) };
-      if (mode === 'daily') startDailyRound(run, 0, this.now());
+      if (mode === 'daily') {
+        run.rewards = { ...run.rewards, daily: GAME_REWARDS.daily, dailyScoreBonus: 0 };
+        startDailyRound(run, 0, this.now());
+      }
       db.prepare('INSERT INTO account_games (id, user_id, date, mode, payload) VALUES (?, ?, ?, ?, ?)')
         .run(run.id, user.id, run.date, mode, JSON.stringify(run));
       return this.publicGame(run, db);
@@ -791,7 +794,8 @@ export class Accounts {
     const storedCase = caseReward ? JSON.parse(caseReward.item) : null;
     const caseTier = storedCase?.item?.caseTier || storedCase?.rarity || null;
     const { submittedAnswers, ...view } = run;
-    return { ...view, serverNow: this.now(), ...(caseReward ? { dailyCase: { status: caseReward.opened_at === null ? 'ready'
+    return { ...view, ...(run.mode === 'daily' && !run.complete
+      ? { rewards: { ...run.rewards, daily: GAME_REWARDS.daily, dailyScoreBonus: 0 } } : {}), serverNow: this.now(), ...(caseReward ? { dailyCase: { status: caseReward.opened_at === null ? 'ready'
       : caseReward.case_inventory_id ? 'claimed' : 'opened', tier: caseTier } } : {}),
       auctions: publicRunAuctions(run) };
   }
@@ -844,8 +848,9 @@ export class Accounts {
       run.rewardEligible = run.mode === 'higher-lower' || reward.run_id === run.id;
       if (run.complete && run.rewardEligible) {
         const rates = rewardRates(run.rewards);
-        const score = run.mode === 'daily' ? run.answers.reduce((sum, guess, i) => sum + scoreGuess(guess, run.auctions[i].actualBid), 0) : 0;
-        const target = run.mode === 'daily' ? rates.daily + scoreReward(score, rates.dailyScoreBonus || 0)
+        // Apply the flat Daily payout even to in-progress pre-patch runs.
+        if (run.mode === 'daily') run.rewards = { ...rates, daily: GAME_REWARDS.daily, dailyScoreBonus: 0 };
+        const target = run.mode === 'daily' ? GAME_REWARDS.daily
           : run.streak >= rates.minimumStreak ? Math.min(rates.higherLowerMax, run.streak * rates.higherLowerPerCorrect) : 0;
         // Higher or Lower pays only the improvement over today's best reward.
         // Failed attempts and repeats cannot mint currency or block the Daily.

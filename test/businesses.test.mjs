@@ -6,7 +6,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { Accounts } from '../src/accounts.mjs';
 import { closeDataStore, upsertAuctions } from '../src/database.mjs';
-import { businessDashboard, businessSaleChance, buyBusiness, ensureBusinessSchema, setBusinessMargin,
+import { SHOP_SIZES, SHOP_TYPES, businessDashboard, businessSaleChance, buyBusiness, ensureBusinessSchema, setBusinessMargin,
   stockBusiness, supplyStockAuctions, tickBusinesses, unstockBusiness } from '../src/businesses.mjs';
 import { getResale, listItem, listResales, listingsBidOnByUser, placeBid, settleDueListings } from '../src/resale.mjs';
 import { setMarketIndex } from '../src/market.mjs';
@@ -45,6 +45,22 @@ async function fixture(t) {
     balance: id => accounts.db(db => db.prepare('SELECT tokens FROM users WHERE id = ?').get(id).tokens),
     count: (table, condition = '1 = 1') => accounts.db(db => db.prepare(`SELECT COUNT(*) AS count FROM ${table} WHERE ${condition}`).get().count) };
 }
+
+test('all store types and sizes receive 25% more hourly visitors', async t => {
+  const f = await fixture(t), shop = buyBusiness(f.dir, f.rival, 'wine', 'popup', { now: start }).shop;
+  assert.deepEqual(SHOP_SIZES.map(size => size.visitorsPerHour), [1.25, 2.5, 6.25, 13.75]);
+  const hours = 720, oldRates = [1, 2, 5, 11];
+  for (const type of SHOP_TYPES) for (const [n, size] of SHOP_SIZES.entries()) {
+    // A stable empty storefront isolates foot traffic from purchases/reviews.
+    f.accounts.db(db => db.prepare(`UPDATE businesses SET type=?,size=?,plot_id=NULL,
+      traffic_popularity=1,visitors=0,last_tick_at=? WHERE id=?`).run(type.id, size.id, start, shop.id));
+    const after = businessDashboard(f.dir, f.rival, { now: start + hours * hour });
+    const expected = oldRates[n] * 1.25 * hours;
+    assert.ok(Math.abs(after.shops[0].visitors - expected) < expected * .03,
+      `${type.id}/${size.id}: expected about ${expected}, got ${after.shops[0].visitors}`);
+    assert.equal(after.sizes.find(entry => entry.id === size.id).visitorsPerHour, oldRates[n] * 1.25);
+  }
+});
 
 test('stock batches use marketplace escrow, bid history, and inventory transfer', async t => {
   const f = await fixture(t);

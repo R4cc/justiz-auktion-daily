@@ -1,4 +1,4 @@
-# Economy balance — 1 October 2026
+# Economy balance — updated 14 October 2026
 
 The pass covers starting grants, Daily and Higher or Lower income, free and paid cases, tradable case supply, sealed palettes, resale and proxy bidding, NPC demand, wholesale stock, and business sales. Shared targets live in `src/economy-balance.mjs`; item euros stay tied to their historical auction, while current J€ estimates follow the category market.
 
@@ -7,7 +7,7 @@ The pass covers starting grants, Daily and Higher or Lower income, free and paid
 | Source | New balance | Reason |
 |---|---|---|
 | Starting grant | J€1,000 | Enough for an entry shop or several affordable auctions; existing balances stay intact. |
-| Daily completion | J€200 + round(J€150 × score / 5,000) | Stable participation income with a skill bonus; independent of expensive case rotations. |
+| Daily completion | J€1,000 at every score | Fixed participation income; case rarity remains score-based. |
 | Daily physical case | One per day, score-weighted tier, saved item price ≤ J€1,000 | Prevent whole-car archive tails from overwhelming all other income. Affordable contents are re-ranked; thin pools use packaged starter stock. |
 | Higher or Lower | J€25 × streak from 3 correct; J€250 maximum per UTC day | Separate from Daily. Completed improvements pay only the difference from today's prior reward; misses and repeats cannot mint currency. |
 | Admin grants | Existing authorized, receipt-protected grants | Administrative interventions are outside normal progression. |
@@ -45,7 +45,7 @@ New store purchases require level 1 for pop-ups, 3 for small shops, 6 for medium
 
 Direct Case Store stock refills globally every four hours: Lost Property 100, Evidence Locker 60, Seized Treasure 35, Vault 20, and Collector's Cache 10. Legacy themed openings retain 10 per category. Upgrades preserve the current window's sold counts and all purchase receipts; prices and drop odds are unchanged.
 
-Reward receipts migrate atomically from `(user, date)` to `(user, date, mode)` without paying again or modifying balances. Existing runs retain their saved rates, including old flat Daily rewards; new default runs include the score bonus. Already-earned Higher or Lower rewards count toward later top-ups, including amounts above the new cap from an older schedule.
+Reward receipts migrate atomically from `(user, date)` to `(user, date, mode)` without paying again or modifying balances. Higher-or-Lower runs retain their saved rates. Daily runs completed after the 14 October patch use the flat J€1,000 payout, including previously started runs; completed receipts keep their original payout. Already-earned Higher or Lower rewards count toward later top-ups, including amounts above the new cap from an older schedule.
 
 Palette pricing v4 migrates v1 single-draw expectations once, and preserves v2/v3 bundle expectations without multiplying again. Edition reference metadata uses frozen valuation inputs; live reserves, proxy ceilings, bid history, hidden reward JSON, ownership and existing inventory never change. A v4 marker makes the migration idempotent. Existing prepared Daily cases retain their old sealed result and face value. Already recorded store sales and owner-selected margins remain intact; unsold stock uses the updated demand curve.
 
@@ -57,8 +57,16 @@ Run `node scripts/economy-report.mjs --stress` for the checked-in [report](econo
 
 ## Player theft — 12 October 2026
 
-All other player stores permit free single-deck blackjack theft, with hit/stand only and dealer standing on soft 17. Ties give no item and no fine. Card order is uniformly shuffled with server-side cryptographic randomness and is unaffected by item prices, store guards or districts. The paid roulette fee is replaced by a caught-wheel fine: `max(20, ceil(liveMarketValue × theftFineMultiplier × guardFactor × max(1, 1/districtFactor)))`, with `theftFineMultiplier=4` and guard factor 2 when active. A J€100 item therefore risks a J€400 fine at an ordinary unguarded location.
+All other player stores permit free single-deck blackjack theft, with hit/stand only and dealer standing on soft 17. Ties give no item and no fine. Card order is uniformly shuffled with server-side cryptographic randomness and is unaffected by item prices, store guards or districts. The paid roulette fee is replaced by a caught-wheel fine: `max(ceil(liveMarketValue × 1.5), ceil(previousFine × 0.5))`. The previous fine includes the J€20 minimum, a 4× value multiplier, district and security effects, and guard factor 2 when active. A J€100 item therefore risks a J€200 fine at an ordinary unguarded location.
 
 `test/blackjack.test.mjs` simulates 60,000 seeded hands using a hit/stand strategy and checks ordinary win/loss/push frequencies. A loss now gets an independent 20% caught / 80% escape wheel. This reduces expected fine cost by 80%, without changing fair card odds, and gives a small positive expected return for ordinary unguarded items at their nominal market value. Guards, security, safe districts and the minimum fine continue to increase risk. High resale proceeds can make theft more profitable. These are simulation results, not player telemetry; assetless offenders instead pay through escalating loss of application access. Future market changes and voluntary overpayments can still change realized proceeds.
 
 Cash pays fines first, then the bailiff seizes inventory at current market estimates. Bidder-backed listings and hidden palette reward inventory stay protected while debt waits for assets. With no unsold inventory and unpaid debt, the remaining amount becomes 5/15/45-minute jail sentences, increasing threefold to a 24-hour cap according to recorded catches. Only a caught wheel incurs a fine. Unfinished hands lose after ten minutes; pending wheels resolve automatically after two more minutes. The roll is drawn once, kept private until settlement, and cannot change across retries or reloads. Wins and pushes bypass the wheel; escape gives neither loot nor fine. Existing paid attempts preserve their original saved terms. Ownership transfer, fines, seizures and receipts are atomic and idempotent; 30-minute player and 5-minute store cooldowns remain.
+
+## Balance patch — 14 October 2026
+
+- Base hourly visitors for every store size increase by 25%: 1.25 / 2.5 / 6.25 / 13.75 before popularity and district multipliers. Fractional visitors retain deterministic hourly rounding.
+- Positive and negative review effects on popularity and traffic are 25% stronger: the review multiplier ranges from −12.5% to +12.5% before the existing popularity cap and confidence prior.
+- New theft quotes halve fines, including the small-item floor (J€20 → J€10), with an explicit minimum of 1.5× live item value. Guards, districts and security still apply; accepted attempts retain their saved quotes.
+- Normal-item resale NPCs consider bids 1.2× as often: their initial and repeat delays are divided by 1.2. Existing interest uses the new repeat delay after its next due tick. Budgets, demand and sealed-palette bidding slots retain their existing rules.
+- Daily games completed after the patch pay exactly J€1,000, including runs started earlier. Completed receipts are preserved; retries cannot pay twice. Case rarity still uses the existing score-based weights.

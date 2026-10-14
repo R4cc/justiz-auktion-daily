@@ -97,10 +97,10 @@ test('sale values follow auction euros and case prices preserve the target retur
   }
 });
 
-test('game rewards have a fixed floor and bonus, independent of rotating case prices', () => {
+test('game rewards have a fixed cash payout, independent of rotating case prices', () => {
   const catalog = caseCatalog(stock, day);
   assert.deepEqual(caseRewards(catalog), {
-    daily: DAILY_REWARD_FLOOR, dailyScoreBonus: 150,
+    daily: DAILY_REWARD_FLOOR, dailyScoreBonus: 0,
     higherLowerPerCorrect: 25, higherLowerMax: 250, minimumStreak: 3
   });
   assert.deepEqual(caseRewards(caseCatalog(stock.map(item => ({ ...item, currentBid: item.currentBid * 1000 })), day)), caseRewards(catalog));

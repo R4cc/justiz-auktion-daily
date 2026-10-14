@@ -229,7 +229,7 @@ test('Daily gives 150 XP on completion exactly once even when Higher-or-Lower to
   for (let i = 0; i < 4; i++) playAnswer(f.accounts, user, daily.id, i, 100);
   assert.equal(xp(f), 0);
   const done = playAnswer(f.accounts, user, daily.id, 4, 100);
-  assert.equal(done.earned, 350); assert.equal(xp(f), 150);
+  assert.equal(done.earned, 1000); assert.equal(xp(f), 150);
   assert.equal(f.accounts.profile(user).progression.level, 2);
   closeDataStore(f.dir);
   playAnswer(f.accounts, user, daily.id, 4, 100); f.accounts.startGame(user, 'daily', () => auctions);

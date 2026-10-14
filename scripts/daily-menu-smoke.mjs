@@ -5,6 +5,9 @@ import {readFile,mkdtemp,rm} from 'node:fs/promises';
 import path from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {Accounts} from '../src/accounts.mjs';
+import {createGuestGameApi} from '../src/guest-game-api.mjs';
+import {publicDailySummary} from '../src/game-rounds.mjs';
+import {playAnswer} from '../test/helpers/play-answer.mjs';
 import {createAccountApi} from '../src/account-api.mjs';
 import {createEconomyApi} from '../src/economy-api.mjs';
 import {closeDataStore,upsertAuctions} from '../src/database.mjs';
@@ -19,9 +22,10 @@ const daily={date:new Date().toISOString().slice(0,10),gameNumber:285,auctions:l
 const api=await createAccountApi({dataDir:dir,json,env,flags,dailyPayload:async()=>daily}),accounts=new Accounts(dir,{flags});
 const token=await accounts.login({username:'admin',password:env.ADMIN_PASSWORD}),owner=accounts.user(token);
 const economy=createEconomyApi({dataDir:dir,json,flags,accounts});
+const guestApi=createGuestGameApi({dataDir:dir,json,env,dailyPayload:async()=>daily,randomPayload:async()=>({auctions:lots.slice(5,10)}),higherLowerPayload:async()=>({auctions:lots.slice(10,18)})});
 const server=createServer(async(req,res)=>{try{
-  const url=new URL(req.url,'http://localhost');if(await api(req,res,url)||economy(req,res,url))return;
-  if(url.pathname==='/api/daily')return json(res,200,daily);
+  const url=new URL(req.url,'http://localhost');if(await api(req,res,url)||await economy(req,res,url)||await guestApi(req,res,url))return;
+  if(url.pathname==='/api/daily')return json(res,200,publicDailySummary(daily));
   if(url.pathname==='/api/random')return json(res,200,{auctions:lots.slice(5,10)});
   if(url.pathname==='/api/higher-lower')return json(res,200,{auctions:lots.slice(10,18)});
   if(url.pathname.startsWith('/api/'))return json(res,404,{error:'not_found'});
@@ -33,7 +37,7 @@ const browser=await chromium.launch({executablePath:process.env.CHROMIUM_PATH||'
 try{
   const context=await browser.newContext({viewport:{width:1440,height:1000}}),page=await context.newPage(),errors=[];page.on('pageerror',error=>errors.push(error.message));
   const go=async()=>{await page.goto(base+'/');await page.waitForSelector('.daily-home');await page.waitForFunction(()=>dailyMeta?.gameNumber===285);await page.evaluate(()=>accountReady);};
-  const language=async lang=>{const hidden=!(await page.locator('#language-select').isVisible());if(hidden)await page.locator('[data-action="sidebar"]').click();await page.locator('#language-select').selectOption(lang);if(hidden)await page.keyboard.press('Escape');};
+  const language=async lang=>page.evaluate(lang=>{const select=document.querySelector('#language-select');select.value=lang;select.dispatchEvent(new Event('change',{bubbles:true}));},lang);
   const layout=async state=>{
     for(const width of [1440,1024,768,600,390,320]){await page.setViewportSize({width,height:1000});for(const lang of ['en','de']){
       await language(lang);
@@ -53,12 +57,12 @@ try{
   // Guest saved progress remains isolated and appears on the menu.
   await page.evaluate(()=>{localStorage.setItem(todayStorageKey(),JSON.stringify({view:'game',round:0,answers:[{guess:30,score:1000,error:0}],scoreVersion:2}));renderStart();});assert.equal(await page.locator('.daily-play').innerText(),'Continue Daily');assert.equal(await page.locator('.daily-menu-progress .is-done').count(),1);
   // Server progress from another device takes precedence over browser storage.
-  const run=accounts.startGame(owner,'daily',()=>daily.auctions);accounts.answer(owner,run.id,0,lots[0].actualBid);accounts.answer(owner,run.id,1,lots[1].actualBid);
+  const run=accounts.startGame(owner,'daily',()=>daily.auctions);playAnswer(accounts,owner,run.id,0,lots[0].actualBid);playAnswer(accounts,owner,run.id,1,lots[1].actualBid);
   await context.addCookies([{name:'jg_session',value:token,url:base}]);await go();assert.equal(await page.locator('.daily-play').innerText(),'Continue Daily');assert.equal(await page.locator('.daily-menu-progress .is-done').count(),2);assert.equal(await page.locator('.daily-reward-login').count(),0);
-  assert.match(await page.locator('.daily-reward-amount strong').innerText(),/200.*350/);await layout('resume');await page.setViewportSize({width:1440,height:1000});await language('en');
+  assert.match(await page.locator('.daily-reward-amount strong').innerText(),/1[,.]000/);await layout('resume');await page.setViewportSize({width:1440,height:1000});await language('en');
   await page.locator('.daily-play').click();await page.waitForSelector('.game-shell');assert.equal(await page.evaluate(()=>accountDailyRun.id),run.id);await page.evaluate(()=>renderStart());
-  for(let n=2;n<5;n++)accounts.answer(owner,run.id,n,lots[n].actualBid);
-  await go();assert.equal(await page.locator('.daily-play').innerText(),'View results');assert.equal(await page.locator('.daily-menu-progress .is-done').count(),5);assert.match(await page.locator('.daily-reward-amount strong').innerText(),/350/);assert.match(await page.locator('.daily-challenge-bottom').innerText(),/5,000/);await layout('complete');
+  for(let n=2;n<5;n++)playAnswer(accounts,owner,run.id,n,lots[n].actualBid);
+  await go();assert.equal(await page.locator('.daily-play').innerText(),'View results');assert.equal(await page.locator('.daily-menu-progress .is-done').count(),5);assert.match(await page.locator('.daily-reward-amount strong').innerText(),/1[,.]000/);assert.match(await page.locator('.daily-challenge-bottom').innerText(),/5,000/);await layout('complete');
   await page.setViewportSize({width:1440,height:1000});await language('en');const balance=accounts.profile(owner).tokens;
   await page.locator('.daily-play').click();await page.waitForSelector('.results-screen');assert.equal(accounts.profile(owner).tokens,balance);
   await page.evaluate(()=>{document.querySelectorAll('dialog[open]').forEach(dialog=>dialog.close());renderStart();});
