@@ -933,7 +933,7 @@ const server =
         if (await accountApi(request, response, url)) return;
         if (await guestGameApi(request, response, url)) return;
 
-        if (['GET', 'HEAD'].includes(request.method) && ['/auction-house', '/auctions', '/marketplace', '/market', '/businesses', '/stores', '/town', '/shop', '/palettes', '/skills', '/inventory', '/profile', '/login', '/register', '/admin', '/leaderboard'].includes(url.pathname)) {
+        if (['GET', 'HEAD'].includes(request.method) && ['/auction-house', '/auctions', '/marketplace', '/market', '/businesses', '/stores', '/town', '/shop', '/palettes', '/skills', '/inventory', '/profile', '/login', '/register', '/admin', '/leaderboard', '/changelog'].includes(url.pathname)) {
           await sendFile(request, response, publicDir, '/index.html', 'no-cache');
           return;
         }

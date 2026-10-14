@@ -21,3 +21,9 @@
 ### Git Operations
 
 - Always push your changes directly to main, no separate branches.
+
+### Changelog Updates
+
+- Add or update Changelog entries only when the user explicitly requests a changelog update for that particular feature or change.
+- Implementing a feature or fix, committing, or pushing does not by itself authorize a Changelog update. Do not automatically generate entries from Git history.
+- When requested, maintain the entries in `dist/changelog-ui.js`, with the date of the change and concise English and German descriptions, newest first.

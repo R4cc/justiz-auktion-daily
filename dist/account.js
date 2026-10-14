@@ -26,7 +26,7 @@ caseReveal.addEventListener('close', () => {
 });
 let accountSelectedCase = 'fundkiste', accountInventoryPage = 0, accountFilter = 'all';
 let currentAccountPage = null, accountVisit = 0, pageLoaded = false;
-const accountPaths = ['/auction-house', '/auctions', '/marketplace', '/market', '/businesses', '/stores', '/town', '/shop', '/palettes', '/skills', '/inventory', '/profile', '/login', '/register', '/admin', '/leaderboard'];
+const accountPaths = ['/auction-house', '/auctions', '/marketplace', '/market', '/businesses', '/stores', '/town', '/shop', '/palettes', '/skills', '/inventory', '/profile', '/login', '/register', '/admin', '/leaderboard', '/changelog'];
 const accountPage = document.querySelector('#account-page');
 const accountContent = document.querySelector('#account-content');
 const notificationButton = document.querySelector('#notification-button');
@@ -172,13 +172,14 @@ function sidebarLinkMarkup(route, label) {
     '/skills': '<circle cx="12" cy="4" r="2"/><circle cx="5" cy="20" r="2"/><circle cx="19" cy="20" r="2"/><circle cx="12" cy="20" r="2"/><path d="M12 6v12m-7 0v-6h14v6"/>',
     '/profile': '<circle cx="12" cy="8" r="4"/><path d="M4 21v-3a8 8 0 0 1 16 0v3"/>',
     '/login': '<path d="M14 3h6v18h-6M3 12h12m-4-4 4 4-4 4"/>',
+    '/changelog': '<rect x="4" y="3" width="16" height="18" rx="2"/><path d="M8 7h8m-8 5h8m-8 5h5"/>',
     '/admin': '<path d="M5 3v4m0 4v10m7-18v10m0 4v4m7-18v4m0 4v10"/><circle cx="5" cy="9" r="2"/><circle cx="12" cy="15" r="2"/><circle cx="19" cy="9" r="2"/>'
   };
   return `<svg class="nav-icon" data-nav-icon="${accountEscape(route)}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">${icons[route] || icons['/profile']}</svg><span class="nav-link-label">${accountEscape(label)}</span>`;
 }
 function updateNavigation() {
   renderPersistentProgression(account);
-  const labels = { '/': 'Daily', '/shop': t('Case Store', 'Kisten-Shop'), '/palettes': t('Mystery palettes', 'Mystery-Paletten'), '/skills': t('Skill tree', 'Skillbaum'), '/auctions': t('Palette Auctions', 'Paletten-Auktionen'), '/auction-house': t('Auction House', 'Auktionshaus'), '/marketplace': t('Auction House', 'Auktionshaus'), '/market': t('Stock Market', 'Aktienmarkt'), '/businesses': t('Your stores', 'Deine Läden'), '/stores': t('Visit stores', 'Läden besuchen'), '/town': t('Town map', 'Stadtplan'), '/inventory': t('Inventory', 'Inventar'), '/leaderboard': t('Leaderboard', 'Rangliste'), '/profile': t('Profile', 'Profil'), '/admin': 'Admin' };
+  const labels = { '/': 'Daily', '/shop': t('Case Store', 'Kisten-Shop'), '/palettes': t('Mystery palettes', 'Mystery-Paletten'), '/skills': t('Skill tree', 'Skillbaum'), '/auctions': t('Palette Auctions', 'Paletten-Auktionen'), '/auction-house': t('Auction House', 'Auktionshaus'), '/marketplace': t('Auction House', 'Auktionshaus'), '/market': t('Stock Market', 'Aktienmarkt'), '/businesses': t('Your stores', 'Deine Läden'), '/stores': t('Visit stores', 'Läden besuchen'), '/town': t('Town map', 'Stadtplan'), '/inventory': t('Inventory', 'Inventar'), '/leaderboard': t('Leaderboard', 'Rangliste'), '/profile': t('Profile', 'Profil'), '/admin': 'Admin', '/changelog': 'Changelog' };
   for (const link of document.querySelectorAll('.site-nav a')) {
     if (link.id !== 'header-auth') {
       link.innerHTML = sidebarLinkMarkup(link.getAttribute('href'), labels[link.getAttribute('href')] || link.textContent);
@@ -470,6 +471,7 @@ function renderAccountPage() {
   else if (currentAccountPage === '/profile') renderProfile();
   else if (currentAccountPage === '/admin') renderAdmin();
   else if (currentAccountPage === '/leaderboard') renderLeaderboard();
+  else if (currentAccountPage === '/changelog') window.changelogUi.render();
   else renderAuth();
 }
 // Forced one-time view after signing in with an admin-issued temporary
