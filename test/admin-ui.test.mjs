@@ -54,6 +54,16 @@ test('market overview remains searchable and read-only while the admin is busy',
   assert.match(markup, /Current index/);
 });
 
+test('archive export is available in both languages and disabled while busy', () => {
+  for (const german of [false, true]) {
+    const f = fixture({ adminActiveTab: 'auctions', t: (en, de) => german ? de : en });
+    assert.match(f.render(), german ? /Alle Gegenstände exportieren \(JSON\)/ : /Export all items \(JSON\)/);
+    assert.match(f.content.innerHTML, /type="button"[^>]*data-account="export-archive">/);
+    f.context.accountBusy = true;
+    assert.match(f.render(), /data-account="export-archive" disabled/);
+  }
+});
+
 test('admin controls escape external values and keep one-time codes and passwords reviewable', () => {
   const hostile = '</textarea><script>alert(1)</script>';
   const f = fixture({ freshCodes: [hostile], freshPasswordReset: { username: 'Player', temporaryPassword: hostile } });

@@ -116,6 +116,13 @@ export async function createAccountApi({ dataDir, dailyPayload, json, env = proc
             json(response, 200, { total: matches.length, page, pages, pageSize: AUCTION_PAGE_SIZE,
               auctions: matches.slice((page - 1) * AUCTION_PAGE_SIZE, page * AUCTION_PAGE_SIZE).map(auctionBasics) });
           }
+          else if (route === 'admin/auctions/export') {
+            if (!user.admin) throw new AccountError('forbidden', 403);
+            const archive = readArchive(dataDir);
+            const auctions = archive.auctions.map(({ image, images, sourceImages, imageCache, imageCount, ...item }) => item);
+            response.setHeader('content-disposition', 'attachment; filename="auction-archive.json"');
+            json(response, 200, { ...archive, auctions });
+          }
           else if (route.startsWith('admin/auctions/')) {
             if (!user.admin) throw new AccountError('forbidden', 403);
             const auction = readArchive(dataDir).auctions.find(entry => String(entry.id) === route.slice('admin/auctions/'.length));

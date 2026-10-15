@@ -692,6 +692,17 @@ function auctionResultsMarkup() {
     ${rows ? `<div class="auction-table-wrap"><table class="auction-table"><thead><tr><th scope="col" aria-label="${t('Image', 'Bild')}"></th><th scope="col">${t('Auction', 'Auktion')}</th><th scope="col">${t('Price', 'Preis')}</th><th scope="col">${t('Ends', 'Ende')}</th><th scope="col" aria-label="${t('Actions', 'Aktionen')}"></th></tr></thead><tbody>${rows}</tbody></table></div>` : `<p class="admin-count">${t('No auctions match this search.', 'Keine Auktionen gefunden.')}</p>`}
     <div class="inventory-pages"><button data-account="auction-page" data-step="-1" ${accountAuctions.page <= 1 ? 'disabled' : ''}>← ${t('Previous', 'Zurück')}</button><span>${number(accountAuctions.page)} / ${number(accountAuctions.pages)}</span><button data-account="auction-page" data-step="1" ${accountAuctions.page >= accountAuctions.pages ? 'disabled' : ''}>${t('Next', 'Weiter')} →</button></div>`;
 }
+async function exportAuctionArchive() {
+  const archive = await accountApi('admin/auctions/export');
+  const url = URL.createObjectURL(new Blob([JSON.stringify(archive, null, 2)], { type: 'application/json' }));
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = 'auction-archive.json';
+  document.body.append(link);
+  link.click();
+  link.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
 async function loadAuctionBrowser(visit) {
   const request = ++auctionBrowserRequest, query = accountAuctions.query || '', page = accountAuctions.page;
   const current = () => visit === accountVisit && request === auctionBrowserRequest && currentAccountPage === '/admin' && query === (accountAuctions.query || '') && page === accountAuctions.page;
@@ -774,7 +785,7 @@ function renderAdmin() {
       <div class="admin-subpanel"><div class="admin-panel-heading"><div><h3>${t('Grant J€ to all players', 'J€ an alle Spieler geben')}</h3><p>${t('Give the same J€ amount to every current player, including admins. Future accounts are excluded.', 'Vergib denselben J€-Betrag an alle aktuellen Spieler inklusive Admins. Künftige Konten sind ausgeschlossen.')}</p></div></div>
       <form id="grant-form" class="grant-form"><label>${t('J€ per player', 'J€ pro Spieler')}<input name="amount" type="number" min="1" max="1000000" step="1" value="100" required></label><button class="primary-button" type="submit">${t('Give J€ to all players', 'J€ an alle Spieler geben')}</button><p class="account-error" role="alert"></p></form>
       <details class="admin-history"><summary>${t('Recent grants', 'Letzte Gutschriften')} <span>${number(accountAdmin.grants.length)}</span></summary><div class="grant-history">${accountAdmin.grants.map(grant => `<div class="admin-history-row"><div><strong>${justizEuro(grant.amount)} ${t('per player', 'pro Spieler')}</strong><small>${new Date(grant.createdAt).toLocaleString(uiLocale())}</small></div><span>${number(grant.recipients)} ${t('players', 'Spieler')}</span></div>`).join('') || `<p class="admin-empty">${t('No grants yet.', 'Noch keine Gutschriften.')}</p>`}</div></details></div></div>`)}
-    ${panel('auctions', `<div class="admin-section"><div class="admin-panel-heading"><div><h2>${t('Auction archive', 'Auktionsarchiv')}</h2></div></div>
+    ${panel('auctions', `<div class="admin-section"><div class="admin-panel-heading"><div><h2>${t('Auction archive', 'Auktionsarchiv')}</h2></div><button type="button" class="primary-button" data-account="export-archive"${accountBusy ? ' disabled' : ''}>${t('Export all items (JSON)', 'Alle Gegenstände exportieren (JSON)')}</button></div>
       <div class="admin-toolbar"><label class="admin-search">${t('Search the archive', 'Archiv durchsuchen')}<span>${adminIcon('search')}<input id="auction-search" name="auction-search" type="search" autocomplete="off" placeholder="${t('Title, description, category or ID', 'Titel, Beschreibung, Kategorie oder ID')}" value="${accountEscape(accountAuctions.query)}"></span></label></div><div id="auction-results">${auctionResultsMarkup()}</div></div>`)}
     ${panel('access', `<div class="admin-section"><div class="admin-panel-heading"><div><h2>${t('Registration codes', 'Registrierungscodes')}</h2></div><span class="admin-tag">${number(availableCodes)} ${t('available', 'verfügbar')}</span></div>
       <div class="admin-subpanel admin-invite-form"><h3>${t('Create registration codes', 'Registrierungscodes erstellen')}</h3><p>${t('Full codes are shown only once after creation. Copy and save them before leaving.', 'Vollständige Codes werden nur einmal nach dem Erstellen angezeigt. Kopiere und speichere sie vor dem Verlassen.')}</p><form id="code-form" class="code-form"><label>${t('Number of codes', 'Anzahl der Codes')}<input name="count" type="number" min="1" max="50" value="5" required></label><button class="primary-button" type="submit">${adminIcon('code')}${t('Create codes', 'Codes erstellen')}</button><p class="account-error" role="alert"></p></form></div>
@@ -1125,6 +1136,7 @@ document.addEventListener('click', async event => {
       updateAccount(result.user);
       if (visit === accountVisit) { await navigateAccountPage('/admin', false); showToast(t(`Gave ${justizEuro(result.grant.amount)} to ${result.grant.username}.`, `${result.grant.username} hat ${justizEuro(result.grant.amount)} erhalten.`)); }
     }
+    if (action === 'export-archive') await exportAuctionArchive();
     if (action === 'auction-detail') {
       const result = await accountApi(`admin/auctions/${button.dataset.id}`);
       if (visit === accountVisit) { renderAuctionDetail(result.auction); if (!auctionReveal.open) auctionReveal.showModal(); }
