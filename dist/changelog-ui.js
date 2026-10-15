@@ -2,6 +2,13 @@ window.changelogUi = (() => {
   // Curated manually. Only update for a feature when the user explicitly asks.
   const entries = [
     {
+      date: '2026-10-15', title: 'Toy Categories',
+      changes: [
+        {en:'Expanded toy matching to include board and card games, puzzles, dolls, plush toys, building sets, model trains, model vehicles and more toy brands.',de:'Spielzeug-Erkennung um Brett- und Kartenspiele, Puzzles, Puppen, Plüschtiere, Bausätze, Modelleisenbahnen, Modellfahrzeuge und weitere Spielzeugmarken erweitert.'},
+        {en:'Toy shops now accept these individual finds, including older items. New toy stock rotations use the same expanded selection.',de:'Spielzeugläden nehmen diese Einzelfunde jetzt auch aus älteren Beständen an. Neue Spielzeug-Vorratsrotationen nutzen dieselbe erweiterte Auswahl.'}
+      ]
+    },
+    {
       date: '2026-10-14', title: 'Profile Statistics',
       changes: [
         {en:'Added a Statistics tab next to Overview with grouped money, cases, trading, business, theft and game totals.',de:'Statistiken-Tab neben der Übersicht mit gruppierten Summen zu Geld, Kisten, Handel, Läden, Diebstahl und Spielen hinzugefügt.'},

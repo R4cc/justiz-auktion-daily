@@ -49,7 +49,7 @@ function pools(db, now) {
     .filter(item=>item.title && auctionGallery(item).length && Number.isFinite(item.finalPrice??item.currentBid) && (item.finalPrice??item.currentBid)>0 && (item.finalPrice??item.currentBid)<=Number.MAX_SAFE_INTEGER/1000);
   const families=buildAuctionFamilies(sources);
   const result=categories.map(([id,name,nameDe,theme])=>{
-    const eligible=item=>matchesTheme(item,theme) && (id!=='toys' || businessTypeForItem(item)==='toys');
+    const eligible=item=>id==='toys' ? businessTypeForItem(item)==='toys' : matchesTheme(item,theme);
     let categoryFamilies=families.filter(family=>family.some(eligible));
     if(!categoryFamilies.length)categoryFamilies=buildAuctionFamilies(starter.filter(eligible));
     let items=buildEditionItems({id,category:theme},categoryFamilies,Math.floor(now/86400000),eligible,50);

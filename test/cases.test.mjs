@@ -21,7 +21,7 @@ const stock = themes.flatMap(([theme, title, category, price], index) => Array.f
   currentBid: price * (n + 1), image: `/assets/${theme}.jpg`
 })));
 
-test('each themed case uses only its own category and excludes vehicle accessories and spirits', () => {
+test('themed cases exclude vehicle accessories and spirits while model cars belong to collectibles', () => {
   const extras = [
     { id: 9001, title: 'BMW Reifen 9001', category: 'Fahrzeuge' },
     { id: 9002, title: 'Whisky 9002', category: 'Getränke' },
@@ -36,7 +36,8 @@ test('each themed case uses only its own category and excludes vehicle accessori
     const box = catalog.cases.find(box => box.id === theme);
     assert.ok(box.available);
     assert.ok(box.items.every(item => item.category === category));
-    assert.ok(box.items.every(item => item.auctionId < 9000));
+    assert.ok(box.items.every(item => item.auctionId < 9000 || theme === 'collectibles' && item.auctionId === 9003));
+    if (theme === 'collectibles') assert.ok(box.items.some(item => item.auctionId === 9003));
     assert.equal(new Set(box.items.map(item => item.rarity)).size, 5);
   }
 });

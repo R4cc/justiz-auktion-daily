@@ -27,8 +27,39 @@ export function normalizeSelectionText(value = '') {
     .replace(/ß/g, 'ss').replace(/[^a-z0-9]+/g, ' ').replace(/\s+/g, ' ').trim();
 }
 
+// Toy evidence is shared by live selection and legacy inventory/shop checks.
+// Keep ambiguous words such as "game", "figure", "model" and car brands out
+// of the standalone vocabulary: they also describe electronics, art and cars.
+const TOY_WORDS = /\b((?:kinder|holz|baby)?spielzeug[a-z]*|toys?|brettspiele?|gesellschaftsspiele?|kartenspiele?|wuerfelspiele?|wurfelspiele?|lernspiele?|kinderspiele?|spielkarten|sammelkarten|trading cards?|board games?|card games?|(?:kinder|holz|3d)?puzzles?|jigsaw|(?:holz|metall)?baukasten[a-z]*|(?:holz)?bauklotze|(?:holz)?bausteine|klemmbausteine|building sets?|building blocks?|puppen?[a-z]*|dolls?|dollhouses?|plusch[a-z]*|kuscheltiere?|stofftiere?|teddy(?:bar|baren)?|teddies|stuffed animals?|modellbausatze?|modellbausatz|modellautos?|modellfahrzeuge?|modelleisenbahn[a-z]*|modellbahn[a-z]*|modellflugzeuge?|modellschiffe?|model (?:cars?|trains?|aircraft|boats?)|actionfiguren?|action figures?|sammelfiguren?|funko pop|lego|duplo|playmobil|barbie|hot wheels|matchbox|schleich|steiff|brio|marklin|roco|fischertechnik|siku|ravensburger|hasbro|mattel|monopoly|scrabble)\b/;
+const TOY_MEDIA = /\b(buch|bucher|book|books|katalog|catalogue|catalog|anleitung|bauanleitung|manual|dvd|bluray|videospiel|videospiele|video games?|computerspiel|computerspiele|konsolenspiel|konsolenspiele|playstation|xbox)\b/;
+const TOY_CATEGORIES = /^(toys?|spielzeug(?: und sammlerstucke)?|spielwaren|spiele und spielzeug)$/;
+function toyText(text, raw = text) {
+  if (TOY_MEDIA.test(text)) return false;
+  if (TOY_WORDS.test(text)) return true;
+  if (/\b(?:rc|ferngesteuert[a-z]*) (?:autos?|cars?|fahrzeuge?|buggys?|trucks?|boote?|schiffe?|flugzeuge?|hubschrauber|helicopters?)\b/.test(text)) return true;
+  if (/\b(?:slotcars?|rennbahn[a-z]*|autorennbahn[a-z]*)\b/.test(text)) return true;
+  if (/\b(?:pokemon|yu gi oh|yugioh)\b/.test(text) && /\b(?:karten|cards|sammelkarten|trading cards)\b/.test(text)) return true;
+  // Scale plus vehicle evidence catches "BMW M3 1:18" without reclassifying
+  // a real car whose title merely includes its model name or registration year.
+  return /\b1\s*[:/]\s*(?:12|18|24|32|43|50|64|72|87|160)\b/.test(raw) &&
+    /\b(auto|car|pkw|lkw|bmw|mercedes|volkswagen|vw|audi|porsche|ferrari|ford|traktor|tractor)\b/.test(text);
+}
+export function isToyAuction(auction) {
+  const title = normalizeSelectionText(auction.title);
+  if (TOY_MEDIA.test(title)) return false;
+  if (toyText(title, String(auction.title || ''))) return true;
+  // A real product title takes precedence over incidental toy mentions in a
+  // seller's description. Generic lots may identify their contents there.
+  const titleCategory = CATEGORY_RULES.find(([, pattern]) => pattern.test(title))?.[0];
+  if (titleCategory && titleCategory !== 'Sammlerstücke') return false;
+  if (TOY_CATEGORIES.test(normalizeSelectionText(auction.category))) return true;
+  const description = String(auction.description || '').split(/versand|foto und farbhinweis|offnungszeiten|geschäftszeiten/i)[0].slice(0, 600);
+  return toyText(normalizeSelectionText(description), description);
+}
+
 export function auctionSelectionCategory(auction) {
   const title = normalizeSelectionText(auction.title);
+  if (isToyAuction(auction)) return 'Sammlerstücke';
   const fromTitle = CATEGORY_RULES.find(([, pattern]) => pattern.test(title));
   if (fromTitle) return fromTitle[0];
   // Alcohol metadata catches producer-only wine titles without calling perfume a drink.
