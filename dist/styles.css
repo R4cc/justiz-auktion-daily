@@ -938,7 +938,7 @@ button:focus-visible, a:focus-visible { outline: 3px solid var(--red); outline-o
 .auction-room-contents ul { display: grid; gap: 0; margin: 0; padding: 0; list-style: none; }
 .auction-room-contents li { display: flex; justify-content: space-between; gap: 12px; padding: 9px 0; border-bottom: 1px solid var(--line); font-size: 13px; }
 .auction-room-contents small { flex: none; color: var(--muted); }
-.auction-room-bidding { display: flex; flex-direction: column; padding-top: 38px; border-left: 1px solid var(--line); background: #f1f0e6; }
+.auction-room-bidding { display: flex; flex-direction: column; overflow-y: auto; padding-top: 38px; border-left: 1px solid var(--line); background: #f1f0e6; }
 .auction-room-bidding > header, .auction-room-bidding > [data-live-facts] { padding: 0 24px; }
 .auction-room-bidding h3 { margin: 3px 0 16px; font-size: 22px; }
 .auction-room-bidding .economy-bid { padding-top: 10px; }
@@ -959,6 +959,25 @@ button:focus-visible, a:focus-visible { outline: 3px solid var(--red); outline-o
 .auction-bid-entry { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; }
 .auction-bid-entry .primary-button { min-height: 48px; margin: 0; padding: 10px 14px; white-space: nowrap; }
 .auction-bid-form > p { font-size: 11px; line-height: 1.4; }
+.auction-bid-balances { display: grid; gap: 7px; padding: 12px; border: 1px solid var(--line); border-radius: 10px; background: #edf1e4; }
+.auction-bid-balances p { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 7px; font-size: 12px; line-height: 1.5; }
+.auction-bid-balances [data-reserved-maximum] strong { font-size: 16px; }
+.auction-bid-balances strong { font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.auction-leading-badge { padding: 2px 7px; border-radius: 20px; background: var(--ink); color: var(--paper); font-size: 10px; font-weight: 800; }
+.auction-bid-form > label { font-size: 13px; }
+.auction-bid-entry input { font-size: 20px; font-weight: 800; font-variant-numeric: tabular-nums; }
+.auction-bid-entry input[aria-invalid="true"] { border-color: #b1391a; box-shadow: 0 0 0 1px #b1391a; }
+.auction-bid-entry input[aria-invalid="true"]:focus { outline: 2px solid #b1391a; outline-offset: 2px; }
+.auction-bid-guidance { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 4px 12px; color: var(--muted); font-size: 12px; }
+.auction-bid-guidance .text-button { min-height: 36px; padding: 4px 0; font-size: 12px; }
+.auction-bid-form .account-error { font-size: 12px; }
+.auction-bid-form .account-error:empty { display: none; }
+.auction-bid-preview { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin: 0; padding: 10px 0; border-top: 1px solid var(--line); }
+.auction-bid-preview div { min-width: 0; }
+.auction-bid-preview dt { color: var(--muted); font-size: 11px; }
+.auction-bid-preview dd { margin: 3px 0 0; font-weight: 800; font-size: 16px; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.auction-bid-form button:disabled { cursor: not-allowed; }
+.auction-bid-form[aria-busy="true"] button:disabled { cursor: wait; }
 .auction-escrow-note { color: var(--muted); }
 .auction-win-panel h3 { margin: 4px 0 8px; font-size: 20px; }
 .auction-win-panel .palette-seal { margin: 12px 0; }

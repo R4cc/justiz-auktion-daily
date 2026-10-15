@@ -366,7 +366,7 @@ test('auction detail uses media, facts and bidding without flavour descriptions'
   assert.ok(markup.indexOf('auction-room-media') < markup.indexOf('auction-room-story'));
   assert.ok(markup.indexOf('auction-room-story') < markup.indexOf('auction-room-bidding'));
   assert.ok(markup.indexOf('data-live-history') < markup.indexOf('auction-bid-dock'));
-  assert.match(markup, /Raise bid/);
+  assert.match(markup, /Place bid/);
   assert.doesNotMatch(markup, /camera\.jpg|Camera|Possible contents/);
   assert.match(markup, /palette-artwork/);
   assert.match(markup, /three mystery finds[\s\S]*after winning[\s\S]*Duplicates are possible/);
@@ -709,6 +709,7 @@ test('Auction House cards show winning and outbid states for both domains withou
       sellerUsername: 'Seller', contents: [{title: 'SECRET FIND'}], description: 'Promotional filler'}};
     const html = vm.runInContext('houseCard(entry)', context);
     assert.match(html, leading ? /Winning/ : /Outbid/);
+    assert.match(html, leading ? /Your reserved maximum/ : /Your last maximum/);
     assert.match(html, new RegExp(`data-economy="${primary ? 'primary' : 'resale'}"`));
     assert.match(html, /data-id="bid"/);
     assert.match(html, /role="button"/); assert.match(html, /tabindex="0"/);
@@ -805,7 +806,7 @@ test('bid forms cap new offers at wallet funds and raises at wallet plus this au
     context.account.tokens = 0;
     assert.match(render(), /min="805" max="800"[^>]*value=""[^>]*disabled/);
     assert.match(render(), /type="submit" disabled/);
-    assert.match(render(), /role="alert"[^>]*>insufficient_tokens/);
+    assert.match(render(), /role="alert"[^>]*>You need J€ 5 more/);
     // An old bid on this lot and money held elsewhere are not spendable.
     context.lot.leading = false; context.account.tokens = 20;
     assert.match(render(), /min="25" max="20"/);
@@ -818,21 +819,34 @@ test('bid forms cap new offers at wallet funds and raises at wallet plus this au
   assert.match(vm.runInContext('bidForm(lot, false)', context), /Dein hinterlegtes Höchstgebot/);
 });
 
-test('live bid limits follow refunds, spending and leadership without overwriting a typed maximum', () => {
-  const input = { value: '950', disabled: false }, button = {}, error = { textContent: '', dataset: {} };
-  const reservedValue = {}, reserved = { hidden: false, querySelector: () => reservedValue };
-  const form = { querySelector: selector => ({ 'input[name="amount"]': input, '.account-error': error,
-    'button[type="submit"]': button, '[data-reserved-maximum]': reserved })[selector] };
-  const context = uiContext({ account: { tokens: 200 }, document: { activeElement: input }, form,
+function bidFormFixture() {
+  const input = { value: '950', disabled: false, min: '805', max: '1000',
+    setCustomValidity(value) { this.validationMessage = value; },
+    setAttribute(key, value) { this[key] = value; }, focus() { this.focused = true; } };
+  const button = {}, error = { textContent: '', dataset: {} }, minimum = {}, minimumValue = {};
+  const reservedValue = {}, reserved = { hidden: false, querySelector: () => reservedValue }, budget = {};
+  const preview = {}, charge = {}, wallet = {};
+  const nodes = { 'input[name="amount"]': input, '.account-error': error, 'button[type="submit"]': button,
+    '[data-reserved-maximum]': reserved, '[data-bid-budget]': budget, '[data-bid-minimum]': minimum,
+    '[data-bid-minimum-value]': minimumValue, '[data-bid-preview]': preview, '[data-bid-charge]': charge, '[data-bid-wallet]': wallet, '[data-bid-charge-label]': {}, '[data-bid-wallet-label]': {} };
+  const form = { dataset: { bidReserved: '800' }, querySelector: selector => nodes[selector] };
+  const context = uiContext({ account: { tokens: 200 }, busy: false, document: { activeElement: input }, form,
     t: en => en, justizEuro: value => `J€ ${value}`, accountError: String,
     lot: { status: 'active', endsAt: Date.now() + 60_000, currentBid: 20, leading: true, highestBid: 800, bidIncrement: 5 } });
-  vm.runInContext(extract(uiSource, '  function updateBidForm(', '  function paletteArtwork('), context);
-  const update = () => vm.runInContext('updateBidForm(lot, false, form)', context);
+  vm.runInContext(extract(uiSource, '  function bidForm(', '  function paletteArtwork('), context);
+  return { context, input, button, error, reserved, reservedValue, preview, charge, wallet, minimum, minimumValue,
+    update: () => vm.runInContext('updateBidForm(lot, false, form)', context),
+    validate: () => vm.runInContext('validateBidForm(form, true)', context) };
+}
+
+test('live bid limits follow refunds, spending and leadership without overwriting a typed maximum', () => {
+  const { context, input, button, error, reserved, reservedValue, update } = bidFormFixture();
   update(); assert.equal(input.max, '1000'); assert.equal(input.value, '950'); assert.equal(button.disabled, false);
   context.account.tokens = 100; update();
-  assert.equal(input.max, '900'); assert.equal(input.value, '950'); // Native max validation blocks the draft.
+  assert.equal(input.max, '900'); assert.equal(input.value, '950');
+  assert.match(error.textContent, /up to J€ 900/); assert.equal(input['aria-invalid'], 'true');
   context.account.tokens = 0; update();
-  assert.equal(button.disabled, true); assert.equal(input.disabled, true); assert.equal(error.textContent, 'insufficient_tokens');
+  assert.equal(button.disabled, true); assert.equal(input.disabled, true); assert.match(error.textContent, /J€ 5 more/);
   context.account.tokens = 200; update();
   assert.equal(button.disabled, false); assert.equal(error.textContent, '');
   assert.equal(reservedValue.textContent, 'J€ 800');
@@ -840,6 +854,29 @@ test('live bid limits follow refunds, spending and leadership without overwritin
   assert.equal(input.max, '1000'); assert.equal(reserved.hidden, true);
   context.lot.endsAt = 0; update();
   assert.equal(button.disabled, true); assert.equal(input.disabled, true); assert.match(error.textContent, /auction has ended/);
+});
+
+test('invalid maximums show exact bounds, preserve drafts and hide misleading payment previews', () => {
+  const f = bidFormFixture(); f.update();
+  for (const value of ['', '805.5', 'not-a-number']) {
+    f.input.value = value; assert.equal(f.validate(), false);
+    assert.match(f.error.textContent, /whole J€ amount/); assert.equal(f.preview.hidden, true);
+  }
+  f.input.value = '804'; assert.equal(f.validate(), false);
+  assert.equal(f.input.value, '804'); assert.match(f.error.textContent, /at least J€ 805/); assert.equal(f.input.focused, true);
+  f.context.lot.highestBid = 835; f.update();
+  assert.equal(f.input.value, '804'); assert.match(f.error.textContent, /at least J€ 840/);
+  f.input.value = '1036'; assert.equal(f.validate(), false); assert.match(f.error.textContent, /up to J€ 1035/);
+  f.context.t = (_, de) => de; f.input.value = '800'; f.validate();
+  assert.match(f.error.textContent, /mindestens J€ 840/);
+});
+
+test('maximum preview reserves only the raise difference and shows the remaining wallet', () => {
+  const f = bidFormFixture(); f.input.value = '870'; f.context.lot.highestBid = 161; f.context.account.tokens = 839; f.update();
+  assert.equal(f.charge.textContent, 'J€ 709'); assert.equal(f.wallet.textContent, 'J€ 130');
+  assert.equal(f.preview.hidden, false); assert.equal(f.input['aria-invalid'], 'false');
+  f.context.lot.leading = false; f.context.account.tokens = 1000; f.update();
+  assert.equal(f.charge.textContent, 'J€ 870'); assert.equal(f.wallet.textContent, 'J€ 130');
 });
 
 test('a fresh same-auction reservation lets a J€839 wallet raise to J€870 despite stale bid lists', () => {

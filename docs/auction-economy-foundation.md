@@ -271,7 +271,12 @@ Auction detail responses include a private `bidding` budget for the signed-in
 viewer: free wallet plus their current maximum reserved on that same auction.
 The bid form uses that current budget even if cached participation lists are
 stale. Other auctions' escrow and opponents' hidden maxima are excluded;
-anonymous responses contain no private bidding budget.
+anonymous responses contain no private bidding budget. The form shows exact
+minimum/maximum validation inline, offers an explicit minimum-fill action and
+previews the additional escrow and remaining wallet. Live updates and rejected
+racing bids preserve the player's draft while refreshing the limits. Cards
+separate a current reserved maximum from an outbid/archived last maximum;
+confirmed bids report the saved amount or that no money was reserved.
 Settlement transfers the existing inventory row and pays the seller once.
 No parallel NPC currency/accounting system or recurring mint/refill exists.
 

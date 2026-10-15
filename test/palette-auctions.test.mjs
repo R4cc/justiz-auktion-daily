@@ -243,11 +243,15 @@ test('palette proxy ceiling waits for rivals and refunds unused reserve at settl
   bidOnPaletteAuction(dir, leader, lot.id, lot.reserve, { now: day });
   const raised = bidOnPaletteAuction(dir, leader, lot.id, ceiling, { now: day + 1000 });
   assert.equal(raised.currentBid, lot.reserve);
+  assert.equal(raised.bidding.leading, true);
+  assert.equal(raised.bidding.reservedMaximum, ceiling);
   assert.deepEqual(getPaletteAuction(dir, lot.id, { now: day + 1000 }).bids.map(bid => bid.amount),
     [lot.reserve, lot.reserve]);
   assert.equal(tokensOf(service, leader), 100000 - ceiling);
   const challenged = bidOnPaletteAuction(dir, rival, lot.id, lot.reserve + inc, { now: day + 2000 });
   assert.equal(challenged.currentBid, lot.reserve + 2 * inc);
+  assert.equal(challenged.bidding.leading, false);
+  assert.equal(challenged.bidding.reservedMaximum, 0);
   assert.equal(tokensOf(service, rival), 100000);
   assert.equal(paletteAuctionsByUser(dir, leader, { now: day + 2000 })[0].highestBid, ceiling);
   settlePaletteAuction(dir, lot.id, { now: day + hour });

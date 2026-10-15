@@ -331,7 +331,9 @@ export function bidOnPaletteAuction(dataDir, user, auctionId, amount, { now = Da
         bodyEn: `${snapshot.name} is now at J€ ${outcome.visibleBid}.`, bodyDe: `${snapshot.nameDe || snapshot.name} steht jetzt bei J€ ${outcome.visibleBid}.`
       }, now);
     }
-    return serializePublicAuction(db, db.prepare('SELECT * FROM primary_palette_auctions WHERE id = ?').get(row.id));
+    return { ...serializePublicAuction(db, db.prepare('SELECT * FROM primary_palette_auctions WHERE id = ?').get(row.id)),
+      bidding: proxyBidBudget(outcome.visibleBid, outcome.maxBid, outcome.leaderId,
+        user.id, row.reserve, increment, account.tokens - charge) };
   }));
 }
 
