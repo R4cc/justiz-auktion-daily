@@ -161,6 +161,9 @@ precedes runtime startup in `server.mjs`.
   four buyers selected from the 800-person roster. Their ceiling is the market-adjusted expected bundle
   value times a persona multiplier, so a hot market (index above 100) lets
   NPCs chase a lot past its frozen reserve and a cold market silences them.
+  A durable slot claim is written in the bid transaction, including when an
+  existing human maximum immediately beats the NPC. Replays and concurrent
+  runtimes cannot consume a slot twice; rejected bids roll the claim back.
   Bids use the identical escrow/refund accounting as human bids through a
   trusted runtime path; NPC accounts stay rejected on every player-facing
   surface.
@@ -263,8 +266,11 @@ the lot’s value-tiered increment according to cheapness or make a bounded jump
 toward WTP according to aggressiveness. They react when outbid below WTP and
 shorten their personality-based delay in the last two minutes. No NPC jumps
 straight to WTP. A database-backed guard inside `placeBid`
-allows at most one NPC bid per listing per 30 seconds, including replayed ticks
-and parallel runtimes. At most 200 unseen listings initialize and 1000 due
+allows at most one discretionary NPC bid per listing per 30 seconds, including
+replayed ticks and parallel runtimes. Automatic proxy defenses are marked in
+stored bid records and do not restart that decision cooldown. Both NPC runtimes cap
+proposed maxima at current spendable funds, excluding other auctions' escrow.
+Banned bidders and stale concurrent-winner snapshots cannot abort the tick. At most 200 unseen listings initialize and 1000 due
 interest rows are considered per tick. All actual bids use `placeBid`:
 full escrow debit, exact outbid refund, leader raises pay the difference.
 Auction detail responses include a private `bidding` budget for the signed-in

@@ -72,6 +72,7 @@ export function ensureResaleSchema(db, now = Date.now()) {
     bidder_id TEXT NOT NULL REFERENCES users(id),
     amount INTEGER NOT NULL CHECK(amount > 0),
     visible_amount INTEGER,
+    automatic INTEGER NOT NULL DEFAULT 0 CHECK(automatic IN (0,1)),
     created_at INTEGER NOT NULL
   ) STRICT`);
   db.exec(`CREATE INDEX IF NOT EXISTS resale_bids_auction ON resale_bids(auction_id, amount)`);
@@ -94,6 +95,12 @@ export function ensureResaleSchema(db, now = Date.now()) {
   if (!db.prepare('PRAGMA table_info(resale_bids)').all().some(column => column.name === 'visible_amount')) {
     db.exec('ALTER TABLE resale_bids ADD COLUMN visible_amount INTEGER');
   }
+  if (!db.prepare('PRAGMA table_info(resale_bids)').all().some(column => column.name === 'automatic')) {
+    // Old rows stay untouched; pre-upgrade automatic replies can only affect
+    // the remainder of their existing 30-second cooldown.
+    db.exec('ALTER TABLE resale_bids ADD COLUMN automatic INTEGER NOT NULL DEFAULT 0 CHECK(automatic IN (0,1))');
+  }
+  db.exec('CREATE INDEX IF NOT EXISTS resale_bids_timing ON resale_bids(auction_id, automatic, created_at)');
   if (!columns.includes('settled_at')) {
     db.exec('ALTER TABLE resale_auctions ADD COLUMN settled_at INTEGER');
     // One-time cleanup for foundation-version rows: their bids were advisory
@@ -282,7 +289,7 @@ export function placeBid(dataDir, user, auctionId, amount, { now = Date.now() } 
     // Persistent timing guard, inside the economic write lock. Replaying a
     // runtime tick (or running two processes) cannot cause a bidding burst.
     if (bidder.npc && db.prepare(`SELECT 1 FROM resale_bids b JOIN users u ON u.id = b.bidder_id
-      WHERE b.auction_id = ? AND u.npc = 1 AND b.created_at > ? LIMIT 1`).get(row.id, now - 30_000)) {
+      WHERE b.auction_id = ? AND u.npc = 1 AND b.automatic = 0 AND b.created_at > ? LIMIT 1`).get(row.id, now - 30_000)) {
       fail('npc_bid_wait', 409);
     }
     const outcome = resolveProxyBid(row.current_bid, row.max_bid, row.current_bidder_id,
@@ -305,7 +312,7 @@ export function placeBid(dataDir, user, auctionId, amount, { now = Date.now() } 
       (auction_id, bidder_id, amount, visible_amount, created_at) VALUES (?, ?, ?, ?, ?)`)
       .run(row.id, user.id, amount, outcome.challengerBid, now);
     if (outcome.autoBid !== null) db.prepare(`INSERT INTO resale_bids
-      (auction_id, bidder_id, amount, visible_amount, created_at) VALUES (?, ?, ?, ?, ?)`)
+      (auction_id, bidder_id, amount, visible_amount, created_at, automatic) VALUES (?, ?, ?, ?, ?, 1)`)
       .run(row.id, row.current_bidder_id, oldMax, outcome.autoBid, now);
     db.prepare('UPDATE resale_auctions SET current_bid = ?, max_bid = ?, current_bidder_id = ?, ends_at = ? WHERE id = ?')
       .run(outcome.visibleBid, outcome.maxBid, outcome.leaderId, auctionEndAfterBid(row.ends_at, now), row.id);

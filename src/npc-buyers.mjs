@@ -3,7 +3,7 @@ import { createHash } from 'node:crypto';
 import { transaction, withDatabase } from './database.mjs';
 import { estimatedValueTokens, marketCategoryForItem, marketIndexes } from './market.mjs';
 import { ensureResaleSchema, placeBid } from './resale.mjs';
-import { bidOnPaletteAuction, ensurePaletteAuctionSchema, paletteBidIncrement } from './palette-auctions.mjs';
+import { bidOnPaletteAuction, ensurePaletteAuctionSchema, paletteBidIncrement, PALETTE_NPC_SLOT_MS } from './palette-auctions.mjs';
 import { bundleReferencePricing } from './palette-definitions.mjs';
 import { AccountError } from './errors.mjs';
 export { NPC_BUYERS, SPECIAL_NPC_BUYERS } from './npc-roster.mjs';
@@ -13,7 +13,7 @@ import { npcAudienceKey, npcDemand } from './npc-demand.mjs';
 import { BARGAIN_SUPPLIER_ID } from './bargain-auctions.mjs';
 
 export const NPC_COHORT_SIZE = 16;
-export const PALETTE_SHOWUP_MS = 5 * 60_000;
+export const PALETTE_SHOWUP_MS = PALETTE_NPC_SLOT_MS;
 
 export const deterministicUnit = key => createHash('sha256').update(key).digest().readUInt32BE(0) / 2 ** 32;
 
@@ -41,6 +41,12 @@ export function seedNpcBuyers(dataDir, { now = Date.now() } = {}) {
     const existing = new Set(db.prepare('SELECT id FROM users WHERE npc = 1').all().map(row => row.id));
     for (const npc of NPC_BUYERS) if (!existing.has(npc.id)) ensureNpcBuyer(db, npc, now);
   }));
+}
+
+// A proposed maximum must fit today's spendable wallet, even if the NPC's
+// willingness-to-pay is larger. Reserved funds on other lots stay unavailable.
+function npcSpendableTokens(dataDir, npcId) {
+  return withDatabase(dataDir, db => db.prepare('SELECT tokens FROM users WHERE id=? AND npc=1 AND banned=0').get(npcId)?.tokens ?? 0);
 }
 
 export function npcValuation(item, indexes, npc, auctionId, unit = deterministicUnit, quantity = 1) {
@@ -127,7 +133,7 @@ export function tickNpcBuyers(dataDir, { now = Date.now(), unit = deterministicU
     const bulkDiscount = Math.max(.75, 1 - Math.log2(quantity) * .04);
     const liveCeiling = Math.max(1, Math.floor(Math.min(interest.max_bid, value.maxBid * bulkDiscount)
       * demandCache.get(interest.auction_id)));
-    interest.max_bid = liveCeiling;
+    interest.max_bid = Math.min(liveCeiling, npcSpendableTokens(dataDir, npc.id));
     const minimum = interest.current_bid === null ? interest.start_price : interest.current_bid + resaleBidIncrement(interest.start_price);
     const delay = npcResaleBidDelay(npc, interest.ends_at, now);
     if (minimum > interest.max_bid) {
@@ -144,7 +150,7 @@ export function tickNpcBuyers(dataDir, { now = Date.now(), unit = deterministicU
         withDatabase(dataDir, db => db.prepare('UPDATE resale_npc_interest SET last_bid_at = ? WHERE auction_id = ? AND npc_id = ?')
           .run(now, interest.auction_id, npc.id));
       } catch (error) {
-        if (!(error instanceof AccountError) || !['bid_too_low', 'auction_ended', 'insufficient_tokens', 'npc_bid_wait'].includes(error.message)) throw error;
+        if (!(error instanceof AccountError) || !['bid_too_low', 'auction_ended', 'insufficient_tokens', 'npc_bid_wait', 'npc_self_outbid', 'login_required'].includes(error.message)) throw error;
         if (error.message === 'npc_bid_wait') touched.add(interest.auction_id);
       }
     }
@@ -172,9 +178,9 @@ export function paletteBidCeiling(snapshot, indexes, npc, auctionId, unit = dete
 
 // One deterministic consideration per active lot per five-minute slot: most
 // slots are quiet observation, so an hour-long lot gathers a handful of NPC
-// bids instead of a wall of them. Stateless by design — restarts and
-// concurrent runtimes cannot double-bid, because the slot roll, the chosen
-// cohort buyer and the amount are all derived from (lot, npc, slot, bid).
+// bids instead of a wall of them. Deterministic selection and durable slot
+// receipts prevent repeated decisions across restarts/concurrent runtimes.
+// Even a losing proxy challenge consumes that lot's NPC turn for the slot.
 export function tickPaletteBuyers(dataDir, { now = Date.now(), unit = deterministicUnit } = {}) {
   seedNpcBuyers(dataDir, { now });
   const slot = Math.floor(now / PALETTE_SHOWUP_MS);
@@ -183,7 +189,9 @@ export function tickPaletteBuyers(dataDir, { now = Date.now(), unit = determinis
     ensurePaletteAuctionSchema(db, now);
     return db.prepare(`SELECT id, reserve, current_bid, current_bidder_id, ends_at, public_snapshot_json
       FROM primary_palette_auctions WHERE status = 'active' AND ends_at > ?
-      ORDER BY ends_at, id LIMIT 50`).all(now);
+      AND NOT EXISTS (SELECT 1 FROM primary_palette_npc_slots s
+        WHERE s.auction_id=primary_palette_auctions.id AND s.slot=?)
+      ORDER BY ends_at, id LIMIT 50`).all(now, slot);
   });
   let bids = 0;
   for (const lot of lots) {
@@ -204,16 +212,17 @@ export function tickPaletteBuyers(dataDir, { now = Date.now(), unit = determinis
     // The tiered minimum raise applies to NPCs exactly like to humans; the
     // domain would reject anything below it anyway (bid_too_low).
     const minimum = lot.current_bid === null ? lot.reserve : lot.current_bid + paletteBidIncrement(lot.reserve);
-    if (minimum > maxBid) continue;
-    const headroom = maxBid - minimum;
+    const ceiling = Math.min(maxBid, npcSpendableTokens(dataDir, npc.id));
+    if (minimum > ceiling) continue;
+    const headroom = ceiling - minimum;
     const pressure = .02 + npc.aggressiveness * .06;
     const jump = headroom === 0 ? 0 : 1 + Math.floor(unit(`${lot.id}:${npc.id}:${lot.current_bid}:palette-jump`)
-      * Math.min(headroom, Math.round(maxBid * pressure)));
+      * Math.min(headroom, Math.round(ceiling * pressure)));
     try {
-      bidOnPaletteAuction(dataDir, npc, lot.id, Math.min(maxBid, minimum + jump), { now, npc: true });
+      bidOnPaletteAuction(dataDir, npc, lot.id, Math.min(ceiling, minimum + jump), { now, npc: true });
       bids++;
     } catch (error) {
-      if (!(error instanceof AccountError) || !['bid_too_low', 'palette_auction_ended', 'insufficient_tokens', 'npc_self_outbid'].includes(error.message)) throw error;
+      if (!(error instanceof AccountError) || !['bid_too_low', 'palette_auction_ended', 'insufficient_tokens', 'npc_self_outbid', 'npc_bid_wait', 'account_banned', 'login_required'].includes(error.message)) throw error;
     }
   }
   return { bids };

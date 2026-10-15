@@ -41,6 +41,7 @@ export { levelForXp, XP_LEVEL_LIMIT } from './progression.mjs';
 // gate); NPC accounts stay rejected on every player-facing surface, and
 // auction cancellation remains deliberately unsupported.
 export const PALETTE_AUCTION_DURATION_MS = 3600_000;
+export const PALETTE_NPC_SLOT_MS = 5 * 60_000;
 // The board targets ten concurrent sealed lots, refreshed by one drop window
 // every duration/target (six minutes, see economy-runtime) so ends stay
 // staggered. An edition holds at most two concurrent lots to keep the board
@@ -115,6 +116,21 @@ export function ensurePaletteAuctionSchema(db, now = Date.now()) {
     db.exec('ALTER TABLE primary_palette_bids ADD COLUMN visible_amount INTEGER');
   }
   db.exec(`CREATE INDEX IF NOT EXISTS primary_palette_bids_auction ON primary_palette_bids(auction_id, id)`);
+  if (!db.prepare("SELECT 1 FROM sqlite_schema WHERE type='table' AND name='primary_palette_npc_slots'").get()) {
+    db.exec(`CREATE TABLE IF NOT EXISTS primary_palette_npc_slots (
+      auction_id TEXT NOT NULL REFERENCES primary_palette_auctions(id) ON DELETE CASCADE,
+      slot INTEGER NOT NULL, PRIMARY KEY(auction_id, slot)
+    ) STRICT`);
+    // On upgrade, existing NPC activity consumes the current slot rather
+    // than immediately replaying it. Older bid history is never rewritten.
+    const slot = Math.floor(now / PALETTE_NPC_SLOT_MS);
+    if (db.prepare("SELECT 1 FROM sqlite_schema WHERE type='table' AND name='users'").get()) db.prepare(`INSERT OR IGNORE INTO primary_palette_npc_slots (auction_id, slot)
+      SELECT DISTINCT b.auction_id, ? FROM primary_palette_bids b
+      JOIN users u ON u.id=b.bidder_id AND u.npc=1
+      JOIN primary_palette_auctions a ON a.id=b.auction_id
+      WHERE a.status='active' AND a.ends_at>? AND b.created_at>=? AND b.created_at<=?`)
+      .run(slot, now, slot * PALETTE_NPC_SLOT_MS, now);
+  }
   db.exec(`CREATE TABLE IF NOT EXISTS primary_palette_stock_draws (
     auction_id TEXT PRIMARY KEY REFERENCES primary_palette_auctions(id),
     draws TEXT NOT NULL CHECK(json_valid(draws)), rewards TEXT CHECK(rewards IS NULL OR json_valid(rewards))
@@ -308,6 +324,11 @@ export function bidOnPaletteAuction(dataDir, user, auctionId, amount, { now = Da
     const takesLead = outcome.leaderId === user.id;
     const charge = !takesLead ? 0 : raise ? amount - oldMax : amount;
     if (account.tokens < (raise ? charge : amount)) fail('insufficient_tokens', 409);
+    // A losing proxy challenge is still this slot's NPC action. Claim it
+    // under the write lock, alongside escrow, so restarts and concurrent
+    // runtimes cannot bid again simply because the human retained the lead.
+    if (npc && !db.prepare('INSERT OR IGNORE INTO primary_palette_npc_slots (auction_id, slot) VALUES (?, ?)')
+      .run(row.id, Math.floor(now / PALETTE_NPC_SLOT_MS)).changes) fail('npc_bid_wait', 409);
     if (charge && !db.prepare('UPDATE users SET tokens = tokens - ? WHERE id = ? AND tokens >= ?')
       .run(charge, user.id, charge).changes) fail('insufficient_tokens', 409);
     if (takesLead && !raise && row.current_bidder_id !== null) {
