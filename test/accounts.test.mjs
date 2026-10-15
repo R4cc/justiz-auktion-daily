@@ -11,6 +11,7 @@ import { caseCatalog, publicCaseCatalog, itemRarity, drawItem } from '../src/cas
 import { closeDataStore, upsertAuctions } from '../src/database.mjs';
 import { createAccountApi } from '../src/account-api.mjs';
 import { listItem } from '../src/resale.mjs';
+import { ensureBusinessSchema } from '../src/businesses.mjs';
 
 const password = 'test-only-password-123';
 const lots = Array.from({ length: 8 }, (_, i) => ({ id: i + 1, title: `Product ${i + 100}`,
@@ -519,6 +520,17 @@ test('admin economy reset clears player progress and auctions while preserving a
   listItem(dir, player, { inventoryId: item.id, startPrice: 10, endsAt: new Date(Date.now() + 120000).toISOString() });
   const run = service.startGame(player, 'daily', () => lots.slice(0, 5));
   for (let i = 0; i < 5; i++) playAnswer(service, player, run.id, i, lots[i].actualBid);
+  service.db(db => {
+    const now = Date.now();
+    ensureBusinessSchema(db, { now });
+    for (const [id, owner] of [['reset-old-store', admin.id], ['reset-new-store', player.id]]) {
+      db.prepare(`INSERT INTO businesses (id,user_id,type,size,bought_at,last_tick_at)
+        VALUES (?,?,'wine','popup',?,?)`).run(id, owner, now, now);
+    }
+    db.prepare('INSERT INTO business_stock_history VALUES (?,?,?)').run('reset-old-store', item.id, now);
+    db.prepare('INSERT INTO business_takeovers VALUES (?,?,?,?,?,?,?,?)').run(player.id,
+      'reset-takeover-request', '{}', 'reset-old-store', admin.id, 'reset-new-store', '{}', now);
+  });
   const sessionsBefore = service.db(db => db.prepare('SELECT COUNT(*) AS count FROM account_sessions').get().count);
 
   assert.throws(() => service.resetEconomy(player, 'RESET ECONOMY'), { status: 403 });
@@ -528,6 +540,7 @@ test('admin economy reset clears player progress and auctions while preserving a
   assert.throws(() => service.resetEconomy(admin, 'RESET ECONOMY'), /reset fault/);
   assert.equal(service.inventory(player).length, 1);
   assert.equal(service.db(db => db.prepare('SELECT COUNT(*) AS count FROM resale_auctions').get().count), 1);
+  assert.equal(service.db(db => db.prepare('SELECT COUNT(*) AS count FROM business_takeovers').get().count), 1);
   service.db(db => db.exec('DROP TRIGGER stop_economy_reset'));
   const reset = service.resetEconomy(admin, 'RESET ECONOMY');
   assert.equal(reset.playerCount, 2); assert.equal(reset.inventoryCount, 1);
@@ -540,6 +553,9 @@ test('admin economy reset clears player progress and auctions while preserving a
   assert.equal(service.inventory(player).length, 0);
   assert.equal(service.friends(player).friends[0].status, 'accepted');
   assert.equal(service.db(db => db.prepare('SELECT COUNT(*) AS count FROM resale_auctions').get().count), 0);
+  for (const table of ['business_stock_history', 'business_takeovers', 'businesses']) {
+    assert.equal(service.db(db => db.prepare(`SELECT COUNT(*) AS count FROM ${table}`).get().count), 0);
+  }
   assert.equal(service.adminOverview(admin).lastReset.inventoryCount, 1);
 });
 

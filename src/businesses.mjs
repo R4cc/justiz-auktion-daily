@@ -1,3 +1,7 @@
+import { syncUserStatistics } from './user-statistics.mjs';
+import { ensureBusinessAbandonmentSchema, businessAbandonment, recordBusinessRestock } from './business-abandonment.mjs';
+import { checkDueStoreEvent } from './store-events.mjs';
+import { assertPlayerFree } from './justice.mjs';
 import { reconcileCategorizedStock } from './item-category-migration.mjs';
 import { storePopularity, storeReputation, storePopularityBreakdown, shelfFillFactor, assortmentPopularity } from './store-reputation.mjs';
 import { ensureReviewSchema, recordNpcStoreFeedback } from './store-reviews.mjs';
@@ -11,7 +15,7 @@ import { AccountError } from './errors.mjs';
 import { marketCategoryForItem, marketIndexAt, marketIndexes, estimatedValueTokens } from './market.mjs';
 import { ensureResaleSchema, inventoryIsLocked } from './resale.mjs';
 import { sealedPaletteInventoryIds } from './palette-auctions.mjs';
-import { ensureNotificationSchema } from './notifications.mjs';
+import { ensureNotificationSchema, pushNotification } from './notifications.mjs';
 import { auctionSelectionCategory } from './auction-selection.mjs';
 import { auctionGallery } from './auction-images.mjs';
 import { recordSale, salePayout, tradingTotals, acquisition, milestone, ensureTraderSchema } from './trader.mjs';
@@ -134,6 +138,7 @@ export function ensureBusinessSchema(db, { now = Date.now() } = {}) {
   ensureStoreCashSchema(db);
   ensureReviewSchema(db);
   ensureTownSchema(db, { now });
+  ensureBusinessAbandonmentSchema(db, now);
 }
 
 // Upgrade recorded assortment factors, using their original stock snapshot so
@@ -265,6 +270,7 @@ export function restockPrestigeStores(db, now, userId = null) {
   for (const shop of shops) {
     // Settle elapsed sales before adding stock acquired in the present.
     advanceShop(db,shop,now);
+    checkDueStoreEvent(db,shop,now,{advance:false});
     const stock = shopStock(db,shop.id,shop.type,shop.profit_margin,now);
     const space = shopCapacity(shop.type,shopSize(shop.size)) - stock.length;
     if (space <= 0) continue;
@@ -295,10 +301,12 @@ export function restockPrestigeStores(db, now, userId = null) {
         const varied = pool.findIndex(entry=>!state.titles.has(entry.item.title));
         const [entry] = pool.splice(varied < 0 ? 0 : varied,1);
         insert.run(entry.id,state.shop.id,now,shelfPrice(db,entry.item,state.shop.type,state.shop.profit_margin,now));
+        recordBusinessRestock(db,state.shop.id,[entry.id],now);
         state.titles.add(entry.item.title); state.space--; state.added++; stocked++; moved=true;
       }
     } while (moved);
     for (const state of states) if (state.added) {
+      checkDueStoreEvent(db,state.shop,now,{advance:false});
       const metrics = shopMetrics(db,state.shop,shopStock(db,state.shop.id,state.shop.type,state.shop.profit_margin,now),now);
       db.prepare('UPDATE businesses SET traffic_popularity=?,popularity_factors=? WHERE id=?')
         .run(metrics.popularity,JSON.stringify(metrics.factors),state.shop.id);
@@ -317,6 +325,7 @@ function publicShop(db, row, now = Date.now()) {
   const {factors,...metrics}=shopMetrics(db,row,stock,now);
   return { id: row.id, type: row.type, size: row.size, boughtAt: row.bought_at,
     npcTheftChancePercent: npcStoreTheftChance(row.security_guard, plotLocation(db,row.plot_id)?.theftMultiplier ?? 1),
+    ...businessAbandonment(row,now), takeoverPrice: Math.round(shopSize(row.size).cost * shopType(row.type).costFactor * (plotLocation(db,row.plot_id)?.priceMultiplier ?? 1)),
     location: plotLocation(db, row.plot_id), name: row.store_name, motto: row.store_motto, securityGuard: Boolean(row.security_guard), securityGuardProfitPercent: ECONOMY_BALANCE.securityGuardProfitPercent, securityGuardFees: row.security_guard_fees, mischiefEnabled: Boolean(row.mischief_enabled),
     ...tradingTotals(db,row.user_id,row.id),
     visitors: row.visitors, sales: row.sales, salesToday: today.sales,
@@ -355,11 +364,69 @@ export function buyBusiness(dataDir, user, typeId, sizeId, { now = Date.now(), p
     const cost = Math.round(size.cost * type.costFactor * plotLocation(db, plot.id).priceMultiplier);
     if (!db.prepare('UPDATE users SET tokens = tokens - ? WHERE id = ? AND tokens >= ?').run(cost, user.id, cost).changes) fail('insufficient_tokens', 409);
     const id = randomUUID();
-    db.prepare('INSERT INTO businesses (id, user_id, type, size, bought_at, last_tick_at, profit_margin, plot_id, plot_since, opening_cost) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
-      .run(id, user.id, type.id, size.id, now, Math.floor(now / HOUR) * HOUR, DEFAULT_PROFIT_MARGIN, plot.id, now, cost);
+    db.prepare('INSERT INTO businesses (id, user_id, type, size, bought_at, last_tick_at, profit_margin, plot_id, plot_since, opening_cost, last_restock_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
+      .run(id, user.id, type.id, size.id, now, Math.floor(now / HOUR) * HOUR, DEFAULT_PROFIT_MARGIN, plot.id, now, cost, now);
     ensureTraderSchema(db);
     if (db.prepare("SELECT 1 FROM trader_milestones WHERE user_id=? AND step='sale'").get(user.id)) milestone(db,user.id,'reinvest',now);
     return { shop: publicShop(db, db.prepare('SELECT * FROM businesses WHERE id = ?').get(id), now), cost };
+  }));
+}
+
+export function takeOverBusiness(dataDir, user, { shopId, expectedPrice, requestId } = {}, { now = Date.now() } = {}) {
+  if (typeof shopId !== 'string' || typeof requestId !== 'string' || !/^[a-zA-Z0-9-]{16,80}$/.test(requestId)
+    || !Number.isSafeInteger(expectedPrice) || expectedPrice < 1) fail('invalid_request');
+  return withDatabase(dataDir, db => transaction(db, () => {
+    ensureBusinessSchema(db,{now});
+    const player = activeUser(db,user);
+    if (db.prepare('SELECT must_change_password FROM users WHERE id=?').get(player.id).must_change_password) fail('password_change_required',403);
+    assertPlayerFree(db,player.id,now);
+    const payload = JSON.stringify({shopId,expectedPrice});
+    const prior = db.prepare('SELECT payload,result FROM business_takeovers WHERE buyer_id=? AND request_id=?').get(player.id,requestId);
+    if (prior) {
+      if (prior.payload !== payload) fail('request_conflict',409);
+      return JSON.parse(prior.result);
+    }
+    const shop = db.prepare(`SELECT b.* FROM businesses b JOIN users u ON u.id=b.user_id
+      WHERE b.id=? AND b.retired=0 AND u.npc=0`).get(shopId);
+    if (!shop || !shop.plot_id || shop.user_id === player.id || !businessAbandonment(shop,now).abandoned) fail('store_not_abandoned',409);
+    if (db.prepare('SELECT COUNT(*) AS n FROM businesses WHERE user_id=? AND retired=0').get(player.id).n >= MAX_STORES_PER_USER) fail('store_limit_reached',409);
+    const size = shopSize(shop.size), type = shopType(shop.type), location = plotLocation(db,shop.plot_id);
+    if (levelForXp(player.xp) < size.requiredLevel) fail('store_level_required',403);
+    const cost = Math.round(size.cost * type.costFactor * location.priceMultiplier);
+    if (cost !== expectedPrice) fail('store_price_changed',409);
+    const has = name => Boolean(db.prepare("SELECT 1 FROM sqlite_schema WHERE type='table' AND name=?").get(name));
+    if (has('store_heists')) {
+      // Legacy memory games have no financial consequence left to resolve
+      // once expired. Keep live games and modern police proceedings locked.
+      db.prepare(`UPDATE store_heists SET status='expired',result=json_object('id',id,'outcome','expired','fee',fee,'inventoryId',NULL)
+        WHERE business_id=? AND status='active' AND blackjack IS NULL AND expires_at<=?`).run(shop.id,now);
+      if (db.prepare("SELECT 1 FROM store_heists WHERE business_id=? AND retired=0 AND status IN ('active','police') LIMIT 1").get(shop.id)) fail('store_takeover_pending',409);
+    }
+    advanceShop(db,shop,now);
+    const stock = shopStock(db,shop.id,shop.type,shop.profit_margin,now);
+    if (stock.some(item => inventoryIsLocked(db,item.id))) fail('store_takeover_pending',409);
+    const cash = db.prepare('SELECT cash_balance FROM businesses WHERE id=?').get(shop.id).cash_balance;
+    const oldOwner = db.prepare('SELECT tokens FROM users WHERE id=?').get(shop.user_id);
+    if (!Number.isSafeInteger(oldOwner.tokens + cash)) fail('token_balance_limit',409);
+    if (!db.prepare('UPDATE users SET tokens=tokens-? WHERE id=? AND tokens>=?').run(cost,player.id,cost).changes) fail('insufficient_tokens',409);
+    if (cash) db.prepare('UPDATE users SET tokens=tokens+? WHERE id=?').run(cash,shop.user_id);
+    // Preserve old store receipts and reviews; shelf items already belong to
+    // the previous owner and simply return to their ordinary inventory.
+    syncUserStatistics(db,shop.user_id,now);
+    db.prepare('DELETE FROM business_stock WHERE business_id=? AND sold_at IS NULL').run(shop.id);
+    const retired = 'npc-abandoned-retired';
+    db.prepare("INSERT OR IGNORE INTO users(id,username,password_hash,npc,tokens,created_at) VALUES(?,'Abandoned Assets','disabled',1,0,?)").run(retired,now);
+    db.prepare('UPDATE businesses SET user_id=?,retired=1,plot_id=NULL,cash_balance=0,traffic_popularity=0 WHERE id=?').run(retired,shop.id);
+    const id = randomUUID();
+    db.prepare(`INSERT INTO businesses (id,user_id,type,size,bought_at,last_tick_at,profit_margin,plot_id,plot_since,opening_cost,last_restock_at)
+      VALUES (?,?,?,?,?,?,?,?,?,?,?)`).run(id,player.id,shop.type,shop.size,now,Math.floor(now/HOUR)*HOUR,DEFAULT_PROFIT_MARGIN,shop.plot_id,now,cost,now);
+    const result = {shop:publicShop(db,db.prepare('SELECT * FROM businesses WHERE id=?').get(id),now),cost};
+    db.prepare('INSERT INTO business_takeovers VALUES (?,?,?,?,?,?,?,?)').run(player.id,requestId,payload,shop.id,shop.user_id,id,JSON.stringify(result),now);
+    pushNotification(db,shop.user_id,{type:'store',sourceKey:`store-takeover:${shop.id}`,href:'/businesses',
+      titleEn:'Abandoned store purchased',titleDe:'Verlassener Laden übernommen',
+      bodyEn:`Your remaining stock returned to inventory and J€ ${cash} was collected from the till.`,
+      bodyDe:`Deine übrigen Waren sind im Inventar. J€ ${cash} aus der Kasse wurden gutgeschrieben.`},now);
+    return result;
   }));
 }
 
@@ -371,6 +438,7 @@ export function setBusinessMargin(dataDir, user, shopId, profitMargin, { now = D
     if (!shop) fail('business_not_found', 404);
     // Settle elapsed hours with the old margin before changing future sales.
     advanceShop(db, shop, now);
+    checkDueStoreEvent(db,shop,now,{advance:false});
     db.prepare('UPDATE businesses SET profit_margin = ? WHERE id = ?').run(profitMargin, shop.id);
     return publicShop(db, db.prepare('SELECT * FROM businesses WHERE id = ?').get(shop.id), now);
   }));
@@ -383,6 +451,7 @@ export function applyBusinessStock(db, user, shopId, addIds, removeIds, now) {
   ensureBusinessSchema(db,{now});activeUser(db,user);advanceShops(db,now,user.id);
   const shop=db.prepare('SELECT * FROM businesses WHERE id=? AND user_id=?').get(shopId,user.id);
   if(!shop)fail('business_not_found',404);
+  checkDueStoreEvent(db,shop,now,{advance:false});
   const stock=shopStock(db,shop.id,shop.type,shop.profit_margin,now);
   for(const id of removeIds)if(!stock.some(entry=>entry.id===id))fail('stock_not_found',409);
   if(stock.length-removeIds.length+addIds.length>shopCapacity(shop.type,shopSize(shop.size)))fail('business_full',409);
@@ -399,7 +468,9 @@ export function applyBusinessStock(db, user, shopId, addIds, removeIds, now) {
   });
   for(const id of removeIds)db.prepare('DELETE FROM business_stock WHERE business_id=? AND inventory_id=? AND sold_at IS NULL').run(shop.id,id);
   for(const entry of additions)db.prepare('INSERT INTO business_stock(inventory_id,business_id,stocked_at,asking_price) VALUES(?,?,?,?)').run(entry.id,shop.id,now,entry.price);
+  recordBusinessRestock(db,shop.id,addIds,now);
   if(addIds.length)milestone(db,user.id,'find',now);
+  checkDueStoreEvent(db,shop,now,{advance:false});
   const metrics=shopMetrics(db,shop,shopStock(db,shop.id,shop.type,shop.profit_margin,now),now);
   db.prepare('UPDATE businesses SET traffic_popularity=?,popularity_factors=? WHERE id=?').run(metrics.popularity,JSON.stringify(metrics.factors),shop.id);
   return publicShop(db,db.prepare('SELECT * FROM businesses WHERE id=?').get(shop.id),now);

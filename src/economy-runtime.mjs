@@ -13,6 +13,7 @@ import { tickWorldNews } from './world-news.mjs';
 import { AccountError } from './errors.mjs';
 import { tickBusinesses } from './businesses.mjs';
 import { tickNpcStoreThefts } from './npc-store-theft.mjs';
+import { tickStoreEvents } from './store-events.mjs';
 import { supplyCaseAuctions } from './case-supply.mjs';
 import { supplyBargainAuctions } from './bargain-auctions.mjs';
 import { supplyNpcItemAuctions } from './npc-item-supply.mjs';
@@ -85,6 +86,7 @@ export function tickEconomy(dataDir, { now = Date.now(), flags = featureFlags() 
   }
   if (flags.businesses) run('justice',()=>tickStoreJustice(dataDir,{now}));
   if (flags.businesses) run('businesses', () => tickBusinesses(dataDir, { now }));
+  if (flags.businesses) run('storeEvents', () => tickStoreEvents(dataDir, { now }));
   if (flags.businesses) run('npcStoreTheft', () => tickNpcStoreThefts(dataDir, { now }));
   if (flags.market || flags.resales || flags.paletteAuctions || flags.businesses) run('netWorth', () => captureNetWorth(dataDir, { now }));
   return { ...result, failures };

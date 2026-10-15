@@ -12,7 +12,7 @@ export const TOWN_DISTRICTS = [
 export const TOWN_STREETS = [
   {id:'side',nameEn:'Side street',nameDe:'Seitengasse',trafficMultiplier:1},
   {id:'main',nameEn:'Shopping street',nameDe:'Einkaufsstraße',trafficMultiplier:1.5},
-  {id:'residential',nameEn:'Residential lane',nameDe:'Wohngasse',trafficMultiplier:.65}
+  {id:'residential',nameEn:'Residential lane',nameDe:'Wohngasse',trafficMultiplier:1.25}
 ];
 // Street names are inspired by Vienna; these are fictional plots, not addresses.
 const roads = {

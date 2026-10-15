@@ -25,7 +25,7 @@ import { bidOnPaletteAuction, createPaletteAuction, getPaletteAuctionRewards, pa
 import { archivedListingsBidOnByUser, cancelListing, listItem, listingsBidOnByUser, listingsByUser, placeBid } from './resale.mjs';
 import { maskLeaderboard } from './username-privacy.mjs';
 import { markNotificationsRead, notificationsForUser } from './notifications.mjs';
-import { businessDashboard, buyBusiness, setBusinessMargin, stockBusiness, unstockBusiness } from './businesses.mjs';
+import { businessDashboard, buyBusiness, takeOverBusiness, setBusinessMargin, stockBusiness, unstockBusiness } from './businesses.mjs';
 import { saveStoreSettings, saveStoreStock, collectStoreCash, spinStoreHeist, actStoreHeist, buyStoreItem, customizeStore, finishStoreHeist, reactToStore, likeStoreReview, recordStoreVisit, playerCriminalRecord, reviewStore, startStoreHeist, tipStore, visitStore } from './storefronts.mjs';
 import { jsonBody as body } from './json-body.mjs';
 
@@ -201,6 +201,7 @@ export async function createAccountApi({ dataDir, dailyPayload, json, env = proc
         // handling all live in the domain function.
         result = { auction: bidOnPaletteAuction(dataDir, user, payload.id, payload.amount), user: accounts.profile(user) };
       }
+      else if (flags.businesses && route === 'businesses/takeover') result = { ...takeOverBusiness(dataDir, user, payload), user: accounts.profile(user) };
       else if (flags.businesses && route === 'businesses/buy') result = { ...buyBusiness(dataDir, user, payload.type, payload.size, { plotId: payload.plotId ?? null }), user: accounts.profile(user) };
       else if (flags.businesses && route === 'businesses/stock') result = { shop: stockBusiness(dataDir, user, payload.shopId, payload.inventoryIds), user: accounts.profile(user) };
       else if(flags.businesses && ['businesses/settings','businesses/stock/transfer'].includes(route)) {

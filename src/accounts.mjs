@@ -367,7 +367,7 @@ export class Accounts {
       // registration codes, passwords, bans and account_sessions are untouched.
       for (const table of ['user_statistics_events', 'user_statistics_state', 'trader_sales', 'item_acquisitions', 'trader_milestones', 'resale_npc_interest', 'resale_bids', 'resale_auctions',
         'store_review_packs', 'store_events', 'store_event_checks', 'npc_store_theft_checks', 'store_heists', 'store_review_likes', 'store_npc_feedback', 'store_reviews', 'store_visits', 'store_reactions', 'store_receipts',
-        'business_sales', 'business_stock', 'businesses', 'town_plots', 'wholesale_bids', 'wholesale_auctions',
+        'business_stock_history', 'business_takeovers', 'business_sales', 'business_stock', 'businesses', 'town_plots', 'wholesale_bids', 'wholesale_auctions',
         'primary_palette_mystery_stock', 'primary_palette_stock_units', 'primary_palette_stock_draws', 'primary_palette_bids', 'primary_palette_rewards', 'primary_palette_auctions', 'stock_palette_purchases', 'stock_palette_editions', 'skill_purchases', 'user_skills',
         'daily_rewards', 'daily_case_rewards', 'xp_events', 'case_openings', 'case_purchases', 'case_stock', 'sealed_cases', 'inventory', 'account_games',
         'user_token_grants', 'token_grants', 'account_notifications', 'net_worth_snapshots', 'justice_seizures', 'player_justice']) {

@@ -6,8 +6,12 @@ import { join } from 'node:path';
 import { Accounts } from '../src/accounts.mjs';
 import { closeDataStore } from '../src/database.mjs';
 import { buyBusiness, stockBusiness, businessDashboard, unstockBusiness } from '../src/businesses.mjs';
-import { checkStoreEvents, acknowledgeStoreEvents, STORE_EVENT_INTERVAL, STORE_EVENTS, ensureStoreEventSchema } from '../src/store-events.mjs';
+import { checkStoreEvents, checkDueStoreEvent, tickStoreEvents, acknowledgeStoreEvents, STORE_EVENT_INTERVAL, STORE_EVENTS, ensureStoreEventSchema } from '../src/store-events.mjs';
 import { visitStore, buyStoreItem, startStoreHeist, actStoreHeist } from '../src/storefronts.mjs';
+import { tickEconomy } from '../src/economy-runtime.mjs';
+import { acquireItems } from '../src/trader.mjs';
+import { ensurePrestigeSchema } from '../src/prestige-effects.mjs';
+import { setMarketIndex } from '../src/market.mjs';
 const now = Date.parse('2026-10-08T12:30:00Z'), due = now + STORE_EVENT_INTERVAL;
 async function fixture(t) {
   const dir = await mkdtemp(join(tmpdir(), 'jg-store-events-')), accounts = new Accounts(dir, { now: () => now });
@@ -57,7 +61,7 @@ for(const [name,roll] of [['bombing',0],['heist',3]]) test(`${name} is cosmetic,
   stockBusiness(f.dir,f.owner,f.shop.id,['wine-8'],{now:due+1});
   assert.equal(visitStore(f.dir,f.rival,f.shop.id,{now:due+1}).store.stock.length,8);
 });
-test('rich buyer pays frozen current shelf prices exactly once and records normal sales',async t=>{
+test('rich buyer pays the standard event price exactly once and records normal sales',async t=>{
   const f=await fixture(t), before=f.balance(), event=run(f,10);
   assert.equal(event.type,'rich_buyer');assert.equal(event.itemsSold,8);assert.equal(event.money,960);
   assert.equal(f.balance(),before);assert.equal(f.query('SELECT * FROM business_sales').length,8);
@@ -119,4 +123,62 @@ test('historical stock-loss outcomes remain byte-for-byte unchanged after the ri
   const f=await fixture(t),result={id:'old-event',shopId:f.shop.id,type:'bombing',itemsLost:8,itemsSold:0,money:0,titleEn:'Historical outcome'};
   f.accounts.db(db=>db.prepare('INSERT INTO store_events VALUES (?,?,?,?,?,NULL)').run(result.id,f.shop.id,f.owner.id,JSON.stringify(result),now));
   assert.deepEqual(checkStoreEvents(f.dir,f.owner,{now:now+1}).events,[result]);
+});
+
+test('runtime checks stocked stores without owner visits and endpoint retries only return persisted outcomes',async t=>{
+  const f=await fixture(t), before=f.balance();
+  const result=tickStoreEvents(f.dir,{now:due,random:rolls(0,85)});
+  assert.equal(result.events.length,1);assert.equal(result.events[0].type,'windfall');
+  assert.equal(f.balance(),before);assert.equal(f.query('SELECT cash_balance FROM businesses WHERE id=?',f.shop.id)[0].cash_balance,200);
+  assert.deepEqual(tickStoreEvents(f.dir,{now:due+1,random:()=>{throw Error('runtime rerolled');}}).events,[]);
+  assert.deepEqual(checkStoreEvents(f.dir,f.owner,{now:due+1,random:()=>{throw Error('page rerolled');}}).events,result.events);
+  const g=await fixture(t), tick=tickEconomy(g.dir,{now:due,flags:{businesses:true}});
+  assert.deepEqual(tick.failures,[]);assert.ok(tick.storeEvents);
+  assert.equal(g.query('SELECT checked_at FROM store_event_checks WHERE business_id=?',g.shop.id)[0].checked_at,due);
+});
+
+test('empty checks stay overdue and newly stocked goods receive the due check without advancing ordinary sales twice',async t=>{
+  const f=await fixture(t);
+  f.accounts.db(db=>db.prepare('DELETE FROM business_stock').run());
+  tickStoreEvents(f.dir,{now:due,random:()=>{throw Error('empty shelves rolled');}});
+  assert.equal(f.query('SELECT * FROM store_event_checks').length,0);
+  // Recreate the stock insertion boundary used by manual and Prestige restocking.
+  f.accounts.atomic(db=>{
+    db.prepare('INSERT INTO business_stock(inventory_id,business_id,stocked_at,asking_price) VALUES(?,?,?,?)').run('wine-8',f.shop.id,due+1,120);
+    const shop=db.prepare('SELECT * FROM businesses WHERE id=?').get(f.shop.id);
+    const event=checkDueStoreEvent(db,shop,due+1,{advance:false,random:rolls(0,10)});
+    assert.equal(event.type,'rich_buyer');assert.equal(event.itemsSold,1);assert.equal(event.money,120);
+  });
+  assert.equal(f.query('SELECT checked_at FROM store_event_checks')[0].checked_at,due+1);
+  assert.equal(f.query('SELECT cash_balance FROM businesses WHERE id=?',f.shop.id)[0].cash_balance,120);
+});
+
+test('event prices ignore owner markup, follow the live market and preserve Prestige, guard fees and till accounting',async t=>{
+  for(const margin of [0,100]) {
+    const f=await fixture(t), before=f.balance();
+    f.accounts.db(db=>{
+      db.prepare('UPDATE businesses SET profit_margin=?,security_guard=1 WHERE id=?').run(margin,f.shop.id);
+      acquireItems(db,f.owner.id,Array.from({length:8},(_,i)=>`wine-${i}`),400,'purchase',now);
+      ensurePrestigeSchema(db);db.prepare('INSERT INTO user_prestige VALUES(?,?,?,?)').run(f.owner.id,JSON.stringify(['profit']),1,now);
+    });
+    setMarketIndex(f.dir,'wine',150,{now:due});
+    const event=run(f,10), shop=f.query('SELECT * FROM businesses WHERE id=?',f.shop.id)[0];
+    // J€180 market-linked customer price, J€32 positive-profit bonus, J€8 guard fee per item.
+    assert.equal(event.money,1696);assert.equal(shop.revenue,1696);assert.equal(shop.cash_balance,1632);
+    assert.equal(shop.security_guard_fees,64);assert.equal(f.balance(),before);
+    const sales=f.query('SELECT price FROM business_sales');assert.equal(sales.length,8);assert.ok(sales.every(s=>s.price===180));
+    const tracked=f.query('SELECT proceeds,cost,guard_fee FROM trader_sales');assert.equal(tracked.length,8);
+    assert.ok(tracked.every(s=>s.proceeds===212&&s.cost===50));assert.equal(tracked.reduce((sum,s)=>sum+s.guard_fee,0),64);
+    tickStoreEvents(f.dir,{now:due+1,random:()=>{throw Error('paid twice');}});
+    assert.equal(f.query('SELECT cash_balance FROM businesses WHERE id=?',f.shop.id)[0].cash_balance,1632);
+  }
+});
+
+test('autonomous checks skip retired and banned owners without consuming a roll or event interval',async t=>{
+  for(const condition of ['retired','banned']) {
+    const f=await fixture(t);
+    f.accounts.db(db=>db.prepare(condition==='retired'?'UPDATE businesses SET retired=1 WHERE id=?':'UPDATE users SET banned=1 WHERE id=?').run(condition==='retired'?f.shop.id:f.owner.id));
+    assert.deepEqual(tickStoreEvents(f.dir,{now:due,random:()=>{throw Error('ineligible shop rolled');}}).events,[]);
+    assert.equal(f.query('SELECT * FROM store_event_checks').length,0);
+  }
 });

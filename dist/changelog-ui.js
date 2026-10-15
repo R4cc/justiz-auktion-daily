@@ -2,6 +2,15 @@ window.changelogUi = (() => {
   // Curated manually. Only update for a feature when the user explicitly asks.
   const entries = [
     {
+      date: '2026-10-15', title: 'Store Activity & Balance',
+      changes: [
+        {en:'Stores become Abandoned after 20 days without new stock. Manual and automatic restocking count; moving the same items off and back onto shelves does not. Existing stores receive a 20-day grace period.',de:'Läden gelten nach 20 Tagen ohne neue Waren als verlassen. Manuelles und automatisches Auffüllen zählt; dieselben Waren aus- und wieder einzuräumen zählt nicht. Bestehende Läden erhalten 20 Tage Schonfrist.'},
+        {en:'Other players can purchase abandoned locations at the normal opening price. Remaining goods and cash return to the previous owner. Add new stock before a purchase to recover your store.',de:'Andere Spieler können verlassene Standorte zum regulären Eröffnungspreis kaufen. Übrige Waren und Kasseneinnahmen bleiben beim bisherigen Besitzer. Neue Waren vor einem Kauf reaktivieren deinen Laden.'},
+        {en:'Daily store events run automatically. Empty shelves do not reset pending checks, and event buyers pay fixed market-based prices independent of your markup.',de:'Tägliche Ladenereignisse laufen automatisch. Leere Regale setzen fällige Prüfungen nicht zurück; Ereigniskäufer zahlen feste marktbasierte Preise unabhängig vom Aufschlag.'},
+        {en:'Foot traffic for large-store residential locations increased from 0.65× to 1.25×.',de:'Die Laufkundschaft an Wohnstraßen-Standorten großer Läden wurde von 0,65× auf 1,25× erhöht.'}
+      ]
+    },
+    {
       date: '2026-10-15', title: 'Item Categorization',
       changes: [
         {en:'Improved item matching using 1,976 archived listings, including German compounds, product descriptions and accessory types. Product names take priority over incidental brands, colors and seller boilerplate.',de:'Artikelerkennung anhand von 1.976 archivierten Angeboten verbessert, einschließlich zusammengesetzter Begriffe, Produktbeschreibungen und Zubehörarten. Produktnamen haben Vorrang vor beiläufigen Marken, Farben und Verkäuferhinweisen.'},

@@ -65,6 +65,8 @@ function accountError(code) {
     review_not_found: t('This review is no longer available. Refresh the store.', 'Diese Bewertung ist nicht mehr verfügbar. Lade den Laden neu.'),
     invalid_store_reaction: t('Choose a valid reaction.', 'Wähle eine gültige Reaktion.'),
     own_store: t('Choose another player’s store for this action.', 'Wähle für diese Aktion den Laden eines anderen Spielers.'),
+    store_not_abandoned: t('This store is no longer available for takeover.', 'Dieser Laden ist nicht mehr zur Übernahme verfügbar.'),
+    store_takeover_pending: t('Finish pending store transactions before takeover.', 'Vor der Übernahme müssen laufende Ladenvorgänge abgeschlossen sein.'),
     store_price_changed: t('The shelf price changed. Refresh the store and try again.', 'Der Regalpreis hat sich geändert. Lade den Laden neu und versuche es erneut.'),
     store_risk_changed: t('The theft fine changed. Check the updated amount before starting.', 'Das Diebstahlbußgeld hat sich geändert. Prüfe den aktualisierten Betrag vor dem Start.'),
     stock_not_found: t('This item has left the shelf. Refresh the store.', 'Dieser Artikel ist nicht mehr im Regal. Lade den Laden neu.'),

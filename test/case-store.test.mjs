@@ -129,6 +129,42 @@ test('store cases use the existing resale locks and transfer the sealed reward t
   assert.ok(f.accounts.openSealedCase(f.other, item.id).auctionId);
 });
 
+test('a lucky sealed draw keeps its selected category and frozen value after trading and changing owner luck', async t => {
+  const f = await fixture(t);
+  const items = [
+    { rarity: 'common', title: 'Laptop', price: 100, category: 'Elektronik' },
+    { rarity: 'uncommon', title: 'Gold watch', price: 200, category: 'Schmuck & Uhren' },
+    { rarity: 'rare', title: 'Riesling', price: 300, category: 'Getränke' },
+    { rarity: 'epic', title: 'BMW PKW', price: 400, category: 'Fahrzeuge' },
+    { rarity: 'legendary', title: 'Drill', price: 500, category: 'Werkzeuge' }
+  ];
+  const catalog = { cases: [{ id: 'fundkiste', available: true, items }] };
+  const random = max => Math.floor(max * .745);
+  const ordinary = prepareMysteryCase(catalog, STORE_CASES[0], { now: day, random });
+  const lucky = prepareMysteryCase(catalog, STORE_CASES[0], { now: day, random, luckPercent: 7 });
+  assert.equal(ordinary.reward.marketCategory, 'electronics');
+  assert.equal(lucky.reward.marketCategory, 'watches_jewelry');
+  assert.equal(lucky.reward.title, 'Gold watch');
+  f.accounts.atomic(db => insertSealedCase(db, f.buyer.id, lucky, day));
+  const auction = listItem(f.dir, f.buyer, { inventoryId: lucky.item.id, startPrice: 1,
+    endsAt: new Date(day + 60000).toISOString() }, { now: day });
+  placeBid(f.dir, f.other, auction.id, 1, { now: day + 1 });
+  settleAuction(f.dir, auction.id, { now: day + 60001 });
+  f.accounts.db(db => db.prepare('INSERT INTO user_skills(user_id,skill_id,rank,updated_at) VALUES (?,?,?,?)')
+    .run(f.other.id, 'luck', 3, day + 60001));
+  setMarketIndex(f.dir, 'electronics', 150, { now: day + 60001 });
+  setMarketIndex(f.dir, 'watches_jewelry', 50, { now: day + 60001 });
+  f.setNow(day + 60001);
+  closeDataStore(f.dir);
+  const opened = f.accounts.openSealedCase(f.other, lucky.item.id);
+  assert.deepEqual(opened, { ...lucky.reward, sellValue: 200 });
+  const indexes = f.accounts.db(db => marketIndexes(db, day + 60001));
+  assert.equal(estimatedValueTokens(opened, indexes), 100);
+  const inventory = f.accounts.inventory(f.other).find(item => item.id === opened.id);
+  assert.equal(inventory.estimatedValueTokens, 100);
+  assert.deepEqual(f.accounts.openSealedCase(f.other, lucky.item.id), opened);
+});
+
 test('receipt persistence failure rolls back the charge, case and private reward together', async t => {
   const f = await fixture(t), quote = f.quote(), before = f.balance();
   f.accounts.db(db => db.exec(`CREATE TRIGGER fail_store_receipt BEFORE INSERT ON case_purchases

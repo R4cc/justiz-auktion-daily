@@ -164,7 +164,7 @@ test('street traffic changes actual hourly visitors and applies only after migra
     });
   }
   assert.ok(visitors.side >= 1200 && visitors.side <= 1300);
-  assert.ok(visitors.main > visitors.side * 1.4); assert.ok(visitors.residential < visitors.side * .75);
+  assert.ok(visitors.main > visitors.side * 1.4); assert.ok(visitors.residential > visitors.side * 1.2 && visitors.residential < visitors.side * 1.3);
   const f = await fixture(t), shop = buyBusiness(f.dir, f.owner, 'wine', null, { now, plotId: 'leopoldstadt-3' }).shop;
   f.accounts.db(db => {
     db.prepare('UPDATE businesses SET traffic_popularity=1,plot_since=? WHERE id=?').run(now + 2 * hour, shop.id);

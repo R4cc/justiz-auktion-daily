@@ -1,3 +1,5 @@
+import { checkDueStoreEvent } from './store-events.mjs';
+import { businessAbandonment } from './business-abandonment.mjs';
 import { prestigeEffects } from './prestige-effects.mjs';
 import { storeReputation } from './store-reputation.mjs';
 import { storeReviewList } from './store-reviews.mjs';
@@ -6,7 +8,7 @@ import { plotLocation } from './town-plots.mjs';
 import { randomInt, randomUUID } from 'node:crypto';
 import { withDatabase, transaction } from './database.mjs';
 import { AccountError } from './errors.mjs';
-import { advanceShop, ensureBusinessSchema, shopStock, SHOP_TYPES, applyBusinessStock } from './businesses.mjs';
+import { advanceShop, ensureBusinessSchema, shopStock, SHOP_TYPES, SHOP_SIZES, applyBusinessStock } from './businesses.mjs';
 import { marketIndexes } from './market.mjs';
 import { inventoryIsLocked } from './resale.mjs';
 import { pushNotification } from './notifications.mjs';
@@ -132,7 +134,7 @@ export function theftQuote(referencePrice, securityGuard, locationMultiplier = 1
   return { fine, policeCatchPercent: (securityGuard ? ECONOMY_BALANCE.securityGuardCatchPercent : POLICE_CATCH_PERCENT) * (100-catchReductionPercent)/100, rules: 'single-deck-s17' };
 }
 function publicCard(db, shop, viewer, now) {
-  return { id: shop.id, ownerId: shop.user_id, owner: viewer ? shop.username : maskUsername(shop.username),
+  return { ...businessAbandonment(shop,now), takeoverPrice: Math.round(SHOP_SIZES.find(size=>size.id===shop.size).cost * SHOP_TYPES.find(type=>type.id===shop.type).costFactor * (plotLocation(db,shop.plot_id)?.priceMultiplier ?? 1)), id: shop.id, ownerId: shop.user_id, owner: viewer ? shop.username : maskUsername(shop.username),
     location: plotLocation(db, shop.plot_id), name: shop.store_name, motto: shop.store_motto, type: shop.type, size: shop.size, securityGuard: Boolean(shop.security_guard), mischiefEnabled: Boolean(shop.mischief_enabled),
     stockCount: db.prepare('SELECT COUNT(*) AS n FROM business_stock WHERE business_id = ? AND sold_at IS NULL').get(shop.id).n,
     playerVisits: db.prepare('SELECT COUNT(*) AS n FROM store_visits WHERE business_id = ?').get(shop.id).n,
@@ -301,6 +303,7 @@ export function saveStoreSettings(dataDir,user,payload,{now=Date.now()}={}) {
     const saved={name:shop.store_name,motto:shop.store_motto,securityGuard:Boolean(shop.security_guard),profitMargin:shop.profit_margin};
     if(payload.expected&&Object.keys(saved).some(key=>payload.expected[key]!==saved[key]))fail('store_settings_changed',409);
     advanceShop(db,shop,now);
+    checkDueStoreEvent(db,shop,now,{advance:false});
     db.prepare('UPDATE businesses SET store_name=?,store_motto=?,security_guard=?,profit_margin=? WHERE id=?').run(payload.name.trim(),payload.motto.trim(),Number(payload.securityGuard),payload.profitMargin,shop.id);
     return {id,amount:0};
   }),now);
