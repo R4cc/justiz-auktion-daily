@@ -28,6 +28,7 @@ caseReveal.addEventListener('close', () => {
 });
 let accountSelectedCase = 'fundkiste', accountInventoryPage = 0, accountFilter = 'all';
 let currentAccountPage = null, accountVisit = 0, pageLoaded = false;
+const initialAccountPath = location.pathname;
 const accountPaths = ['/auction-house', '/auctions', '/marketplace', '/market', '/businesses', '/stores', '/town', '/shop', '/palettes', '/skills', '/inventory', '/profile', '/login', '/register', '/admin', '/leaderboard', '/changelog'];
 const accountPage = document.querySelector('#account-page');
 const accountContent = document.querySelector('#account-content');
@@ -272,7 +273,7 @@ function closeNotificationPanel() {
   notificationPanel.hidden = true;
   notificationButton.setAttribute('aria-expanded', 'false');
 }
-async function loadNotifications(showFresh = true) {
+async function loadNotifications(showFresh = true, refreshSession = true) {
   const owner = account?.id;
   if (!owner || notificationBusy) return;
   const request = ++notificationRequest;
@@ -287,7 +288,7 @@ async function loadNotifications(showFresh = true) {
     // avoid stacking transient notification toasts over the panel.
     if (showFresh && notificationPanel.hidden) for (const entry of result.fresh || []) showNotificationToast(entry);
     // Sales and refunds can settle on any page. Refresh money and XP together.
-    if (showFresh && !document.hidden) {
+    if (showFresh && refreshSession && !document.hidden) {
       const revision = accountRevision, session = await accountApi('me');
       if (request === notificationRequest && account?.id === owner && revision === accountRevision) updateAccount(session.user);
     }
@@ -305,7 +306,9 @@ function startNotifications(user) {
   notificationRequest++; notificationBusy = false;
   notificationOwner = user.id;
   clearInterval(notificationTimer);
-  loadNotifications(true);
+  // updateAccount just supplied a fresh session; keep initial toasts without
+  // immediately requesting the same wallet and progression a second time.
+  loadNotifications(true, false);
   notificationTimer = setInterval(() => { if (!document.hidden) loadNotifications(true); }, 30_000);
 }
 window.addEventListener('focus', () => loadNotifications(true));
@@ -340,7 +343,8 @@ const accountReady = Promise.all([accountApi('me'), catalogReady, economyReady])
   updateAccount(result.user);
   renderStaticUi();
   if (typeof renderStart === 'function' && state.view === 'start' && location.pathname === '/') renderStart();
-}).catch(() => {});
+  return result;
+}).catch(() => null);
 function showGamePage() {
   window.storeReputationUi?.stop();
   if(account?.justice?.jailed){window.justiceUi?.sync(account);return;}
@@ -394,6 +398,7 @@ async function navigateAccountPage(path, push = true) {
   window.townUi?.stop();
   if (!accountPaths.includes(path)) { renderStart(); return; }
   if (push && location.pathname + location.search !== destination.pathname + destination.search) history.pushState({}, '', destination.pathname + destination.search);
+  const firstPageLoad = accountVisit === 0 && !push && accountPaths.includes(initialAccountPath);
   const visit = ++accountVisit;
   currentAccountPage = path; pageLoaded = false;
   higherLowerRequest++; clearInterval(countdownTimer); state.view = 'account';
@@ -401,9 +406,12 @@ async function navigateAccountPage(path, push = true) {
   accountContent.innerHTML = `<p class="collection-loading">${t('Loading…', 'Wird geladen …')}</p>`;
   window.scrollTo({ top: 0, behavior: 'instant' });
   try {
-    await accountReady;
-    if (visit !== accountVisit) return;
-    const session = await accountApi('me');
+    // Reuse the fresh startup session on direct entry. Later SPA navigation
+    // still refreshes it; session and feature downloads run in parallel.
+    const [session] = await Promise.all([
+      accountReady.then(initial => firstPageLoad && initial ? initial : accountApi('me')),
+      window.pageAssets?.load(path)
+    ]);
     if (visit !== accountVisit) return;
     updateAccount(session.user);
     // Skip every page loader while a temporary password still needs replacing.

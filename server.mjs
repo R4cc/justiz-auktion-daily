@@ -1,3 +1,4 @@
+import { sendStaticFile } from './src/static-files.mjs';
 import { auctionGallery } from './src/auction-images.mjs';
 import { createAccountApi } from './src/account-api.mjs';
 import { createEconomyApi } from './src/economy-api.mjs';
@@ -8,10 +9,6 @@ import { higherLowerDeck } from './src/higher-lower.mjs';
 import {
   createServer
 } from 'node:http';
-
-import {
-  createReadStream
-} from 'node:fs';
 
 import {
   stat
@@ -206,7 +203,10 @@ const mimeTypes = {
     'image/svg+xml',
 
   '.webp':
-    'image/webp'
+    'image/webp',
+
+  '.woff2':
+    'font/woff2'
 };
 
 function json(
@@ -365,8 +365,7 @@ async function sendFile(
       return false;
     }
 
-    response.writeHead(
-      200,
+    await sendStaticFile(request, response, filename, details,
       {
         'content-type':
           mimeTypes[
@@ -375,9 +374,6 @@ async function sendFile(
             ).toLowerCase()
           ] ||
           'application/octet-stream',
-
-        'content-length':
-          details.size,
 
         'cache-control':
           cacheControl,
@@ -392,30 +388,9 @@ async function sendFile(
           'camera=(), microphone=(), geolocation=(), payment=()',
 
         'content-security-policy':
-          "default-src 'self'; img-src 'self' data: https://www.justiz-auktion.de; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; script-src 'self'; connect-src 'self'; base-uri 'self'; frame-ancestors 'none'"
+          "default-src 'self'; img-src 'self' data: https://www.justiz-auktion.de; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; script-src 'self'; connect-src 'self'; base-uri 'self'; frame-ancestors 'none'"
       }
     );
-
-    if (
-      request.method ===
-      'HEAD'
-    ) {
-      response.end();
-    } else {
-      createReadStream(
-        filename
-      )
-        .on(
-          'error',
-          error =>
-            response.destroy(
-              error
-            )
-        )
-        .pipe(
-          response
-        );
-    }
 
     return true;
   } catch (error) {
@@ -1131,7 +1106,10 @@ const server =
             url.pathname
           ).toLowerCase();
 
-        const cacheControl =
+        const versionedAsset = ['.css', '.js'].includes(extension) && url.searchParams.has('v');
+        const cacheControl = versionedAsset || url.pathname.startsWith('/fonts/')
+          ? 'public, max-age=31536000, immutable'
+          :
           url.pathname ===
             '/' ||
           extension ===

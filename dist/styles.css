@@ -76,6 +76,11 @@ button { color: inherit; }
   width: 36px; height: 36px; border: 1px solid var(--line); border-radius: 50%; background: rgba(255,255,255,.45); cursor: pointer; font-weight: 700;
 }
 
+#app:empty, .account-page:has(> #account-content > .collection-loading) { min-height: 100svh; }
+/* Session-confirmed mobile wallet/XP bars must not move the loading text. */
+@media (max-width: 900px) {
+  #account-content > .collection-loading { position: fixed; top: 152px; left: 16px; right: 16px; margin: 0; }
+}
 #app { width: min(1180px, calc(100% - 40px)); margin: 0 auto; }
 .site-disclaimer { width: min(1180px, calc(100% - 40px)); margin: auto auto 0; padding: 24px 0 30px; border-top: 1px solid var(--line); color: var(--muted); }
 .site-disclaimer p { max-width: 88ch; margin: 0; font: 11px/1.65 'DM Mono', monospace; }
