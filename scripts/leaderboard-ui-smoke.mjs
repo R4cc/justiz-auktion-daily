@@ -9,6 +9,7 @@ import { createAccountApi } from '../src/account-api.mjs';
 import { createEconomyApi } from '../src/economy-api.mjs';
 import { closeDataStore, upsertAuctions } from '../src/database.mjs';
 import { featureFlags } from '../src/features.mjs';
+import { playAnswer } from '../test/helpers/play-answer.mjs';
 const { chromium } = await import(process.env.PLAYWRIGHT_MODULE || '/home/lxadm/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules/playwright/index.mjs');
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..'), dir = await mkdtemp('/tmp/jg-leaderboard-ui-');
 const env = { ADMIN_USERNAME:'admin', ADMIN_PASSWORD:'leaderboard-browser-password', COOKIE_SECURE:'false' }, flags = featureFlags(env);
@@ -20,7 +21,7 @@ const adminToken = await accounts.login({username:'admin',password:env.ADMIN_PAS
 for(const [username,value,multiplier] of [['Collector_With_A_Very_Long_Name',8765432,2],['AppraisalAce',4200,1],['MuseumKeeper',2600,1.5],['RisingTrader',1200,3]]){
   const token = await accounts.register({username,password:env.ADMIN_PASSWORD,code:accounts.codes(admin,1)[0]}), user = accounts.user(token);
   accounts.db(db=>db.prepare('INSERT INTO inventory (id,user_id,item,created_at) VALUES (?,?,?,?)').run('item-'+user.id,user.id,JSON.stringify({title:'Collected artwork',price:value,marketCategory:'collectibles',rarity:'rare'}),Date.now()));
-  const run = accounts.startGame(user,'daily',()=>lots);for(let n=0;n<5;n++)accounts.answer(user,run.id,n,Math.round(lots[n].actualBid*multiplier));
+  const run = accounts.startGame(user,'daily',()=>lots);for(let n=0;n<5;n++)playAnswer(accounts,user,run.id,n,Math.round(lots[n].actualBid*multiplier));
   players.push({user,token});
 }
 const viewer = players[3], economy = createEconomyApi({dataDir:dir,json,flags,accounts});
@@ -43,7 +44,12 @@ try{
   await context.addCookies([{name:'jg_session',value:viewer.token,url:base}]);await page.reload();await page.waitForSelector('.leaderboard-personal-rank');
   assert.equal(await page.locator('.podium-place-1 .podium-name').innerText(),players[1].user.username);
   assert.equal(await page.locator('.leaderboard-personal-rank > strong').innerText(),'#4');assert.equal(await page.locator('tbody tr.is-me').count(),1);
-  const setLanguage=async lang=>{const hidden=!(await page.locator('#language-select').isVisible());if(hidden)await page.locator('[data-action="sidebar"]').click();await page.locator('#language-select').selectOption(lang);if(hidden)await page.keyboard.press('Escape');};
+  const setLanguage=async lang=>{
+    const drawer=await page.locator('[data-action="sidebar"]').isVisible();
+    if(drawer){await page.locator('[data-action="sidebar"]').click();await page.locator('#language-select').waitFor({state:'visible'});}
+    await page.locator('#language-select').selectOption(lang);
+    if(drawer){await page.keyboard.press('Escape');await page.locator('#language-select').waitFor({state:'hidden'});}
+  };
   for(const route of ['/leaderboard','/leaderboard?view=collection','/leaderboard?view=daily']){
     await page.goto(base+route);await page.waitForSelector('.leaderboard-podium');
     const expected = accounts.leaderboard(route.includes('collection')?'collection':'daily').leaders;

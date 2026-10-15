@@ -51,9 +51,32 @@ try{
   await go();assert.equal(await page.locator('.daily-play').innerText(),'Play Daily');assert.equal(await page.locator('.daily-menu-progress .is-done').count(),0);assert.equal(await page.locator('.daily-reward-login').count(),1);
   await layout('guest');await page.setViewportSize({width:1440,height:1000});await language('en');
   // The new menu keeps all three existing action contracts and actual screens.
-  await page.locator('.daily-play').focus();await page.keyboard.press('Enter');await page.waitForSelector('.game-shell #price-input');assert.equal(await page.locator('.daily-home').count(),0);await page.evaluate(()=>renderStart());
+  await page.locator('.daily-play').focus();await page.keyboard.press('Enter');await page.waitForSelector('.game-shell #price-input');assert.equal(await page.locator('.daily-home').count(),0);
+  for(let position=0;position<5;position++){
+    await page.locator('#price-input').fill(String(lots[position].actualBid));
+    await page.locator('#guess-form button[type="submit"]').click();
+    await page.waitForSelector('.reveal-panel');
+    assert.match(await page.locator('.round-reward').innerText(),/1,000/);
+    await page.locator('[data-action="next"]').click();
+    await page.waitForSelector(position===4?'.results-screen':'#price-input');
+  }
+  assert.equal(await page.locator('.daily-case-dialog[open]').count(),0,'guest results have no account reward claim');
+  await page.evaluate(()=>renderStart());
   await page.locator('[data-action="random"]').click();await page.waitForSelector('.game-shell');assert.equal(await page.evaluate(()=>gameMode),'random');await page.evaluate(()=>renderStart());
-  await page.locator('[data-action="higher-lower"]').click();await page.waitForSelector('.hl-screen .hl-choices');await page.locator('.hl-home').click();await page.waitForSelector('.daily-home');
+  await page.locator('[data-action="higher-lower"]').click();await page.waitForSelector('.hl-screen .hl-choices');
+  // A temporary failed answer must leave the round playable, with its price sealed.
+  await page.route('**/api/games/answer',route=>route.fulfill({status:503,json:{error:'try_later'}}),{times:1});
+  await page.locator('[data-action="hl-higher"]').click();
+  await page.waitForFunction(()=>higherLowerRun?.pending===false);
+  assert.equal(await page.locator('.hl-choices button:disabled').count(),0,'Higher or Lower choices remain usable after a failed request');
+  assert.equal(await page.locator('.hl-challenger .hl-price').innerText(),'?');
+  await page.locator('[data-action="hl-higher"]').click();await page.waitForSelector('[data-action="hl-next"]');
+  assert.equal(await page.locator('.hl-streak strong').innerText(),'1');
+  await page.locator('[data-action="hl-next"]').click();await page.waitForSelector('.hl-choices');
+  await page.locator('[data-action="hl-lower"]').click();await page.waitForSelector('.hl-verdict');
+  assert.match(await page.locator('.hl-verdict').innerText(),/Game over/);
+  assert.equal(await page.locator('.hl-controls [data-action="higher-lower"]').count(),1);
+  await page.locator('.hl-home').click();await page.waitForSelector('.daily-home');
   // Guest saved progress remains isolated and appears on the menu.
   await page.evaluate(()=>{localStorage.setItem(todayStorageKey(),JSON.stringify({view:'game',round:0,answers:[{guess:30,score:1000,error:0}],scoreVersion:2}));renderStart();});assert.equal(await page.locator('.daily-play').innerText(),'Continue Daily');assert.equal(await page.locator('.daily-menu-progress .is-done').count(),1);
   // Server progress from another device takes precedence over browser storage.
@@ -68,5 +91,5 @@ try{
   await page.evaluate(()=>{document.querySelectorAll('dialog[open]').forEach(dialog=>dialog.close());renderStart();});
   await page.locator('.daily-next-links a[href="/leaderboard"]').click();await page.waitForSelector('.leaderboard-page');assert.equal(await page.locator('.leaderboard-modes a[aria-current="page"]').getAttribute('href'),'/leaderboard?view=daily');
   await go();await page.evaluate(()=>{economyFlags.paletteAuctions=false;renderStart();});assert.equal(await page.locator('.daily-next-links a[href="/auction-house"]').count(),0);
-  assert.deepEqual(errors,[]);console.log('Daily menu passed: all three existing games launch; guest/signed-in/resume/completed states; server progress across devices; correct rewards, no repeat payout; leaderboard and flag-aware auction links; keyboard; live reset; EN/DE at 1440/1024/768/600/390/320px; no overflow or JS errors.');
+  assert.deepEqual(errors,[]);console.log('Daily menu passed: all three existing games launch; five-round guest Daily play; Higher or Lower error recovery, correct streak and game over; guest/signed-in/resume/completed states; server progress across devices; correct rewards, no repeat payout; leaderboard and flag-aware auction links; keyboard; live reset; EN/DE at 1440/1024/768/600/390/320px; no overflow or JS errors.');
 }finally{await browser.close();await new Promise(resolve=>server.close(resolve));closeDataStore(dir);await rm(dir,{recursive:true,force:true});}

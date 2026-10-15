@@ -50,6 +50,15 @@ const browser = await chromium.launch({ executablePath: process.env.CHROMIUM_PAT
 try {
  const context=await browser.newContext({viewport:{width:1440,height:1000}}),page=await context.newPage(),errors=[];page.on('pageerror',e=>errors.push(e.message));await context.addCookies([{name:'jg_session',value:token,url:base}]);
  const shot=async name=>page.screenshot({path:'/tmp/stores-redesign-'+name+'.png',fullPage:true});
+ // Deep links must never select a missing map scale or hide the canvas.
+ for(const [value,expected] of [['not-a-number','1'],['1.5','2']]){
+  await page.goto(base+'/town?zoom='+value);await page.waitForSelector('.town-canvas');
+  assert.equal(await page.locator('.town-canvas').getAttribute('data-zoom'),expected);
+  assert.doesNotMatch(await page.locator('.town-zoom').innerText(),/undefined|NaN/);
+  await page.locator('[data-town-zoom="1"]').click();
+  assert.equal(await page.locator('.town-canvas').getAttribute('data-zoom'),String(Number(expected)+1));
+ }
+
  await page.goto(base+'/businesses');await page.waitForSelector('.business-shop');assert.equal(await page.locator('.shop-card').count(),2);assert.equal(await page.locator('.economy-overview,.business-milestones').count(),0);await shot('portfolio');
  await page.locator(`[data-business="open-edit"][data-shop="${wine.id}"]`).click();await page.waitForSelector('.shop-task[open]');await page.locator('[name="storeName"]').fill('Vienna Wine & Finds');await page.locator('[name="profitMargin"]').fill('35');await page.locator('[name="motto"]').fill('A curious collector’s favourite corner.');
  await page.locator('[data-business="switch-task"][data-view="stock"]').click();assert.equal(await page.locator('dialog[open]').count(),1);await page.locator('[data-business="switch-task"][data-view="settings"]').click();assert.equal(await page.locator('[name="storeName"]').inputValue(),'Vienna Wine & Finds');await shot('settings');

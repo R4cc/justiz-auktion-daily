@@ -74,6 +74,7 @@ async function guessHigherLower(direction) {
       run.correct = updated.correct;
       run.streak = updated.streak;
     } catch (error) {
+      run.pending = false;
       showToast(error.message);
       if (higherLowerRun === run && state.view === 'higher-lower') renderHigherLower();
       return;

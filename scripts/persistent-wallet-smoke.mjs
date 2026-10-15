@@ -53,13 +53,13 @@ try{
   await page.locator('.auction-bid-dock input[name="amount"]').fill('100');await page.locator('.auction-bid-dock button[type="submit"]').click();
   await checkBalance(before+61-100);assert.equal(balance(),before+61-100);
   assert.equal(await page.evaluate(()=>account.heldInBids),100);
-  assert.equal(await page.locator('[data-available-balance]').innerText(),await money(before+61-100));
+  assert.equal(await page.locator('[data-bid-budget]').innerText(),await money(before+61));
   const {placeBid}=await import('../src/resale.mjs');
   // Seller cannot bid: use a separate registered account for the refund.
   const rivalToken=await accounts.register({username:'WalletRival',password:env.ADMIN_PASSWORD,code:accounts.codes(owner,1)[0]}),rival=accounts.user(rivalToken);
   placeBid(dir,rival,listing.id,200);
   await page.evaluate(()=>window.dispatchEvent(new Event('focus')));await checkBalance(before+61);
-  assert.equal(await page.locator('[data-available-balance]').innerText(),await money(before+61));
+  assert.equal(await page.locator('[data-bid-budget]').innerText(),await money(before+61));
   await page.locator('[data-economy="close"]').click();
   // A confirmed case purchase updates the shared balance before its popup closes.
   await page.evaluate(async()=>await navigateAccountPage('/shop'));await page.waitForSelector('.case-buy-button');

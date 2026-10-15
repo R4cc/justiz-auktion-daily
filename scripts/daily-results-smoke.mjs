@@ -8,6 +8,8 @@ import { createAccountApi } from '../src/account-api.mjs';
 import { createEconomyApi } from '../src/economy-api.mjs';
 import { closeDataStore, upsertAuctions } from '../src/database.mjs';
 import { featureFlags } from '../src/features.mjs';
+import { createGuestGameApi } from '../src/guest-game-api.mjs';
+import { publicDailySummary } from '../src/game-rounds.mjs';
 
 const { chromium } = await import(process.env.PLAYWRIGHT_MODULE || '/home/lxadm/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules/playwright/index.mjs');
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -23,11 +25,12 @@ const adminToken = await accounts.login({ username: 'admin', password: env.ADMIN
 const admin = accounts.user(adminToken);
 const secondToken = await accounts.register({ username: 'opener', password: env.ADMIN_PASSWORD, code: accounts.codes(admin, 1)[0] });
 const economy = createEconomyApi({ dataDir: dir, json, flags, accounts });
+const guestApi = createGuestGameApi({ dataDir: dir, json, env, dailyPayload: async () => daily, randomPayload: async () => daily });
 const server = createServer(async (req, res) => {
   try {
     const url = new URL(req.url, 'http://localhost');
-    if (url.pathname === '/api/daily' || url.pathname === '/api/random') return json(res, 200, daily);
-    if (await api(req, res, url) || economy(req, res, url)) return;
+    if (url.pathname === '/api/daily') return json(res, 200, publicDailySummary(daily));
+    if (await api(req, res, url) || await economy(req, res, url) || await guestApi(req, res, url)) return;
     if (url.pathname.startsWith('/api/')) return json(res, 404, { error: 'not_found' });
     const filename = url.pathname === '/' || !path.extname(url.pathname) ? '/index.html' : url.pathname;
     const content = await readFile(path.join(root, 'dist', filename));
@@ -46,7 +49,10 @@ try {
       assert.ok(response.ok(), `${route}: ${await response.text()}`); return response.json();
     };
     const { run } = await post('games/start', { mode: 'daily' });
-    for (let i = 0; i < 5; i++) await post('games/answer', { id: run.id, position: i, answer: daily.auctions[i].actualBid });
+    for (let i = 0; i < 5; i++) {
+      await post('games/round/start', { id: run.id, position: i });
+      await post('games/answer', { id: run.id, position: i, answer: daily.auctions[i].actualBid });
+    }
     await context.addInitScript(() => {
       window.copiedResults = [];
       Object.defineProperty(navigator, 'clipboard', { value: { writeText: async text => window.copiedResults.push(text) } });

@@ -8,6 +8,8 @@ import { parseAuctionPage } from '../src/collector.mjs';
 import { decodeHtmlEntities } from '../src/html-text.mjs';
 import named from '../src/html-entities.json' with { type: 'json' };
 import { Accounts } from '../src/accounts.mjs';
+import { createGuestGameApi } from '../src/guest-game-api.mjs';
+import { publicDailySummary } from '../src/game-rounds.mjs';
 import { createAccountApi } from '../src/account-api.mjs';
 import { createEconomyApi } from '../src/economy-api.mjs';
 import { upsertAuctions, readArchive, readDailyGames, saveDailyGame, closeDataStore } from '../src/database.mjs';
@@ -37,11 +39,13 @@ closeDataStore(dir);const saved=readArchive(dir).auctions.find(item=>item.id===l
 assert.equal(saved.title,'Monitor (Saved) + ½');
 const listing=listItem(dir,owner,{inventoryId:'legacy',startPrice:80,endsAt:new Date(Date.now()+3600000).toISOString()});
 const economy=createEconomyApi({dataDir:dir,json,flags,accounts});
+const guestApi=createGuestGameApi({dataDir:dir,json,env,dailyPayload:async()=>daily(),randomPayload:async()=>daily(),higherLowerPayload:async()=>({auctions:[fresh,saved].map(item=>({...item,actualBid:item.correctPrice}))})});
 const server=createServer(async(req,res)=>{try{
   const url=new URL(req.url,'http://localhost');
-  if(['/api/daily','/api/random'].includes(url.pathname))return json(res,200,daily());
+  if(url.pathname==='/api/daily')return json(res,200,publicDailySummary(daily()));
+  if(url.pathname==='/api/random')return json(res,200,daily());
   if(url.pathname==='/api/higher-lower')return json(res,200,{auctions:[fresh,saved].map(item=>({...item,actualBid:item.correctPrice}))});
-  if(await api(req,res,url)||economy(req,res,url))return;
+  if(await api(req,res,url)||economy(req,res,url)||await guestApi(req,res,url))return;
   if(url.pathname.startsWith('/api/'))return json(res,404,{error:'not_found'});
   const filename=url.pathname==='/'||!path.extname(url.pathname)?'/index.html':url.pathname;
   const content=await readFile(path.join(root,'dist',filename));res.writeHead(200,{'content-type':filename.endsWith('.js')?'text/javascript':filename.endsWith('.css')?'text/css':'text/html'});res.end(content);
@@ -79,8 +83,8 @@ try {
     assert.equal(await page.locator('[data-item-section="about"] img,[data-item-section="about"] script').count(),0);await safe();
     await page.keyboard.press('Escape');
   }
-  await page.goto(base+'/auction-house');await page.waitForSelector('[data-economy="tab"][data-id="mine"]');await page.locator('[data-economy="tab"][data-id="mine"]').click();await page.waitForSelector(`[data-economy="resale"][data-id="${listing.id}"]`);
-  assert.equal(await page.locator(`[data-economy="resale"][data-id="${listing.id}"] h2`).innerText(),saved.title);
+  await page.goto(base+'/auction-house');await page.waitForSelector('[data-house-filter="view"]');await page.locator('[data-house-filter="view"]').selectOption('mine');await page.waitForSelector(`[data-economy="resale"][data-id="${listing.id}"]`);
+  assert.equal(await page.locator(`[data-economy="resale"][data-id="${listing.id}"] h3`).innerText(),saved.title);
   await page.locator(`[data-economy="resale"][data-id="${listing.id}"]`).click();await page.waitForSelector('.auction-room');
   assert.equal(await page.locator('#economy-dialog-title').innerText(),saved.title);await safe();
   await page.goto(base+'/admin');await page.waitForSelector('[data-admin-tab="auctions"]');await page.locator('[data-admin-tab="auctions"]').click();

@@ -31,6 +31,7 @@
 .auction-house .is-owned .house-lot-state,
 .auction-house .is-ended .house-lot-state { border-color: #d3d5c9; background: #f4f2e8; color: #596452; }
 .auction-house .house-lot-body { display: flex; flex: 1; flex-direction: column; min-width: 0; padding: 16px 17px 12px; }
+.auction-house .house-lot-body > .item-market-trend { align-self: flex-start; margin: 0 0 8px; }
 .auction-house .house-lot h3 { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3; overflow: hidden; margin: 0 0 16px; overflow-wrap: anywhere; color: var(--ink); font-size: .9rem; font-weight: 750; line-height: 1.5; letter-spacing: -.015em; }
 .auction-house .house-lot-price { display: grid; gap: 3px; margin-top: auto; }
 .auction-house .house-lot-price strong { overflow-wrap: anywhere; font: 600 1.2rem/1.4 'DM Mono', monospace; letter-spacing: -.035em; }

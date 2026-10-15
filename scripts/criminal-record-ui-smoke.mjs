@@ -9,7 +9,7 @@ import { createAccountApi } from '../src/account-api.mjs';
 import { createEconomyApi } from '../src/economy-api.mjs';
 import { closeDataStore,upsertAuctions } from '../src/database.mjs';
 import { buyBusiness,stockBusiness } from '../src/businesses.mjs';
-import { startStoreHeist,actStoreHeist,visitStore,playerCriminalRecord } from '../src/storefronts.mjs';
+import { startStoreHeist,actStoreHeist,spinStoreHeist,visitStore,playerCriminalRecord } from '../src/storefronts.mjs';
 import { featureFlags } from '../src/features.mjs';
 const {chromium}=await import(process.env.PLAYWRIGHT_MODULE||'/home/lxadm/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules/playwright/index.mjs');
 const root=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..'),dir=await mkdtemp('/tmp/jg-criminal-record-ui-');
@@ -22,7 +22,8 @@ accounts.db(db=>{db.prepare('UPDATE users SET tokens=1000000 WHERE id=?').run(ow
 const shop=buyBusiness(dir,owner,'wine','popup',{now}).shop;stockBusiness(dir,owner,shop.id,['wine'],{now});
 const thief={id:'thief'},entry=visitStore(dir,thief,shop.id,{now}).store.stock[0],heist=startStoreHeist(dir,thief,{shopId:shop.id,inventoryId:entry.id,expectedPrice:entry.price,expectedFine:entry.theft.fine,requestId:'crime-browser-attempt-001'},{now,draw:max=>max-1});
 accounts.db(db=>db.prepare('UPDATE store_heists SET blackjack=? WHERE id=?').run(JSON.stringify({player:[2,3],dealer:[9,8],deck:[1,4,5],turn:0,outcome:'active'}),heist.id));
-actStoreHeist(dir,thief,{heistId:heist.id,action:'stand',turn:0,requestId:'crime-browser-stand-001'},{now});
+actStoreHeist(dir,thief,{heistId:heist.id,action:'stand',turn:0,requestId:'crime-browser-stand-001'},{now,policeDraw:()=>0});
+spinStoreHeist(dir,thief,{heistId:heist.id,requestId:'crime-browser-police-spin-001'},{now});
 accounts.db(db=>{const insert=db.prepare(`INSERT INTO store_heists(id,user_id,business_id,owner_id,inventory_id,sequence,roll,chance,fee,created_at,ready_at,expires_at,status,result,blackjack,settled_at)
  VALUES(?,'thief',?,?,'wine','[]',0,0,?,?,?,?,'caught','{}',?,?)`);for(let n=0;n<13;n++){const at=now-(n+1)*86400000;insert.run('historical-'+n,shop.id,owner.id,100+n,at,at+1000,at+600000,n===12?null:'{}',n===12?null:at+2000);}});
 const thiefToken=accounts.atomic(db=>accounts.session(db,'thief')),expected=playerCriminalRecord(dir,thief,{limit:50}),economy=createEconomyApi({dataDir:dir,json,flags,accounts});

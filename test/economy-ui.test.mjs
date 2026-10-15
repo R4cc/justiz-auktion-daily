@@ -897,3 +897,16 @@ test('a fresh same-auction reservation lets a J€839 wallet raise to J€870 de
     assert.equal(vm.runInContext('870 <= bidMaximum(lot)', context), true);
   }
 });
+
+test('unified Auction House cards retain category trends without assigning a trend to sealed or mixed lots', () => {
+  const context = houseContext({window: {marketTrendUi: {markup: category => category ? `<span data-market-trend="${category}">+2.4% · 24h</span>` : ''}},
+    entry: {lot: houseLot('tool', {item: {title: 'Tool', marketCategory: 'tools'}}), primary: false}});
+  vm.runInContext(extract(uiSource, '  function lotMarketCategory(', '  function lotCard('), context);
+  assert.match(vm.runInContext('houseCard(entry)', context), /data-market-trend="tools"/);
+  context.entry = {lot: {id:'wine', name:'Wine stock', reserve:20, status:'active', endsAt:Date.now()+3600_000, allowedMarketCategories:['wine']}, primary:true};
+  assert.match(vm.runInContext('houseCard(entry)', context), /data-market-trend="wine"/);
+  context.entry.lot.allowedMarketCategories = ['wine','tools'];
+  assert.doesNotMatch(vm.runInContext('houseCard(entry)', context), /data-market-trend/);
+  context.entry = {lot:houseLot('case', {item:{kind:'case',title:'Sealed case',marketCategory:'tools'}}),primary:false};
+  assert.doesNotMatch(vm.runInContext('houseCard(entry)', context), /data-market-trend/);
+});

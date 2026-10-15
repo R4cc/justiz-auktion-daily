@@ -10,7 +10,7 @@ let accountFriends = { friends: [], date: '' }, accountAdmin = { playerCount: 0,
 let accountLeaderboard = { date: '', leaders: [] }, adminUserFilter = '';
 let adminActiveTab = 'market', adminMarketFilter = '';
 let accountNotifications = [], notificationUnreadCount = 0, notificationOwner = null, notificationTimer = null, notificationBusy = false, notificationRequest = 0;
-let accountAuctions = { query: '', page: 1, pages: 1, total: 0, auctions: [] }, auctionSearchTimer = null;
+let accountAuctions = { query: '', page: 1, pages: 1, total: 0, auctions: [] }, auctionSearchTimer = null, auctionBrowserRequest = 0;
 const auctionReveal = document.createElement('dialog');
 auctionReveal.className = 'auction-reveal';
 auctionReveal.setAttribute('aria-labelledby', 'auction-detail-title');
@@ -348,6 +348,7 @@ const accountReady = Promise.all([accountApi('me'), catalogReady, economyReady])
 function showGamePage() {
   window.storeReputationUi?.stop();
   if(account?.justice?.jailed){window.justiceUi?.sync(account);return;}
+  clearTimeout(auctionSearchTimer); auctionBrowserRequest++;
   caseReveal.close(); auctionReveal.close();
   if (typeof traderStockDialog !== 'undefined') traderStockDialog.close();
   document.querySelector('.daily-case-dialog')?.close();
@@ -385,6 +386,7 @@ async function navigateAccountPage(path, push = true) {
   // Moving between an owner's loaded store tabs is local navigation. Keep the
   // page's refresh timer, drafts and pending writes alive instead of reloading.
   if (window.storeUi?.navigateOwnerTab?.(destination, push)) return;
+  clearTimeout(auctionSearchTimer); auctionBrowserRequest++;
   caseReveal.close(); auctionReveal.close();
   if (typeof traderStockDialog !== 'undefined') traderStockDialog.close();
   document.querySelector('.daily-case-dialog')?.close();
@@ -691,11 +693,17 @@ function auctionResultsMarkup() {
     <div class="inventory-pages"><button data-account="auction-page" data-step="-1" ${accountAuctions.page <= 1 ? 'disabled' : ''}>← ${t('Previous', 'Zurück')}</button><span>${number(accountAuctions.page)} / ${number(accountAuctions.pages)}</span><button data-account="auction-page" data-step="1" ${accountAuctions.page >= accountAuctions.pages ? 'disabled' : ''}>${t('Next', 'Weiter')} →</button></div>`;
 }
 async function loadAuctionBrowser(visit) {
-  const result = await accountApi(`admin/auctions?query=${encodeURIComponent(accountAuctions.query || '')}&page=${accountAuctions.page}`);
-  if (visit !== accountVisit) return;
-  accountAuctions = { query: accountAuctions.query || '', ...result };
-  const node = accountContent.querySelector('#auction-results');
-  if (node) node.innerHTML = auctionResultsMarkup();
+  const request = ++auctionBrowserRequest, query = accountAuctions.query || '', page = accountAuctions.page;
+  const current = () => visit === accountVisit && request === auctionBrowserRequest && currentAccountPage === '/admin' && query === (accountAuctions.query || '') && page === accountAuctions.page;
+  try {
+    const result = await accountApi(`admin/auctions?query=${encodeURIComponent(query)}&page=${page}`);
+    if (!current()) return;
+    accountAuctions = { query, ...result };
+    const node = accountContent.querySelector('#auction-results');
+    if (node) node.innerHTML = auctionResultsMarkup();
+  } catch (error) {
+    if (current()) showToast(error.message);
+  }
 }
 function renderAuctionDetail(auction) {
   const facts = [
@@ -1212,7 +1220,8 @@ document.addEventListener('input', event => {
   if (event.target.id === 'auction-search') {
     accountAuctions.query = event.target.value; accountAuctions.page = 1;
     clearTimeout(auctionSearchTimer);
-    auctionSearchTimer = setTimeout(() => loadAuctionBrowser(accountVisit), 300);
+    const visit = accountVisit;
+    auctionSearchTimer = setTimeout(() => loadAuctionBrowser(visit), 300);
   }
 });
 document.addEventListener('jg:language', () => {

@@ -74,5 +74,11 @@ try{
  await context.addCookies([{name:'jg_session',value:adminToken,url:base}]);await go('?tab=record');await page.waitForSelector('.criminal-record-clear');assert.equal(await page.locator('.criminal-record-entry').count(),0);await page.locator('[data-profile-tab="statistics"]').click();assert.equal(await page.evaluate(()=>accountStatistics.userId),owner.id);assert.equal(await page.evaluate(()=>accountStatistics.cases.opened),0);
  const guest=await browser.newContext(),anonymous=await guest.newPage();anonymous.on('pageerror',error=>errors.push(error.message));await anonymous.goto(base+'/profile');await anonymous.waitForSelector('#account-content a[href="/login"]');assert.equal(await anonymous.locator('.profile-hero,.profile-tabs').count(),0);await guest.close();
  await page.goto(base+'/changelog');await page.waitForSelector('.changelog-list');assert.match(await page.locator('.changelog-list').innerText(),/Profile Statistics/);
- assert.deepEqual(errors,[]);console.log('Profile hub passed: grouped receipt-backed statistics, statistics deep links and account isolation, real progression, Daily idle/resume/completion, all four earned milestones, real skill points, next actions, friends request/accept, record pagination/deep links/account isolation, keyboard tabs, max level, escaping, reduced motion, EN/DE 1440–320px without overflow.');
+
+ // Accepted friends can be removed through the same browser control.
+ await context.addCookies([{name:'jg_session',value:thiefToken,url:base}]);await go('?tab=friends');
+ await page.locator('.friend-card [data-account="friend-remove"]').click();
+ await page.waitForSelector('.profile-friends .collection-empty');assert.equal(await page.locator('.friend-card').count(),0);
+ await page.reload();await page.waitForSelector('#friend-form');assert.equal(await page.locator('.friend-card,.friend-request').count(),0);
+ assert.deepEqual(errors,[]);console.log('Profile hub passed: grouped receipt-backed statistics, statistics deep links and account isolation, real progression, Daily idle/resume/completion, all four earned milestones, real skill points, next actions, friends request/accept/remove, record pagination/deep links/account isolation, keyboard tabs, max level, escaping, reduced motion, EN/DE 1440–320px without overflow.');
 }finally{await browser.close();await new Promise(resolve=>server.close(resolve));closeDataStore(dir);await rm(dir,{recursive:true,force:true});}

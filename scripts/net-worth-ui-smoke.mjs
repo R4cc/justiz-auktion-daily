@@ -27,6 +27,7 @@ const api = await createAccountApi({ dataDir: dir, json, env, flags, dailyPayloa
 const accounts = new Accounts(dir, { flags }), token = await accounts.login({ username: 'admin', password: env.ADMIN_PASSWORD }), owner = accounts.user(token);
 accounts.db(db => db.prepare('UPDATE users SET tokens=1000000, xp=36100 WHERE id=?').run(owner.id));
 const wine = buyBusiness(dir, owner, 'wine', 'popup').shop;
+accounts.db(db=>db.prepare('UPDATE businesses SET cash_balance=123 WHERE id=?').run(wine.id));
 const addItem = (id, category, title, rarity='common') => accounts.db(db => db.prepare('INSERT INTO inventory (id,user_id,item,created_at) VALUES (?,?,?,?)').run(id,owner.id,JSON.stringify({title,price:30,marketCategory:category,rarity}),Date.now()));
 for(let n=0;n<5;n++)addItem(`wine-${n}`,'wine','Riesling');
 for(let n=0;n<3;n++)addItem(`tech-${n}`,'electronics','Monitor',n===2?'rare':'common');
@@ -73,9 +74,9 @@ try {
   for(const range of ['1d','1w','1m','all']){
     await page.locator(`[data-worth-range="${range}"]`).click();await page.waitForSelector('.net-worth-chart[aria-busy="false"]');
     const payload=await read(range);assert.ok(payload.points.length>1&&payload.points.length<=403);
-    assert.equal(payload.current.total,payload.current.cash+payload.current.heldBids+payload.current.items+payload.current.businesses+payload.current.sealedPalettes-payload.current.fineDebt);
-    assert.equal(payload.current.businesses,1000);assert.equal(await page.locator(`[data-worth-range="${range}"]`).getAttribute('aria-pressed'),'true');
-    assert.equal(await page.locator('.worth-breakdown > div').count(),4);
+    assert.equal(payload.current.total,payload.current.cash+payload.current.storeCash+payload.current.heldBids+payload.current.items+payload.current.businesses+payload.current.sealedPalettes-payload.current.fineDebt);
+    assert.equal(payload.current.storeCash,123);assert.equal(await page.locator('.worth-breakdown > div').nth(1).locator('dd').innerText(),await page.evaluate(()=>justizEuro(123)));assert.equal(payload.current.businesses,1000);assert.equal(await page.locator(`[data-worth-range="${range}"]`).getAttribute('aria-pressed'),'true');
+    assert.equal(await page.locator('.worth-breakdown > div').count(),5);
     const expected=await page.evaluate(value=>justizEuro(value),payload.current.total);assert.equal(await page.locator('.worth-summary > strong').innerText(),expected);
     await page.locator('[data-worth-plot]').focus();await page.keyboard.press('Home');assert.ok((await page.locator('[data-worth-inspection]').innerText()).includes(await page.evaluate(value=>justizEuro(value),payload.points[0].total)));
     await page.keyboard.press('ArrowRight');await page.keyboard.press('End');assert.equal(await page.locator('[data-worth-marker]').getAttribute('visibility'),'visible');
@@ -113,7 +114,7 @@ try {
   const backed=listItem(dir,owner,{inventoryId:'debt-backed-item',startPrice:20,endsAt:new Date(Date.now()+3600000).toISOString()});placeBid(dir,{id:'debt-bidder'},backed.id,100);
   accounts.db(db=>{recordNetWorth(db,owner.id,{now:Date.now()-60000});imposeFine(db,owner.id,400,Date.now());});
   await page.goto(base+'/inventory?worth=all');await page.waitForSelector('[data-worth-plot]');
-  const debt=await read('all');assert.equal(debt.current.fineDebt,400);assert.equal(debt.current.total,-370);assert.equal(await page.locator('.worth-breakdown > div').count(),5);
+  const debt=await read('all');assert.equal(debt.current.fineDebt,400);assert.equal(debt.current.total,-370);assert.equal(await page.locator('.worth-breakdown > div').count(),6);
   assert.ok(await page.locator('.worth-line').evaluate(el=>Array.from(el.points).every(point=>point.y>=18&&point.y<=214)));
   await page.screenshot({path:'/tmp/jg-net-worth-debt.png',fullPage:true});
   assert.deepEqual(errors,[]);

@@ -70,6 +70,29 @@ try {
   await direct.goto(base+'/profile');await direct.waitForSelector('.profile-hub');
   assert.equal(sessions.length,1,'direct entry must reuse its freshly fetched session');
   await direct.evaluate(()=>navigateAccountPage('/town'));assert.equal(sessions.length,2,'later navigation must refresh the session');
+  // A failed dependency must be retryable without reloading the whole app.
+  const recoveryContext=await browser.newContext(),recovery=await recoveryContext.newPage(),recoveryErrors=[];
+  recovery.on('pageerror',error=>recoveryErrors.push(error.message));
+  await recoveryContext.addCookies([{name:'jg_session',value:token,url:base}]);
+  await recovery.goto(base+'/');await recovery.waitForSelector('.daily-home');
+  await recovery.route('**/shop-ui.js?*',route=>route.abort());
+  await recovery.evaluate(()=>navigateAccountPage('/town'));
+  assert.equal(await recovery.evaluate(()=>pageLoaded),false,'failed feature load shows a retryable error');
+  await recovery.unroute('**/shop-ui.js?*');
+  await recovery.evaluate(()=>navigateAccountPage('/town'));
+  assert.ok(await recovery.evaluate(()=>pageLoaded),'retry recovers after a dependency download fails');
+  assert.equal(await recovery.locator('#account-content h1').count(),1);
+  assert.deepEqual(recoveryErrors,[],'failed dependency must not execute dependent scripts');
+  await recovery.route('**/profile.css?*',route=>route.abort());
+  await recovery.evaluate(()=>navigateAccountPage('/profile'));
+  assert.equal(await recovery.evaluate(()=>pageLoaded),false,'failed stylesheet shows a retryable error');
+  await recovery.unroute('**/profile.css?*');
+  await recovery.evaluate(()=>navigateAccountPage('/profile'));
+  assert.ok(await recovery.evaluate(()=>pageLoaded),'retry recovers after a stylesheet download fails');
+  await recovery.evaluate(()=>Promise.all([navigateAccountPage('/town'),navigateAccountPage('/inventory'),navigateAccountPage('/profile')]));
+  assert.ok(await recovery.locator('.profile-hub').isVisible(),'latest navigation wins');
+  assert.deepEqual(recoveryErrors,[]);
+  await recoveryContext.close();
   assert.deepEqual(errors,[]);assert.deepEqual(externalFonts,[]);
-  console.log('Page assets passed: Daily skips unused feature assets; all 12 routes load their dependencies; scripts execute once; direct/SPA session freshness; EN/DE at 1440/390/320px; no overflow or JS errors.');
+  console.log('Page assets passed: Daily skips unused feature assets; all 12 routes load their dependencies; scripts execute once; direct/SPA session freshness; dependency/stylesheet failure retries and rapid navigation; EN/DE at 1440/390/320px; no overflow or JS errors.');
 }finally{await browser.close();await new Promise(resolve=>server.close(resolve));closeDataStore(dir);await rm(dir,{recursive:true,force:true});}
