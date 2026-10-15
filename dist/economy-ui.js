@@ -54,10 +54,15 @@ window.economyUi = (() => {
   };
   const countdown = end => `<time class="economy-countdown" data-economy-end="${end}" datetime="${new Date(end).toISOString()}" aria-live="off">${remaining(end)}</time>`;
   const bidMinimum = (lot, primary) => {
+    if (lot.bidding) return lot.bidding.minimumBid;
     const increment = lot.bidIncrement ?? 1;
     return lot.currentBid === null ? primary ? lot.reserve : lot.startPrice
       : lot.leading && Number.isSafeInteger(lot.highestBid) ? lot.highestBid + increment : lot.currentBid + increment;
   };
+  const bidReserved = lot => lot.bidding?.reservedMaximum
+    ?? (lot.leading && Number.isSafeInteger(lot.highestBid) ? lot.highestBid : 0);
+  const bidMaximum = lot => lot.bidding?.maximumBid
+    ?? Math.min(Number.MAX_SAFE_INTEGER, account.tokens + bidReserved(lot));
   const empty = text => `<p class="collection-empty">${text}</p>`;
   const status = lot => lot.status === 'cancelled' ? t('Cancelled', 'Storniert') : lot.status === 'active' ? t('Active', 'Aktiv') : lot.winnerId ? t('Sold', 'Verkauft') : t('Unsold', 'Nicht verkauft');
   const bidHistory = bids => [...(bids || [])].sort((a, b) => a.createdAt - b.createdAt || String(a.id).localeCompare(String(b.id)))
@@ -181,15 +186,7 @@ window.economyUi = (() => {
       }
       const bidInput = dialog.querySelector('input[name="amount"]');
       if (lot && bidInput) {
-        bidInput.min = String(bidMinimum(lot, detailPrimary));
-        if (document.activeElement !== bidInput && Number(bidInput.value) < Number(bidInput.min)) bidInput.value = bidInput.min;
-        const form = bidInput.closest('form'), error = form.querySelector('.account-error');
-        const ended = lot.status !== 'active' || lot.endsAt <= Date.now();
-        form.querySelector('button[type="submit"]').disabled = ended;
-        if (ended) {
-          error.textContent = t('This auction has ended. Check your auction history.', 'Diese Auktion ist beendet. Sieh in deinem Auktionsverlauf nach.');
-          error.dataset.auctionEnded = '1';
-        } else if (error.dataset.auctionEnded) { error.textContent = ''; delete error.dataset.auctionEnded; }
+        updateBidForm(lot, detailPrimary, bidInput.closest('form'));
       }
     }
   }
@@ -455,11 +452,33 @@ window.economyUi = (() => {
     if (lot.status !== 'active' || lot.endsAt <= Date.now()) return `<p>${status(lot)}</p>`;
     if (!primary && lot.sellerId === account.id) return `<p>${t('This is your listing.', 'Dies ist dein Angebot.')}</p>`;
     if (primary && account.progression.level < lot.requiredLevel) return `<p>${accountError('level_required')}</p>`;
-    const min = bidMinimum(lot, primary);
-    const hasBid = lot.currentBid !== null;
+    const min = bidMinimum(lot, primary), max = bidMaximum(lot), affordable = max >= min;
+    const hasBid = lot.currentBid !== null, reserved = bidReserved(lot);
     return `<form data-economy-form="${primary ? 'primary' : 'resale'}" data-id="${esc(lot.id)}" class="economy-form auction-bid-form"><label>${t('Your maximum bid in J€', 'Dein Höchstgebot in J€')}
-      <span class="auction-bid-entry"><input name="amount" type="number" inputmode="numeric" min="${min}" step="1" value="${min}" required><button class="primary-button" type="submit">${hasBid ? t('Raise bid', 'Gebot erhöhen') : t('Place bid', 'Gebot abgeben')}</button></span></label>${lot.leading ? `<p>${t('Your current maximum', 'Dein aktuelles Höchstgebot')}: <strong>${justizEuro(lot.highestBid)}</strong></p>` : ''}<p>${t('Available wallet balance', 'Verfügbares Guthaben')}: <strong data-available-balance>${justizEuro(account.tokens)}</strong> ${infoTip(t('Your maximum is held in escrow. Automatic bids raise the visible price only as needed. It is returned if you are outbid; if you win, unused J€ return at settlement.', 'Dein Höchstgebot wird hinterlegt. Automatische Gebote erhöhen den sichtbaren Preis nur bei Bedarf. Wirst du überboten, erhältst du es zurück; beim Gewinn werden übrige J€ nach der Abrechnung erstattet.'), t('How proxy bidding works', 'So funktioniert automatisches Bieten'))}</p>
-      <p class="auction-end-rule">${t('Bids in the final 10 seconds reset the countdown to 10 seconds.', 'Gebote in den letzten 10 Sekunden setzen den Countdown auf 10 Sekunden zurück.')}</p><p class="account-error" role="alert"></p></form>`;
+      <span class="auction-bid-entry"><input name="amount" type="number" inputmode="numeric" min="${min}" max="${max}" step="1" value="${affordable ? min : ''}" required${affordable ? '' : ' disabled'}><button class="primary-button" type="submit"${affordable ? '' : ' disabled'}>${hasBid ? t('Raise bid', 'Gebot erhöhen') : t('Place bid', 'Gebot abgeben')}</button></span></label><p data-reserved-maximum${reserved ? '' : ' hidden'}>${t('Your reserved maximum', 'Dein hinterlegtes Höchstgebot')}: <strong>${justizEuro(reserved)}</strong></p><p>${t('Available for this auction', 'Für diese Auktion verfügbar')}: <strong data-bid-budget>${justizEuro(max)}</strong> ${infoTip(t('Your maximum is held in escrow. Raising it uses only the difference from your available wallet. Automatic bids raise the visible price only as needed. It is returned if you are outbid; if you win, unused J€ return at settlement.', 'Dein Höchstgebot wird hinterlegt. Beim Erhöhen wird nur die Differenz vom verfügbaren Guthaben abgezogen. Automatische Gebote erhöhen den sichtbaren Preis nur bei Bedarf. Wirst du überboten, erhältst du es zurück; beim Gewinn werden übrige J€ nach der Abrechnung erstattet.'), t('How proxy bidding works', 'So funktioniert automatisches Bieten'))}</p>
+      <p class="auction-end-rule">${t('Bids in the final 10 seconds reset the countdown to 10 seconds.', 'Gebote in den letzten 10 Sekunden setzen den Countdown auf 10 Sekunden zurück.')}</p><p class="account-error" role="alert"${affordable ? '' : ' data-bid-unavailable="1"'}>${affordable ? '' : accountError('insufficient_tokens')}</p></form>`;
+  }
+  function updateBidForm(lot, primary, form) {
+    const input = form.querySelector('input[name="amount"]'), error = form.querySelector('.account-error');
+    const min = bidMinimum(lot, primary), max = bidMaximum(lot), affordable = max >= min;
+    const ended = lot.status !== 'active' || lot.endsAt <= Date.now();
+    input.min = String(min); input.max = String(max);
+    input.disabled = ended || !affordable;
+    if (affordable && !ended && document.activeElement !== input && Number(input.value) < min) input.value = String(min);
+    form.querySelector('button[type="submit"]').disabled = ended || !affordable;
+    const reserved = form.querySelector('[data-reserved-maximum]');
+    if (reserved) {
+      reserved.hidden = !bidReserved(lot);
+      reserved.querySelector('strong').textContent = justizEuro(bidReserved(lot));
+    }
+    const budget = form.querySelector('[data-bid-budget]');
+    if (budget) budget.textContent = justizEuro(max);
+    if (ended || !affordable) {
+      error.textContent = ended
+        ? t('This auction has ended. Check your auction history.', 'Diese Auktion ist beendet. Sieh in deinem Auktionsverlauf nach.')
+        : accountError('insufficient_tokens');
+      error.dataset.bidUnavailable = '1';
+    } else if (error.dataset.bidUnavailable) { error.textContent = ''; delete error.dataset.bidUnavailable; }
   }
   function paletteArtwork(lot) {
     if(lot.stockOffer&&window.paletteUi)return `<div class="palette-artwork palette-auction-art is-${esc(lot.stockOffer.tier)}">${window.paletteUi.art(lot.stockOffer)}</div>`;

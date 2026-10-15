@@ -11,7 +11,7 @@ import { bundleReferencePricing, ensurePaletteEditionSchema } from './palette-de
 import { paletteStoryForAuction } from './palette-stories.mjs';
 import { levelForXp } from './progression.mjs';
 import { pushNotification } from './notifications.mjs';
-import { proxyMinimum, resolveProxyBid } from './proxy-bids.mjs';
+import { proxyBidBudget, proxyMinimum, resolveProxyBid } from './proxy-bids.mjs';
 import { auctionEndAfterBid } from './auction-timing.mjs';
 
 // Re-exported for backwards compatibility with the pre-extraction imports;
@@ -446,7 +446,7 @@ export function settlePaletteAuction(dataDir, auctionId, { now = Date.now() } = 
   }));
 }
 
-export function getPaletteAuction(dataDir, auctionId, { now = Date.now() } = {}) {
+export function getPaletteAuction(dataDir, auctionId, { now = Date.now(), viewerId = null } = {}) {
   // Public reads settle their own due lot so the response is terminal truth.
   const due = withDatabase(dataDir, db => {
     ensurePaletteAuctionSchema(db, now);
@@ -454,10 +454,17 @@ export function getPaletteAuction(dataDir, auctionId, { now = Date.now() } = {})
     return row.settled_at === null && now >= row.ends_at;
   });
   if (due) settlePaletteAuction(dataDir, auctionId, { now });
-  return withDatabase(dataDir, db => {
+  return withDatabase(dataDir, db => transaction(db, () => {
     ensurePaletteAuctionSchema(db, now);
-    return serializePublicAuction(db, loadAuction(db, auctionId), { bids: true });
-  });
+    const row = loadAuction(db, auctionId), result = serializePublicAuction(db, row, { bids: true });
+    if (viewerId) {
+      const viewer = db.prepare('SELECT tokens FROM users WHERE id = ? AND banned = 0').get(viewerId);
+      if (viewer) result.bidding = proxyBidBudget(row.current_bid, row.max_bid,
+        row.settled_at === null && row.status !== 'cancelled' ? row.current_bidder_id : null,
+        viewerId, row.reserve, paletteBidIncrement(row.reserve), viewer.tokens);
+    }
+    return result;
+  }));
 }
 
 // Default view: active, unexpired lots. Bounded integer pagination.

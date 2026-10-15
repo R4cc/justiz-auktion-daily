@@ -9,7 +9,7 @@ import { awardXp, resaleXp } from './xp.mjs';
 import { estimatedValueTokens, marketIndexes, marketCategoryForItem } from './market.mjs';
 import { pushNotification } from './notifications.mjs';
 import { sealedPaletteInventoryIds } from './palette-auctions.mjs';
-import { proxyMinimum, resolveProxyBid } from './proxy-bids.mjs';
+import { proxyBidBudget, proxyMinimum, resolveProxyBid } from './proxy-bids.mjs';
 import { npcDemand } from './npc-demand.mjs';
 import { auctionEndAfterBid } from './auction-timing.mjs';
 
@@ -432,12 +432,19 @@ export function settleDueListings(dataDir, { now = Date.now(), limit = 100 } = {
   });
 }
 
-export function getResale(dataDir, auctionId, { now = Date.now() } = {}) {
+export function getResale(dataDir, auctionId, { now = Date.now(), viewerId = null } = {}) {
   settleDueListings(dataDir, { now });
-  return withDatabase(dataDir, db => {
+  return withDatabase(dataDir, db => transaction(db, () => {
     ensureResaleSchema(db, now);
-    return serializeListing(db, loadListing(db, auctionId, now), { bids: true, now });
-  });
+    const row = loadListing(db, auctionId, now), result = serializeListing(db, row, { bids: true, now });
+    if (viewerId) {
+      const viewer = db.prepare('SELECT tokens FROM users WHERE id = ? AND banned = 0').get(viewerId);
+      if (viewer) result.bidding = proxyBidBudget(row.current_bid, row.max_bid,
+        row.settled_at === null && row.status !== 'cancelled' ? row.current_bidder_id : null,
+        viewerId, row.start_price, resaleBidIncrement(row.start_price), viewer.tokens);
+    }
+    return result;
+  }));
 }
 
 export function listResales(dataDir, { now = Date.now(), limit = 50, offset = 0, sellerId = null, status = 'active' } = {}) {

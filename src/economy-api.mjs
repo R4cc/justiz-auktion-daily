@@ -86,7 +86,8 @@ export function createEconomyApi({ dataDir, json, flags = featureFlags(), accoun
       }
       if (flags.paletteAuctions && url.pathname.startsWith('/api/palette-auctions/')) {
         json(response, 200, { auction: getPaletteAuction(dataDir,
-          decoded(url.pathname.slice('/api/palette-auctions/'.length))) });
+          decoded(url.pathname.slice('/api/palette-auctions/'.length)),
+          { viewerId: player?.must_change_password ? null : player?.id }) });
         return true;
       }
       if (flags.resales && url.pathname === '/api/resales') {
@@ -98,7 +99,8 @@ export function createEconomyApi({ dataDir, json, flags = featureFlags(), accoun
         return true;
       }
       if (flags.resales && url.pathname.startsWith('/api/resales/')) {
-        const listing = getResale(dataDir, decoded(url.pathname.slice('/api/resales/'.length)));
+        const listing = getResale(dataDir, decoded(url.pathname.slice('/api/resales/'.length)),
+          { viewerId: player?.must_change_password ? null : player?.id });
         json(response, 200, { listing: signedIn(request) ? listing : maskListing(listing) });
         return true;
       }

@@ -385,7 +385,7 @@ test('leading bidder form raises the private maximum instead of the visible pric
     sellerId: 'seller', currentBid: 31, leading: true, highestBid: 80 }, false)`, context);
   assert.match(resale, /Your maximum bid in J€/);
   assert.match(resale, /min="81"/);
-  assert.match(resale, /Your current maximum: <strong>J€ 80/);
+  assert.match(resale, /Your reserved maximum: <strong>J€ 80/);
   const palette = vm.runInContext(`bidForm({ id: 'palette', status: 'active', endsAt: Date.now() + 60_000,
     reserve: 20, bidIncrement: 5, requiredLevel: 1, currentBid: 30, leading: true, highestBid: 60 }, true)`, context);
   assert.match(palette, /min="65"/);
@@ -786,5 +786,77 @@ test('Market Intelligence excludes batches, cases, review packs, primary palette
   for (const [primary, changes] of [[false, {quantity: 2}], [false, {item: {kind: 'case'}}], [false, {item: {kind: 'review-pack'}}], [true, {}], [false, {estimatedValueTokens: 0}], [false, {estimatedValueTokens: null}]]) {
     context.entry = {primary, lot: houseLot('excluded', {estimatedValueTokens: 200, ...changes})};
     assert.equal(vm.runInContext('individualMarketValue(entry.lot, entry.primary)', context), '');
+  }
+});
+
+test('bid forms cap new offers at wallet funds and raises at wallet plus this auction escrow', () => {
+  const context = uiContext({ account: { id: 'bidder', tokens: 200, heldInBids: 9000, progression: { level: 5 } },
+    t: en => en, esc: String, justizEuro: value => `J€ ${value}`, infoTip: text => text, accountError: String });
+  vm.runInContext(extract(uiSource, '  function bidForm(', '  function paletteArtwork('), context);
+  for (const primary of [false, true]) {
+    context.lot = { id: 'lot', sellerId: 'seller', status: 'active', endsAt: Date.now() + 60_000,
+      reserve: 20, startPrice: 20, requiredLevel: 1, currentBid: null, bidIncrement: 5 };
+    const render = () => vm.runInContext(`bidForm(lot, ${primary})`, context);
+    assert.match(render(), /min="20" max="200"/);
+    assert.doesNotMatch(render(), /type="submit" disabled/);
+    Object.assign(context.lot, { currentBid: 20, leading: true, highestBid: 800 });
+    assert.match(render(), /min="805" max="1000"/);
+    assert.match(render(), /Your reserved maximum: <strong>J€ 800/);
+    context.account.tokens = 0;
+    assert.match(render(), /min="805" max="800"[^>]*value=""[^>]*disabled/);
+    assert.match(render(), /type="submit" disabled/);
+    assert.match(render(), /role="alert"[^>]*>insufficient_tokens/);
+    // An old bid on this lot and money held elsewhere are not spendable.
+    context.lot.leading = false; context.account.tokens = 20;
+    assert.match(render(), /min="25" max="20"/);
+    assert.match(render(), /data-reserved-maximum hidden/);
+    assert.match(render(), /type="submit" disabled/);
+    context.account.tokens = 200;
+  }
+  context.t = (_, de) => de;
+  context.lot.leading = true;
+  assert.match(vm.runInContext('bidForm(lot, false)', context), /Dein hinterlegtes Höchstgebot/);
+});
+
+test('live bid limits follow refunds, spending and leadership without overwriting a typed maximum', () => {
+  const input = { value: '950', disabled: false }, button = {}, error = { textContent: '', dataset: {} };
+  const reservedValue = {}, reserved = { hidden: false, querySelector: () => reservedValue };
+  const form = { querySelector: selector => ({ 'input[name="amount"]': input, '.account-error': error,
+    'button[type="submit"]': button, '[data-reserved-maximum]': reserved })[selector] };
+  const context = uiContext({ account: { tokens: 200 }, document: { activeElement: input }, form,
+    t: en => en, justizEuro: value => `J€ ${value}`, accountError: String,
+    lot: { status: 'active', endsAt: Date.now() + 60_000, currentBid: 20, leading: true, highestBid: 800, bidIncrement: 5 } });
+  vm.runInContext(extract(uiSource, '  function updateBidForm(', '  function paletteArtwork('), context);
+  const update = () => vm.runInContext('updateBidForm(lot, false, form)', context);
+  update(); assert.equal(input.max, '1000'); assert.equal(input.value, '950'); assert.equal(button.disabled, false);
+  context.account.tokens = 100; update();
+  assert.equal(input.max, '900'); assert.equal(input.value, '950'); // Native max validation blocks the draft.
+  context.account.tokens = 0; update();
+  assert.equal(button.disabled, true); assert.equal(input.disabled, true); assert.equal(error.textContent, 'insufficient_tokens');
+  context.account.tokens = 200; update();
+  assert.equal(button.disabled, false); assert.equal(error.textContent, '');
+  assert.equal(reservedValue.textContent, 'J€ 800');
+  context.lot.leading = false; context.account.tokens = 1000; update();
+  assert.equal(input.max, '1000'); assert.equal(reserved.hidden, true);
+  context.lot.endsAt = 0; update();
+  assert.equal(button.disabled, true); assert.equal(input.disabled, true); assert.match(error.textContent, /auction has ended/);
+});
+
+test('a fresh same-auction reservation lets a J€839 wallet raise to J€870 despite stale bid lists', () => {
+  const context = uiContext({ account: { id: 'bidder', tokens: 839, progression: { level: 5 } },
+    t: en => en, esc: String, justizEuro: value => `J€ ${value}`, infoTip: text => text, accountError: String });
+  vm.runInContext(extract(uiSource, '  function bidForm(', '  function paletteArtwork('), context);
+  for (const primary of [false, true]) {
+    context.lot = { id: 'lot', sellerId: 'seller', status: 'active', endsAt: Date.now() + 60_000,
+      reserve: 20, startPrice: 20, requiredLevel: 1, currentBid: 20,
+      // Cached history incorrectly says the player isn't leading.
+      leading: false, highestBid: 0,
+      bidding: { leading: true, reservedMaximum: 161, availableTokens: 839, minimumBid: 162, maximumBid: 1000 } };
+    const html = vm.runInContext(`bidForm(lot, ${primary})`, context);
+    assert.match(html, /min="162" max="1000"/);
+    assert.match(html, /Your reserved maximum: <strong>J€ 161/);
+    assert.match(html, /Available for this auction: <strong data-bid-budget>J€ 1000/);
+    assert.doesNotMatch(html, /type="submit" disabled|insufficient_tokens/);
+    assert.equal(vm.runInContext('870 <= bidMaximum(lot)', context), true);
   }
 });

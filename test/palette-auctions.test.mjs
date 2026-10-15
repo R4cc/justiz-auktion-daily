@@ -6,6 +6,7 @@ import path from 'node:path';
 import { Accounts, STARTING_TOKENS } from '../src/accounts.mjs';
 import { closeDataStore, upsertAuctions, withDatabase } from '../src/database.mjs';
 import { loadPaletteCatalog, bundleReferencePricing } from '../src/palette-definitions.mjs';
+import { listItem, placeBid, getResale } from '../src/resale.mjs';
 import { saveNewsEvent } from '../src/news.mjs';
 import { notificationsForUser } from '../src/notifications.mjs';
 import {
@@ -572,4 +573,52 @@ test('primary auctions repeatedly reset late bid deadlines, including NPCs and p
   assert.throws(() => settlePaletteAuction(dir, lot.id, { now: end + 23999 }), /auction_still_active/);
   assert.throws(() => bidOnPaletteAuction(dir, admin, lot.id, amount + 5 * inc, { now: extended.endsAt }), /palette_auction_ended/);
   assert.equal(settlePaletteAuction(dir, lot.id, { now: extended.endsAt }).winnerId, npc.id);
+});
+
+
+test('maximum bids share one funded wallet across resale and palette auctions without reusing reserved money', async t => {
+  const { dir, service, admin, register } = await fixture(t);
+  const bidder = await register('SharedWalletBidder'), rival = await register('SharedWalletRival');
+  const lot = createPaletteAuction(dir, { editionId: baseEdition(dir).editionId, requestId: 'shared-wallet-primary' },
+    { now: day, random: alwaysFirst });
+  service.db(db => {
+    db.prepare('UPDATE users SET tokens = ? WHERE id = ?').run(lot.reserve + 1000, bidder.id);
+    db.prepare('UPDATE users SET tokens = 100000 WHERE id = ?').run(rival.id);
+    db.prepare('INSERT INTO inventory (id, user_id, item, created_at) VALUES (?, ?, ?, ?)')
+      .run('shared-wallet-item', admin.id, JSON.stringify({ title: 'Shared wallet tool', price: 100,
+        rarity: 'common', marketCategory: 'tools' }), day);
+  });
+  const resale = listItem(dir, admin, { inventoryId: 'shared-wallet-item', startPrice: 10,
+    endsAt: new Date(day + hour).toISOString() }, { now: day });
+  const snapshot = () => service.db(db => JSON.stringify({
+    balances: db.prepare('SELECT id, tokens FROM users ORDER BY id').all(),
+    resale: db.prepare('SELECT * FROM resale_auctions').all(),
+    primary: db.prepare('SELECT * FROM primary_palette_auctions').all(),
+    resaleBids: db.prepare('SELECT * FROM resale_bids').all(),
+    primaryBids: db.prepare('SELECT * FROM primary_palette_bids').all()
+  }));
+  const rejectsUnfunded = work => {
+    const before = snapshot();
+    assert.throws(work, /insufficient_tokens/);
+    assert.equal(snapshot(), before, 'unfunded maximum must not change balances, escrow or bid history');
+  };
+  placeBid(dir, bidder, resale.id, 600, { now: day });
+  rejectsUnfunded(() => bidOnPaletteAuction(dir, bidder, lot.id, lot.reserve + 401, { now: day }));
+  bidOnPaletteAuction(dir, bidder, lot.id, lot.reserve + 400, { now: day });
+  assert.equal(tokensOf(service, bidder), 0);
+  assert.equal(service.profile(bidder).heldInBids, lot.reserve + 1000);
+  rejectsUnfunded(() => placeBid(dir, bidder, resale.id, 601, { now: day }));
+  rejectsUnfunded(() => bidOnPaletteAuction(dir, bidder, lot.id, lot.reserve + 400 + paletteBidIncrement(lot.reserve), { now: day }));
+  // Being outbid refunds only that auction's maximum. The other reservation
+  // remains funded, and its leader can use the refund to raise by exactly 600.
+  placeBid(dir, rival, resale.id, 700, { now: day + 1000 });
+  assert.equal(tokensOf(service, bidder), 600);
+  rejectsUnfunded(() => bidOnPaletteAuction(dir, bidder, lot.id, lot.reserve + 1001, { now: day + 2000 }));
+  bidOnPaletteAuction(dir, bidder, lot.id, lot.reserve + 1000, { now: day + 2000 });
+  assert.equal(tokensOf(service, bidder), 0);
+  assert.equal(service.profile(bidder).heldInBids, lot.reserve + 1000);
+  // A losing challenger also needs actual wallet funds even though the bid
+  // would lose immediately to the incumbent's private maximum.
+  rejectsUnfunded(() => placeBid(dir, bidder, resale.id, 650, { now: day + 3000 }));
+  assert.equal(getResale(dir, resale.id, { now: day + 3000 }).currentBidderId, rival.id);
 });

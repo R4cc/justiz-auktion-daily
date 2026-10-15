@@ -267,6 +267,11 @@ allows at most one NPC bid per listing per 30 seconds, including replayed ticks
 and parallel runtimes. At most 200 unseen listings initialize and 1000 due
 interest rows are considered per tick. All actual bids use `placeBid`:
 full escrow debit, exact outbid refund, leader raises pay the difference.
+Auction detail responses include a private `bidding` budget for the signed-in
+viewer: free wallet plus their current maximum reserved on that same auction.
+The bid form uses that current budget even if cached participation lists are
+stale. Other auctions' escrow and opponents' hidden maxima are excluded;
+anonymous responses contain no private bidding budget.
 Settlement transfers the existing inventory row and pays the seller once.
 No parallel NPC currency/accounting system or recurring mint/refill exists.
 

@@ -16,3 +16,13 @@ export function resolveProxyBid(currentBid, leaderMax, leaderId, bidderId, amoun
   const visibleBid = Math.min(ceiling, amount + increment);
   return { leaderId, maxBid: ceiling, visibleBid, challengerBid: amount, autoBid: visibleBid };
 }
+
+// A private read model for the signed-in bidder. Only money reserved on this
+// lot can supplement their wallet; another leader's ceiling stays private.
+export function proxyBidBudget(currentBid, leaderMax, leaderId, bidderId, startPrice, increment, tokens) {
+  const leading = leaderId === bidderId;
+  const reservedMaximum = leading ? leaderMax ?? currentBid : 0;
+  return { leading, reservedMaximum, availableTokens: tokens,
+    minimumBid: proxyMinimum(currentBid, leaderMax, leaderId, bidderId, startPrice, increment),
+    maximumBid: Math.min(Number.MAX_SAFE_INTEGER, tokens + reservedMaximum) };
+}

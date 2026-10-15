@@ -7,6 +7,9 @@ import { createServer } from 'node:http';
 import { createAccountApi } from '../src/account-api.mjs';
 import { createEconomyApi } from '../src/economy-api.mjs';
 import { maskListing, maskUsername } from '../src/username-privacy.mjs';
+import { createPaletteAuction, bidOnPaletteAuction, paletteBidIncrement } from '../src/palette-auctions.mjs';
+import { loadPaletteCatalog } from '../src/palette-definitions.mjs';
+import { listItem, placeBid } from '../src/resale.mjs';
 import { marketState } from '../src/market.mjs';
 import { featureFlags } from '../src/features.mjs';
 import { closeDataStore, upsertAuctions } from '../src/database.mjs';
@@ -452,4 +455,64 @@ test('police wheel HTTP requires authentication, CSRF and ownership, conceals th
  const spun=(await (await post(base,'stores/heist/spin',payload,cookie)).json());assert.equal(spun.heist.outcome,'escaped');assert.equal(spun.user.justice.offences,0);
  assert.deepEqual((await (await post(base,'stores/heist/spin',payload,cookie)).json()).heist,spun.heist);
  assert.equal(accounts.db(db=>db.prepare('SELECT user_id FROM inventory WHERE id=?').get('wheel-wine').user_id),owner.id);
+});
+
+
+test('auction details expose only the viewer own escrow and allow raises above the free wallet balance', async t => {
+  const { base, dir } = await fixture(t, { ...env, FEATURE_PALETTE_AUCTIONS: 'true', FEATURE_BUSINESSES: 'false' });
+  const adminCookie = (await post(base, 'login', { username: 'admin', password })).headers.get('set-cookie');
+  const codes = (await (await post(base, 'codes', { count: 2 }, adminCookie)).json()).codes;
+  const bidderCookie = (await post(base, 'register', { username: 'EscrowBidder', password, code: codes[0] })).headers.get('set-cookie');
+  const otherCookie = (await post(base, 'register', { username: 'EscrowViewer', password, code: codes[1] })).headers.get('set-cookie');
+  const accounts = new Accounts(dir), now = Date.now();
+  const user = cookie => accounts.user(cookie.match(/jg_session=([a-f0-9]+)/)[1]);
+  const admin = user(adminCookie), bidder = user(bidderCookie);
+  accounts.db(db => db.prepare('INSERT INTO inventory (id, user_id, item, created_at) VALUES (?, ?, ?, ?)')
+    .run('escrow-http-item', admin.id, JSON.stringify({ title: 'Tool', price: 100, rarity: 'common', marketCategory: 'tools' }), now));
+  const resale = listItem(dir, admin, { inventoryId: 'escrow-http-item', startPrice: 10,
+    endsAt: new Date(now + 3600_000).toISOString() }, { now });
+  placeBid(dir, bidder, resale.id, 161, { now });
+  const read = async (path, cookie) => {
+    const response = await fetch(base + path, { headers: cookie ? { cookie } : {} });
+    assert.equal(response.status, 200); return response.json();
+  };
+  const resalePath = '/api/resales/' + resale.id;
+  const own = (await read(resalePath, bidderCookie)).listing;
+  assert.equal(own.bidding.availableTokens, 839);
+  assert.equal(own.bidding.reservedMaximum, 161);
+  assert.equal(own.bidding.maximumBid, 1000);
+  assert.equal(own.bidding.leading, true);
+  const raised = await post(base, 'resale/bid', { id: resale.id, amount: 870 }, bidderCookie);
+  assert.equal(raised.status, 200); assert.equal((await raised.json()).user.tokens, 130);
+  const ownRaised = (await read(resalePath, bidderCookie)).listing;
+  assert.equal(ownRaised.bidding.reservedMaximum, 870);
+  assert.equal(ownRaised.bidding.maximumBid, 1000);
+  assert.ok(!('bidding' in (await read(resalePath)).listing));
+  const other = (await read(resalePath, otherCookie)).listing;
+  assert.equal(other.bidding.reservedMaximum, 0); assert.equal(other.bidding.leading, false);
+  assert.equal(other.bidding.maximumBid, 1000);
+  assert.equal((await post(base, 'resale/bid', { id: resale.id, amount: 1001 }, bidderCookie)).status, 409);
+  assert.equal(accounts.profile(bidder).tokens, 130);
+  // The same private budget and raise semantics apply to primary palettes.
+  upsertAuctions(dir, Array.from({ length: 24 }, (_, n) => ({ id: 1000 + n, title: `Laptop Lenovo ${n}`,
+    category: 'Elektronik', currentBid: 10 + n * 20, image: '/favicon.png' })));
+  const edition = loadPaletteCatalog(dir, { now }).palettes.find(p => p.id === 'fundkiste');
+  const palette = createPaletteAuction(dir, { editionId: edition.editionId, requestId: 'escrow-http-palette' }, { now, random: () => 0 });
+  const first = palette.reserve + 160, maximum = first + 839;
+  accounts.db(db => db.prepare('UPDATE users SET tokens = ? WHERE id = ?').run(maximum, bidder.id));
+  bidOnPaletteAuction(dir, bidder, palette.id, first, { now });
+  const palettePath = '/api/palette-auctions/' + palette.id;
+  const ownPalette = (await read(palettePath, bidderCookie)).auction;
+  assert.equal(ownPalette.bidding.availableTokens, 839);
+  assert.equal(ownPalette.bidding.reservedMaximum, first);
+  assert.equal(ownPalette.bidding.maximumBid, maximum);
+  const increment = paletteBidIncrement(palette.reserve), next = first + Math.max(800, increment);
+  assert.ok(next > 839);
+  const primaryRaised = await post(base, 'palette-auctions/bid', { id: palette.id, amount: next }, bidderCookie);
+  assert.equal(primaryRaised.status, 200);
+  assert.equal((await primaryRaised.json()).user.tokens, maximum - next);
+  assert.ok(!('bidding' in (await read(palettePath)).auction));
+  const otherPalette = (await read(palettePath, otherCookie)).auction;
+  assert.equal(otherPalette.bidding.reservedMaximum, 0); assert.equal(otherPalette.bidding.leading, false);
+  assert.equal(otherPalette.bidding.maximumBid, 1000);
 });
