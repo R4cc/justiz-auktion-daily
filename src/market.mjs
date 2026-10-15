@@ -43,6 +43,7 @@ export const SNAPSHOT_RETENTION_MS = 30 * 24 * 3600_000;
 export const MAX_BACKFILL_BOUNDARIES = 720;          // per refresh, matching the 30-day retention window
 export const SIMULATION_MARKER = 'market_simulation_v1';
 export const INTRADAY_MARKER = 'market_intraday_v1';
+export const MANUAL_ADJUSTMENTS_RETIRED_MARKER = 'market_manual_adjustments_retired_v1';
 const HISTORY_CURSOR = 'market_history_through_v1';
 export const MARKET_QUOTE_INTERVAL_MS = 60_000;
 export const MARKET_HISTORY_RANGES = {
@@ -165,9 +166,15 @@ export function ensureMarketSchema(db, now) {
   for (const { id } of MARKET_CATEGORIES) seed.run(id, DEFAULT_MARKET_INDEX, DEFAULT_MARKET_INDEX, updatedAt);
 }
 
-// Admin controls multiply the simulated index after its normal price band.
-// The timestamped journal preserves earlier valuations and survives drift ticks.
+// Removed admin controls must not leave permanent price overrides behind.
+// Keep their timestamped journal for quotes before the retirement boundary.
+function manualAdjustmentsRetirement(db) {
+  return getState(db, MANUAL_ADJUSTMENTS_RETIRED_MARKER, null);
+}
+
 export function marketMultiplierAt(db, category, at) {
+  const retiredAt = manualAdjustmentsRetirement(db)?.retiredAtMs ?? null;
+  if (retiredAt !== null && at >= retiredAt) return 1;
   return db.prepare(`SELECT multiplier FROM admin_market_adjustments
     WHERE category = ? AND created_at <= ? ORDER BY created_at DESC, id DESC LIMIT 1`)
     .get(category, at)?.multiplier ?? 1;
@@ -301,6 +308,17 @@ export function applyMarketDrift(db, now, random = null) {
     setState(db, INTRADAY_MARKER, { activatedAtMs: now });
   }
   ensureMarketChaos(db, now);
+  if (manualAdjustmentsRetirement(db) === null) {
+    const changedPrices = MARKET_CATEGORIES.some(({ id }) => marketMultiplierAt(db, id, now) !== 1);
+    setState(db, MANUAL_ADJUSTMENTS_RETIRED_MARKER, { retiredAtMs: now, changedPrices });
+    // Only invalidate quotes at/after this deployment boundary. Old receipts,
+    // snapshots and trend points remain valid historical records.
+    db.prepare('DELETE FROM market_snapshots WHERE captured_at >= ?').run(new Date(now).toISOString());
+    const through = getState(db, HISTORY_CURSOR, null);
+    if (Number.isFinite(through) && through >= now) {
+      setState(db, HISTORY_CURSOR, Math.ceil(now / SNAPSHOT_INTERVAL_MS) * SNAPSHOT_INTERVAL_MS - SNAPSHOT_INTERVAL_MS);
+    }
+  }
   const bucket = Math.floor(now / MARKET_DRIFT_INTERVAL_MS);
   const insert = db.prepare(`INSERT INTO market_trend_points
     (category, bucket, index_value, momentum, direction, regime_until) VALUES (?, ?, ?, ?, ?, ?)`);
@@ -368,6 +386,8 @@ export function tickMarketDrift(dataDir, { now = Date.now(), random = null } = {
 // downtime simply leaves unretained hours unfilled. Snapshots older than the
 // retention window are deleted; effect and receipt records are never touched.
 function refreshMarketHistory(db, now, activationMs) {
+  const retirement = manualAdjustmentsRetirement(db);
+  const retiredAt = retirement?.retiredAtMs ?? null;
   const last = Math.floor(now / SNAPSHOT_INTERVAL_MS) * SNAPSHOT_INTERVAL_MS;
   const first = Math.ceil(activationMs / SNAPSHOT_INTERVAL_MS) * SNAPSHOT_INTERVAL_MS;
   const retentionFloor = Math.ceil((now - SNAPSHOT_RETENTION_MS) / SNAPSHOT_INTERVAL_MS) * SNAPSHOT_INTERVAL_MS;
@@ -433,23 +453,33 @@ function refreshMarketHistory(db, now, activationMs) {
         while (modifierPosition + 1 < changes.length && changes[modifierPosition + 1].created_at <= boundary) modifierPosition++;
         modifierPositions.set(id, modifierPosition);
         insert.run(id, indexFromEffects(active, boundary, baseline + intradayMovement(db, id, boundary))
-          * marketChaosMultiplier(db, id, boundary) * (changes[modifierPosition]?.multiplier ?? 1), capturedAt);
+          * marketChaosMultiplier(db, id, boundary)
+          * (retiredAt !== null && boundary >= retiredAt ? 1 : changes[modifierPosition]?.multiplier ?? 1), capturedAt);
       }
     }
   }
   if (last >= first && (!Number.isFinite(through) || last > through)) setState(db, HISTORY_CURSOR, last);
+  // Include the exact retirement boundary even between hourly grid points.
+  if (retirement?.changedPrices && retiredAt >= now - SNAPSHOT_RETENTION_MS && retiredAt <= now) {
+    const insertRetirement = db.prepare('INSERT OR REPLACE INTO market_snapshots (category, index_value, captured_at) VALUES (?, ?, ?)');
+    for (const { id } of MARKET_CATEGORIES) {
+      insertRetirement.run(id, computeCategoryIndex(db, id, retiredAt), new Date(retiredAt).toISOString());
+    }
+  }
   // Drift backfills can rebuild snapshots. Restore each actual admin change
   // from its receipt, including changes between hourly boundaries.
   const receiptSnapshot = db.prepare('INSERT OR REPLACE INTO market_snapshots (category, index_value, captured_at) VALUES (?, ?, ?)');
   for (const row of db.prepare(`SELECT category, after_index, created_at FROM admin_market_adjustments
     WHERE created_at >= ? AND created_at <= ? ORDER BY created_at, id`).all(now - SNAPSHOT_RETENTION_MS, now)) {
-    receiptSnapshot.run(row.category, row.after_index, new Date(row.created_at).toISOString());
+    if (retiredAt === null || row.created_at < retiredAt) {
+      receiptSnapshot.run(row.category, row.after_index, new Date(row.created_at).toISOString());
+    }
   }
   db.prepare('DELETE FROM market_snapshots WHERE captured_at < ?').run(new Date(now - SNAPSHOT_RETENTION_MS).toISOString());
 }
 
 // market_categories.current_index is a cache refreshed on reads; the source of
-// truth is the persisted trends, effects and admin adjustment journal.
+// truth is the persisted trends/effects, plus manual overrides before retirement.
 function materializeMarketIndexes(db, now) {
   const updatedAt = new Date(now).toISOString();
   const update = db.prepare('UPDATE market_categories SET current_index = ?, updated_at = ? WHERE category = ?');
@@ -548,11 +578,16 @@ export function marketHistory(dataDir, category, { now = Date.now(), limit = 100
       // Include the exact opening and live quote, and actual admin receipts
       // between samples, so jumps and the chart's latest value stay accurate.
       const times = new Set([start, now]), receipts = new Map();
+      const retirement = manualAdjustmentsRetirement(db);
+      const retiredAt = retirement?.retiredAtMs ?? null;
+      if (retirement?.changedPrices && retiredAt >= start && retiredAt <= now) times.add(retiredAt);
       for (let at = Math.ceil(start / interval) * interval; at <= now; at += interval) times.add(at);
       for (const at of marketChaosHistoryTimes(db, start, now)) times.add(at);
       for (const row of db.prepare(`SELECT created_at, after_index FROM admin_market_adjustments
         WHERE category = ? AND created_at >= ? AND created_at <= ? ORDER BY created_at, id`).all(category, start, now)) {
-        times.add(row.created_at); receipts.set(row.created_at, row.after_index);
+        if (retiredAt === null || row.created_at < retiredAt) {
+          times.add(row.created_at); receipts.set(row.created_at, row.after_index);
+        }
       }
       return [...times].filter(at => at <= now).sort((a, b) => b - a).map(at => ({
         indexValue: roundIndex(receipts.get(at) ?? computeCategoryIndex(db, category, at)), capturedAt: new Date(at).toISOString()

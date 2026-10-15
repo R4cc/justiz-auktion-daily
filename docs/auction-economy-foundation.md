@@ -139,7 +139,7 @@ precedes runtime startup in `server.mjs`.
   Hash-keyed anchors make quotes identical across domain reads and restarts.
   Its one-time activation preserves the initial quote and earlier history.
   The normal combined index, including intraday flow and short-lived news effects, stays
-  between 50 and 150 (±50% of neutral 100) before any persistent admin multiplier.
+  between 50 and 150 (±50% of neutral 100).
   Once per seven-day window, one randomly timed **Market frenzy** lasts exactly
   one hour. A private persisted seed fixes its timing and each category's path.
   Minute quotes rapidly alternate between five-minute pumps and crashes, with
@@ -149,7 +149,10 @@ precedes runtime startup in `server.mjs`.
   reroll the schedule, rewrite earlier history or stack events. Only the active
   event's start/end times are public; future timing and the seed stay private.
   Inventory, cases, store estimates, theft fines and NPC valuations all consume
-  the same quote. Admin multipliers compose after it. The Market page shows an
+  the same quote. The first tick after the manual-override retirement update
+  records a durable timestamp and stops applying saved admin multipliers from
+  that point onward. Earlier valuations and adjustment receipts retain their
+  original multipliers; charts include the exact retirement quote. The Market page shows an
   EN/DE event banner and countdown; event turning points remain in every chart
   range and hourly history after expiry. The market chart retains 30 days.
   The first trend tick also performs the one-time simulation activation.
@@ -332,7 +335,9 @@ all store activity and sale histories before deleting businesses/inventory.
 Global market combines persistent trends, minute-level intraday flow and
 persisted news effects. Each signed effect
 contributes `delta * clamp(1 - elapsed / 72h, 0, 1)`. Index is
-`clamp(trendBaseline + intradayFlow + sum(contributions), 50, 150) * adminMultiplier`. Absolute active contribution budget
+`clamp(trendBaseline + intradayFlow + sum(contributions), 50, 150)`.
+Historical quotes before the persisted manual-override retirement timestamp
+additionally apply the admin multiplier effective at that time. Absolute active contribution budget
 is 30/category; opposing effects consume the same budget. Hourly history is
 reconstructed from the shared simulation, bounded to 30 days/720 boundaries.
 A durable cursor extends this grid incrementally and rewinds when drift

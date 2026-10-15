@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import { closeDataStore, getState, withDatabase } from '../src/database.mjs';
 import { ensureMarketChaos, marketChaosEvent, marketChaosHistoryTimes, marketChaosMultiplier,
   MARKET_CHAOS_MARKER, MARKET_CHAOS_WEEK_MS, MARKET_CHAOS_DURATION_MS } from '../src/market-chaos.mjs';
-import { MARKET_CATEGORIES, estimatedValueTokens, marketHistory, marketIndexes, marketState, tickMarketDrift } from '../src/market.mjs';
+import { MANUAL_ADJUSTMENTS_RETIRED_MARKER, MARKET_CATEGORIES, marketMultiplierAt, estimatedValueTokens, marketHistory, marketIndexes, marketState, tickMarketDrift } from '../src/market.mjs';
 import { createEconomyApi } from '../src/economy-api.mjs';
 
 const day=Date.parse('2026-10-13T12:00:00Z'),minute=60_000;
@@ -108,9 +108,11 @@ test('event turning points survive all chart ranges and incremental hourly snaps
   }
 });
 
-test('admin multipliers compose with the frenzy and remain effective after it ends',async t=>{
+test('historical admin multipliers compose with the frenzy until automatic retirement',async t=>{
   const dir=await fixture(t),start=times(dir)[0],at=start+10*minute;
   tickMarketDrift(dir,{now:at});
+  // Simulate the previous release, which had not retired manual overrides.
+  withDatabase(dir,db=>db.prepare('DELETE FROM app_state WHERE key = ?').run(MANUAL_ADJUSTMENTS_RETIRED_MARKER));
   const before=withDatabase(dir,db=>marketIndexes(db,at).electronics);
   withDatabase(dir,db=>db.prepare(`INSERT INTO admin_market_adjustments
     (admin_id,request_id,category,action,percent,multiplier,before_index,after_index,created_at)
@@ -121,7 +123,9 @@ test('admin multipliers compose with the frenzy and remain effective after it en
   assert.equal(marketHistory(dir,'electronics',{now:at,range:'1h'})[0].indexValue,state.categories[0].currentIndex);
   const end=start+MARKET_CHAOS_DURATION_MS;tickMarketDrift(dir,{now:end});
   const normal=withDatabase(dir,db=>marketIndexes(db,end).electronics);
-  assert.ok(normal>=100&&normal<=300);
+  assert.ok(normal>=50&&normal<=150);
+  assert.equal(withDatabase(dir,db=>marketMultiplierAt(db,'electronics',end)),1);
+  assert.equal(withDatabase(dir,db=>marketIndexes(db,at).electronics),before*2);
 });
 
 test('public market API exposes only the active event, shares history quotes and removes the banner state at expiry',async t=>{
