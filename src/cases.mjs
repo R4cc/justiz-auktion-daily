@@ -2,7 +2,7 @@ import { prestigeEffects, discountedCaseCost } from './prestige-effects.mjs';
 import { readFileSync } from 'node:fs';
 import { randomInt, createHash } from 'node:crypto';
 import { auctionGallery } from './auction-images.mjs';
-import { auctionSelectionCategory, buildAuctionFamilies, normalizeSelectionText } from './auction-selection.mjs';
+import { auctionSelectionCategory, buildAuctionFamilies, isCarAuction, isWineAuction } from './auction-selection.mjs';
 import { ECONOMY_BALANCE, GAME_REWARDS, expectedItemValue } from './economy-balance.mjs';
 import { marketIndexes, estimatedValueTokens } from './market.mjs';
 import { readArchive, transaction, withDatabase } from './database.mjs';
@@ -41,17 +41,9 @@ export function itemRarity(price, familySize) {
 // (vehicle parts are not cars, spirits are not wine). Do not add new rules here.
 export function matchesTheme(item, theme) {
   if (theme === 'mixed' || theme === 'premium') return true;
-  const category = auctionSelectionCategory(item), title = normalizeSelectionText(item.title);
-  if (theme === 'cars') return category === 'Fahrzeuge' &&
-    /\b(pkw|auto|car|personenkraftwagen|bmw|mercedes|volkswagen|vw|audi|hyundai|opel|skoda|ford|seat|toyota|tesla|renault|peugeot|fiat|citroen|kia|volvo|porsche)\b/.test(title) &&
-    !/\b(reifen|felgen|ersatzteil|ersatzteile|anhanger|motorrad|motorroller|modellauto|radkappen|motor|getriebe|scheinwerfer|stossstange|autotur)\b/.test(title);
-  if (theme === 'wine') {
-    const text = normalizeSelectionText(`${item.title} ${String(item.description || '').slice(0, 600)}`);
-    return category === 'Getränke' &&
-      !/\b(whisky|whiskey|rum|cognac|brandy|vodka|wodka|likor|spirituosen|bier|gin|tequila)\b/.test(title) &&
-      (/\b(wine|wein|weine|rotwein|weisswein|rosewein|riesling|merlot|cabernet|sauvignon|chardonnay|pinot|spatburgunder|burgunder|bordeaux|barolo|brunello|chianti|rioja|tempranillo|malbec|zinfandel|portwein|weingut|primitivo|avignonesi|champagner|champagne|prosecco|sekt|chablis|amarone|valpolicella|montepulciano|montalcino|sangiovese|sancerre|tignanello|sassicaia|ornellaia)\b/.test(text) ||
-      (/\bflaschen?\b/.test(text) && /\b(jahrgang|trinkbarkeit)\b/.test(text)));
-  }
+  const category = auctionSelectionCategory(item);
+  if (theme === 'cars') return isCarAuction(item);
+  if (theme === 'wine') return isWineAuction(item);
   return category === ({ electronics: 'Elektronik', tools: 'Werkzeuge', jewellery: 'Schmuck & Uhren', collectibles: 'Sammlerstücke' })[theme];
 }
 

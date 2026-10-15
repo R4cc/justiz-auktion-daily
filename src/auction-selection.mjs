@@ -1,89 +1,5 @@
-// Selection categories intentionally differ from the source site's very broad buckets.
-const CATEGORY_RULES = [
-  ['Getränke', /\b(wein|weine|rotwein|weisswein|rosewein|riesling|merlot|cabernet|sauvignon|chardonnay|pinot|spatburgunder|burgunder|bordeaux|barolo|brunello|chianti|rioja|tempranillo|malbec|zinfandel|portwein|weingut|primitivo|avignonesi|champagner|champagne|prosecco|sekt|whisky|whiskey|rum|cognac|brandy|vodka|wodka|likor|spirituosen|chablis|amarone|valpolicella|montepulciano|montalcino|sangiovese|sancerre|tignanello|sassicaia|ornellaia|bier|gin|tequila)\b/],
-  ['Bücher & Medien', /\b(buch|bucher|buchpaket|roman|romane|stgb|bgb|strafgesetzbuch|gesetzbuch|kommentar|lehrbuch|lexikon|auflage|dvd|bluray|schallplatte|vinyl)\b/],
-  ['Fahrräder', /\b(fahrrad|fahrrader|mountainbike|rennrad|ebike|e bike|pedelec|bicycle|bike)\b/],
-  ['Fahrzeuge', /\b(pkw|lkw|auto|fahrzeug|fahrzeuge|bmw|mercedes|volkswagen|vw|audi|hyundai|opel|skoda|ford|seat|motorrad|motorroller|anhanger|reifen)\b/],
-  ['Elektronik', /\b(notebook|laptop|computer|pc|monitor|fernseher|smartphone|handy|iphone|ipad|tablet|kamera|camera|konsole|playstation|xbox|nintendo|drucker|festplatte|airpods|macbook)\b/],
-  ['Werkzeuge', /\b(werkzeug|werkzeuge|werkzeugkoffer|bohrhammer|bohrmaschine|akkuschrauber|makita|hilti|sage|kreissage|schleifer|schweissgerat|kompressor)\b/],
-  ['Schmuck & Uhren', /\b(schmuck|modeschmuck|herrenring|damenring|diamanten|halskette|damenkette|armbanduhr|ring|kette|armreif|armband|gold|silber|uhr|rolex)\b/],
-  ['Kosmetik', /\b(parfum|parfums|parfumset|eau de toilette|eau de parfum|duft|dufte|kosmetik)\b/],
-  ['Mode', /\b(sneaker|schuhe|jacke|winterjacke|sommerjacke|shirt|kleidung|herrenbekleidung|damenbekleidung|jeanshosen|hemden|poloshirt|sonnenbrille|umhangetasche|jeans|handtasche|tasche|stiefel)\b/],
-  ['Möbel & Wohnen', /\b(mobel|schrank|tisch|esstisch|schreibtisch|stuhl|sofa|lampe|porzellan|teppich|sessel|bett)\b/],
-  ['Haushalt & Garten', /\b(waschmaschine|kuhlschrank|spulmaschine|staubsauger|kaffeemaschine|kuche|rasenmaher|grill|gartengerat|kuchenmaschine|thermomix)\b/],
-  ['Sport & Freizeit', /\b(sport|hantel|fitness|ski|snowboard|zelt|angel|kajak|gitarre|klavier|musikinstrument)\b/],
-  ['Sammlerstücke', /\b(munze|munzen|sammlung|figur|lego|modellauto|antiquitat|briefmarke|briefmarken|spielzeug)\b/]
-];
-const CATEGORY_ALIASES = new Map([
-  ['wine', 'Getränke'], ['wein', 'Getränke'], ['getranke', 'Getränke'], ['beverages', 'Getränke'],
-  ['books', 'Bücher & Medien'], ['bucher', 'Bücher & Medien'], ['vehicles', 'Fahrzeuge'],
-  ['tools', 'Werkzeuge'], ['werkzeug', 'Werkzeuge'], ['jewelry', 'Schmuck & Uhren'],
-  ['electronics', 'Elektronik'], ['furniture', 'Möbel & Wohnen'], ['fashion', 'Mode'],
-  ...CATEGORY_RULES.map(([category]) => [normalizeSelectionText(category), category])
-]);
-
-export function normalizeSelectionText(value = '') {
-  return String(value).replace(/&(?:lpar|rpar|plus|amp|quot|apos|period|lowbar);/gi, ' ').normalize('NFKD').replace(/\p{M}/gu, '').toLowerCase()
-    .replace(/ß/g, 'ss').replace(/[^a-z0-9]+/g, ' ').replace(/\s+/g, ' ').trim();
-}
-
-// Toy evidence is shared by live selection and legacy inventory/shop checks.
-// Keep ambiguous words such as "game", "figure", "model" and car brands out
-// of the standalone vocabulary: they also describe electronics, art and cars.
-const TOY_WORDS = /\b((?:kinder|holz|baby)?spielzeug[a-z]*|toys?|brettspiele?|gesellschaftsspiele?|kartenspiele?|wuerfelspiele?|wurfelspiele?|lernspiele?|kinderspiele?|spielkarten|sammelkarten|trading cards?|board games?|card games?|(?:kinder|holz|3d)?puzzles?|jigsaw|(?:holz|metall)?baukasten[a-z]*|(?:holz)?bauklotze|(?:holz)?bausteine|klemmbausteine|building sets?|building blocks?|puppen?[a-z]*|dolls?|dollhouses?|plusch[a-z]*|kuscheltiere?|stofftiere?|teddy(?:bar|baren)?|teddies|stuffed animals?|modellbausatze?|modellbausatz|modellautos?|modellfahrzeuge?|modelleisenbahn[a-z]*|modellbahn[a-z]*|modellflugzeuge?|modellschiffe?|model (?:cars?|trains?|aircraft|boats?)|actionfiguren?|action figures?|sammelfiguren?|funko pop|lego|duplo|playmobil|barbie|hot wheels|matchbox|schleich|steiff|brio|marklin|roco|fischertechnik|siku|ravensburger|hasbro|mattel|monopoly|scrabble)\b/;
-const TOY_MEDIA = /\b(buch|bucher|book|books|katalog|catalogue|catalog|anleitung|bauanleitung|manual|dvd|bluray|videospiel|videospiele|video games?|computerspiel|computerspiele|konsolenspiel|konsolenspiele|playstation|xbox)\b/;
-const TOY_CATEGORIES = /^(toys?|spielzeug(?: und sammlerstucke)?|spielwaren|spiele und spielzeug)$/;
-function toyText(text, raw = text) {
-  if (TOY_MEDIA.test(text)) return false;
-  if (TOY_WORDS.test(text)) return true;
-  if (/\b(?:rc|ferngesteuert[a-z]*) (?:autos?|cars?|fahrzeuge?|buggys?|trucks?|boote?|schiffe?|flugzeuge?|hubschrauber|helicopters?)\b/.test(text)) return true;
-  if (/\b(?:slotcars?|rennbahn[a-z]*|autorennbahn[a-z]*)\b/.test(text)) return true;
-  if (/\b(?:pokemon|yu gi oh|yugioh)\b/.test(text) && /\b(?:karten|cards|sammelkarten|trading cards)\b/.test(text)) return true;
-  // Scale plus vehicle evidence catches "BMW M3 1:18" without reclassifying
-  // a real car whose title merely includes its model name or registration year.
-  return /\b1\s*[:/]\s*(?:12|18|24|32|43|50|64|72|87|160)\b/.test(raw) &&
-    /\b(auto|car|pkw|lkw|bmw|mercedes|volkswagen|vw|audi|porsche|ferrari|ford|traktor|tractor)\b/.test(text);
-}
-export function isToyAuction(auction) {
-  const title = normalizeSelectionText(auction.title);
-  if (TOY_MEDIA.test(title)) return false;
-  if (toyText(title, String(auction.title || ''))) return true;
-  // A real product title takes precedence over incidental toy mentions in a
-  // seller's description. Generic lots may identify their contents there.
-  const titleCategory = CATEGORY_RULES.find(([, pattern]) => pattern.test(title))?.[0];
-  if (titleCategory && titleCategory !== 'Sammlerstücke') return false;
-  if (TOY_CATEGORIES.test(normalizeSelectionText(auction.category))) return true;
-  const description = String(auction.description || '').split(/versand|foto und farbhinweis|offnungszeiten|geschäftszeiten/i)[0].slice(0, 600);
-  return toyText(normalizeSelectionText(description), description);
-}
-
-export function auctionSelectionCategory(auction) {
-  const title = normalizeSelectionText(auction.title);
-  if (isToyAuction(auction)) return 'Sammlerstücke';
-  const fromTitle = CATEGORY_RULES.find(([, pattern]) => pattern.test(title));
-  if (fromTitle) return fromTitle[0];
-  // Alcohol metadata catches producer-only wine titles without calling perfume a drink.
-  const description = normalizeSelectionText(String(auction.description || '').split(/versand|foto und farbhinweis|offnungszeiten|geschäftszeiten/i)[0]
-    .replace(/\d{1,2}(?::\d{2})?\s*uhr/gi, '').slice(0, 600));
-  if (/\bflaschen?\b/.test(description) && /\b(alkoholgehalt|jahrgang|trinkbarkeit)\b/.test(description)) return 'Getränke';
-  const fromDescription = CATEGORY_RULES.find(([, pattern]) => pattern.test(description));
-  if (fromDescription) return fromDescription[0];
-  return CATEGORY_ALIASES.get(normalizeSelectionText(auction.category)) || 'Sonstiges';
-}
-
-const WINE_WORDS = /\b(wine|wines|wein|weine|rotwein|weisswein|rosewein|riesling|merlot|cabernet|sauvignon|chardonnay|pinot|spatburgunder|burgunder|bordeaux|barolo|brunello|chianti|rioja|tempranillo|malbec|zinfandel|portwein|weingut|primitivo|avignonesi|champagner|champagne|prosecco|sekt|chablis|amarone|valpolicella|montepulciano|montalcino|sangiovese|sancerre|tignanello|sassicaia|ornellaia)\b/;
-const OTHER_DRINK_WORDS = /\b(whisky|whiskey|rum|cognac|brandy|vodka|wodka|likor|liqueur|spirituosen|spirits|schnaps|grappa|absinth|bier|beer|gin|tequila|wasser|saft|cola|limonade)\b/;
-
-export function isWineAuction(auction) {
-  const title = normalizeSelectionText(auction.title);
-  // Wine-colored clothes and perfume bottles remain in their own categories.
-  if (auctionSelectionCategory(auction) !== 'Getränke') return false;
-  if (OTHER_DRINK_WORDS.test(title)) return false;
-  if (WINE_WORDS.test(title) || /^(wine|wines|wein|weine)$/.test(normalizeSelectionText(auction.category))) return true;
-  const description = normalizeSelectionText(String(auction.description || '').split(/versand|foto und farbhinweis|offnungszeiten|geschäftszeiten/i)[0].slice(0, 600));
-  if (OTHER_DRINK_WORDS.test(description)) return false;
-  return WINE_WORDS.test(description) || /\bflaschen?\b/.test(description) && /\b(jahrgang|trinkbarkeit)\b/.test(description);
-}
+import { normalizeSelectionText, auctionSelectionCategory } from './item-categories.mjs';
+export { auctionSelectionCategory, normalizeSelectionText, isToyAuction, isWineAuction, isCarAuction } from './item-categories.mjs';
 
 const STOP_WORDS = new Set(('der die das den dem des ein eine einer eines einem einen und oder mit ohne von vom zum zur fur im in aus am an auf ca circa marke modell typ koffer transportkoffer zustand gebraucht gebrauchte gebrauchter neu neuwertig original verpackt ovp ungepruft defekt stuck stk st flasche flaschen set paket konvolut auktion angebot artikel verkauf siehe beschreibung auflage aufl kommentar').split(' '));
 function productText(value) {
@@ -181,19 +97,23 @@ export function buildAuctionFamilies(auctions) {
 export function chooseVariedAuctions(candidates, count, rank) {
   const selected = [];
   const categories = new Map();
+  // Classification is stable during a selection; sorting must not repeatedly
+  // scan every item's title and description.
+  const itemCategories = new Map(candidates.map(item => [item, auctionSelectionCategory(item)]));
+  const categoryFor = item => itemCategories.get(item);
   const remaining = [...candidates];
   const minimumCategories = Math.min(4, count);
   while (selected.length < count) {
     const eligible = remaining.filter(item => {
-      const category = auctionSelectionCategory(item);
+      const category = categoryFor(item);
       return (categories.get(category) || 0) < (category === 'Getränke' ? 1 : 2);
     });
     // Prefer a new category before allowing any second lot in a category.
-    eligible.sort((a, b) => Number(categories.has(auctionSelectionCategory(a))) - Number(categories.has(auctionSelectionCategory(b))) || rank(b, selected) - rank(a, selected) || Number(a.id) - Number(b.id));
+    eligible.sort((a, b) => Number(categories.has(categoryFor(a))) - Number(categories.has(categoryFor(b))) || rank(b, selected) - rank(a, selected) || Number(a.id) - Number(b.id));
     const choice = eligible[0];
     if (!choice) break;
     selected.push(choice);
-    const category = auctionSelectionCategory(choice);
+    const category = categoryFor(choice);
     categories.set(category, (categories.get(category) || 0) + 1);
     remaining.splice(remaining.indexOf(choice), 1);
   }

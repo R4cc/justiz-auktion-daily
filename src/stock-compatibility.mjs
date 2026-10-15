@@ -1,5 +1,5 @@
 import { marketCategoryForItem } from './market.mjs';
-import { auctionSelectionCategory, isToyAuction } from './auction-selection.mjs';
+import { auctionSelectionCategory, isToyAuction, isCarAuction } from './auction-selection.mjs';
 
 export function businessTypeForItem(item) {
   if (['review-pack','case'].includes(item.kind)) return null;
@@ -10,7 +10,7 @@ export function businessTypeForItem(item) {
   // supplier units and individual finds; older generic categories can use
   // the shared title/description classifier without rewriting their values.
   if (category === 'wine' || (category === 'other' && auctionSelectionCategory(item) === 'Getränke')) return 'wine';
-  if (category === 'vehicles' && /\b(auto|car|pkw|limousine|kombi|sedan|volkswagen|vw|bmw|audi|opel|ford|toyota)\b/i.test(item.title || '') && !/\b(modell|reifen|motor|teil|felge)\b/i.test(item.title || '')) return 'cars';
+  if (category === 'vehicles' && isCarAuction(item)) return 'cars';
   if (category === 'watches_jewelry' || (category === 'other' && auctionSelectionCategory(item) === 'Schmuck & Uhren')) return 'jeweler';
   if (['tools','other'].includes(category)) return 'hardware';
   if (category === 'electronics') return 'electronics';

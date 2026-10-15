@@ -1,3 +1,4 @@
+import { RESALE_LOCK_SQL } from './inventory-locks.mjs';
 import { prestigeEffects, discountedCaseCost } from './prestige-effects.mjs';
 import { businessTypeForItem } from './stock-compatibility.mjs';
 import { resaleBidIncrement } from './economy-balance.mjs';
@@ -143,8 +144,6 @@ export function ensureResaleSchema(db, now = Date.now()) {
 // belongs to the seller and the winner's tokens sit in escrow. A settled sale
 // no longer blocks anything: ownership has moved to the winner, whose future
 // listings reference the same inventory row without touching history.
-const RESALE_LOCK_SQL = `(status = 'active' OR (status = 'ended' AND winner_id IS NOT NULL AND settled_at IS NULL))`;
-
 export function inventoryIsLocked(db, inventoryId) {
   return Boolean(db.prepare(`SELECT 1 FROM resale_auction_items ai
     JOIN resale_auctions a ON a.id = ai.auction_id

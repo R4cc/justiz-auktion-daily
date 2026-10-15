@@ -1,3 +1,4 @@
+import { reconcileCategorizedStock } from './item-category-migration.mjs';
 import { storePopularity, storeReputation, storePopularityBreakdown } from './store-reputation.mjs';
 import { ensureReviewSchema, recordNpcStoreFeedback } from './store-reviews.mjs';
 import { businessTypeForItem } from './stock-compatibility.mjs';
@@ -524,6 +525,7 @@ export function tickBusinesses(dataDir, { now = Date.now() } = {}) {
   const supply = supplyStockAuctions(dataDir, { now, retire: true });
   withDatabase(dataDir, db => transaction(db, () => {
     ensureBusinessSchema(db, { now });
+    reconcileCategorizedStock(db);
     advanceShops(db, now);
     restockPrestigeStores(db, now);
   }));

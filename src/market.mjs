@@ -1,3 +1,4 @@
+import { SELECTION_MARKET_CATEGORIES } from './item-categories.mjs';
 import { AccountError } from './errors.mjs';
 import { createHash } from 'node:crypto';
 import { auctionSelectionCategory } from './auction-selection.mjs';
@@ -54,13 +55,7 @@ export const MARKET_HISTORY_RANGES = {
 };
 
 // German listing categories (auction-selection.mjs) -> market category ids.
-const LISTING_CATEGORY_MAP = {
-  Elektronik: 'electronics', Fahrzeuge: 'vehicles', 'Getränke': 'wine',
-  Werkzeuge: 'tools', Werkzeug: 'tools', 'Schmuck & Uhren': 'watches_jewelry',
-  'Sammlerstücke': 'collectibles', 'Möbel & Wohnen': 'household', 'Haushalt & Garten': 'household',
-  'Fahrräder': 'bicycles', 'Bücher & Medien': 'books_media', Mode: 'fashion',
-  Kosmetik: 'cosmetics', 'Sport & Freizeit': 'sport_leisure', Sonstiges: 'other'
-};
+const LISTING_CATEGORY_MAP = SELECTION_MARKET_CATEGORIES;
 
 // Case themes (the palette/seizure-story types in cases.mjs) -> market category.
 // 'mixed' palettes intentionally span categories and map to null.

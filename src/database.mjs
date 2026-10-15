@@ -1,3 +1,4 @@
+import { migrateSavedItemCategories, CATEGORY_CLASSIFICATION_VERSION } from './item-category-migration.mjs';
 import { repairSavedAuctionText } from './auction-text-migration.mjs';
 import { existsSync, mkdirSync, readFileSync } from 'node:fs';
 import path from 'node:path';
@@ -255,6 +256,14 @@ function openDatabase(dataDir) {
         if (!database.prepare("SELECT 1 FROM app_state WHERE key='auction_text_entities_v1'").get()) {
           setState(database, 'auction_text_entities_v1', { updated: repairSavedAuctionText(database) });
         }
+      });
+    } catch (error) { database.close(); throw error; }
+  }
+  if (!database.prepare('SELECT 1 FROM app_state WHERE key=?').get(CATEGORY_CLASSIFICATION_VERSION)) {
+    try {
+      transaction(database, () => {
+        if (!database.prepare('SELECT 1 FROM app_state WHERE key=?').get(CATEGORY_CLASSIFICATION_VERSION))
+          setState(database,CATEGORY_CLASSIFICATION_VERSION,migrateSavedItemCategories(database));
       });
     } catch (error) { database.close(); throw error; }
   }

@@ -2,6 +2,13 @@ window.changelogUi = (() => {
   // Curated manually. Only update for a feature when the user explicitly asks.
   const entries = [
     {
+      date: '2026-10-15', title: 'Item Categorization',
+      changes: [
+        {en:'Improved item matching using 1,976 archived listings, including German compounds, product descriptions and accessory types. Product names take priority over incidental brands, colors and seller boilerplate.',de:'Artikelerkennung anhand von 1.976 archivierten Angeboten verbessert, einschließlich zusammengesetzter Begriffe, Produktbeschreibungen und Zubehörarten. Produktnamen haben Vorrang vor beiläufigen Marken, Farben und Verkäuferhinweisen.'},
+        {en:'Existing archive, inventory, case and palette items receive corrected categories automatically. Incompatible store stock returns to inventory once active theft or auction locks clear; saved prices, ownership and rewards are preserved.',de:'Bestehende Archiv-, Inventar-, Kisten- und Palettenartikel erhalten automatisch korrigierte Kategorien. Unpassender Ladenbestand kehrt nach laufenden Diebstahl- oder Auktionssperren ins Inventar zurück; gespeicherte Preise, Eigentümer und Belohnungen bleiben erhalten.'}
+      ]
+    },
+    {
       date: '2026-10-15', title: 'Palette Profit',
       changes: [
         {en:'Improved mystery-palette quantity odds across all sizes, targeting roughly 20% more profitable openings at the starting bid.',de:'Mengenchancen aller Überraschungspaletten verbessert: Ziel sind rund 20% mehr gewinnbringende Öffnungen zum Startgebot.'},
