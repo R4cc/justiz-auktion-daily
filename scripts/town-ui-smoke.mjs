@@ -1,2 +1,2 @@
-// The town and owner flows share a single connected regression fixture.
-import './stores-redesign-smoke.mjs';
+// Focused browser coverage for the town, including real opening and return flows.
+import './town-map-smoke.mjs';

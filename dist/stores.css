@@ -159,16 +159,6 @@
 .shop-check input[role="switch"]:before{content:'';position:absolute;width:18px;height:18px;border-radius:50%;left:2px;top:2px;background:#fffdf2;box-shadow:0 1px 3px #244d4040;transition:transform .15s}
 .shop-check input[role="switch"]:checked{background:#3c744e}
 .shop-check input[role="switch"]:checked:before{transform:translateX(16px)}
-.town-page>.town-mobile-switch{display:none}
-@media(max-width:760px){.town-page>.town-mobile-switch{display:flex}
-.town-selection:has(.town-preview){position:fixed;bottom:12px;left:12px;right:12px;width:auto;max-height:44dvh;overflow:auto;z-index:35;box-shadow:0 10px 60px #183e3650;border-color:#9eaf92}
-.town-page:has(.town-preview){padding-bottom:260px}
-.town-selection .town-preview>.shop-illustration{width:74px}
-.town-selection .town-preview{grid-template-columns:74px minmax(0,1fr);padding:14px}
-.town-selection .town-preview .town-plot-facts{grid-template-columns:repeat(4,minmax(0,1fr));font-size:10px}
-.town-selection .town-preview .primary-button{min-height:40px}
-.town-selection .town-preview p{font-size:10px}
-}
 .shop-game-stages{display:flex;gap:6px;margin:0 22px 20px 0;flex-wrap:wrap}
 .shop-game-stages span{font-size:9px;font-weight:750;border:1px solid #d8ddcc;border-radius:5px;padding:5px 7px;background:#eeefe3;color:#6b7768}
 .shop-game-stages [aria-current]{background:#285b45;color:#fff9df;border-color:#285b45}
