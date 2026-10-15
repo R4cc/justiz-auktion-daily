@@ -8,6 +8,31 @@ import { skillEffects } from './skill-effects.mjs';
 import { AccountError } from './errors.mjs';
 const fail=(code,status=409)=>{throw new AccountError(code,status);};
 
+// Automatic lots vary around an hour. A minimum gap keeps the countdowns
+// visibly distinct; allocation shares the creation lock with rival schedulers.
+export const STOCK_PALETTE_MIN_DURATION_MS=30*60_000;
+export const STOCK_PALETTE_MAX_DURATION_MS=90*60_000;
+export const STOCK_PALETTE_END_GAP_MS=60_000;
+function scheduledStockEnd(db,now,requestId){
+  const lower=now+STOCK_PALETTE_MIN_DURATION_MS,upper=now+STOCK_PALETTE_MAX_DURATION_MS;
+  const occupied=db.prepare("SELECT ends_at FROM primary_palette_auctions WHERE status='active' AND ends_at BETWEEN ? AND ? ORDER BY ends_at")
+    .all(lower-STOCK_PALETTE_END_GAP_MS,upper+STOCK_PALETTE_END_GAP_MS);
+  const gaps=[];let cursor=lower;
+  for(const {ends_at:end} of occupied){
+    const last=Math.min(upper,end-STOCK_PALETTE_END_GAP_MS);
+    if(cursor<=last)gaps.push([cursor,last]);
+    cursor=Math.max(cursor,end+STOCK_PALETTE_END_GAP_MS);
+  }
+  if(cursor<=upper)gaps.push([cursor,upper]);
+  if(!gaps.length)fail('palette_schedule_full');
+  // Fill the largest free interval with jitter, rather than clustering many
+  // independent random timestamps into the same few minutes after a restart.
+  gaps.sort((a,b)=>(b[1]-b[0])-(a[1]-a[0])||a[0]-b[0]);
+  const [first,last]=gaps[0];
+  const unit=createHash('sha256').update(`palette-end:${requestId}`).digest().readUInt32BE(0)/2**32;
+  return first+Math.floor((last-first)*(.25+unit*.5));
+}
+
 // Trusted supply only; clients can acquire these lots solely through bidding.
 // Freeze the price-based odds and private source pool now. Draw actual items
 // and independent amounts only at the winner's first opening.
@@ -36,14 +61,15 @@ export function createStockPaletteAuction(dataDir,{offerId,requestId,endsAt},{no
     }
     const quotedCatalog=catalog(db,now),quoted=quotedCatalog.offers.find(offer=>offer.id===offerId);
     if(!quoted)fail('invalid_palette',400);
-    const end=endsAt===undefined?now+PALETTE_AUCTION_DURATION_MS:endsAt;
-    if(!Number.isSafeInteger(end)||end<=now||end>now+PALETTE_AUCTION_DURATION_MS)fail('invalid_auction_end',400);
+    const end=endsAt===undefined?(automaticSupply?scheduledStockEnd(db,now,requestId):now+PALETTE_AUCTION_DURATION_MS):endsAt;
+    const maxDuration=automaticSupply?STOCK_PALETTE_MAX_DURATION_MS:PALETTE_AUCTION_DURATION_MS;
+    if(!Number.isSafeInteger(end)||end<=now||end>now+maxDuration)fail('invalid_auction_end',400);
     const offer=quoted,publicOffer=publicMysteryOffer(offer);
     const editionId=`stock:${offer.id}:${quotedCatalog.rotationDate}`;
     // The private offer keeps the source pool. Public lots show odds only;
     // existing fixed-size rewards keep their original contract.
     db.prepare(`INSERT OR IGNORE INTO palette_editions(id,palette_id,event_id,rotation_date,starts_at,ends_at,payload_json)
-      VALUES (?,?,NULL,?,?,?,?)`).run(editionId,offer.id,quotedCatalog.rotationDate,Date.parse(quotedCatalog.rotationDate),Date.parse(quotedCatalog.rotationDate)+86400000+PALETTE_AUCTION_DURATION_MS,
+      VALUES (?,?,NULL,?,?,?,?)`).run(editionId,offer.id,quotedCatalog.rotationDate,Date.parse(quotedCatalog.rotationDate),Date.parse(quotedCatalog.rotationDate)+86400000+STOCK_PALETTE_MAX_DURATION_MS,
         JSON.stringify({version:4,pricingVersion:4,paletteId:offer.id,kind:'stock',available:true,items:offer.items,weights:offer.weights,rewardCount:3,openingMode:MYSTERY_STOCK_MODE}));
     const id=randomUUID(),snapshot={paletteId:offer.id,name:`${offer.name} mystery palette · ${offer.tierName}`,nameDe:`${offer.nameDe}-Überraschungspalette · ${offer.tierNameDe}`,
       badge:offer.tierName,kind:'stock',type:offer.category,rewardCount:3,items:[],stockOffer:publicOffer,
@@ -56,8 +82,9 @@ export function createStockPaletteAuction(dataDir,{offerId,requestId,endsAt},{no
 }
 
 // One live lot per available category/size keeps both affordable and premium
-// stock on the normal board. Cold-start deadlines are staggered; replacement
-// lots run a full hour, and frozen auctions can cross the daily pool rotation.
+// stock on the normal board. Every automatic creation reserves a randomized,
+// spaced deadline, including replacement batches after downtime. Existing
+// auctions keep their deadlines and frozen pools across the daily rotation.
 export function supplyStockPaletteAuctions(dataDir,{now=Date.now()}={}) {
   // Retire unbid old fixed-size lots; bidder-backed lots keep their contract.
   withDatabase(dataDir,db=>transaction(db,()=>{
@@ -71,15 +98,19 @@ export function supplyStockPaletteAuctions(dataDir,{now=Date.now()}={}) {
   }));
   const quotedCatalog=stockPaletteAuctionCatalog(dataDir,{now}),offers=quotedCatalog.offers;
   const live=withDatabase(dataDir,db=>{ensurePaletteAuctionSchema(db,now);return db.prepare("SELECT id,ends_at,public_snapshot_json FROM primary_palette_auctions WHERE status='active' AND ends_at>?").all(now);});
-  const active=new Set(live.map(row=>JSON.parse(row.public_snapshot_json).stockOffer?.id).filter(Boolean)),auctions=[];
-  const period=PALETTE_AUCTION_DURATION_MS/Math.max(1,offers.length),bucket=Math.floor(now/PALETTE_AUCTION_DURATION_MS);
-  for(const [index,offer] of offers.entries()){
+  const active=new Set(live.map(row=>JSON.parse(row.public_snapshot_json).stockOffer?.id).filter(Boolean)),auctions=[],skipped=[];
+  const bucket=Math.floor(now/PALETTE_AUCTION_DURATION_MS);
+  for(const offer of offers){
     if(active.has(offer.id))continue;
     const latest=withDatabase(dataDir,db=>db.prepare("SELECT id FROM primary_palette_auctions WHERE json_extract(public_snapshot_json,'$.stockOffer.id')=? ORDER BY started_at DESC,id DESC LIMIT 1").get(offer.id));
     const requestId=createHash('sha256').update(`stock-palette:${offer.id}:${bucket}:${latest?.id||'initial'}`).digest('hex');
-    const end=live.length||latest?now+PALETTE_AUCTION_DURATION_MS:now+Math.max(60_000,Math.round((index+1)*period));
-    const lot=createStockPaletteAuction(dataDir,{offerId:offer.id,requestId,endsAt:end},{now,automaticSupply:true});
-    if(lot.status==='active'&&lot.endsAt>now)auctions.push(lot.id);
+    try{
+      const lot=createStockPaletteAuction(dataDir,{offerId:offer.id,requestId},{now,automaticSupply:true});
+      if(lot.status==='active'&&lot.endsAt>now)auctions.push(lot.id);
+    }catch(error){
+      if(!(error instanceof AccountError)||error.message!=='palette_schedule_full')throw error;
+      skipped.push(offer.id);
+    }
   }
-  return {auctions,skipped:[]};
+  return {auctions,skipped};
 }

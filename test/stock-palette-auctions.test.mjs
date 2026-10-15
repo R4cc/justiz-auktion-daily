@@ -2,9 +2,11 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
 import { Accounts } from '../src/accounts.mjs';
 import { closeDataStore, upsertAuctions } from '../src/database.mjs';
-import { createStockPaletteAuction, supplyStockPaletteAuctions, stockPaletteAuctionCatalog } from '../src/stock-palette-auctions.mjs';
+import { createStockPaletteAuction, supplyStockPaletteAuctions, stockPaletteAuctionCatalog, STOCK_PALETTE_MIN_DURATION_MS, STOCK_PALETTE_MAX_DURATION_MS, STOCK_PALETTE_END_GAP_MS } from '../src/stock-palette-auctions.mjs';
 import { stockPaletteCatalog, buyStockPalette } from '../src/stock-palettes.mjs';
 import { bidOnPaletteAuction, getPaletteAuction, getPaletteAuctionRewards, listPaletteAuctions, paletteAuctionsByUser, settleDuePaletteAuctions, settlePaletteAuction, sealedPaletteInventoryIds } from '../src/palette-auctions.mjs';
 import { currentNetWorth } from '../src/net-worth.mjs';
@@ -39,8 +41,8 @@ test('the normal board maintains cheap and premium category lots, staggered ends
  const staleScheduler=createStockPaletteAuction(f.dir,{offerId:'wine-budget',requestId:'stale-scheduler-request-001'},{now:now+1,automaticSupply:true});assert.equal(staleScheduler.id,current.id);assert.equal(listPaletteAuctions(f.dir,{now}).length,board.length);
  assert.equal(supplyStockPaletteAuctions(f.dir,{now}).auctions.length,0);assert.equal(listPaletteAuctions(f.dir,{now}).length,board.length);
  const ends=board[0].endsAt;supplyStockPaletteAuctions(f.dir,{now:ends});const replaced=listPaletteAuctions(f.dir,{now:ends});assert.equal(replaced.length,board.length);assert.ok(!replaced.some(lot=>lot.id===board[0].id));
+ const runtime=tickEconomy(f.dir,{now:now+3*hour,flags:{palettes:true,paletteAuctions:true}});assert.deepEqual(runtime.failures,[]);assert.equal(listPaletteAuctions(f.dir,{now:now+3*hour}).length,catalog.offers.length);
  const midnight=Date.parse('2026-10-12T23:55:00Z'),late=createStockPaletteAuction(f.dir,{offerId:'wine-budget',requestId:'midnight-crossing-palette-001'},{now:midnight});assert.equal(late.endsAt,midnight+hour);
- const runtime=tickEconomy(f.dir,{now:now+hour,flags:{palettes:true,paletteAuctions:true}});assert.deepEqual(runtime.failures,[]);assert.equal(listPaletteAuctions(f.dir,{now:now+hour}).length,catalog.offers.length+1);
 });
 test('escrow, outbid refunds, proxy remainder and first-opening inventory transfer are exact and atomic',async t=>{
  const f=await fixture(t),lot=create(f,'wine-premium'),max=lot.reserve+1000;
@@ -175,4 +177,63 @@ test('pre-buff auctions keep their quoted odds, NPC budget and opening while new
  const newOpen=getPaletteAuctionRewards(f.dir,f.buyer,fresh.id,{now:now+hour,random:draw});
  assert.equal(oldOpen.offer.quantity,3);assert.equal(newOpen.offer.quantity,6);
  assert.deepEqual(getPaletteAuctionRewards(f.dir,f.buyer,old.id,{now:now+hour,random:()=>{throw Error('rerolled');}}),oldOpen);
+});
+
+function assertSpacedDeadlines(board){
+ const ends=board.map(lot=>lot.endsAt).sort((a,b)=>a-b);
+ for(let i=1;i<ends.length;i++)assert.ok(ends[i]-ends[i-1]>=STOCK_PALETTE_END_GAP_MS,`crowded deadlines: ${ends[i]-ends[i-1]}ms`);
+ assert.ok(ends.at(-1)-ends[0]>30*60_000,'board should span more than half an hour');
+}
+
+test('cold starts and repeated full downtime recoveries randomize all palette deadlines without rerolling on restart',async t=>{
+ const f=await fixture(t),catalog=stockPaletteAuctionCatalog(f.dir,{now});
+ let at=now;
+ for(let cycle=0;cycle<4;cycle++){
+  const supplied=supplyStockPaletteAuctions(f.dir,{now:at});assert.equal(supplied.auctions.length,catalog.offers.length);
+  const board=listPaletteAuctions(f.dir,{now:at});assert.equal(board.length,catalog.offers.length);assertSpacedDeadlines(board);
+  for(const lot of board){assert.ok(lot.endsAt>=at+STOCK_PALETTE_MIN_DURATION_MS);assert.ok(lot.endsAt<=at+STOCK_PALETTE_MAX_DURATION_MS);}
+  assert.ok(new Set(board.map(lot=>lot.endsAt-lot.startedAt)).size>1,'durations must vary');
+  closeDataStore(f.dir);
+  assert.deepEqual(supplyStockPaletteAuctions(f.dir,{now:at+1000}),{auctions:[],skipped:[]});
+  assert.deepEqual(listPaletteAuctions(f.dir,{now:at+1000}),board);
+  at=Math.max(...board.map(lot=>lot.endsAt))+2*hour;
+ }
+});
+
+test('partial recovery avoids existing deadlines and preserves advertised bidder-backed lots',async t=>{
+ const f=await fixture(t),oldEnd=now+45*60_000;
+ const existing=['wine-budget','wine-standard'].map((offerId,index)=>createStockPaletteAuction(f.dir,
+  {offerId,requestId:`old-synchronized-palette-${index}`,endsAt:oldEnd},{now}));
+ for(const lot of existing)bidOnPaletteAuction(f.dir,f.buyer,lot.id,lot.reserve,{now});
+ const balance=f.balance('buyer'),offers=stockPaletteAuctionCatalog(f.dir,{now}).offers;
+ const supplied=supplyStockPaletteAuctions(f.dir,{now}),board=listPaletteAuctions(f.dir,{now});
+ assert.equal(supplied.auctions.length,offers.length-existing.length);assert.equal(f.balance('buyer'),balance);
+ const added=board.filter(lot=>supplied.auctions.includes(lot.id));
+ for(const lot of added)for(const other of board.filter(other=>other.id!==lot.id))assert.ok(Math.abs(lot.endsAt-other.endsAt)>=STOCK_PALETTE_END_GAP_MS);
+ for(const lot of existing){const after=getPaletteAuction(f.dir,lot.id,{now});assert.equal(after.endsAt,oldEnd);assert.equal(after.currentBid,lot.reserve);}
+});
+
+test('independent simultaneous schedulers allocate different deadlines under the creation lock',async t=>{
+ const f=await fixture(t);stockPaletteAuctionCatalog(f.dir,{now});
+ const moduleUrl=new URL('../src/stock-palette-auctions.mjs',import.meta.url).href;
+ const run=promisify(execFile);
+ const results=await Promise.all(['wine-budget','wine-standard','wine-premium'].map((offerId,index)=>run(process.execPath,['--input-type=module','-e',
+  `import {createStockPaletteAuction} from ${JSON.stringify(moduleUrl)}; console.log(JSON.stringify(createStockPaletteAuction(${JSON.stringify(f.dir)},${JSON.stringify({offerId,requestId:`parallel-palette-deadline-${index}`})},{now:${now},automaticSupply:true})));`
+ ])));
+ const lots=results.map(result=>JSON.parse(result.stdout.trim()));assert.equal(new Set(lots.map(lot=>lot.id)).size,3);
+ const ends=lots.map(lot=>lot.endsAt).sort((a,b)=>a-b);
+ for(let i=1;i<ends.length;i++)assert.ok(ends[i]-ends[i-1]>=STOCK_PALETTE_END_GAP_MS);
+ const retry=createStockPaletteAuction(f.dir,{offerId:'wine-budget',requestId:'parallel-palette-deadline-0'},{now:now+1000,automaticSupply:true});
+ assert.deepEqual(retry,lots[0]);
+});
+
+test('a crowded schedule defers supply instead of creating a duplicate deadline',async t=>{
+ const f=await fixture(t),lot=create(f,'wine-budget','crowded-palette-source-001');
+ f.accounts.db(db=>{
+  db.prepare('UPDATE primary_palette_auctions SET ends_at=? WHERE id=?').run(now+STOCK_PALETTE_MIN_DURATION_MS,lot.id);
+  const insert=db.prepare(`INSERT INTO primary_palette_auctions(id,creation_request_id,edition_id,reserve,status,started_at,ends_at,valuation_at,required_level,public_snapshot_json)
+   SELECT ?,?,edition_id,reserve,status,started_at,?,valuation_at,required_level,public_snapshot_json FROM primary_palette_auctions WHERE id=?`);
+  for(let n=1;n<=60;n++)insert.run(`crowded-slot-${n}`,`crowded-request-${n}`,now+STOCK_PALETTE_MIN_DURATION_MS+n*60_000,lot.id);
+ });
+ const result=supplyStockPaletteAuctions(f.dir,{now});assert.equal(result.auctions.length,0);assert.ok(result.skipped.length>0);
 });
