@@ -1,12 +1,12 @@
 import { reconcileCategorizedStock } from './item-category-migration.mjs';
-import { storePopularity, storeReputation, storePopularityBreakdown } from './store-reputation.mjs';
+import { storePopularity, storeReputation, storePopularityBreakdown, shelfFillFactor, assortmentPopularity } from './store-reputation.mjs';
 import { ensureReviewSchema, recordNpcStoreFeedback } from './store-reviews.mjs';
 import { businessTypeForItem } from './stock-compatibility.mjs';
 export { businessTypeForItem } from './stock-compatibility.mjs';
 import { ensureTownSchema, availableTownPlot, plotLocation } from './town-plots.mjs';
 import { ECONOMY_BALANCE, npcStoreTheftChance } from './economy-balance.mjs';
 import { createHash, randomUUID } from 'node:crypto';
-import { withDatabase, transaction } from './database.mjs';
+import { withDatabase, transaction, setState } from './database.mjs';
 import { AccountError } from './errors.mjs';
 import { marketCategoryForItem, marketIndexAt, marketIndexes, estimatedValueTokens } from './market.mjs';
 import { ensureResaleSchema, inventoryIsLocked } from './resale.mjs';
@@ -130,9 +130,28 @@ export function ensureBusinessSchema(db, { now = Date.now() } = {}) {
       db.prepare('UPDATE businesses SET traffic_popularity=?,popularity_factors=? WHERE id=?').run(metrics.popularity,JSON.stringify(metrics.factors),row.id);
     }
   }
+  upgradeStockPopularity(db);
   ensureStoreCashSchema(db);
   ensureReviewSchema(db);
   ensureTownSchema(db, { now });
+}
+
+// Upgrade recorded assortment factors, using their original stock snapshot so
+// sales or market movements since stocking do not rewrite the other factors.
+function upgradeStockPopularity(db) {
+  const key = 'store_popularity_factors_v2';
+  if (db.prepare('SELECT 1 FROM app_state WHERE key=?').get(key)) return;
+  const update = db.prepare('UPDATE businesses SET traffic_popularity=?,popularity_factors=? WHERE id=? AND popularity_factors=? AND traffic_popularity=?');
+  for (const row of db.prepare('SELECT id,traffic_popularity,popularity_factors FROM businesses WHERE popularity_factors IS NOT NULL').all()) {
+    let old;
+    try { old = JSON.parse(row.popularity_factors); } catch { continue; }
+    if (old?.version !== 1 || old.basePopularity !== row.traffic_popularity ||
+        ![old.count,old.capacity,old.varietyFactor,old.valueFactor].every(Number.isFinite) || old.capacity <= 0) continue;
+    const factors = {...old,version:2,valueFactor:Math.max(1,old.valueFactor),fillFactor:shelfFillFactor(old.count,old.capacity)};
+    factors.basePopularity = assortmentPopularity(factors.count,factors.varietyFactor,factors.valueFactor,factors.fillFactor);
+    update.run(factors.basePopularity,JSON.stringify(factors),row.id,row.popularity_factors,row.traffic_popularity);
+  }
+  setState(db,key,{version:2});
 }
 
 function activeUser(db, user) {
@@ -182,12 +201,10 @@ function shopMetrics(db, row, stock, at) {
   const value = stock.length ? Math.round(stock.reduce((sum, entry) =>
     sum + referencePrice(db, entry.item, row.type, at), 0) / stock.length) : 0;
   const capacity = shopCapacity(row.type, size);
-  const fill = stock.length / capacity;
-  const varietyFactor=.65+.15*Math.min(4,variety), valueFactor=.8+.2*Math.min(2,value/type.typicalValue), fillFactor=.65+.35*fill;
-  const popularity = stock.length ? Math.min(1.5, Math.max(.3,
-    varietyFactor * valueFactor * fillFactor)) : 0;
+  const varietyFactor=.65+.15*Math.min(4,variety), valueFactor=Math.max(1,.8+.2*Math.min(2,value/type.typicalValue)), fillFactor=shelfFillFactor(stock.length,capacity);
+  const popularity = assortmentPopularity(stock.length,varietyFactor,valueFactor,fillFactor);
   return { variety, value, popularity: Math.round(popularity * 100) / 100, capacity,
-    factors:{version:1,varietyFactor,valueFactor,fillFactor,variety,count:stock.length,capacity,updatedAt:at,basePopularity:Math.round(popularity*100)/100} };
+    factors:{version:2,varietyFactor,valueFactor,fillFactor,variety,count:stock.length,capacity,updatedAt:at,basePopularity:Math.round(popularity*100)/100} };
 }
 
 export function advanceShop(db, row, now) {

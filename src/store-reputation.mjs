@@ -3,6 +3,11 @@ import { storeRatingWeights, PURCHASED_REVIEW_WEIGHT, PURCHASED_REVIEW_WEIGHT_CA
 
 export const MAX_STORE_POPULARITY = 1.5;
 export const REVIEW_TRAFFIC_MAX_BONUS = ECONOMY_BALANCE.reviewTrafficMaxBonus;
+// Shelf space only reduces appeal below 30% of capacity; fuller shelves
+// are neutral. Keep the existing maximum 35% reduction near empty.
+export const shelfFillFactor = (count, capacity) => .65 + .35 * Math.min(1, Math.max(0, count) / (capacity * .3));
+export const assortmentPopularity = (count, varietyFactor, valueFactor, fillFactor) =>
+  count ? Math.round(Math.min(MAX_STORE_POPULARITY, Math.max(.3, varietyFactor * valueFactor * fillFactor)) * 100) / 100 : 0;
 const PRIOR_REVIEWS = 20, PRIOR_STARS = 3;
 
 function multiplierForRating(rating) {
@@ -39,14 +44,14 @@ export function storePopularityBreakdown(db, shop, location, now) {
   const stockPercent=percent(shop.traffic_popularity);
   let snapshot=null;
   try {snapshot=JSON.parse(shop.popularity_factors||'null');}catch{}
-  const recorded=snapshot?.version===1&&snapshot.basePopularity===shop.traffic_popularity;
+  const recorded=[1,2].includes(snapshot?.version)&&snapshot.basePopularity===shop.traffic_popularity;
   const factors=[];
   let basePercent=stockPercent;
   if(recorded){
     basePercent=percent(.65);
     if(!snapshot.count)factors.push({id:'empty_shelves',points:-basePercent});
     else {
-      const varietyPercent=percent(snapshot.varietyFactor),valuePercent=percent(snapshot.varietyFactor*snapshot.valueFactor);
+      const varietyPercent=percent(snapshot.varietyFactor),valuePercent=percent(Math.round(snapshot.varietyFactor*snapshot.valueFactor*100)/100);
       factors.push({id:'variety',points:varietyPercent-basePercent,count:snapshot.variety},
         {id:'stock_value',points:valuePercent-varietyPercent},
         {id:'shelf_fill',points:stockPercent-valuePercent,count:snapshot.count,capacity:snapshot.capacity});

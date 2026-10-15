@@ -1,6 +1,6 @@
 # Store popularity and configurable review auctions
 
-Popularity keeps the existing assortment appeal: stock variety, average value and shelf fill. The review system applies a small multiplier before the existing 1.5 ceiling. The UI maps this shared effective value to a 0–100% meter on store cards, owner dashboards, storefronts and the town list.
+Popularity combines stock variety, bonuses for above-typical average value, and a shelf-fill penalty only below 30% capacity. Stock at or above 30% has no shelf penalty; low-value stock is neutral. Existing recorded assortment snapshots receive these rules once without recalculating their historical stock counts or market values. The review system applies a small multiplier before the existing 1.5 ceiling. The UI maps this shared effective value to a 0–100% meter on store cards, owner dashboards, storefronts and the town list.
 
 Customer ratings retain Influence weights of 1, 1.25, 1.5 and 1.75. A purchased review with the selected 1–5 stars has weight 0.25; all bought reviews together count for at most ten ordinary reviews per store. All actual counts, including purchased reviews, are shown in the five-to-one-star bar chart. Purchased reviews create no customer identities, written comments, purchase receipts or likes.
 
