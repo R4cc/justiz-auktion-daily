@@ -12,7 +12,7 @@ import { upgradeSkill } from '../src/skill-tree.mjs';
 import { luckWeights } from '../src/skill-effects.mjs';
 import { tickEconomy } from '../src/economy-runtime.mjs';
 import { paletteBidCeiling } from '../src/npc-buyers.mjs';
-import { MYSTERY_QUANTITIES, quantityOdds, expectedQuantity } from '../src/mystery-stock.mjs';
+import { MYSTERY_QUANTITIES, quantityOdds, expectedQuantity, referenceQuantityOdds } from '../src/mystery-stock.mjs';
 import { imposeFine } from '../src/justice.mjs';
 import { expectedItemValue } from '../src/economy-balance.mjs';
 const now=Date.parse('2026-10-12T12:00:00Z'),hour=3600000;
@@ -83,9 +83,9 @@ test('opening-time Luck improves rarity and quantity odds, including upgrades af
  assert.ok(maxima.includes(reveal.offer.weights.reduce((a,b)=>a+b,0)));assert.ok(maxima.includes(reveal.offer.quantityOdds.reduce((sum,entry)=>sum+entry.weight,0)));
  f.accounts.db(db=>db.prepare("UPDATE user_skills SET rank=1 WHERE user_id='buyer' AND skill_id='luck'").run());assert.deepEqual(getPaletteAuctionRewards(f.dir,f.buyer,lot.id,{now:now+hour+1000,random:()=>{throw Error('reroll');}}),reveal);
  const offer=f.accounts.db(db=>JSON.parse(db.prepare('SELECT offer FROM primary_palette_mystery_stock WHERE auction_id=?').get(lot.id).offer));
- const npc={id:'npc',categories:['wine'],willingness:1},ceiling=paletteBidCeiling({...lot,items:offer.items,stockOffer:offer},{wine:100},npc,lot.id,()=>.5),ev=expectedItemValue(offer.items,offer.weights)*offer.expectedQuantity;assert.equal(ceiling.maxBid,Math.floor(ev*.81));
+ const npc={id:'npc',categories:['wine'],willingness:1},ceiling=paletteBidCeiling({...lot,items:offer.items,stockOffer:offer},{wine:100},npc,lot.id,()=>.5),ev=expectedItemValue(offer.items,offer.weights)*offer.bidReferenceQuantity;assert.equal(ceiling.maxBid,Math.floor(ev*.81));
 });
-test('every price tier permits small hauls and genuine jackpots; quantity EV and Luck stay within the paid balance bound',async t=>{
+test('every price tier permits small hauls and jackpots; improved odds and Luck retain their separate balance bounds',async t=>{
  const f=await fixture(t);
  for(const [tier,choices] of Object.entries(MYSTERY_QUANTITIES)){
   const low=create(f,'wine-'+tier,'small-haul-'+tier+'-request'),high=create(f,'wine-'+tier,'jackpot-haul-'+tier+'-request');
@@ -95,7 +95,9 @@ test('every price tier permits small hauls and genuine jackpots; quantity EV and
   const offer=f.accounts.db(db=>JSON.parse(db.prepare('SELECT offer FROM primary_palette_mystery_stock WHERE auction_id=?').get(low.id).offer));
   for(const bonus of [0,3,5,7]){
    const lucky=expectedItemValue(offer.items,luckWeights(offer.weights,bonus),item=>item.referenceValue)*expectedQuantity(quantityOdds(tier,bonus));
-   assert.ok(lucky<=offer.expectedMarket*(1+bonus/100)**2+1e-8);assert.ok(lucky/low.reserve<=.82*1.07**2+1e-8);
+   assert.ok(lucky<=offer.expectedMarket*(1+bonus/100)**2+1e-8);
+   const boostRatio=expectedQuantity(quantityOdds(tier))/expectedQuantity(referenceQuantityOdds(tier));
+   assert.ok(lucky/low.reserve<=.82*boostRatio*(1+bonus/100)**2+1e-8);
   }
  }
 });
@@ -146,4 +148,31 @@ test('opening honors frozen per-lot quantity odds rather than the current global
  f.accounts.db(db=>{const row=db.prepare('SELECT offer FROM primary_palette_mystery_stock WHERE auction_id=?').get(lot.id),offer=JSON.parse(row.offer);offer.quantityOdds=[{quantity:2,weight:9500,percent:95},{quantity:7,weight:500,percent:5}];db.prepare('UPDATE primary_palette_mystery_stock SET offer=? WHERE auction_id=?').run(JSON.stringify(offer),lot.id);});
  bidOnPaletteAuction(f.dir,f.buyer,lot.id,lot.reserve,{now});settlePaletteAuction(f.dir,lot.id,{now:now+hour});const reveal=getPaletteAuctionRewards(f.dir,f.buyer,lot.id,{now:now+hour,random:max=>max-1});
  assert.equal(reveal.offer.quantity,21);assert.deepEqual(reveal.offer.quantityOdds.map(choice=>choice.quantity),[2,7]);
+});
+
+test('pre-buff auctions keep their quoted odds, NPC budget and opening while new auctions use improved quantities',async t=>{
+ const f=await fixture(t),old=create(f,'wine-budget','pre-buff-stock-auction-001');
+ const saved=f.accounts.db(db=>JSON.parse(db.prepare('SELECT offer FROM primary_palette_mystery_stock WHERE auction_id=?').get(old.id).offer));
+ saved.quantityOdds=referenceQuantityOdds('budget');saved.expectedQuantity=expectedQuantity(saved.quantityOdds);delete saved.bidReferenceQuantity;
+ saved.expectedMarket=expectedItemValue(saved.items,saved.weights,item=>item.referenceValue)*saved.expectedQuantity;
+ f.accounts.db(db=>{
+  db.prepare('UPDATE primary_palette_mystery_stock SET offer=? WHERE auction_id=?').run(JSON.stringify(saved),old.id);
+  const snapshot=JSON.parse(db.prepare('SELECT public_snapshot_json FROM primary_palette_auctions WHERE id=?').get(old.id).public_snapshot_json);
+  snapshot.stockOffer={...snapshot.stockOffer,quantityOdds:saved.quantityOdds};
+  db.prepare('UPDATE primary_palette_auctions SET public_snapshot_json=? WHERE id=?').run(JSON.stringify(snapshot),old.id);
+ });
+ const before=getPaletteAuction(f.dir,old.id,{now}),fresh=create(f,'wine-budget','post-buff-stock-auction-001');
+ assert.equal(fresh.reserve,old.reserve);
+ const retried=create(f,'wine-budget','pre-buff-stock-auction-001');
+ assert.equal(retried.id,before.id);assert.equal(retried.reserve,before.reserve);assert.deepEqual(retried.stockOffer,before.stockOffer);
+ assert.deepEqual(getPaletteAuction(f.dir,old.id,{now}),before);
+ assert.notDeepEqual(fresh.stockOffer.quantityOdds,before.stockOffer.quantityOdds);
+ for(const lot of [old,fresh]){
+  bidOnPaletteAuction(f.dir,f.buyer,lot.id,lot.reserve,{now});settlePaletteAuction(f.dir,lot.id,{now:now+hour});
+ }
+ const draw=max=>Math.floor(max*.53);
+ const oldOpen=getPaletteAuctionRewards(f.dir,f.buyer,old.id,{now:now+hour,random:draw});
+ const newOpen=getPaletteAuctionRewards(f.dir,f.buyer,fresh.id,{now:now+hour,random:draw});
+ assert.equal(oldOpen.offer.quantity,3);assert.equal(newOpen.offer.quantity,6);
+ assert.deepEqual(getPaletteAuctionRewards(f.dir,f.buyer,old.id,{now:now+hour,random:()=>{throw Error('rerolled');}}),oldOpen);
 });

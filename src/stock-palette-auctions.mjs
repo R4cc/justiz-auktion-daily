@@ -16,7 +16,7 @@ function catalog(db,now){
   return {...quoted,offers:quoted.offers.map(offer=>mysteryStockOffer(offer,indexes))};
 }
 export function stockPaletteAuctionCatalog(dataDir,{now=Date.now(),userId=null}={}){
-  return withDatabase(dataDir,db=>transaction(db,()=>{const result=catalog(db,now);return {...result,revision:'opening-v2:'+result.revision,offers:result.offers.map(offer=>publicMysteryOffer(offer,skillEffects(db,userId).luckPercent))};}));
+  return withDatabase(dataDir,db=>transaction(db,()=>{const result=catalog(db,now);return {...result,revision:'opening-v2:'+createHash('sha256').update(JSON.stringify([result.revision,result.offers.map(offer=>[offer.id,offer.cost,offer.quantityOdds])])).digest('hex'),offers:result.offers.map(offer=>publicMysteryOffer(offer,skillEffects(db,userId).luckPercent))};}));
 }
 
 export function createStockPaletteAuction(dataDir,{offerId,requestId,endsAt},{now=Date.now(),automaticSupply=false}={}) {

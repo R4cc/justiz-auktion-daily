@@ -167,7 +167,9 @@ export function tickNpcBuyers(dataDir, { now = Date.now(), unit = deterministicU
 // interested buyers compete and hot markets lift bids above a frozen reserve.
 export function paletteBidCeiling(snapshot, indexes, npc, auctionId, unit = deterministicUnit) {
   const items = Array.isArray(snapshot?.items) ? snapshot.items : [];
-  const expected = snapshot.stockOffer ? {et:expectedItemValue(items,snapshot.stockOffer.weights,item=>estimatedValueTokens(item,indexes))*(snapshot.stockOffer.expectedQuantity??snapshot.stockOffer.quantity)}
+  // Improved quantity odds retain the original risk budget; otherwise NPC
+  // bidding would absorb the reward buff. Older lots use their saved EV.
+  const expected = snapshot.stockOffer ? {et:expectedItemValue(items,snapshot.stockOffer.weights,item=>estimatedValueTokens(item,indexes))*(snapshot.stockOffer.bidReferenceQuantity??snapshot.stockOffer.expectedQuantity??snapshot.stockOffer.quantity)}
     : bundleReferencePricing(items, item => indexes[item.marketCategory] ?? 100, snapshot.rewardCount ?? 3);
   const preferred = (snapshot.allowedMarketCategories ?? []).some(category => npc.categories.includes(category));
   const variation = (unit(`${auctionId}:${npc.id}:palette-value`) - .5) * .06;

@@ -8,6 +8,8 @@ import { AccountError } from './errors.mjs';
 import { assertPlayerFree } from './justice.mjs';
 
 export const MYSTERY_STOCK_MODE='opening-v2';
+// Reference odds used for pricing and NPC risk budgets. New offers improve
+// upper-quantity odds without charging that improvement back to the player.
 // Three independent item/quantity pairs. Even premium lots can have a poor
 // haul, and budget lots have a genuine jackpot tail. Maximum: 288 units.
 export const MYSTERY_QUANTITIES={
@@ -19,20 +21,28 @@ export function boostedQuantityOdds(choices,bonus=0){
   const weights=luckWeights(choices.map(choice=>choice.weight),bonus),total=weights.reduce((a,b)=>a+b,0);
   return choices.map((choice,index)=>({quantity:choice.quantity,weight:weights[index],percent:weights[index]/total*100}));
 }
-export function quantityOdds(tier,bonus=0){
+export function referenceQuantityOdds(tier){
   const choices=MYSTERY_QUANTITIES[tier];
   if(!choices)throw new AccountError('invalid_palette',400);
-  return boostedQuantityOdds(choices.map(([quantity,weight])=>({quantity,weight})),bonus);
+  return boostedQuantityOdds(choices.map(([quantity,weight])=>({quantity,weight})));
+}
+export function quantityOdds(tier,bonus=0){
+  const reference=referenceQuantityOdds(tier);
+  const mean=reference.reduce((sum,entry)=>sum+entry.quantity*entry.percent/100,0);
+  const boost=ECONOMY_BALANCE.paletteQuantityBoost[tier];
+  return boostedQuantityOdds(reference.map(({quantity,weight})=>({quantity,
+    weight:weight*(quantity>=mean?100+boost:100)})),bonus);
 }
 export const expectedQuantity=(odds,rolls=3)=>rolls*odds.reduce((sum,entry)=>sum+entry.quantity*entry.percent/100,0);
 export function mysteryStockOffer(quoted,indexes){
   const odds=quantityOdds(quoted.tier),amount=expectedQuantity(odds);
+  const bidReferenceQuantity=expectedQuantity(referenceQuantityOdds(quoted.tier));
   const items=quoted.items.map(item=>({...item,referenceValue:estimatedValueTokens(item,indexes)}));
   const baseline=Math.max(expectedItemValue(items,quoted.weights),expectedItemValue(items,quoted.weights,item=>item.referenceValue));
-  const cost=Math.ceil(baseline*amount/ECONOMY_BALANCE.paidCaseReturn);
+  const cost=Math.ceil(baseline*bidReferenceQuantity/ECONOMY_BALANCE.paidCaseReturn);
   if(!Number.isSafeInteger(cost)||cost<1)throw new AccountError('invalid_palette',400);
   const {quantity,quantitySplits,multiplierChances,...offer}=quoted;
-  return {...offer,openingMode:MYSTERY_STOCK_MODE,items,cost,quantityOdds:odds,expectedQuantity:amount,
+  return {...offer,openingMode:MYSTERY_STOCK_MODE,items,cost,quantityOdds:odds,expectedQuantity:amount,bidReferenceQuantity,
     expectedMarket:expectedItemValue(items,offer.weights,item=>item.referenceValue)*amount};
 }
 export function publicMysteryOffer(offer,bonus=offer.luckPercent||0){

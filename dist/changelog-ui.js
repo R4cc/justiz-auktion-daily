@@ -2,6 +2,13 @@ window.changelogUi = (() => {
   // Curated manually. Only update for a feature when the user explicitly asks.
   const entries = [
     {
+      date: '2026-10-15', title: 'Palette Profit',
+      changes: [
+        {en:'Improved mystery-palette quantity odds across all sizes, targeting roughly 20% more profitable openings at the starting bid.',de:'Mengenchancen aller Überraschungspaletten verbessert: Ziel sind rund 20% mehr gewinnbringende Öffnungen zum Startgebot.'},
+        {en:'Starting prices and NPC bidding budgets keep their previous baseline. Existing auctions retain their saved odds.',de:'Startpreise und NPC-Gebotsbudgets behalten ihre bisherige Grundlage. Bestehende Auktionen behalten ihre gespeicherten Chancen.'}
+      ]
+    },
+    {
       date: '2026-10-15', title: 'Toy Categories',
       changes: [
         {en:'Expanded toy matching to include board and card games, puzzles, dolls, plush toys, building sets, model trains, model vehicles and more toy brands.',de:'Spielzeug-Erkennung um Brett- und Kartenspiele, Puzzles, Puppen, Plüschtiere, Bausätze, Modelleisenbahnen, Modellfahrzeuge und weitere Spielzeugmarken erweitert.'},
