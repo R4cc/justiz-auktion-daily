@@ -34,6 +34,8 @@
 .shop-state{position:absolute;right:12px;bottom:12px}
 .shop-card-content{padding:20px;display:flex;flex-direction:column;gap:13px}
 .shop-card-content h2{overflow-wrap:anywhere}
+.shop-review-rating{display:flex;align-items:center;flex-wrap:wrap;gap:6px;width:fit-content;max-width:100%;font-size:12px;color:var(--shop-muted)}
+.shop-review-rating>span:first-child{color:#986310;font-size:16px}
 .shop-card-content>small,.shop-address{font-size:11px;color:var(--shop-muted);line-height:1.5}
 .shop-card-content>.shop-metrics{margin:0;background:#f4f4e8;border:0}
 .shop-card-content>.shop-metrics>div{padding:8px}
