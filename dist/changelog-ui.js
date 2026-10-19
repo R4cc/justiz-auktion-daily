@@ -2,6 +2,13 @@ window.changelogUi = (() => {
   // Curated manually. Only update for a feature when the user explicitly asks.
   const entries = [
     {
+      date: '2026-10-19', title: 'Palette Return Protection',
+      changes: [
+        {en:'Mystery palettes now have an 80% chance of contents worth at least 110% of the winning price. Every opening returns at least 90%, limiting the opening-value loss to 10%. Extra item quantities cover any shortfall; jackpots remain.',de:'Überraschungspaletten haben jetzt 80% Chance auf Inhalte im Wert von mindestens 110% des Gewinnerpreises. Jede Öffnung liefert mindestens 90%, sodass der Wertverlust beim Öffnen höchstens 10% beträgt. Zusätzliche Artikelmengen gleichen Fehlbeträge aus; Jackpots bleiben erhalten.'},
+        {en:'Applies to all unopened mystery palettes, including existing wins, using live market value at opening. Starting bids and NPC budgets stay the same. Later market prices and actual sale proceeds can vary.',de:'Gilt für alle ungeöffneten Überraschungspaletten, auch bereits gewonnene, anhand des aktuellen Marktwerts beim Öffnen. Startgebote und NPC-Budgets bleiben gleich. Spätere Marktpreise und tatsächliche Verkaufserlöse können abweichen.'}
+      ]
+    },
+    {
       date: '2026-10-15', title: 'Store Activity & Balance',
       changes: [
         {en:'Stores become Abandoned after 20 days without new stock. Manual and automatic restocking count; moving the same items off and back onto shelves does not. Existing stores receive a 20-day grace period.',de:'Läden gelten nach 20 Tagen ohne neue Waren als verlassen. Manuelles und automatisches Auffüllen zählt; dieselben Waren aus- und wieder einzuräumen zählt nicht. Bestehende Läden erhalten 20 Tage Schonfrist.'},

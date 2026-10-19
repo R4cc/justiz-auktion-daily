@@ -13,6 +13,10 @@ export const ECONOMY_BALANCE = Object.freeze({
   // Upper-quantity weight multipliers, calibrated for ~20% more profitable
   // mystery openings at the same reserve (relative probability, not points).
   paletteQuantityBoost: Object.freeze({ budget: 40, standard: 30, premium: 30 }),
+  // At opening: 80% get at least 110% of their paid price; all get 90%.
+  paletteProfitChance: 80,
+  paletteProfitReturnPercent: 110,
+  paletteMinimumReturnPercent: 90,
   wholesaleReserveRate: .85,
   // Fair blackjack is balanced through the loss fine, never deck manipulation.
   theftFineMultiplier: 4,

@@ -2,10 +2,9 @@ import { readFileSync, mkdtempSync, rmSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 import { stockPaletteCatalog } from '../src/stock-palettes.mjs';
-import { mysteryStockOffer, referenceQuantityOdds, expectedQuantity } from '../src/mystery-stock.mjs';
+import { mysteryStockOffer } from '../src/mystery-stock.mjs';
 import { upsertAuctions, closeDataStore } from '../src/database.mjs';
-import { estimatedValueTokens } from '../src/market.mjs';
-import { expectedItemValue } from '../src/economy-balance.mjs';
+import { ECONOMY_BALANCE } from '../src/economy-balance.mjs';
 
 // Exact probability for three independent item/quantity draws. Aggregate
 // identical unit totals, then sum two draws and look up the third draw's CDF.
@@ -54,13 +53,14 @@ export async function paletteProfitReport(input = 'seed/auctions.json') {
       for (const index of [50, 100, 150]) {
         const indexes = Object.fromEntries(['vehicles','wine','electronics','tools','watches_jewelry','collectibles','other'].map(id => [id, index]));
         for (const quote of quoted.offers) {
-          const offer = mysteryStockOffer(quote, indexes), referenceOdds = referenceQuantityOdds(offer.tier);
-          const unitValue = expectedItemValue(offer.items, offer.weights, item => estimatedValueTokens(item, indexes));
-          rows.push({ index, tier: offer.tier,
-            before: openingProfitChance(offer.items, offer.weights, referenceOdds, offer.cost),
-            after: openingProfitChance(offer.items, offer.weights, offer.quantityOdds, offer.cost),
-            oldReturn: unitValue * expectedQuantity(referenceOdds) / offer.cost,
-            newReturn: offer.expectedMarket / offer.cost });
+          const offer = mysteryStockOffer(quote, indexes);
+          const before=openingProfitChance(offer.items,offer.weights,offer.quantityOdds,offer.cost);
+          const winChance=ECONOMY_BALANCE.paletteProfitChance/100;
+          // Guaranteed lower bounds: integer extra units can also turn some
+          // of the remaining losing draws into wins. Natural jackpots survive.
+          rows.push({index,tier:offer.tier,before,after:winChance+(1-winChance)*before,
+            oldReturn:offer.expectedMarket/offer.cost,
+            minimumReturn:(winChance*ECONOMY_BALANCE.paletteProfitReturnPercent+(1-winChance)*ECONOMY_BALANCE.paletteMinimumReturnPercent)/100});
         }
       }
     }
@@ -71,12 +71,12 @@ export async function paletteProfitReport(input = 'seed/auctions.json') {
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   const input = process.argv[2] || 'seed/auctions.json', rows = await paletteProfitReport(input);
   const percent = value => (value * 100).toFixed(2) + '%';
-  console.log(`Exact mystery-palette profit audit: ${input}; 3 daily rotations; no Luck; same starting prices and NPC risk budgets.\nReference values at opening, not realized sale proceeds.\n`);
-  console.log('| Index | Size | Old profit chance | New profit chance | Relative increase | Old EV / price | New EV / price |\n|---|---|---:|---:|---:|---:|---:|');
+  console.log(`Mystery-palette profit audit: ${input}; 3 daily rotations; no Luck; same starting prices and NPC risk budgets.\nReference values at opening, not realized sale proceeds.\n`);
+  console.log('| Index | Size | Previous profit chance | Protected profit chance (min) | Relative increase (min) | Previous EV / price | Protected EV / price (min) |\n|---|---|---:|---:|---:|---:|---:|');
   for (const index of [50, 100, 150]) for (const tier of ['budget','standard','premium']) {
     const selected = rows.filter(row => row.index === index && row.tier === tier);
     if (!selected.length) continue;
     const mean = key => selected.reduce((sum, row) => sum + row[key], 0) / selected.length;
-    console.log(`| ${index} | ${tier} | ${percent(mean('before'))} | ${percent(mean('after'))} | ${percent(mean('after') / mean('before') - 1)} | ${percent(mean('oldReturn'))} | ${percent(mean('newReturn'))} |`);
+    console.log(`| ${index} | ${tier} | ${percent(mean('before'))} | ${percent(mean('after'))} | ${percent(mean('after') / mean('before') - 1)} | ${percent(mean('oldReturn'))} | ${percent(mean('minimumReturn'))} |`);
   }
 }

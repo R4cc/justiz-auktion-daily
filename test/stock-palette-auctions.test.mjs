@@ -17,6 +17,8 @@ import { paletteBidCeiling } from '../src/npc-buyers.mjs';
 import { MYSTERY_QUANTITIES, quantityOdds, expectedQuantity, referenceQuantityOdds } from '../src/mystery-stock.mjs';
 import { imposeFine } from '../src/justice.mjs';
 import { expectedItemValue } from '../src/economy-balance.mjs';
+import { paletteMarketValue } from '../src/palette-valuation.mjs';
+import { setMarketIndex } from '../src/market.mjs';
 const now=Date.parse('2026-10-12T12:00:00Z'),hour=3600000;
 async function fixture(t){
  const dir=await mkdtemp('/tmp/jg-stock-auctions-'),accounts=new Accounts(dir,{now:()=>now});
@@ -73,7 +75,7 @@ test('first-opening failure rolls back all units, saved result and reveal stamp;
  f.accounts.db(db=>db.exec("CREATE TRIGGER fail_stock_mint BEFORE INSERT ON inventory BEGIN SELECT RAISE(ABORT,'mint_failed'); END"));
  assert.throws(()=>getPaletteAuctionRewards(f.dir,f.buyer,lot.id,{now:now+hour}),/mint_failed/);assert.equal(f.balance('buyer'),balance);assert.equal(f.accounts.db(db=>db.prepare('SELECT count(*) n FROM inventory').get().n),0);
  assert.equal(f.accounts.db(db=>db.prepare('SELECT revealed_at FROM primary_palette_auctions WHERE id=?').get(lot.id).revealed_at),null);assert.equal(f.accounts.db(db=>db.prepare('SELECT rewards FROM primary_palette_mystery_stock WHERE auction_id=?').get(lot.id).rewards),null);
- f.accounts.db(db=>db.exec('DROP TRIGGER fail_stock_mint'));const result=getPaletteAuctionRewards(f.dir,f.buyer,lot.id,{now:now+hour,random:()=>0});assert.equal(f.accounts.inventory(f.buyer).length,3);assert.equal(f.balance('buyer'),balance);
+ f.accounts.db(db=>db.exec('DROP TRIGGER fail_stock_mint'));const result=getPaletteAuctionRewards(f.dir,f.buyer,lot.id,{now:now+hour,random:()=>0});assert.equal(f.accounts.inventory(f.buyer).length,result.offer.quantity);assert.ok(result.offer.quantity>3);assert.equal(f.balance('buyer'),balance);
  assert.deepEqual(getPaletteAuctionRewards(f.dir,f.buyer,lot.id,{now:now+hour+1,random:()=>{throw Error('reroll');}}),result);
 });
 test('opening-time Luck improves rarity and quantity odds, including upgrades after winning, then freezes the result',async t=>{
@@ -81,19 +83,19 @@ test('opening-time Luck improves rarity and quantity odds, including upgrades af
  assert.equal(f.accounts.db(db=>db.prepare('SELECT rewards FROM primary_palette_mystery_stock WHERE auction_id=?').get(lot.id).rewards),null);
  for(let rank=1;rank<=3;rank++)upgradeSkill(f.dir,f.buyer,{skillId:'luck',rank,requestId:`auction-luck-${rank}-request-001`},{now:now+hour});
  const maxima=[],reveal=getPaletteAuctionRewards(f.dir,f.buyer,lot.id,{now:now+hour,random:max=>{maxima.push(max);return Math.floor(max*.215);}});
- assert.equal(reveal.offer.luckPercent,7);assert.deepEqual(reveal.offer.weights,luckWeights(lot.stockOffer.weights,7));assert.deepEqual(reveal.offer.quantityOdds,quantityOdds('standard',7));assert.equal(reveal.offer.quantity,9);assert.equal(reveal.offer.cost,lot.reserve);
+ assert.equal(reveal.offer.luckPercent,7);assert.deepEqual(reveal.offer.weights,luckWeights(lot.stockOffer.weights,7));assert.deepEqual(reveal.offer.quantityOdds,quantityOdds('standard',7));assert.ok(reveal.offer.quantity>=9);assert.equal(reveal.offer.cost,lot.reserve);
  assert.ok(maxima.includes(reveal.offer.weights.reduce((a,b)=>a+b,0)));assert.ok(maxima.includes(reveal.offer.quantityOdds.reduce((sum,entry)=>sum+entry.weight,0)));
  f.accounts.db(db=>db.prepare("UPDATE user_skills SET rank=1 WHERE user_id='buyer' AND skill_id='luck'").run());assert.deepEqual(getPaletteAuctionRewards(f.dir,f.buyer,lot.id,{now:now+hour+1000,random:()=>{throw Error('reroll');}}),reveal);
  const offer=f.accounts.db(db=>JSON.parse(db.prepare('SELECT offer FROM primary_palette_mystery_stock WHERE auction_id=?').get(lot.id).offer));
  const npc={id:'npc',categories:['wine'],willingness:1},ceiling=paletteBidCeiling({...lot,items:offer.items,stockOffer:offer},{wine:100},npc,lot.id,()=>.5),ev=expectedItemValue(offer.items,offer.weights)*offer.bidReferenceQuantity;assert.equal(ceiling.maxBid,Math.floor(ev*.81));
 });
-test('every price tier permits small hauls and jackpots; improved odds and Luck retain their separate balance bounds',async t=>{
+test('every price tier protects poor hauls and retains natural jackpots and Luck',async t=>{
  const f=await fixture(t);
  for(const [tier,choices] of Object.entries(MYSTERY_QUANTITIES)){
   const low=create(f,'wine-'+tier,'small-haul-'+tier+'-request'),high=create(f,'wine-'+tier,'jackpot-haul-'+tier+'-request');
   for(const lot of [low,high]){bidOnPaletteAuction(f.dir,f.buyer,lot.id,lot.reserve,{now});settlePaletteAuction(f.dir,lot.id,{now:now+hour});}
   const small=getPaletteAuctionRewards(f.dir,f.buyer,low.id,{now:now+hour,random:()=>0}),jackpot=getPaletteAuctionRewards(f.dir,f.buyer,high.id,{now:now+hour,random:max=>max-1});
-  assert.equal(small.offer.quantity,3);assert.equal(jackpot.offer.quantity,3*choices.at(-1)[0]);assert.ok(small.rewards.every(reward=>reward.item.rarity==='common'));assert.ok(jackpot.rewards.every(reward=>reward.item.rarity==='legendary'));
+  assert.ok(small.offer.quantity>3);assert.ok(f.accounts.db(db=>paletteMarketValue(db,small,{now:now+hour})).totalValueTokens>=Math.ceil(low.reserve*1.1));assert.equal(jackpot.offer.quantity,3*choices.at(-1)[0]);assert.ok(small.rewards.every(reward=>reward.item.rarity==='common'));assert.ok(jackpot.rewards.every(reward=>reward.item.rarity==='legendary'));
   const offer=f.accounts.db(db=>JSON.parse(db.prepare('SELECT offer FROM primary_palette_mystery_stock WHERE auction_id=?').get(low.id).offer));
   for(const bonus of [0,3,5,7]){
    const lucky=expectedItemValue(offer.items,luckWeights(offer.weights,bonus),item=>item.referenceValue)*expectedQuantity(quantityOdds(tier,bonus));
@@ -149,10 +151,10 @@ test('opening honors frozen per-lot quantity odds rather than the current global
  // An older chance structure retained by its price snapshot.
  f.accounts.db(db=>{const row=db.prepare('SELECT offer FROM primary_palette_mystery_stock WHERE auction_id=?').get(lot.id),offer=JSON.parse(row.offer);offer.quantityOdds=[{quantity:2,weight:9500,percent:95},{quantity:7,weight:500,percent:5}];db.prepare('UPDATE primary_palette_mystery_stock SET offer=? WHERE auction_id=?').run(JSON.stringify(offer),lot.id);});
  bidOnPaletteAuction(f.dir,f.buyer,lot.id,lot.reserve,{now});settlePaletteAuction(f.dir,lot.id,{now:now+hour});const reveal=getPaletteAuctionRewards(f.dir,f.buyer,lot.id,{now:now+hour,random:max=>max-1});
- assert.equal(reveal.offer.quantity,21);assert.deepEqual(reveal.offer.quantityOdds.map(choice=>choice.quantity),[2,7]);
+ assert.ok(reveal.offer.quantity>=21);assert.deepEqual(reveal.offer.quantityOdds.map(choice=>choice.quantity),[2,7]);
 });
 
-test('pre-buff auctions keep their quoted odds, NPC budget and opening while new auctions use improved quantities',async t=>{
+test('pre-buff auctions retain base odds and pricing while all unopened lots receive return protection',async t=>{
  const f=await fixture(t),old=create(f,'wine-budget','pre-buff-stock-auction-001');
  const saved=f.accounts.db(db=>JSON.parse(db.prepare('SELECT offer FROM primary_palette_mystery_stock WHERE auction_id=?').get(old.id).offer));
  saved.quantityOdds=referenceQuantityOdds('budget');saved.expectedQuantity=expectedQuantity(saved.quantityOdds);delete saved.bidReferenceQuantity;
@@ -175,7 +177,8 @@ test('pre-buff auctions keep their quoted odds, NPC budget and opening while new
  const draw=max=>Math.floor(max*.53);
  const oldOpen=getPaletteAuctionRewards(f.dir,f.buyer,old.id,{now:now+hour,random:draw});
  const newOpen=getPaletteAuctionRewards(f.dir,f.buyer,fresh.id,{now:now+hour,random:draw});
- assert.equal(oldOpen.offer.quantity,3);assert.equal(newOpen.offer.quantity,6);
+ assert.ok(oldOpen.offer.quantity>=3);assert.ok(newOpen.offer.quantity>=6);
+ for(const opened of [oldOpen,newOpen])assert.ok(f.accounts.db(db=>paletteMarketValue(db,opened,{now:now+hour})).totalValueTokens>=Math.ceil(old.reserve*1.1));
  assert.deepEqual(getPaletteAuctionRewards(f.dir,f.buyer,old.id,{now:now+hour,random:()=>{throw Error('rerolled');}}),oldOpen);
 });
 
@@ -236,4 +239,28 @@ test('a crowded schedule defers supply instead of creating a duplicate deadline'
   for(let n=1;n<=60;n++)insert.run(`crowded-slot-${n}`,`crowded-request-${n}`,now+STOCK_PALETTE_MIN_DURATION_MS+n*60_000,lot.id);
  });
  const result=supplyStockPaletteAuctions(f.dir,{now});assert.equal(result.auctions.length,0);assert.ok(result.skipped.length>0);
+});
+
+
+test('opening protects the actual paid bid against a market crash, persists physical units and never grants protection twice',async t=>{
+ const f=await fixture(t),lot=create(f),maximum=lot.reserve+20000;
+ bidOnPaletteAuction(f.dir,f.buyer,lot.id,maximum,{now});
+ bidOnPaletteAuction(f.dir,f.other,lot.id,lot.reserve+10000,{now});
+ const won=settlePaletteAuction(f.dir,lot.id,{now:now+hour});
+ assert.ok(won.currentBid>lot.reserve);assert.ok(won.currentBid<maximum);
+ setMarketIndex(f.dir,'wine',50,{now:now+hour});
+ const before=f.balance('buyer');
+ // Lowest base draws, then the losing (20%) protection branch.
+ let calls=0;
+ const opened=getPaletteAuctionRewards(f.dir,f.buyer,lot.id,{now:now+hour,random:()=>++calls===10?99:0});
+ assert.equal(calls,10);
+ const value=f.accounts.db(db=>paletteMarketValue(db,opened,{now:now+hour}));
+ assert.ok(value.totalValueTokens>=Math.ceil(won.currentBid*.9));
+ assert.ok(value.totalValueTokens<won.currentBid,'losing outcomes should still be possible');
+ assert.equal(opened.bundleCostTokens,won.currentBid);assert.equal(f.balance('buyer'),before);
+ const count=opened.rewards.reduce((sum,reward)=>sum+reward.quantity,0);
+ assert.equal(f.accounts.inventory(f.buyer).length,count);
+ assert.equal(f.accounts.db(db=>db.prepare("SELECT SUM(cost) n FROM item_acquisitions WHERE user_id='buyer'").get().n),won.currentBid);
+ assert.deepEqual(getPaletteAuctionRewards(f.dir,f.buyer,lot.id,{now:now+hour+1,random:()=>{throw Error('duplicate protection');}}),opened);
+ assert.equal(f.accounts.inventory(f.buyer).length,count);
 });

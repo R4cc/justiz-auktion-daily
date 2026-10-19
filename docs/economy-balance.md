@@ -1,4 +1,4 @@
-# Economy balance — updated 15 October 2026
+# Economy balance — updated 19 October 2026
 
 The pass covers starting grants, Daily and Higher or Lower income, free and paid cases, tradable case supply, sealed palettes, resale and proxy bidding, NPC demand, wholesale stock, and business sales. Shared targets live in `src/economy-balance.mjs`; item euros stay tied to their historical auction, while current J€ estimates follow the category market.
 
@@ -80,3 +80,12 @@ Security Guards are toggleable in store management. They charge 5% of net tracke
 New mystery stock auctions keep the previous reference quantity distribution for starting prices and NPC risk budgets. Actual quantity odds give weights above the reference mean a relative boost: 40% for Starter, 30% for Warehouse and 30% for Jackpot. Item rarity odds, three independent draws, quantity limits and Luck remain unchanged. Offers freeze the improved odds and their original bidding reference quantity; old auctions and saved openings retain their contracts. Public quantity percentages include the improvement and any applicable Luck.
 
 The target is roughly 20% more profitable openings **relative to the previous probability**, measured at the same starting bid and stable market values, not 20 percentage points or guaranteed realized resale profit. Run `node scripts/palette-profit-report.mjs` (packaged archive) or add `--stress` for a broad synthetic archive. The report calculates exact three-draw probabilities and expected returns for each size at unchanged starting prices and NPC budgets. Neutral-market profit chances rose by 17.58–22.60% relatively across the packaged and stress archives (roughly 5–6 percentage points). Competitive player bids and subsequent market movement still change actual profit.
+
+
+## Mystery palette return protection — 19 October 2026
+
+At the first opening of every unopened mystery stock palette, an independent 80% roll now guarantees contents worth at least 110% of the actual winning price. All other openings return at least 90%, so opening-value losses cannot exceed 10%. The server adds physical copies of the most valuable drawn item to cover a shortfall; original item prices, rarities and natural jackpots remain intact. Base quantity limits apply before these additional units. Live market value at opening determines the supplement, including market movement since creation or bidding. Sale proceeds and later market prices are not guaranteed.
+
+This also covers existing unopened mystery wins with older frozen base odds; saved results replay unchanged. Starting prices, proxy refunds and NPC budgets retain their previous baseline. Acquisition costs still sum to the paid bid across every minted unit. Protection and saved results share the opening transaction, so errors roll back all additions and retries never grant a second supplement.
+
+The minimum expected opening return is `0.8 × 1.1 + 0.2 × 0.9 = 1.06` at any paid price. The profit report now shows conservative lower bounds for protected win probability and return, compared with the 15 October quantity buff. These are opening market values, not realized sales. Pure branch sweeps and auction integration tests cover the 80% threshold, 90% floor, market drops, actual competitive winning prices, rollback and replay.

@@ -3,7 +3,8 @@ import assert from 'node:assert/strict';
 import { fileURLToPath } from 'node:url';
 import { openingProfitChance, paletteProfitReport } from '../scripts/palette-profit-report.mjs';
 import { STOCK_PALETTE_TIERS } from '../src/stock-palettes.mjs';
-import { mysteryStockOffer, publicMysteryOffer, referenceQuantityOdds, quantityOdds, expectedQuantity } from '../src/mystery-stock.mjs';
+import { mysteryStockOffer, publicMysteryOffer, referenceQuantityOdds, quantityOdds, expectedQuantity, protectMysteryDraws } from '../src/mystery-stock.mjs';
+import { estimatedValueTokens } from '../src/market.mjs';
 import { expectedItemValue } from '../src/economy-balance.mjs';
 import { paletteBidCeiling } from '../src/npc-buyers.mjs';
 import { luckWeights } from '../src/skill-effects.mjs';
@@ -55,16 +56,36 @@ test('public quantity percentages include the improvement and Luck exactly once'
   }
 });
 
-test('exact archived and stress profit chances increase roughly 20 percent relatively at unchanged starting bids', async () => {
+test('archived and stress catalogs exceed 80 percent profitable openings at every price tier and market index', async () => {
   for (const input of [fileURLToPath(new URL('../seed/auctions.json',import.meta.url)), '--stress']) {
     const rows = await paletteProfitReport(input);
     for (const tier of ['budget','standard','premium']) {
       const group = rows.filter(row=>row.tier===tier&&row.index===100);
       assert.ok(group.length>0);
       const average = key => group.reduce((sum,row)=>sum+row[key],0)/group.length;
-      const relative = average('after')/average('before')-1;
-      assert.ok(relative>=.15&&relative<=.25, `${input} ${tier}: ${relative}`);
+      assert.ok(average('after')>=.8, `${input} ${tier}: ${average('after')}`);
     }
-    assert.ok(rows.every(row=>row.after>row.before));
+    assert.ok(rows.every(row=>row.after>row.before&&row.after>=.8&&row.minimumReturn>=1.06-1e-9));
   }
+});
+
+
+test('return protection caps losses at ten percent, wins at least eighty percent and preserves item values and jackpots',()=>{
+ const draws=[{position:0,item:items[0],quantity:1},{position:1,item:items[1],quantity:1},{position:2,item:items[2],quantity:1}];
+ const original=JSON.stringify(draws);
+ for(const index of [1,50,100,150,500])for(const cost of [1,9,101,1000,100001]){
+  const indexes={electronics:index};let wins=0;
+  for(let roll=0;roll<100;roll++){
+   const result=protectMysteryDraws(draws,cost,indexes,()=>roll);
+   const value=result.reduce((sum,draw)=>sum+draw.quantity*estimatedValueTokens(draw.item,indexes),0);
+   assert.ok(value>=Math.ceil(cost*.9),`loss floor: ${index}/${cost}/${roll}`);
+   if(roll<80)assert.ok(value>=Math.ceil(cost*1.1),`profit floor: ${index}/${cost}/${roll}`);
+   if(value>cost)wins++;
+   result.forEach((draw,n)=>{assert.strictEqual(draw.item,draws[n].item);assert.ok(draw.quantity>=draws[n].quantity);});
+  }
+  assert.ok(wins>=80);
+ }
+ assert.equal(JSON.stringify(draws),original);
+ const jackpot=draws.map(draw=>({...draw,quantity:96}));
+ assert.deepEqual(protectMysteryDraws(jackpot,10,{electronics:100},()=>99),jackpot);
 });

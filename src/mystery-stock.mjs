@@ -2,7 +2,7 @@ import { randomInt, randomUUID } from 'node:crypto';
 import { drawItem, RARITIES } from './cases.mjs';
 import { expectedItemValue, ECONOMY_BALANCE } from './economy-balance.mjs';
 import { luckWeights, skillEffects } from './skill-effects.mjs';
-import { estimatedValueTokens } from './market.mjs';
+import { estimatedValueTokens, marketIndexes } from './market.mjs';
 import { acquireItems } from './trader.mjs';
 import { AccountError } from './errors.mjs';
 import { assertPlayerFree } from './justice.mjs';
@@ -11,7 +11,7 @@ export const MYSTERY_STOCK_MODE='opening-v2';
 // Reference odds used for pricing and NPC risk budgets. New offers improve
 // upper-quantity odds without charging that improvement back to the player.
 // Three independent item/quantity pairs. Even premium lots can have a poor
-// haul, and budget lots have a genuine jackpot tail. Maximum: 288 units.
+// haul before return protection; budget lots retain a genuine jackpot tail.
 export const MYSTERY_QUANTITIES={
   budget:[[1,5500],[2,2500],[3,1200],[6,600],[12,180],[24,20]],
   standard:[[1,2200],[3,2800],[6,2400],[12,1800],[24,700],[48,100]],
@@ -53,6 +53,18 @@ export function publicMysteryOffer(offer,bonus=offer.luckPercent||0){
     quantityOdds:boostedQuantityOdds(baseQuantityOdds,bonus),rolls,openingMode,
     acquisitionMode:'auction',purchasable:false};
 }
+// Add real copies of a drawn item, never inflate its price or remove a jackpot.
+// The most valuable draw needs the fewest extra inventory rows. Protection
+// uses today's inventory valuation and the visible paid bid, not max escrow.
+export function protectMysteryDraws(draws,cost,indexes,random=randomInt){
+  const profit=random(100)<ECONOMY_BALANCE.paletteProfitChance;
+  const percent=profit?ECONOMY_BALANCE.paletteProfitReturnPercent:ECONOMY_BALANCE.paletteMinimumReturnPercent;
+  const target=Math.ceil(cost*percent/100);
+  const values=draws.map(draw=>estimatedValueTokens(draw.item,indexes));
+  const value=draws.reduce((sum,draw,index)=>sum+draw.quantity*values[index],0);
+  const best=values.indexOf(Math.max(...values));
+  return draws.map((draw,index)=>({...draw,quantity:draw.quantity+(index===best?Math.max(0,Math.ceil((target-value)/values[index])):0)}));
+}
 export function openMysteryStock(db,row,userId,now,random=randomInt){
   if(row.winner_id!==userId||row.settled_at===null||now<row.ends_at)throw new AccountError('palette_rewards_not_found',404);
   const saved=db.prepare('SELECT * FROM primary_palette_mystery_stock WHERE auction_id=?').get(row.id);
@@ -64,14 +76,18 @@ export function openMysteryStock(db,row,userId,now,random=randomInt){
   if(saved.rewards)return JSON.parse(saved.rewards);
   const offer=JSON.parse(saved.offer),luckPercent=skillEffects(db,userId).luckPercent;
   const weights=luckWeights(offer.weights,luckPercent),odds=boostedQuantityOdds(offer.quantityOdds,luckPercent),total=odds.reduce((sum,entry)=>sum+entry.weight,0);
-  const insert=db.prepare('INSERT INTO inventory (id,user_id,item,created_at) VALUES (?,?,?,?)');
-  const rewards=Array.from({length:3},(_,position)=>{
+  const draws=Array.from({length:3},(_,position)=>{
     const original=drawItem(null,{items:offer.items,weights},random);
     let roll=random(total),choice=0;while(roll>=odds[choice].weight)roll-=odds[choice++].weight;
-    const quantity=odds[choice].quantity,inventoryIds=Array.from({length:quantity},()=>randomUUID());
+    const quantity=odds[choice].quantity;
     const item={...original,paletteAuctionId:row.id,paletteEditionId:row.edition_id,rewardPosition:position,bundleCostTokens:row.current_bid,luckPercent};
-    for(const id of inventoryIds)insert.run(id,userId,JSON.stringify({...item,id}),now);
-    return {position,quantity,inventoryIds,item};
+    return {position,quantity,item};
+  });
+  const insert=db.prepare('INSERT INTO inventory (id,user_id,item,created_at) VALUES (?,?,?,?)');
+  const rewards=protectMysteryDraws(draws,row.current_bid,marketIndexes(db,now),random).map(draw=>{
+    const inventoryIds=Array.from({length:draw.quantity},()=>randomUUID());
+    for(const id of inventoryIds)insert.run(id,userId,JSON.stringify({...draw.item,id}),now);
+    return {...draw,inventoryIds};
   });
   acquireItems(db,userId,rewards.flatMap(reward=>reward.inventoryIds),row.current_bid,'purchase',now);
   const winningOffer=publicMysteryOffer(offer,luckPercent);
