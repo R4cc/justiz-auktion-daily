@@ -6,12 +6,12 @@ The `/loans` page offers in-game credit under Trading. Both requirements must be
 |---|---:|---:|---:|---:|---:|
 | Starter | J€500 | 2 | J€2,000 | J€100 | J€120 |
 | Trader | J€2,500 | 4 | J€10,000 | J€500 | J€600 |
-| Business | J€10,000 | 7 | J€50,000 | J€2,000 | J€2,400 |
-| Enterprise | J€50,000 | 10 | J€250,000 | J€10,000 | J€12,000 |
+| Business | J€10,000 | 7 | J€25,000 | J€2,000 | J€2,400 |
+| Enterprise | J€50,000 | 10 | J€125,000 | J€10,000 | J€12,000 |
 
 Every offer has a 20% borrowing fee added to the debt immediately, a three-real-day term, and 24% simple daily interest on remaining principal. After maturity, the daily rate becomes 36%. Fees and accrued interest do not themselves earn interest. Time passes offline; there are no free daily windows or reset-time tricks. A confirmation shows cash received and debt immediately, after 24 hours and after three days. For example, borrowing J€500 creates J€600 debt, rising to J€720 after one day, J€960 at maturity and J€1,140 after four days without payments.
 
-One loan can be active at a time. At least 24 hours must pass from the previous borrowing before another loan can begin, even if it is repaid immediately. Borrowing is at most 25% of the required equity (20% for larger tiers), and borrowed cash never raises net worth: the full remaining principal, fee and interest are liabilities. Loan principal is not earned income, gives no XP or Prestige profit bonus, and cannot unlock a larger loan by itself. These costs and limits make credit expensive temporary liquidity rather than a recurring reward.
+One loan can be active at a time. At least 24 hours must pass from the previous borrowing before another loan can begin, even if it is repaid immediately. Borrowing is at most 25% of the required equity for Starter and Trader, and 40% for Business and Enterprise, and borrowed cash never raises net worth: the full remaining principal, fee and interest are liabilities. Loan principal is not earned income, gives no XP or Prestige profit bonus, and cannot unlock a larger loan by itself. These costs and limits make credit expensive temporary liquidity rather than a recurring reward.
 
 Partial and full repayments use available wallet cash, covering fees and interest first and principal next. Only principal reduction lowers future interest. Fractions of J€ carry at fixed precision, independent of polling frequency; settling the last fractional interest token rounds up to one J€. Server time and frozen contract rates determine the balance. Later offer changes affect new contracts only.
 

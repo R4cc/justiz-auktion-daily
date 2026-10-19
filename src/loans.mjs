@@ -9,8 +9,8 @@ import { ensureLoanSchema, loanBalance, payLoan, collectOverdueLoan, LOAN_DAY_MS
 export const LOAN_OFFERS=Object.freeze([
   {id:'starter',name:'Starter loan',nameDe:'Startkredit',principal:500,requiredLevel:2,requiredNetWorth:2000},
   {id:'trader',name:'Trader loan',nameDe:'Händlerkredit',principal:2500,requiredLevel:4,requiredNetWorth:10000},
-  {id:'business',name:'Business loan',nameDe:'Geschäftskredit',principal:10000,requiredLevel:7,requiredNetWorth:50000},
-  {id:'enterprise',name:'Enterprise loan',nameDe:'Unternehmenskredit',principal:50000,requiredLevel:10,requiredNetWorth:250000}
+  {id:'business',name:'Business loan',nameDe:'Geschäftskredit',principal:10000,requiredLevel:7,requiredNetWorth:25000},
+  {id:'enterprise',name:'Enterprise loan',nameDe:'Unternehmenskredit',principal:50000,requiredLevel:10,requiredNetWorth:125000}
 ].map(offer=>Object.freeze({...offer,feePercent:20,dailyInterestPercent:24,overdueInterestPercent:36,termDays:3})));
 export const LOAN_COOLDOWN_MS=LOAN_DAY_MS;
 export const LOAN_TERMS_VERSION=createHash('sha256').update(JSON.stringify([LOAN_OFFERS,LOAN_COOLDOWN_MS])).digest('hex');
