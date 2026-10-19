@@ -1,3 +1,4 @@
+import { loanDebt } from './loan-ledger.mjs';
 import { withDatabase, transaction } from './database.mjs';
 import { estimatedValueTokens, marketIndexes } from './market.mjs';
 import { sealedPaletteInventoryIds } from './palette-auctions.mjs';
@@ -44,6 +45,7 @@ export function currentNetWorth(db, userId, { now = Date.now(), indexes = market
   const current = { cash: user.tokens, storeCash:storeCashTotal(db,userId), heldBids, items, businesses, sealedPalettes };
   current.total = Object.values(current).reduce((sum, value) => sum + value, 0);
   current.total -= fineDebt; current.fineDebt=fineDebt;
+  current.loanDebt=loanDebt(db,userId,now);current.total-=current.loanDebt;
   if (Object.entries(current).some(([key,value]) => !Number.isSafeInteger(value) || (key!=='total' && value < 0))) throw new AccountError('token_balance_limit', 409);
   return current;
 }

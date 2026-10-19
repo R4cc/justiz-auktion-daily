@@ -1,3 +1,4 @@
+import { loanDashboard, borrowLoan, repayLoan } from './loans.mjs';
 import { userStatistics } from './user-statistics.mjs';
 import { prestigeAccount } from './prestige.mjs';
 import { prestigeEffects } from './prestige-effects.mjs';
@@ -75,7 +76,7 @@ export async function createAccountApi({ dataDir, dailyPayload, json, env = proc
       const token = request.headers.cookie?.split(';').map(part => part.trim()).find(part => part.startsWith('jg_session='))?.slice(11);
       const user = accounts.user(token);
       const route = url.pathname.slice('/api/account/'.length);
-      if (user?.justice?.jailed && !['me','logout','login','password/change'].includes(route)) { const error=new AccountError('player_jailed',423); error.justice=user.justice; throw error; }
+      if (user?.justice?.jailed && !['me','logout','login','password/change','loans','loans/repay'].includes(route)) { const error=new AccountError('player_jailed',423); error.justice=user.justice; throw error; }
       if (request.method === 'GET') {
         if (route === 'me') json(response, 200, { user: user ? accounts.profile(user) : null });
         else if (route === 'case-store') json(response, 200, getStore(user));
@@ -90,7 +91,8 @@ export async function createAccountApi({ dataDir, dailyPayload, json, env = proc
           // A temporary password may only read its own session state; every
           // other surface waits until a real password is set.
           if (user.must_change_password && route !== 'me') throw new AccountError('password_change_required', 403);
-          if (route === 'inventory') json(response, 200, { items: accounts.inventory(user, {includeStores:url.searchParams.get('includeStores')==='1'}) });
+          if (route === 'loans') json(response,200,loanDashboard(dataDir,user));
+          else if (route === 'inventory') json(response, 200, { items: accounts.inventory(user, {includeStores:url.searchParams.get('includeStores')==='1'}) });
           else if (route === 'auction-winnings') json(response,200,{rewards:unopenedAuctionWinnings(dataDir,user,{flags})});
           else if (route === 'statistics') json(response,200,userStatistics(dataDir,user));
           else if (route === 'criminal-record') json(response,200,playerCriminalRecord(dataDir,user,{offset:url.searchParams.get('offset') || 0,limit:url.searchParams.get('limit') || 10}));
@@ -175,6 +177,8 @@ export async function createAccountApi({ dataDir, dailyPayload, json, env = proc
         response.setHeader('set-cookie', cookie(nextToken));
         result = { user: accounts.profile(user) };
       }
+      else if(route==='loans/borrow') result={...borrowLoan(dataDir,user,payload),user:accounts.profile(user)};
+      else if(route==='loans/repay') {result=repayLoan(dataDir,user,payload);result.user=accounts.profile(user);result.loans=loanDashboard(dataDir,user);}
       else if(route==='prestige') result={prestige:prestigeAccount(dataDir,user,payload),user:accounts.profile(user)};
       else if(route==='skills/upgrade') result={tree:upgradeSkill(dataDir,user,payload),user:accounts.profile(user)};
       else if (route === 'stock-palettes/reveal' && flags.palettes) {

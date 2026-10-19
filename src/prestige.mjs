@@ -1,3 +1,4 @@
+import { loanDebt } from './loan-ledger.mjs';
 import { syncUserStatistics } from './user-statistics.mjs';
 import { ensureStoreSchema } from './storefronts.mjs';
 import { withDatabase, transaction } from './database.mjs';
@@ -18,6 +19,7 @@ export function prestigeState(db, userId, xp, now = Date.now()) {
   if (has(db, 'resale_auctions') && db.prepare(`SELECT 1 FROM resale_auctions WHERE settled_at IS NULL AND status!='cancelled'
     AND current_bidder_id IS NOT NULL AND (current_bidder_id=? OR seller_id=?) LIMIT 1`).get(userId, userId)) blocked = 'prestige_auction_pending';
   if (has(db, 'primary_palette_auctions') && db.prepare('SELECT 1 FROM primary_palette_auctions WHERE current_bidder_id=? AND settled_at IS NULL LIMIT 1').get(userId)) blocked = 'prestige_auction_pending';
+  if (loanDebt(db,userId,now)) blocked = 'prestige_loan_pending';
   return { ...effects, requiredLevel: 10, eligible: levelForXp(xp) >= 10 && effects.count < PRESTIGE_BUFFS.length && !blocked,
     blocked, choices: PRESTIGE_BUFFS.filter(buff => !effects.buffs.includes(buff)), startingTokens: ECONOMY_BALANCE.startingTokens };
 }

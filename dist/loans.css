@@ -1,0 +1,21 @@
+.loans-page{max-width:1050px;margin:auto;display:grid;gap:24px;color:#214c40}
+.loans-heading{display:flex;align-items:center;justify-content:space-between;gap:16px}
+.loans-heading h1{margin:4px 0 0}.loans-heading svg{width:68px;height:68px;flex:none;color:#b48132}
+.loan-tier{font-size:11px;font-weight:800;letter-spacing:.09em;text-transform:uppercase}
+.loan-wallet,.loan-active,.loan-offer,.loan-history{border:1px solid #d9dfcf;background:#fffdf4;border-radius:20px;padding:22px}
+.loan-wallet{display:flex;flex-wrap:wrap;gap:20px 36px;margin:0;background:#f1eed2}
+.loan-wallet div{flex:1;min-width:140px}.loan-wallet dt{font-size:12px}.loan-wallet dd{font-size:23px;font-weight:800;margin:6px 0 0;overflow-wrap:anywhere}
+.loan-rules,.loan-active p{font-size:13px;line-height:1.65;margin:0;color:#637466}
+.loan-offers{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:18px}
+.loan-offer{display:flex;flex-direction:column;gap:18px;min-width:0;box-shadow:0 4px 0 #e3e5d8}
+.loan-offer header,.loan-active header{display:flex;align-items:center;justify-content:space-between;gap:12px}.loan-offer h2{font-size:30px;margin:0;overflow-wrap:anywhere}
+.loan-offer dl,.loan-active dl,.loan-confirm dl{display:grid;gap:12px;margin:0}
+.loan-offer dl>div,.loan-active dl>div,.loan-confirm dl>div{display:flex;justify-content:space-between;gap:14px;flex-wrap:wrap}
+.loan-offer dt,.loan-active dt,.loan-confirm dt{font-size:12px;color:#637466}.loan-offer dd,.loan-active dd,.loan-confirm dd{margin:0;font-size:13px;font-weight:700;overflow-wrap:anywhere}
+.loan-offer .primary-button{margin-top:auto}.loan-offer.is-locked{background:#f1f1e8}
+.loan-requirements{display:flex;flex-wrap:wrap;gap:8px;margin:0;font-size:11px}.loan-requirements span{padding:6px 9px;border-radius:8px;background:#e8e8dc}.loan-requirements .is-met{background:#dfeddd;color:#245b3e}
+.loan-active{display:grid;gap:20px;border-top:5px solid #b48132}.loan-active h2{margin:6px 0 0}.loan-active header>strong{font-size:25px;overflow-wrap:anywhere}.loan-active.is-overdue{border-top-color:#a34736}
+.loan-active form{display:flex;align-items:end;gap:12px;flex-wrap:wrap}.loan-active label{display:grid;gap:6px;font-size:12px;flex:1;min-width:150px}.loan-active input{width:100%;box-sizing:border-box;min-width:0;min-height:46px;padding:10px 12px;border:1px solid #bbc8b3;border-radius:10px;background:#fffdf4;color:inherit;font:inherit}
+.loan-history h2{margin:0 0 18px}.loan-history>div{display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;padding:12px 0;border-top:1px solid #e3e5d8;font-size:13px}.loan-history small{display:block;margin-top:4px;color:#637466}
+.loan-success{color:#245b3e}.loan-confirm{width:min(460px,calc(100% - 32px));box-sizing:border-box;border:1px solid #cbd3c1;border-radius:20px;padding:24px;background:#fffdf4;color:#214c40}.loan-confirm::backdrop{background:#15382c88}.loan-confirm h2{margin-top:0}.loan-confirm p{font-size:13px;line-height:1.6}.loan-confirm-actions{display:flex;gap:12px;flex-wrap:wrap;justify-content:flex-end;margin-top:22px}
+@media(max-width:600px){.loan-offers{grid-template-columns:1fr}.loan-wallet,.loan-active,.loan-offer,.loan-history{padding:18px}.loan-wallet div{min-width:105px}.loan-active header{flex-wrap:wrap}.loans-heading svg{width:48px;height:48px}.loan-active form .primary-button{width:100%}.loan-confirm-actions>*{flex:1}}

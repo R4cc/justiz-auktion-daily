@@ -1,3 +1,4 @@
+import { tickLoans } from './loan-ledger.mjs';
 import { supplyReviewAuctions } from './review-auctions.mjs';
 import { supplyStockPaletteAuctions } from './stock-palette-auctions.mjs';
 import { tickStoreJustice } from './storefronts.mjs';
@@ -66,7 +67,7 @@ export function supplyPaletteAuctions(dataDir, { now = Date.now() } = {}) {
 // Pure scheduling wrapper; creation and accounting remain domain-owned.
 export function tickEconomy(dataDir, { now = Date.now(), flags = featureFlags() } = {}) {
   const result = {}, failures = [];
-  const run = (name, work) => { try { result[name] = work(); } catch (error) { failures.push({ system: name, code: error instanceof AccountError ? error.message : 'internal_error' }); } };
+  const run = (name, work) => { try { const value=work();if(value!==null)result[name]=value; } catch (error) { failures.push({ system: name, code: error instanceof AccountError ? error.message : 'internal_error' }); } };
   if (flags.news) run('news', () => tickWorldNews(dataDir, { now }));
   // Drift runs before buyers so NPC ceilings price the fresh regime.
   if (flags.market) run('marketDrift', () => tickMarketDrift(dataDir, { now }));
@@ -88,13 +89,13 @@ export function tickEconomy(dataDir, { now = Date.now(), flags = featureFlags() 
   if (flags.businesses) run('businesses', () => tickBusinesses(dataDir, { now }));
   if (flags.businesses) run('storeEvents', () => tickStoreEvents(dataDir, { now }));
   if (flags.businesses) run('npcStoreTheft', () => tickNpcStoreThefts(dataDir, { now }));
+  run('loans',()=>tickLoans(dataDir,{now}));
   if (flags.market || flags.resales || flags.paletteAuctions || flags.businesses) run('netWorth', () => captureNetWorth(dataDir, { now }));
   return { ...result, failures };
 }
 
 export function startEconomyRuntime(dataDir, { flags = featureFlags(), now = Date.now,
   onError = result => console.error('Economy tick needs attention:', result) } = {}) {
-  if (!flags.market && !flags.news && !flags.paletteAuctions && !flags.resales && !flags.businesses) return () => {};
   let stopped = false, timer;
   const tick = () => {
     if (stopped) return;

@@ -1,3 +1,4 @@
+import { collectOverdueLoan, loanDebt } from './loan-ledger.mjs';
 import { prestigeState } from './prestige.mjs';
 import { ensurePrestigeSchema, prestigeEffects } from './prestige-effects.mjs';
 import { ensureSkillsSchema, skillEffects, luckWeights } from './skill-effects.mjs';
@@ -365,7 +366,7 @@ export class Accounts {
       // Auction state goes first so escrow and inventory locks disappear in the
       // same transaction that restores balances. Authentication/social tables,
       // registration codes, passwords, bans and account_sessions are untouched.
-      for (const table of ['user_statistics_events', 'user_statistics_state', 'trader_sales', 'item_acquisitions', 'trader_milestones', 'resale_npc_interest', 'resale_bids', 'resale_auctions',
+      for (const table of ['loan_receipts', 'player_loans', 'user_statistics_events', 'user_statistics_state', 'trader_sales', 'item_acquisitions', 'trader_milestones', 'resale_npc_interest', 'resale_bids', 'resale_auctions',
         'store_review_packs', 'store_events', 'store_event_checks', 'npc_store_theft_checks', 'store_heists', 'store_review_likes', 'store_npc_feedback', 'store_reviews', 'store_visits', 'store_reactions', 'store_receipts',
         'business_stock_history', 'business_takeovers', 'business_sales', 'business_stock', 'businesses', 'town_plots', 'wholesale_bids', 'wholesale_auctions',
         'primary_palette_mystery_stock', 'primary_palette_stock_units', 'primary_palette_stock_draws', 'primary_palette_bids', 'primary_palette_rewards', 'primary_palette_auctions', 'stock_palette_purchases', 'stock_palette_editions', 'skill_purchases', 'user_skills',
@@ -442,7 +443,7 @@ export class Accounts {
   }
   profile(user) {
     return this.atomic(db => {
-      settleExpiredPlayerHeists(db,user.id,this.now()); collectFine(db,user.id,this.now());
+      settleExpiredPlayerHeists(db,user.id,this.now()); collectFine(db,user.id,this.now()); collectOverdueLoan(db,user.id,this.now());
       const row = db.prepare('SELECT id, username, admin, tokens, xp, created_at, grants_seen_at, must_change_password FROM users WHERE id = ?').get(user.id);
       const rewardsByMode = Object.fromEntries(db.prepare(`SELECT r.earned, r.mode, g.complete FROM daily_rewards r
         JOIN account_games g ON r.run_id = g.id WHERE r.user_id = ? AND r.date = ?`)
@@ -472,7 +473,7 @@ export class Accounts {
       recordNetWorth(db, user.id, { now: this.now() });
       // Progression derives from the freshly read users.xp through the shared
       // curve — no level arithmetic lives in this class.
-      return { ...publicRow, justice:justiceStatus(db,user.id,this.now()), mustChangePassword: Boolean(must_change_password),
+      return { ...publicRow, loanDebt:loanDebt(db,user.id,this.now()), justice:justiceStatus(db,user.id,this.now()), mustChangePassword: Boolean(must_change_password),
         prestige:prestigeState(db,user.id,xp,this.now()), progression: progressionForXp(xp), skills:skillSummary(db,user.id,xp), ...this.summary(db, user.id), heldInBids, traderStock,
         ...tradingTotals(db,user.id), traderMilestones: traderProgress(db,user.id,this.now()),
         admin: Boolean(row.admin), reward: reward || null, rewardsByMode, gifts, date: day(this.now()) };

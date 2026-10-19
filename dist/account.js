@@ -29,7 +29,7 @@ caseReveal.addEventListener('close', () => {
 let accountSelectedCase = 'fundkiste', accountInventoryPage = 0, accountFilter = 'all';
 let currentAccountPage = null, accountVisit = 0, pageLoaded = false;
 const initialAccountPath = location.pathname;
-const accountPaths = ['/auction-house', '/auctions', '/marketplace', '/market', '/businesses', '/stores', '/town', '/shop', '/palettes', '/skills', '/inventory', '/profile', '/login', '/register', '/admin', '/leaderboard', '/changelog'];
+const accountPaths = ['/auction-house', '/auctions', '/marketplace', '/market', '/businesses', '/stores', '/town', '/shop', '/palettes', '/skills', '/loans', '/inventory', '/profile', '/login', '/register', '/admin', '/leaderboard', '/changelog'];
 const accountPage = document.querySelector('#account-page');
 const accountContent = document.querySelector('#account-content');
 const notificationButton = document.querySelector('#notification-button');
@@ -95,6 +95,16 @@ function accountError(code) {
     store_limit_reached: t('You can own at most 3 stores.', 'Du kannst höchstens 3 Läden besitzen.'),
     invalid_store_events: t('Could not dismiss store events. Try again.', 'Ladenereignisse konnten nicht geschlossen werden. Versuche es erneut.'),
     business_not_found: t('This store is no longer available.', 'Dieser Laden ist nicht mehr verfügbar.'),
+    invalid_loan: t('Choose a valid loan.','Wähle einen gültigen Kredit.'),
+    loan_terms_changed: t('Loan terms changed. Review the current offer.','Kreditbedingungen geändert. Prüfe das aktuelle Angebot.'),
+    loan_active: t('Repay your active loan first.','Zahle zuerst deinen laufenden Kredit zurück.'),
+    loan_cooldown: t('Wait 24 hours after borrowing before taking another loan.','Warte nach der Kreditaufnahme 24 Stunden auf den nächsten Kredit.'),
+    loan_level_required: t('Your level is too low for this loan.','Dein Level ist für diesen Kredit zu niedrig.'),
+    loan_net_worth_required: t('Your net worth is too low for this loan.','Dein Gesamtvermögen ist für diesen Kredit zu niedrig.'),
+    loan_justice_pending: t('Settle fines and finish your sentence before borrowing.','Begleiche Bußgelder und verbüße deine Haftstrafe vor einer Kreditaufnahme.'),
+    invalid_loan_payment: t('Enter a positive whole J€ amount.','Gib einen positiven ganzen J€-Betrag ein.'),
+    loan_not_found: t('This loan is already repaid or unavailable.','Dieser Kredit ist bereits zurückgezahlt oder nicht verfügbar.'),
+    prestige_loan_pending: t('Repay your loan before Prestiging.','Zahle deinen Kredit vor Prestige zurück.'),
     insufficient_tokens: t('You do not have enough J€.', 'Du hast nicht genug J€.'),
     case_out_of_stock: t('This case is sold out globally. Check the next refill time.', 'Diese Kiste ist weltweit ausverkauft. Prüfe den nächsten Auffülltermin.'),
     try_later: t('Too many attempts. Try again later.', 'Zu viele Versuche. Versuche es später erneut.'),
@@ -178,6 +188,7 @@ function sidebarLinkMarkup(route, label) {
     '/market': '<path d="M3 3v18h18M7 15l4-5 4 3 6-8m-5 0h5v5"/>',
     '/inventory': '<path d="M9 5V3h6v2m-8 0h10a3 3 0 0 1 3 3v11a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V8a3 3 0 0 1 3-3Z"/><rect x="7" y="12" width="10" height="6" rx="1"/><path d="M8 8h8m-4 4v2"/>',
     '/town': '<path d="m3 5 6-2 6 2 6-2v16l-6 2-6-2-6 2V5Zm6-2v16m6-14v16"/>',
+    '/loans': '<path d="m3 9 9-6 9 6H3Zm2 2v7m7-7v7m7-7v7M3 21h18"/>',
     '/businesses': '<path d="M3 10V5h18v5m-18 0 2-6m2 6 1-6m4 6V4m5 6-1-6m5 6-2-6M3 10a3 3 0 0 0 6 0 3 3 0 0 0 6 0 3 3 0 0 0 6 0M5 13v8h14v-8m-9 8v-6h4v6"/>',
     '/stores': '<path d="M3 11V5h14v6M3 5l-1 6a2.5 2.5 0 0 0 5 0 2.5 2.5 0 0 0 5 0 2.5 2.5 0 0 0 6 0l-1-6M4 14v7h7m-3-4v4m6-4h8m-3-3 3 3-3 3"/>',
     '/skills': '<circle cx="12" cy="4" r="2"/><circle cx="5" cy="20" r="2"/><circle cx="19" cy="20" r="2"/><circle cx="12" cy="20" r="2"/><path d="M12 6v12m-7 0v-6h14v6"/>',
@@ -207,7 +218,7 @@ function renderPersistentWallet(user) {
 function updateNavigation() {
   renderPersistentProgression(account);
   renderPersistentWallet(account);
-  const labels = { '/': 'Daily', '/shop': t('Case Store', 'Kisten-Shop'), '/palettes': t('Mystery palettes', 'Mystery-Paletten'), '/skills': t('Skill tree', 'Skillbaum'), '/auctions': t('Palette Auctions', 'Paletten-Auktionen'), '/auction-house': t('Auction House', 'Auktionshaus'), '/marketplace': t('Auction House', 'Auktionshaus'), '/market': t('Stock Market', 'Aktienmarkt'), '/businesses': t('Your stores', 'Deine Läden'), '/stores': t('Visit stores', 'Läden besuchen'), '/town': t('Town map', 'Stadtplan'), '/inventory': t('Inventory', 'Inventar'), '/leaderboard': t('Leaderboard', 'Rangliste'), '/profile': t('Profile', 'Profil'), '/admin': 'Admin', '/changelog': 'Changelog' };
+  const labels = { '/loans': t('Loans','Kredite'), '/': 'Daily', '/shop': t('Case Store', 'Kisten-Shop'), '/palettes': t('Mystery palettes', 'Mystery-Paletten'), '/skills': t('Skill tree', 'Skillbaum'), '/auctions': t('Palette Auctions', 'Paletten-Auktionen'), '/auction-house': t('Auction House', 'Auktionshaus'), '/marketplace': t('Auction House', 'Auktionshaus'), '/market': t('Stock Market', 'Aktienmarkt'), '/businesses': t('Your stores', 'Deine Läden'), '/stores': t('Visit stores', 'Läden besuchen'), '/town': t('Town map', 'Stadtplan'), '/inventory': t('Inventory', 'Inventar'), '/leaderboard': t('Leaderboard', 'Rangliste'), '/profile': t('Profile', 'Profil'), '/admin': 'Admin', '/changelog': 'Changelog' };
   for (const link of document.querySelectorAll('.site-nav a')) {
     if (link.id !== 'header-auth') {
       link.innerHTML = sidebarLinkMarkup(link.getAttribute('href'), labels[link.getAttribute('href')] || link.textContent);
@@ -359,6 +370,7 @@ function showGamePage() {
   window.economyUi?.stop();
   window.paletteUi?.stop();
   window.skillsUi?.stop();
+  window.loansUi?.stop();
   window.businessUi?.stop();
   window.storeUi?.stop();
   window.townUi?.stop();
@@ -397,6 +409,7 @@ async function navigateAccountPage(path, push = true) {
   window.economyUi?.stop();
   window.paletteUi?.stop();
   window.skillsUi?.stop();
+  window.loansUi?.stop();
   window.businessUi?.stop();
   window.storeUi?.stop();
   window.townUi?.stop();
@@ -438,6 +451,7 @@ async function navigateAccountPage(path, push = true) {
     }
     if (path === '/town') { await window.townUi.load(visit); if (visit !== accountVisit) return; }
     if (path === '/stores') { await window.storeUi.load(visit); if (visit !== accountVisit) return; }
+    if(path === '/loans') { await window.loansUi.load(visit); if(visit!==accountVisit)return; }
     if(path === '/skills') { await window.skillsUi.load(visit); if(visit!==accountVisit)return; }
     if (path === '/shop') {
       const store = await accountApi('case-store'); if (visit !== accountVisit) return; accountStore = store;
@@ -509,6 +523,7 @@ function renderAccountPage() {
   else if (currentAccountPage === '/businesses') window.businessUi.render();
   else if (currentAccountPage === '/town') window.townUi.render();
   else if (currentAccountPage === '/stores') window.storeUi.render();
+  else if (currentAccountPage === '/loans') window.loansUi.render();
   else if (currentAccountPage === '/skills') window.skillsUi.render();
   else if (currentAccountPage === '/shop') renderShop();
   else if (currentAccountPage === '/inventory') renderInventory();
