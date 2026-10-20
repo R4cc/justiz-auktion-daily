@@ -111,6 +111,21 @@ window.changelogUi = (() => {
     }
   ];
 
+  // Compare entry identities rather than dates so multiple same-day updates
+  // reappear as NEW. One storage value replaces the previous revision.
+  const revision = JSON.stringify(entries.map(entry => [entry.date, entry.title || entry.en || entry.de]));
+  const seenKey = 'jg:changelog-seen';
+  let seenInMemory = false;
+  function hasUnread() {
+    if (!entries.length || seenInMemory) return false;
+    try { return localStorage.getItem(seenKey) !== revision; } catch { return true; }
+  }
+  function markRead() {
+    seenInMemory = true;
+    try { localStorage.setItem(seenKey, revision); } catch {}
+    window.updateNavigation?.();
+  }
+
   function render() {
     const releases = new Map();
     for (const entry of entries) {
@@ -127,7 +142,15 @@ window.changelogUi = (() => {
           : `<ul><li>${accountEscape(t(entry.en, entry.de))}</li></ul>`}</div>
       </li>`).join('')}</ol></li>`).join('')}</ol>
     </div>`;
+    markRead();
   }
 
-  return { render };
+  window.addEventListener('storage', event => {
+    if (event.key === seenKey || event.key === null) window.updateNavigation?.();
+  });
+  return { render, hasUnread };
 })();
+
+// Core navigation initializes before this deferred script. Refresh its badge
+// once the curated entries are available, without waiting for a page visit.
+window.updateNavigation?.();

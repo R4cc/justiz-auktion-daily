@@ -227,7 +227,9 @@ function updateNavigation() {
     if (link.id !== 'header-auth') {
       link.innerHTML = sidebarLinkMarkup(link.getAttribute('href'), labels[link.getAttribute('href')] || link.textContent);
       if(link.pathname==='/skills' && account?.skills?.available){ const badge=document.createElement('span');badge.className='skill-nav-points';badge.textContent=account.skills.available;badge.setAttribute('aria-label',t(`${account.skills.available} skill points available`,`${account.skills.available} Skillpunkte verfügbar`));link.append(badge); }
-      const isNew = Boolean(link.dataset.newEntry && !sidebarEntrySeen(link.dataset.newEntry));
+      const isNew = link.pathname === '/changelog'
+        ? Boolean(window.changelogUi?.hasUnread())
+        : Boolean(link.dataset.newEntry && !sidebarEntrySeen(link.dataset.newEntry));
       link.classList.toggle('has-new-tag', isNew);
       if (isNew) {
         const tag = document.createElement('span');
