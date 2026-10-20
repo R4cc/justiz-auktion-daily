@@ -31,15 +31,15 @@ test('product nouns beat incidental brands, colors, model words and legal boiler
   assert.equal(auctionSelectionCategory({ title: 'Fujitsu Lifebook', description: 'Versteigerung gemäß ZPO § 814.' }), 'Elektronik');
 });
 
-test('case themes and store types distinguish real cars, parts, toys, wine and other drinks', () => {
+test('case themes distinguish cars from other vehicles while stores accept the vehicle category', () => {
   for (const title of ['Mazda 3', 'Cupra Formentor', 'Chevrolet Sport Coupe', 'MINI One', 'Land Rover Discovery']) {
     assert.equal(isCarAuction({ title }), true, title);
     assert.equal(matchesTheme({ title }, 'cars'), true, title);
     assert.equal(businessTypeForItem({ title }), 'cars', title);
   }
-  for (const title of ['BMW Reifen', 'Ford Dachfahrradträger', 'Audi Scheinwerfer', 'Ducati Kraftrad', 'Ford Modellauto', 'Tom Ford Brille']) {
+  for (const [title, type] of [['BMW Reifen', 'cars'], ['Ford Dachfahrradträger', 'cars'], ['Audi Scheinwerfer', 'cars'], ['Ducati Kraftrad', 'cars'], ['Ford Modellauto', 'toys'], ['Tom Ford Brille', null]]) {
     assert.equal(isCarAuction({ title }), false, title);
-    assert.notEqual(businessTypeForItem({ title }), 'cars', title);
+    assert.equal(businessTypeForItem({ title }), type, title);
   }
   for (const title of ['Kaffee', 'Whisky', 'Rum', 'Tee', 'Wodka']) {
     assert.equal(isWineAuction({ title }), false, title);

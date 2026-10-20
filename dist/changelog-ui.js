@@ -2,6 +2,12 @@ window.changelogUi = (() => {
   // Curated manually. Only update for a feature when the user explicitly asks.
   const entries = [
     {
+      date: '2026-10-20', title: 'Car Lot Stock',
+      changes: [
+        {en:'Car lots now accept all items categorized as Vehicles, including motorcycles, scooters, trailers, tires and vehicle accessories. Existing inventory can be stocked too.',de:'Autohäuser nehmen jetzt alle Artikel der Kategorie Fahrzeuge an, einschließlich Motorrädern, Rollern, Anhängern, Reifen und Fahrzeugzubehör. Das gilt auch für vorhandene Inventarartikel.'}
+      ]
+    },
+    {
       date: '2026-10-19', title: 'Palette Return Protection',
       changes: [
         {en:'Mystery palettes now have an 80% chance of contents worth at least 110% of the winning price. Every opening returns at least 90%, limiting the opening-value loss to 10%. Extra item quantities cover any shortfall; jackpots remain.',de:'Überraschungspaletten haben jetzt 80% Chance auf Inhalte im Wert von mindestens 110% des Gewinnerpreises. Jede Öffnung liefert mindestens 90%, sodass der Wertverlust beim Öffnen höchstens 10% beträgt. Zusätzliche Artikelmengen gleichen Fehlbeträge aus; Jackpots bleiben erhalten.'},

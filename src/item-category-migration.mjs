@@ -94,7 +94,7 @@ export function reconcileCategorizedStock(db, { all = false, dryRun = false, pro
     WHERE s.sold_at IS NULL AND i.sold_at IS NULL AND i.user_id=b.user_id`;
   for (const row of db.prepare(ownedStock).iterate()) {
     const item = project ? project(JSON.parse(row.item)) : JSON.parse(row.item);
-    const type = Object.hasOwn(item, 'businessCategory') ? item.businessCategory : classifiedBusinessType(item, item.category);
+    const type = item.businessCategory ?? classifiedBusinessType(item, item.category);
     if (item.categoryVersion !== CATEGORY_CLASSIFICATION_VERSION || type === row.type) continue;
     if (heist?.get(row.inventory_id) || resale?.get(row.inventory_id)) { defer?.run(row.inventory_id); deferred++; continue; }
     remove?.run(row.business_id, row.inventory_id);

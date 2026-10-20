@@ -153,3 +153,19 @@ test('startup upgrades an existing player database once and CLI previews and bac
   closeDataStore(dir);readArchive(dir);
   assert.equal(accounts.db(db=>migrateSavedItemCategories(db)).rows,0);
 });
+
+test('vehicle metadata migration and deferred shelf checks agree with car-lot compatibility', t => {
+  const db = fixture(t);
+  db.exec("INSERT INTO businesses VALUES('right','owner','cars',444)");
+  const vehicle = { title:'BMW Reifen', category:'Fahrzeuge', marketCategory:'vehicles', businessCategory:null,
+    categoryVersion:CATEGORY_CLASSIFICATION_VERSION, price:100 };
+  owned(db, 'vehicle', vehicle); shelf(db, 'vehicle', 'right');
+  db.exec('CREATE TABLE item_category_pending_stock(inventory_id TEXT PRIMARY KEY)');
+  db.exec("INSERT INTO item_category_pending_stock VALUES('vehicle')");
+  assert.deepEqual(reconcileCategorizedStock(db), { returned:0, deferred:0 });
+  const report = transaction(db, () => migrateSavedItemCategories(db));
+  assert.equal(report.returnedToInventory, 0);
+  assert.equal(businessTypeForItem(json(db, 'inventory', 'item')), 'cars');
+  assert.equal(json(db, 'inventory', 'item').businessCategory, 'cars');
+  assert.equal(db.prepare('SELECT COUNT(*) AS n FROM business_stock').get().n, 1);
+});

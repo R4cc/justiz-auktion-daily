@@ -125,6 +125,6 @@ export function isCarAuction(auction) {
 export function classifiedBusinessType(item, category = auctionSelectionCategory(item)) {
   if (['case','review-pack'].includes(item.kind)) return null;
   if (isToyAuction(item)) return 'toys';
-  if (category==='Fahrzeuge') return isCarAuction(item)?'cars':null;
+  if (category==='Fahrzeuge') return 'cars';
   return ({'Getränke':'wine','Schmuck & Uhren':'jeweler',Werkzeuge:'hardware',Sonstiges:'hardware',Elektronik:'electronics'})[category] || null;
 }
