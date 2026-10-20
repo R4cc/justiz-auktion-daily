@@ -8,7 +8,7 @@ import { plotLocation } from './town-plots.mjs';
 import { randomInt, randomUUID } from 'node:crypto';
 import { withDatabase, transaction } from './database.mjs';
 import { AccountError } from './errors.mjs';
-import { advanceShop, ensureBusinessSchema, shopStock, SHOP_TYPES, SHOP_SIZES, applyBusinessStock } from './businesses.mjs';
+import { advanceShop, ensureBusinessSchema, shopStock, SHOP_TYPES, SHOP_SIZES, applyBusinessStock, businessUpgrade } from './businesses.mjs';
 import { marketIndexes } from './market.mjs';
 import { inventoryIsLocked } from './resale.mjs';
 import { pushNotification } from './notifications.mjs';
@@ -135,7 +135,7 @@ export function theftQuote(referencePrice, securityGuard, locationMultiplier = 1
 }
 function publicCard(db, shop, viewer, now) {
   return { ...businessAbandonment(shop,now), takeoverPrice: Math.round(SHOP_SIZES.find(size=>size.id===shop.size).cost * SHOP_TYPES.find(type=>type.id===shop.type).costFactor * (plotLocation(db,shop.plot_id)?.priceMultiplier ?? 1)), id: shop.id, ownerId: shop.user_id, owner: viewer ? shop.username : maskUsername(shop.username),
-    location: plotLocation(db, shop.plot_id), name: shop.store_name, motto: shop.store_motto, type: shop.type, size: shop.size, securityGuard: Boolean(shop.security_guard), mischiefEnabled: Boolean(shop.mischief_enabled),
+    location: plotLocation(db, shop.plot_id), name: shop.store_name, motto: shop.store_motto, type: shop.type, size: shop.size, upgrade:businessUpgrade(shop), securityGuard: Boolean(shop.security_guard), mischiefEnabled: Boolean(shop.mischief_enabled),
     stockCount: db.prepare('SELECT COUNT(*) AS n FROM business_stock WHERE business_id = ? AND sold_at IS NULL').get(shop.id).n,
     playerVisits: db.prepare('SELECT COUNT(*) AS n FROM store_visits WHERE business_id = ?').get(shop.id).n,
     ...storeReputation(db, shop, now) };

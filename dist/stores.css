@@ -175,3 +175,8 @@
 .shop-stock-columns>section>h3,.shop-stock-heading>h3{margin:0}.shop-transfer-label{margin-right:auto;font-size:10px;font-weight:650;color:var(--shop-muted)}.shop-stepper{align-items:center}
 .shop-color-jeweler{--shop-color:#9879b0;--shop-roof:#5f4772;--choice-accent:#9879b0;--choice-tint:#ede4f3}
 .shop-color-hardware{--shop-color:#b18143;--shop-roof:#76582d;--choice-accent:#b18143;--choice-tint:#f1e7d4}
+
+.shop-upgrade{margin:18px 0;padding:20px;border:1px solid #d7c58e;border-radius:18px;background:#faf6e7;min-width:0}
+.shop-upgrade header{display:flex;align-items:center;gap:10px;margin-bottom:12px}.shop-upgrade header>span{font-size:26px}.shop-upgrade h3{margin:0;font-size:1.05rem;overflow-wrap:anywhere}
+.shop-upgrade dl{display:grid;grid-template-columns:repeat(auto-fit,minmax(145px,1fr));gap:12px;margin:12px 0}.shop-upgrade dt{font-size:.8rem;color:var(--muted)}.shop-upgrade dd{margin:4px 0 0;font-weight:700;overflow-wrap:anywhere}.shop-upgrade p{line-height:1.5}.shop-upgrade progress{display:block;width:100%;accent-color:#ae7c22;height:12px}.shop-upgrade small{display:block;line-height:1.5}.shop-upgrade button{max-width:100%;white-space:normal}.shop-upgrade-link{display:block;margin-top:12px}.shop-upgrade.is-building{border-color:#bc914b}
+@media(max-width:400px){.shop-upgrade{padding:14px}.shop-upgrade dl{grid-template-columns:1fr}}

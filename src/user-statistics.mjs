@@ -88,6 +88,7 @@ export function syncUserStatistics(db,userId,now=Date.now()) {
   if(row.opening_cost!==null&&row.opening_cost!==undefined)add(`store-cost:${row.id}`,'out:store',{amount:row.opening_cost,at:row.bought_at});
   add(`store-visitors:${row.id}`,'store_visitors',{quantity:row.visitors,at:now});
  }
+ for(const row of rows(db,'business_upgrade_requests','SELECT * FROM business_upgrade_requests WHERE user_id=?',userId))add(`store-upgrade:${row.request_id}`,'out:store',{amount:row.cost,at:row.started_at});
  for(const row of rows(db,'store_visits',`SELECT v.* FROM store_visits v JOIN businesses b ON b.id=v.business_id WHERE b.user_id=?`,userId))add(`player-visit:${row.business_id}:${row.user_id}:${row.day}`,'store_player_visit',{quantity:1,at:row.created_at});
  for(const row of rows(db,'store_receipts','SELECT * FROM store_receipts WHERE user_id=? AND action IN (\'buy\',\'tip\',\'collect-cash\')',userId)){
   if(row.action==='collect-cash'){add(`collect:${row.id}`,'collected',{amount:row.amount,quantity:row.amount>0?1:0,at:row.created_at});continue;}

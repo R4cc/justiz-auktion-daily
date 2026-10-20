@@ -2,6 +2,13 @@ window.changelogUi = (() => {
   // Curated manually. Only update for a feature when the user explicitly asks.
   const entries = [
     {
+      date: '2026-10-20', title: 'Store Upgrades',
+      changes: [
+        {en:'Upgrade an existing store one size at a time for 10% less than buying the target size at the same location. Pop-up to Small takes 2 hours, Small to Medium 8 hours, and Medium to Large 48 hours. Target-size level requirements apply.',de:'Baue bestehende Läden schrittweise aus: 10% günstiger als ein Neukauf der Zielgröße am selben Standort. Vom Straßenstand zu Klein dauert es 2 Stunden, von Klein zu Mittel 8 Stunden und von Mittel zu Groß 48 Stunden. Die Level-Anforderungen der Zielgröße gelten.'},
+        {en:'Stores keep trading at their current size during construction. Larger capacity and visitor traffic activate when the upgrade finishes, even after time offline.',de:'Während des Ausbaus handeln Läden in ihrer bisherigen Größe weiter. Größere Kapazität und mehr Laufkundschaft werden bei Fertigstellung aktiv, auch nach Zeit offline.'}
+      ]
+    },
+    {
       date: '2026-10-20', title: 'Car Lot Stock',
       changes: [
         {en:'Car lots now accept all items categorized as Vehicles, including motorcycles, scooters, trailers, tires and vehicle accessories. Existing inventory can be stocked too.',de:'Autohäuser nehmen jetzt alle Artikel der Kategorie Fahrzeuge an, einschließlich Motorrädern, Rollern, Anhängern, Reifen und Fahrzeugzubehör. Das gilt auch für vorhandene Inventarartikel.'}

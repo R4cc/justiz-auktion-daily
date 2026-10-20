@@ -37,7 +37,8 @@ export function currentNetWorth(db, userId, { now = Date.now(), indexes = market
     FROM primary_palette_auctions WHERE winner_id=? AND settled_at IS NOT NULL AND revealed_at IS NULL`).get(userId).value : 0;
   if(hasTable(db,'stock_palette_purchases')) sealedPalettes+=db.prepare('SELECT COALESCE(SUM(cost),0) AS value FROM stock_palette_purchases WHERE user_id=? AND revealed_at IS NULL AND seized_at IS NULL').get(userId).value;
   let businesses = 0;
-  if (hasTable(db, 'businesses')) for (const shop of db.prepare('SELECT type,size,plot_id FROM businesses WHERE user_id=?').all(userId)) {
+  if (hasTable(db, 'businesses')) for (const shop of db.prepare('SELECT * FROM businesses WHERE user_id=?').all(userId)) {
+    if (shop.upgrade_size) businesses += shop.upgrade_cost || 0;
     const size = SHOP_SIZES.find(entry => entry.id === shop.size), type = SHOP_TYPES.find(entry => entry.id === shop.type);
     if (size && type) businesses += Math.round(size.cost * type.costFactor * (plotLocation(db, shop.plot_id)?.priceMultiplier ?? 1));
   }

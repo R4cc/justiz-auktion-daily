@@ -25,7 +25,7 @@ export function ensureBusinessAbandonmentSchema(db, now) {
 export function businessAbandonment(shop, now) {
   const lastRestockedAt = shop.last_restock_at ?? shop.bought_at;
   const abandonedAt = lastRestockedAt + BUSINESS_ABANDONMENT_MS;
-  return { lastRestockedAt, abandonedAt, abandoned: !shop.retired && now >= abandonedAt };
+  return { lastRestockedAt, abandonedAt, abandoned: !shop.retired && !(shop.upgrade_size && now < shop.upgrade_ends_at) && now >= abandonedAt };
 }
 
 export function recordBusinessRestock(db, shopId, inventoryIds, now) {

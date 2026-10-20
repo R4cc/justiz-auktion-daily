@@ -1,7 +1,7 @@
 import { businessAbandonment } from './business-abandonment.mjs';
 import { storeReputation } from './store-reputation.mjs';
 import { withDatabase, transaction } from './database.mjs';
-import { ensureBusinessSchema, advanceShop, SHOP_TYPES, SHOP_SIZES, MAX_STORES_PER_USER, businessTypeForItem } from './businesses.mjs';
+import { ensureBusinessSchema, advanceShop, SHOP_TYPES, SHOP_SIZES, MAX_STORES_PER_USER, businessTypeForItem, businessUpgrade } from './businesses.mjs';
 import { inventoryIsLocked } from './resale.mjs';
 import { sealedPaletteInventoryIds } from './palette-auctions.mjs';
 import { TOWN_DISTRICTS, TOWN_STREETS, plotLocation } from './town-plots.mjs';
@@ -20,7 +20,7 @@ export function townMap(dataDir, viewer = null, { now = Date.now() } = {}) {
       return {id:plot.id,...location,occupied:Boolean(shop),costs:Object.fromEntries(SHOP_TYPES.map(type=>[type.id,Math.round(size.cost*type.costFactor*location.priceMultiplier)])),
         capacity:size.capacity,carCapacity:size.carCapacity,requiredLevel:size.requiredLevel,
         ...(shop && !shop.retired ? {...businessAbandonment(shop,now),abandonedBusinessId:shop.id,takeoverType:shop.type,takeoverPrice:Math.round(size.cost*SHOP_TYPES.find(type=>type.id===shop.type).costFactor*location.priceMultiplier)} : {abandoned:false}),
-        business:shop && !shop.banned && !shop.npc ? {...storeReputation(db,shop,now),...businessAbandonment(shop,now),id:shop.id,type:shop.type,name:shop.store_name,owner:player ? shop.username : maskUsername(shop.username),own:player?.id===shop.user_id,
+        business:shop && !shop.banned && !shop.npc ? {...storeReputation(db,shop,now),...businessAbandonment(shop,now),id:shop.id,type:shop.type,name:shop.store_name,owner:player ? shop.username : maskUsername(shop.username),own:player?.id===shop.user_id,upgrade:businessUpgrade(shop),
           stockCount:db.prepare('SELECT COUNT(*) AS n FROM business_stock WHERE business_id=? AND sold_at IS NULL').get(shop.id).n} : null};
     });
     const sealed = sealedPaletteInventoryIds(db), compatibleStock = Object.fromEntries(SHOP_TYPES.map(type=>[type.id,0]));

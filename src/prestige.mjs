@@ -49,7 +49,7 @@ export function prestigeAccount(dataDir, user, { buffId, expectedCount, requestI
     db.prepare("INSERT OR IGNORE INTO users(id,username,password_hash,npc,tokens,created_at) VALUES(?,'Retired Assets','disabled',1,0,?)").run(retired, now);
     db.prepare("UPDATE resale_auctions SET status='cancelled',closed_at=?,settled_at=? WHERE seller_id=? AND status='active' AND current_bidder_id IS NULL").run(now, now, row.id);
     db.prepare('DELETE FROM business_stock WHERE business_id IN (SELECT id FROM businesses WHERE user_id=?)').run(row.id);
-    db.prepare('UPDATE businesses SET user_id=?,retired=1,plot_id=NULL,cash_balance=0,traffic_popularity=0 WHERE user_id=?').run(retired, row.id);
+    db.prepare('UPDATE businesses SET user_id=?,retired=1,plot_id=NULL,cash_balance=0,traffic_popularity=0,upgrade_size=NULL,upgrade_started_at=NULL,upgrade_ends_at=NULL,upgrade_cost=NULL WHERE user_id=?').run(retired, row.id);
     db.prepare('UPDATE inventory SET user_id=?,sold_at=COALESCE(sold_at,?) WHERE user_id=?').run(retired, now, row.id);
     if (has(db, 'stock_palette_purchases')) db.prepare('UPDATE stock_palette_purchases SET seized_at=COALESCE(seized_at,?) WHERE user_id=? AND revealed_at IS NULL').run(now, row.id);
     if (has(db, 'primary_palette_mystery_stock')) db.prepare(`UPDATE primary_palette_mystery_stock SET seized_at=COALESCE(seized_at,?)

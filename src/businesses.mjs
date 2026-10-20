@@ -30,6 +30,8 @@ const STOCK_SELLER_ID = 'npc-stock-supply';
 export const DEFAULT_PROFIT_MARGIN = ECONOMY_BALANCE.businessDefaultMargin;
 export const MAX_PROFIT_MARGIN = 100;
 export const MAX_STORES_PER_USER = 3;
+export const STORE_UPGRADE_DISCOUNT = 10;
+export const STORE_UPGRADE_HOURS = Object.freeze({popup:2, tiny:8, medium:48});
 const fail = (code, status = 400) => { throw new AccountError(code, status); };
 const hashNumber = value => parseInt(createHash('sha256').update(value).digest('hex').slice(0, 8), 16) / 0x100000000;
 
@@ -96,6 +98,12 @@ export function ensureBusinessSchema(db, { now = Date.now() } = {}) {
     inventory_id TEXT NOT NULL, price INTEGER NOT NULL, sold_at INTEGER NOT NULL
   ) STRICT;
   CREATE INDEX IF NOT EXISTS business_sales_time ON business_sales(business_id, sold_at);
+  CREATE TABLE IF NOT EXISTS business_upgrade_requests (
+    user_id TEXT NOT NULL REFERENCES users(id), request_id TEXT NOT NULL,
+    business_id TEXT NOT NULL REFERENCES businesses(id), payload TEXT NOT NULL,
+    cost INTEGER NOT NULL CHECK(cost>0), started_at INTEGER NOT NULL,
+    result TEXT NOT NULL, PRIMARY KEY(user_id,request_id)
+  ) STRICT;
   CREATE TABLE IF NOT EXISTS wholesale_auctions (
     id TEXT PRIMARY KEY, stock_id TEXT NOT NULL, starts_at INTEGER NOT NULL, ends_at INTEGER NOT NULL,
     reserve INTEGER NOT NULL, current_bid INTEGER, bidder_id TEXT REFERENCES users(id),
@@ -116,7 +124,7 @@ export function ensureBusinessSchema(db, { now = Date.now() } = {}) {
   if (guardColumns.some(column => column.name === 'goose_guard') && !guardColumns.some(column => column.name === 'security_guard')) {
     db.exec('ALTER TABLE businesses RENAME COLUMN goose_guard TO security_guard');
   }
-  for (const [name, definition] of [['opening_cost', 'INTEGER'], ['retired', 'INTEGER NOT NULL DEFAULT 0'], ['popularity_factors', 'TEXT'], ['store_name', "TEXT NOT NULL DEFAULT ''"], ['store_motto', "TEXT NOT NULL DEFAULT ''"], ['security_guard', 'INTEGER NOT NULL DEFAULT 0'], ['security_guard_profit', 'INTEGER NOT NULL DEFAULT 0'], ['security_guard_fees', 'INTEGER NOT NULL DEFAULT 0 CHECK(security_guard_fees>=0)'], ['mischief_enabled','INTEGER NOT NULL DEFAULT 0 CHECK(mischief_enabled IN (0,1))']]) {
+  for (const [name, definition] of [['upgrade_size','TEXT'], ['upgrade_started_at','INTEGER'], ['upgrade_ends_at','INTEGER'], ['upgrade_cost','INTEGER'], ['opening_cost', 'INTEGER'], ['retired', 'INTEGER NOT NULL DEFAULT 0'], ['popularity_factors', 'TEXT'], ['store_name', "TEXT NOT NULL DEFAULT ''"], ['store_motto', "TEXT NOT NULL DEFAULT ''"], ['security_guard', 'INTEGER NOT NULL DEFAULT 0'], ['security_guard_profit', 'INTEGER NOT NULL DEFAULT 0'], ['security_guard_fees', 'INTEGER NOT NULL DEFAULT 0 CHECK(security_guard_fees>=0)'], ['mischief_enabled','INTEGER NOT NULL DEFAULT 0 CHECK(mischief_enabled IN (0,1))']]) {
     if (!db.prepare('PRAGMA table_info(businesses)').all().some(column => column.name === name)) db.exec(`ALTER TABLE businesses ADD COLUMN ${name} ${definition}`);
   }
   // Keep sale history independently of physical shelf rows: a player purchase
@@ -212,7 +220,30 @@ function shopMetrics(db, row, stock, at) {
     factors:{version:2,varietyFactor,valueFactor,fillFactor,variety,count:stock.length,capacity,updatedAt:at,basePopularity:Math.round(popularity*100)/100} };
 }
 
+// Settle old-size trading first so an offline upgrade never backdates larger
+// capacity or traffic. Every runtime/store read uses this same transition.
 export function advanceShop(db, row, now) {
+  if (row.upgrade_size && row.upgrade_ends_at <= now && !row.retired) {
+    const completedAt = row.upgrade_ends_at, target = shopSize(row.upgrade_size);
+    advanceShopAtSize(db, row, completedAt);
+    db.prepare(`UPDATE businesses SET size=?,upgrade_size=NULL,upgrade_started_at=NULL,
+      upgrade_ends_at=NULL,upgrade_cost=NULL WHERE id=?`).run(target.id,row.id);
+    if (row.plot_id) db.prepare('UPDATE town_plots SET size=? WHERE id=?').run(target.id,row.plot_id);
+    Object.assign(row,db.prepare('SELECT * FROM businesses WHERE id=?').get(row.id));
+    const metrics = shopMetrics(db,row,shopStock(db,row.id,row.type,row.profit_margin,completedAt),completedAt);
+    db.prepare('UPDATE businesses SET traffic_popularity=?,popularity_factors=? WHERE id=?')
+      .run(metrics.popularity,JSON.stringify(metrics.factors),row.id);
+    row.traffic_popularity=metrics.popularity;row.popularity_factors=JSON.stringify(metrics.factors);
+    pushNotification(db,row.user_id,{type:'store',sourceKey:`store-upgrade:${row.id}:${completedAt}`,
+      titleEn:'Store upgrade complete',titleDe:'Ladenausbau abgeschlossen',
+      bodyEn:`${row.store_name || shopType(row.type).name}: ${target.name}`,
+      bodyDe:`${row.store_name || shopType(row.type).nameDe}: ${target.nameDe}`,
+      href:`/stores?shop=${encodeURIComponent(row.id)}`},completedAt);
+  }
+  advanceShopAtSize(db,row,now);
+}
+
+function advanceShopAtSize(db, row, now) {
   let stock = shopStock(db, row.id, row.type, row.profit_margin, now);
   let visitors = 0, sales = 0, revenue = 0, guardFees = 0;
   const until = Math.floor(now / HOUR) * HOUR;
@@ -316,6 +347,52 @@ export function restockPrestigeStores(db, now, userId = null) {
   return stocked;
 }
 
+export function businessUpgrade(row) {
+  return row.upgrade_size ? {fromSize:row.size,toSize:row.upgrade_size,startedAt:row.upgrade_started_at,
+    completesAt:row.upgrade_ends_at,cost:row.upgrade_cost} : null;
+}
+
+function upgradeOffer(db, row) {
+  const index=SHOP_SIZES.findIndex(size=>size.id===row.size), target=SHOP_SIZES[index+1];
+  if (!target || row.retired || row.upgrade_size) return null;
+  const purchaseCost=Math.round(target.cost*shopType(row.type).costFactor*(plotLocation(db,row.plot_id)?.priceMultiplier ?? 1));
+  const player=db.prepare('SELECT xp FROM users WHERE id=?').get(row.user_id);
+  return {targetSize:target.id,cost:Math.round(purchaseCost*(100-STORE_UPGRADE_DISCOUNT)/100),purchaseCost,
+    discountPercent:STORE_UPGRADE_DISCOUNT,durationHours:STORE_UPGRADE_HOURS[row.size],
+    requiredLevel:target.requiredLevel,unlocked:levelForXp(player?.xp||0)>=target.requiredLevel,
+    capacity:shopCapacity(row.type,target),visitorsPerHour:target.visitorsPerHour};
+}
+
+export function upgradeBusiness(dataDir,user,{shopId,targetSize,expectedPrice,requestId}={}, {now=Date.now()}={}) {
+  if(typeof shopId!=='string'||shopId.length>100||typeof targetSize!=='string'||
+    !Number.isSafeInteger(expectedPrice)||expectedPrice<1||typeof requestId!=='string'||!/^[a-zA-Z0-9-]{16,80}$/.test(requestId))fail('invalid_request');
+  return withDatabase(dataDir,db=>transaction(db,()=>{
+    ensureBusinessSchema(db,{now});const player=activeUser(db,user);
+    if(db.prepare('SELECT must_change_password FROM users WHERE id=?').get(player.id).must_change_password)fail('password_change_required',403);
+    assertPlayerFree(db,player.id,now);
+    const payload=JSON.stringify({shopId,targetSize,expectedPrice});
+    const prior=db.prepare('SELECT payload,result FROM business_upgrade_requests WHERE user_id=? AND request_id=?').get(player.id,requestId);
+    if(prior){if(prior.payload!==payload)fail('request_conflict',409);return JSON.parse(prior.result);}
+    const shop=db.prepare('SELECT * FROM businesses WHERE id=? AND user_id=? AND retired=0').get(shopId,player.id);
+    if(!shop)fail('business_not_found',404);
+    advanceShop(db,shop,now);
+    if(shop.upgrade_size)fail('store_upgrade_pending',409);
+    const offer=upgradeOffer(db,shop);
+    if(!offer||offer.targetSize!==targetSize)fail('invalid_store_upgrade',409);
+    if(!offer.unlocked)fail('store_level_required',403);
+    if(businessAbandonment(shop,now).abandoned)fail('store_upgrade_abandoned',409);
+    if(offer.cost!==expectedPrice)fail('store_upgrade_price_changed',409);
+    if(!db.prepare('UPDATE users SET tokens=tokens-? WHERE id=? AND tokens>=?').run(offer.cost,player.id,offer.cost).changes)fail('insufficient_tokens',409);
+    const completesAt=now+offer.durationHours*HOUR;
+    db.prepare('UPDATE businesses SET upgrade_size=?,upgrade_started_at=?,upgrade_ends_at=?,upgrade_cost=? WHERE id=?')
+      .run(targetSize,now,completesAt,offer.cost,shop.id);
+    const result={shopId,fromSize:shop.size,toSize:targetSize,cost:offer.cost,startedAt:now,completesAt};
+    db.prepare('INSERT INTO business_upgrade_requests VALUES(?,?,?,?,?,?,?)')
+      .run(player.id,requestId,shop.id,payload,offer.cost,now,JSON.stringify(result));
+    return result;
+  }));
+}
+
 function publicShop(db, row, now = Date.now()) {
   const stock = shopStock(db, row.id, row.type, row.profit_margin, now);
   const dayStart = Math.floor(now / (24 * HOUR)) * 24 * HOUR;
@@ -324,6 +401,7 @@ function publicShop(db, row, now = Date.now()) {
     .get(row.id, dayStart, dayStart + 24 * HOUR);
   const {factors,...metrics}=shopMetrics(db,row,stock,now);
   return { id: row.id, type: row.type, size: row.size, boughtAt: row.bought_at,
+    upgrade:businessUpgrade(row),nextUpgrade:upgradeOffer(db,row),
     npcTheftChancePercent: npcStoreTheftChance(row.security_guard, plotLocation(db,row.plot_id)?.theftMultiplier ?? 1),
     ...businessAbandonment(row,now), takeoverPrice: Math.round(shopSize(row.size).cost * shopType(row.type).costFactor * (plotLocation(db,row.plot_id)?.priceMultiplier ?? 1)),
     location: plotLocation(db, row.plot_id), name: row.store_name, motto: row.store_motto, securityGuard: Boolean(row.security_guard), securityGuardProfitPercent: ECONOMY_BALANCE.securityGuardProfitPercent, securityGuardFees: row.security_guard_fees, mischiefEnabled: Boolean(row.mischief_enabled),
@@ -388,6 +466,7 @@ export function takeOverBusiness(dataDir, user, { shopId, expectedPrice, request
     }
     const shop = db.prepare(`SELECT b.* FROM businesses b JOIN users u ON u.id=b.user_id
       WHERE b.id=? AND b.retired=0 AND u.npc=0`).get(shopId);
+    if (shop) advanceShop(db,shop,now);
     if (!shop || !shop.plot_id || shop.user_id === player.id || !businessAbandonment(shop,now).abandoned) fail('store_not_abandoned',409);
     if (db.prepare('SELECT COUNT(*) AS n FROM businesses WHERE user_id=? AND retired=0').get(player.id).n >= MAX_STORES_PER_USER) fail('store_limit_reached',409);
     const size = shopSize(shop.size), type = shopType(shop.type), location = plotLocation(db,shop.plot_id);
@@ -402,7 +481,6 @@ export function takeOverBusiness(dataDir, user, { shopId, expectedPrice, request
         WHERE business_id=? AND status='active' AND blackjack IS NULL AND expires_at<=?`).run(shop.id,now);
       if (db.prepare("SELECT 1 FROM store_heists WHERE business_id=? AND retired=0 AND status IN ('active','police') LIMIT 1").get(shop.id)) fail('store_takeover_pending',409);
     }
-    advanceShop(db,shop,now);
     const stock = shopStock(db,shop.id,shop.type,shop.profit_margin,now);
     if (stock.some(item => inventoryIsLocked(db,item.id))) fail('store_takeover_pending',409);
     const cash = db.prepare('SELECT cash_balance FROM businesses WHERE id=?').get(shop.id).cash_balance;
