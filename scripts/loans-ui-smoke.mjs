@@ -1,4 +1,4 @@
-// Visitor UI regression with real one-item purchases and isolated store stock.
+// Loan UI regression with real borrowing, repayment and saved contracts.
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
 import { readFile,mkdtemp,rm } from 'node:fs/promises';
@@ -12,7 +12,7 @@ import { buyBusiness,stockBusiness } from '../src/businesses.mjs';
 import { customizeStore,visitStore } from '../src/storefronts.mjs';
 import { featureFlags } from '../src/features.mjs';
 const {chromium}=await import(process.env.PLAYWRIGHT_MODULE||'/home/lxadm/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules/playwright/index.mjs');
-const root=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..'),dir=await mkdtemp('/tmp/jg-visitor-storefront-');
+const root=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..'),dir=await mkdtemp('/tmp/jg-loans-browser-');
 const env={ADMIN_USERNAME:'admin',ADMIN_PASSWORD:'visitor-browser-password',COOKIE_SECURE:'false'},flags=featureFlags(env),now=Date.now();
 const json=(res,status,value)=>{res.writeHead(status,{'content-type':'application/json'});res.end(JSON.stringify(value));};
 const seed=JSON.parse(await readFile(path.join(root,'seed/auctions.json'),'utf8'));upsertAuctions(dir,seed.auctions);
@@ -39,9 +39,16 @@ try{
  const overflow=async()=>assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1),'page overflow');
  for(const width of [1440,768,390,320])for(const lang of ['en','de']){
   await page.setViewportSize({width,height:1000});await page.goto(base+'/loans');await page.waitForSelector('.loan-offer');await language(lang);
-  assert.equal(await page.locator('.loan-offer').count(),4);assert.equal(await page.locator('[data-loan="review"]:enabled').count(),4);await overflow();
+  assert.equal(await page.locator('.loan-offer').count(),4);
+  for(const [index,rate] of [3,4,5,6].entries()){
+   const rows=page.locator('.loan-offer').nth(index).locator('dl > div');
+   assert.match(await rows.nth(1).locator('dd').innerText(),new RegExp(`^${rate}%`));
+   assert.match(await rows.nth(2).innerText(),/5/);assert.match(await rows.nth(2).locator('dd').innerText(),/^36%/);
+  }
+  assert.equal(await page.locator('[data-loan="review"]:enabled').count(),4);await overflow();
   await page.locator('[data-loan="review"][data-offer="starter"]').click();await page.waitForSelector('.loan-confirm[open]');
-  assert.match(await page.locator('.loan-confirm').innerText(),/720/);assert.match(await page.locator('.loan-confirm').innerText(),/960/);
+  assert.match(await page.locator('.loan-confirm').innerText(),/515/);assert.match(await page.locator('.loan-confirm').innerText(),/575/);
+  assert.match(await page.locator('.loan-confirm').innerText(),/3%/);assert.match(await page.locator('.loan-confirm').innerText(),/36%/);
   const box=await page.locator('.loan-confirm').boundingBox();assert.ok(box.x>=0&&box.x+box.width<=width);
   await page.keyboard.press('Escape');assert.equal(await page.locator('.loan-confirm[open]').count(),0);
   assert.ok(await page.locator('[data-loan="review"][data-offer="starter"]').evaluate(el=>el===document.activeElement));
@@ -68,7 +75,7 @@ try{
  // Advance a saved contract by changing fixture timestamps, without touching the live clock.
  accounts.db(db=>{db.prepare('UPDATE player_loans SET created_at=created_at-?').run(2*86400000);});
  await page.reload();await page.waitForSelector('[data-loan="review"]:enabled');await page.locator('[data-loan="review"][data-offer="starter"]').click();await page.locator('[data-loan="borrow"]').click();await page.waitForSelector('.loan-active');
- accounts.db(db=>{db.prepare('UPDATE player_loans SET created_at=created_at-?,due_at=due_at-?,accrued_at=accrued_at-? WHERE paid_at IS NULL').run(4*86400000,4*86400000,4*86400000);db.prepare('UPDATE users SET tokens=100 WHERE id=?').run(buyer.id);});
+ accounts.db(db=>{db.prepare('UPDATE player_loans SET created_at=created_at-?,due_at=due_at-?,accrued_at=accrued_at-? WHERE paid_at IS NULL').run(6*86400000,6*86400000,6*86400000);db.prepare('UPDATE users SET tokens=100 WHERE id=?').run(buyer.id);});
  for(const lang of ['en','de']){await page.goto(base+'/loans');await page.waitForSelector('.loan-active.is-overdue');await language(lang);await overflow();assert.ok(await page.locator('[data-loan-repay] button').isDisabled());}
  assert.equal(accounts.db(db=>db.prepare('SELECT tokens FROM users WHERE id=?').get(buyer.id).tokens),0);
  await page.screenshot({path:'/tmp/loans-overdue-mobile.png',fullPage:true});

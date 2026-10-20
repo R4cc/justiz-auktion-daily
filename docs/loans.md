@@ -2,18 +2,18 @@
 
 The `/loans` page offers in-game credit under Trading. Both requirements must be met when borrowing, using the current server-side level and net worth after all debts.
 
-| Loan | Cash received | Level | Minimum net worth | Fee | Interest per real day |
-|---|---:|---:|---:|---:|---:|
-| Starter | J€500 | 2 | J€2,000 | J€100 | J€120 |
-| Trader | J€2,500 | 4 | J€10,000 | J€500 | J€600 |
-| Business | J€10,000 | 7 | J€25,000 | J€2,000 | J€2,400 |
-| Enterprise | J€50,000 | 10 | J€125,000 | J€10,000 | J€12,000 |
+| Loan | Cash received | Level | Minimum net worth | Fee | Daily interest for first 5 days | Daily interest after 5 days |
+|---|---:|---:|---:|---:|---:|---:|
+| Starter | J€500 | 2 | J€2,000 | J€0 | 3% (J€15) | 36% (J€180) |
+| Trader | J€2,500 | 4 | J€10,000 | J€0 | 4% (J€100) | 36% (J€900) |
+| Business | J€10,000 | 7 | J€25,000 | J€0 | 5% (J€500) | 36% (J€3,600) |
+| Enterprise | J€50,000 | 10 | J€125,000 | J€0 | 6% (J€3,000) | 36% (J€18,000) |
 
-Every offer has a 20% borrowing fee added to the debt immediately, a three-real-day term, and 24% simple daily interest on remaining principal. After maturity, the daily rate becomes 36%. Fees and accrued interest do not themselves earn interest. Time passes offline; there are no free daily windows or reset-time tricks. A confirmation shows cash received and debt immediately, after 24 hours and after three days. For example, borrowing J€500 creates J€600 debt, rising to J€720 after one day, J€960 at maturity and J€1,140 after four days without payments.
+New offers have no borrowing fee and a five-real-day term. Simple daily interest on remaining principal starts at 3% for Starter, 4% for Trader, 5% for Business and 6% for Enterprise. At maturity, the daily rate jumps to 36%. Accrued interest does not itself earn interest. Time passes offline; there are no free daily windows or reset-time tricks. A confirmation shows cash received and debt immediately, after 24 hours and at the five-day deadline, alongside both daily rates. For example, borrowing J€500 creates J€500 debt, rising to J€515 after one day, J€575 at maturity and J€755 after six days without payments. Daily J€ amounts in the table assume the full original principal remains unpaid.
 
-One loan can be active at a time. At least 24 hours must pass from the previous borrowing before another loan can begin, even if it is repaid immediately. Borrowing is at most 25% of the required equity for Starter and Trader, and 40% for Business and Enterprise, and borrowed cash never raises net worth: the full remaining principal, fee and interest are liabilities. Loan principal is not earned income, gives no XP or Prestige profit bonus, and cannot unlock a larger loan by itself. These costs and limits make credit expensive temporary liquidity rather than a recurring reward.
+One loan can be active at a time. At least 24 hours must pass from the previous borrowing before another loan can begin, even if it is repaid immediately. Borrowing is at most 25% of the required equity for Starter and Trader, and 40% for Business and Enterprise, and borrowed cash never raises net worth: the full remaining principal, fee and interest are liabilities. Loan principal is not earned income, gives no XP or Prestige profit bonus, and cannot unlock a larger loan by itself. The steep overdue rate and borrowing limits keep credit temporary liquidity rather than a recurring reward.
 
-Partial and full repayments use available wallet cash, covering fees and interest first and principal next. Only principal reduction lowers future interest. Fractions of J€ carry at fixed precision, independent of polling frequency; settling the last fractional interest token rounds up to one J€. Server time and frozen contract rates determine the balance. Later offer changes affect new contracts only.
+Partial and full repayments use available wallet cash, covering fees and interest first and principal next. Only principal reduction lowers future interest. Fractions of J€ carry at fixed precision, independent of polling frequency; settling the last fractional interest token rounds up to one J€. Server time and frozen contract rates determine the balance. Later offer changes affect new contracts only. Existing loans retain their saved fees, rates and deadlines, including the original 20% fee, 24% daily rate, three-day term and 36% overdue rate.
 
 After maturity, the economy runtime and profile/loan reads automatically collect available wallet cash up to the debt. Further cash income can be collected on subsequent ticks or reads. Cash never becomes negative; escrow, inventory and store tills are not seized by this feature. Remaining debt keeps accruing, prevents a second loan and blocks Prestige. Settled loan history, cooldowns and transaction receipts survive Prestige. An explicit administrative economy reset clears loans and receipts together with all other economic state.
 

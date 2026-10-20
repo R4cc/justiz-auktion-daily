@@ -36,8 +36,8 @@ test('all four offers require both real level and net worth; borrowed cash canno
   f.set(offer.requiredNetWorth);assert.equal(f.view().offers.find(o=>o.id===offer.id).available,true);
  }
  f.set(2000);const before=f.worth().total,result=f.borrow();
- assert.equal(f.balance(),2500);assert.equal(result.loans.active.total,600);
- assert.equal(f.worth().total,before-100);assert.equal(f.worth().loanDebt,600);
+ assert.equal(f.balance(),2500);assert.equal(result.loans.active.total,500);
+ assert.equal(f.worth().total,before);assert.equal(f.worth().loanDebt,500);
  assert.equal(f.view().offers.find(o=>o.id==='trader').unlocked,false);
  assert.throws(()=>f.borrow('enterprise'),/loan_active/);
 });
@@ -51,45 +51,49 @@ test('borrowing checks frozen terms, isolates actors and is receipt-protected ac
  assert.throws(()=>repayLoan(f.dir,f.other,{loanId:result.receipt.loanId,amount:1,requestId:randomUUID()},{now}),/loan_not_found/);
  f.repay(result.receipt.loanId,600);closeDataStore(f.dir);
  assert.deepEqual(f.borrow('starter',requestId).receipt,result.receipt);assert.equal(f.view().active,null);
- assert.equal(f.balance(),299900);
+ assert.equal(f.balance(),300000);
 });
-test('interest accrues continuously offline at 24 percent daily, then 36 percent overdue, with no fee compounding',async t=>{
+test('interest accrues offline at 3 percent daily for five days, then jumps to 36 percent without compounding',async t=>{
  const f=await fixture(t);f.borrow();
- assert.equal(f.view().active.total,600);
- assert.equal(f.view(now+DAY/24).active.total,605);
- assert.equal(f.view(now+DAY).active.total,720);
+ assert.equal(f.view().active.total,500);
+ assert.equal(f.view(now+DAY/24).active.total,501);
+ assert.equal(f.view(now+DAY).active.total,515);
  // Read the pure ledger: the dashboard deliberately collects overdue cash.
  const row=f.accounts.db(db=>db.prepare('SELECT * FROM player_loans').get());
- assert.equal(loanBalance(row,now+3*DAY).total,960);
- assert.equal(loanBalance(row,now+4*DAY).total,1140);
+ assert.equal(row.due_at,now+5*DAY);
+ assert.equal(loanBalance(row,now+5*DAY).total,575);
+ assert.equal(loanBalance(row,now+5.5*DAY).total,665);
+ assert.equal(loanBalance(row,now+6*DAY).total,755);
+ assert.equal(loanBalance(row,now+3*DAY).total,545);
+ assert.equal(loanBalance(row,now+4*DAY).total,560);
  closeDataStore(f.dir);
- assert.equal(f.accounts.db(db=>loanDebt(db,f.user.id,now+2*DAY)),840);
- assert.equal(f.worth(now+2*DAY).total,299660);
+ assert.equal(f.accounts.db(db=>loanDebt(db,f.user.id,now+2*DAY)),530);
+ assert.equal(f.worth(now+2*DAY).total,299970);
 });
 test('read cadence and zero-cash collection do not change interest or round it away',async t=>{
  const f=await fixture(t);f.borrow();f.set(0);
  for(let i=0;i<100;i++)f.view(now+DAY*i/100);
  const before=f.accounts.db(db=>db.prepare('SELECT * FROM player_loans').get());
- assert.equal(loanBalance(before,now+DAY).total,720);
- assert.equal(tickLoans(f.dir,{now:now+4*DAY}).collected,0);
+ assert.equal(loanBalance(before,now+DAY).total,515);
+ assert.equal(tickLoans(f.dir,{now:now+6*DAY}).collected,0);
  const after=f.accounts.db(db=>db.prepare('SELECT * FROM player_loans').get());
  assert.deepEqual(after,before);
- assert.equal(loanBalance(after,now-1000).total,600);
+ assert.equal(loanBalance(after,now-1000).total,500);
 });
 test('partial repayments pay interest first and lower future interest only after reducing principal',async t=>{
  const f=await fixture(t),{receipt}=f.borrow(),id=receipt.loanId;
- const a=f.repay(id,50,randomUUID(),now+DAY);assert.equal(a.loans.active.interest,170);assert.equal(a.loans.active.principal,500);
- const b=f.repay(id,270,randomUUID(),now+DAY);assert.equal(b.loans.active.interest,0);assert.equal(b.loans.active.principal,400);
- const c=f.view(now+2*DAY);assert.equal(c.active.total,496);assert.equal(c.active.interest,96);
+ const a=f.repay(id,10,randomUUID(),now+DAY);assert.equal(a.loans.active.interest,5);assert.equal(a.loans.active.principal,500);
+ const b=f.repay(id,105,randomUUID(),now+DAY);assert.equal(b.loans.active.interest,0);assert.equal(b.loans.active.principal,400);
+ const c=f.view(now+2*DAY);assert.equal(c.active.total,412);assert.equal(c.active.interest,12);
  const paymentId=randomUUID(),paid=f.repay(id,1000,paymentId,now+2*DAY),tokens=f.balance();
- assert.equal(paid.receipt.paid,496);assert.equal(paid.loans.active,null);assert.equal(paid.loans.history[0].repaid,816);
+ assert.equal(paid.receipt.paid,412);assert.equal(paid.loans.active,null);assert.equal(paid.loans.history[0].repaid,527);
  assert.deepEqual(f.repay(id,1000,paymentId,now+2*DAY).receipt,paid.receipt);assert.equal(f.balance(),tokens);
  assert.throws(()=>f.repay(id,999,paymentId),/request_conflict/);
 });
 test('repayments reject invalid amounts, insufficient cash, foreign ids and duplicate terminal loans atomically',async t=>{
  const f=await fixture(t),id=f.borrow().receipt.loanId;
  for(const amount of [0,-1,1.1,'500',null,Infinity,Number.MAX_SAFE_INTEGER+1])assert.throws(()=>f.repay(id,amount),/invalid_loan_payment/);
- f.set(100);assert.throws(()=>f.repay(id,200),/insufficient_tokens/);assert.equal(f.balance(),100);assert.equal(f.view().active.total,600);
+ f.set(100);assert.throws(()=>f.repay(id,200),/insufficient_tokens/);assert.equal(f.balance(),100);assert.equal(f.view().active.total,500);
  assert.throws(()=>f.repay('not-found',1),/loan_not_found/);
  f.set(600);f.repay(id,600);assert.throws(()=>f.repay(id,1),/loan_not_found/);
 });
@@ -99,17 +103,17 @@ test('a failed loan or repayment ledger write rolls back the wallet and permits 
  assert.throws(()=>f.borrow('starter',requestId),/receipt_failed/);assert.equal(f.balance(),300000);assert.equal(f.view().active,null);
  f.accounts.db(db=>db.exec('DROP TRIGGER fail_loan_receipt'));const id=f.borrow('starter',requestId).receipt.loanId;
  f.accounts.db(db=>db.exec("CREATE TRIGGER fail_loan_receipt BEFORE INSERT ON loan_receipts BEGIN SELECT RAISE(ABORT,'receipt_failed'); END"));
- assert.throws(()=>f.repay(id,600,requestId+'repay'),/receipt_failed/);assert.equal(f.balance(),300500);assert.equal(f.view().active.total,600);
+ assert.throws(()=>f.repay(id,600,requestId+'repay'),/receipt_failed/);assert.equal(f.balance(),300500);assert.equal(f.view().active.total,500);
  f.accounts.db(db=>db.exec('DROP TRIGGER fail_loan_receipt'));f.repay(id,600,requestId+'repay');assert.equal(f.view().active,null);
 });
 test('maturity collects wallet cash once and repeatedly collects later income without stealing escrow or items',async t=>{
  const f=await fixture(t);f.borrow();f.set(200);
- assert.equal(tickLoans(f.dir,{now:now+3*DAY-1}).collected,0);
- assert.equal(tickLoans(f.dir,{now:now+3*DAY}).collected,200);assert.equal(f.balance(),0);
- assert.equal(tickLoans(f.dir,{now:now+3*DAY}).collected,0);
- assert.equal(f.view(now+3*DAY).active.total,760);
- f.set(1000);assert.equal(tickLoans(f.dir,{now:now+3*DAY}).collected,760);assert.equal(f.balance(),240);
- assert.equal(f.view(now+3*DAY).active,null);assert.equal(f.view(now+3*DAY).history[0].repaid,960);
+ assert.equal(tickLoans(f.dir,{now:now+5*DAY-1}).collected,0);
+ assert.equal(tickLoans(f.dir,{now:now+5*DAY}).collected,200);assert.equal(f.balance(),0);
+ assert.equal(tickLoans(f.dir,{now:now+5*DAY}).collected,0);
+ assert.equal(f.view(now+5*DAY).active.total,375);
+ f.set(1000);assert.equal(tickLoans(f.dir,{now:now+5*DAY}).collected,375);assert.equal(f.balance(),625);
+ assert.equal(f.view(now+5*DAY).active,null);assert.equal(f.view(now+5*DAY).history[0].repaid,575);
 });
 test('one day borrowing cooldown survives early repayment and Prestige; active debt blocks Prestige',async t=>{
  const f=await fixture(t),id=f.borrow().receipt.loanId;
@@ -124,7 +128,7 @@ test('one day borrowing cooldown survives early repayment and Prestige; active d
 test('borrowing principal never counts as earned income; economy reset removes all liabilities and receipts',async t=>{
  const f=await fixture(t),before=userStatistics(f.dir,f.user,{now});f.borrow();
  const after=userStatistics(f.dir,f.user,{now});assert.deepEqual(after,before);
- assert.equal(f.accounts.profile(f.user).loanDebt,600);
+ assert.equal(f.accounts.profile(f.user).loanDebt,500);
  f.accounts.resetEconomy(f.user,'RESET ECONOMY');assert.equal(f.worth().loanDebt,0);
  for(const table of ['player_loans','loan_receipts'])assert.equal(f.accounts.db(db=>db.prepare(`SELECT COUNT(*) n FROM ${table}`).get().n),0);
 });
@@ -167,7 +171,36 @@ test('independent concurrent borrowers cannot open two loans for the same player
 });
 test('runtime with trading flags off and the next profile read both enforce overdue collection',async t=>{
  const f=await fixture(t);f.borrow();f.set(100);
- const tick=tickEconomy(f.dir,{now:now+3*DAY,flags:{}});assert.deepEqual(tick.failures,[]);assert.equal(tick.loans.collected,100);
- f.set(100);const later=new Accounts(f.dir,{now:()=>now+3*DAY});
- assert.equal(later.profile(f.user).tokens,0);assert.equal(later.profile(f.user).loanDebt,760);
+ const tick=tickEconomy(f.dir,{now:now+5*DAY,flags:{}});assert.deepEqual(tick.failures,[]);assert.equal(tick.loans.collected,100);
+ f.set(100);const later=new Accounts(f.dir,{now:()=>now+5*DAY});
+ assert.equal(later.profile(f.user).tokens,0);assert.equal(later.profile(f.user).loanDebt,375);
+});
+
+test('larger new loans start at higher daily interest and every tier jumps after five days', async t => {
+ const f=await fixture(t);
+ const expected=[['starter',3,15,575,755],['trader',4,100,3000,3900],['business',5,500,12500,16100],['enterprise',6,3000,65000,83000]];
+ for(const [index,[id,rate,daily,day5,day6]] of expected.entries()){
+  const at=now+index*DAY;
+  const offer=f.view(at).offers.find(offer=>offer.id===id);
+  assert.equal(offer.dailyInterestPercent,rate);assert.equal(offer.fee,0);assert.equal(offer.termDays,5);
+  assert.equal(offer.interestPerDay,daily);assert.equal(offer.overdueInterestPercent,36);
+  const result=f.borrow(id,randomUUID(),at);
+  assert.equal(result.loans.active.total,offer.principal);
+  const row=f.accounts.db(db=>db.prepare('SELECT * FROM player_loans WHERE paid_at IS NULL').get());
+  assert.equal(loanBalance(row,at+5*DAY).total,day5);
+  assert.equal(loanBalance(row,at+6*DAY).total,day6);
+  f.repay(result.receipt.loanId,offer.principal,randomUUID(),at);
+ }
+});
+
+test('existing contracts retain saved fees, interest and deadlines after cheaper offers arrive', async t => {
+ const f=await fixture(t);f.borrow();
+ f.accounts.db(db=>db.prepare('UPDATE player_loans SET fee=100,interest_due=100,daily_bps=2400,overdue_bps=3600,due_at=?').run(now+3*DAY));
+ closeDataStore(f.dir);
+ const state=f.view(now+2*DAY);
+ assert.equal(state.offers[0].dailyInterestPercent,3);assert.equal(state.offers[0].fee,0);
+ assert.equal(state.active.fee,100);assert.equal(state.active.dailyInterestPercent,24);
+ assert.equal(state.active.dueAt,now+3*DAY);assert.equal(state.active.total,840);
+ f.set(0);
+ assert.equal(f.view(now+4*DAY).active.total,1140);
 });
