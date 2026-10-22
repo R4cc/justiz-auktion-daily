@@ -27,7 +27,8 @@ export function createEconomyApi({ dataDir, json, flags = featureFlags(), accoun
   const sessionUser = request => {
     sessionAccounts ||= new Accounts(dataDir, { flags });
     const token = request.headers?.cookie?.split(';').map(part => part.trim()).find(part => part.startsWith('jg_session='))?.slice(11);
-    return sessionAccounts.user(token);
+    const user = sessionAccounts.user(token);
+    return user?.must_change_password ? null : user;
   };
   const signedIn = request => Boolean(sessionUser(request));
   return (request, response, url) => {
@@ -43,7 +44,7 @@ export function createEconomyApi({ dataDir, json, flags = featureFlags(), accoun
         json(response,200,townMap(dataDir,sessionUser(request))); return true;
       }
       if (flags.businesses && (url.pathname === '/api/stores' || url.pathname.startsWith('/api/stores/'))) {
-        const session = sessionUser(request), viewer = session?.mustChangePassword ? null : session;
+        const viewer = sessionUser(request);
         json(response, 200, url.pathname === '/api/stores'
           ? listStores(dataDir, viewer, { query: url.searchParams.get('query') || '', type: url.searchParams.get('type') || '', offset: url.searchParams.get('offset'), limit: url.searchParams.get('limit') })
           : visitStore(dataDir, viewer, decoded(url.pathname.slice('/api/stores/'.length))));

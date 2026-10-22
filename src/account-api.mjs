@@ -32,6 +32,14 @@ import { jsonBody as body } from './json-body.mjs';
 
 const AUCTION_PAGE_SIZE = 25;
 
+function checkJail(user, route) {
+  if (user?.justice?.jailed && !['me','logout','login','password/change','loans','loans/repay'].includes(route)) {
+    const error = new AccountError('player_jailed', 423);
+    error.justice = user.justice;
+    throw error;
+  }
+}
+
 function auctionBasics(auction) {
   const gallery = auctionGallery(auction);
   return { id: auction.id, title: auction.title, category: auction.category,
@@ -70,14 +78,25 @@ export async function createAccountApi({ dataDir, dailyPayload, json, env = proc
     const now = Date.now();
     return accounts.db(db => withCaseStock(db, quoteCaseStore(loadCaseStoreCatalog(dataDir, now), marketIndexes(db, now),{luckPercent:skillEffects(db,user?.id).luckPercent,caseDiscountPercent:prestigeEffects(db,user?.id).caseDiscountPercent}), now));
   }
+  function mutationUser(token, route) {
+    const user = accounts.user(token);
+    if (!user) throw new AccountError('login_required', 401);
+    checkJail(user, route);
+    if (user.must_change_password && route !== 'logout' && route !== 'password/change') {
+      throw new AccountError('password_change_required', 403);
+    }
+    return user;
+  }
   return async (request, response, url) => {
     if (!url.pathname.startsWith('/api/account/')) return false;
     try {
       const token = request.headers.cookie?.split(';').map(part => part.trim()).find(part => part.startsWith('jg_session='))?.slice(11);
-      const user = accounts.user(token);
+      let user = accounts.user(token);
       const route = url.pathname.slice('/api/account/'.length);
-      if (user?.justice?.jailed && !['me','logout','login','password/change','loans','loans/repay'].includes(route)) { const error=new AccountError('player_jailed',423); error.justice=user.justice; throw error; }
+      checkJail(user, route);
       if (request.method === 'GET') {
+        // Temporary sessions may read only their own password-change state.
+        if (user?.must_change_password && route !== 'me') throw new AccountError('password_change_required', 403);
         if (route === 'me') json(response, 200, { user: user ? accounts.profile(user) : null });
         else if (route === 'case-store') json(response, 200, getStore(user));
         else if (route === 'cases') json(response, 200, accounts.db(db => withCaseStock(db, publicCaseCatalog(getCatalog(user)))));
@@ -88,9 +107,6 @@ export async function createAccountApi({ dataDir, dailyPayload, json, env = proc
         }
         else {
           if (!user) throw new AccountError('login_required', 401);
-          // A temporary password may only read its own session state; every
-          // other surface waits until a real password is set.
-          if (user.must_change_password && route !== 'me') throw new AccountError('password_change_required', 403);
           if (route === 'loans') json(response,200,loanDashboard(dataDir,user));
           else if (route === 'inventory') json(response, 200, { items: accounts.inventory(user, {includeStores:url.searchParams.get('includeStores')==='1'}) });
           else if (route === 'auction-winnings') json(response,200,{rewards:unopenedAuctionWinnings(dataDir,user,{flags})});
@@ -158,12 +174,9 @@ export async function createAccountApi({ dataDir, dailyPayload, json, env = proc
         json(response, 200, { user: accounts.profile(accounts.user(nextToken)) });
         return true;
       }
-      if (!user) throw new AccountError('login_required', 401);
-      // The forced-change state allows nothing but setting a new password
-      // (or signing out); logout is dispatched below and stays reachable.
-      if (user.must_change_password && route !== 'logout' && route !== 'password/change') {
-        throw new AccountError('password_change_required', 403);
-      }
+      // Uploading a body yields to logout, bans, resets and other requests.
+      // Authorize against the current session immediately before dispatch.
+      user = mutationUser(token, route);
       let result;
       if (route === 'logout') {
         accounts.logout(token);
@@ -265,6 +278,7 @@ export async function createAccountApi({ dataDir, dailyPayload, json, env = proc
       else if (route === 'inventory/sell-all') result = { ...accounts.sellAll(user, payload.id), user: accounts.profile(user) };
       else if (route === 'games/start') {
         const dailyAuctions = (await dailyPayload()).auctions;
+        user = mutationUser(token, route);
         const auctions = payload.mode === 'daily' ? dailyAuctions : null;
         const dailyIds = dailyAuctions.map(auction => auction.id);
         result = { run: accounts.startGame(user, payload.mode,
