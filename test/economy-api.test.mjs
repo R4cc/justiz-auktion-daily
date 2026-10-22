@@ -516,3 +516,45 @@ test('auction details expose only the viewer own escrow and allow raises above t
   assert.equal(otherPalette.bidding.reservedMaximum, 0); assert.equal(otherPalette.bidding.leading, false);
   assert.equal(otherPalette.bidding.maximumBid, 1000);
 });
+
+test('palette bidder names require a current unrestricted session', async t => {
+  const { base, dir } = await fixture(t, { ...env, FEATURE_PALETTE_AUCTIONS: 'true', FEATURE_BUSINESSES: 'false' });
+  const accounts = new Accounts(dir), now = Date.now();
+  const bidder = accounts.db(db => db.prepare("SELECT id FROM users WHERE username='admin'").get());
+  accounts.db(db => {
+    db.prepare('UPDATE users SET tokens=100000 WHERE id=?').run(bidder.id);
+    db.prepare("INSERT INTO users(id,username,password_hash,tokens,created_at) VALUES ('privacy-viewer','PrivacyViewer','disabled',1000,?)").run(now);
+  });
+  upsertAuctions(dir, Array.from({ length: 24 }, (_, n) => ({ id: 1000 + n, title: `Laptop Lenovo ${n}`,
+    category: 'Elektronik', currentBid: 10 + n * 20, image: '/favicon.png' })));
+  const edition = loadPaletteCatalog(dir, { now }).palettes.find(p => p.id === 'fundkiste');
+  const auction = createPaletteAuction(dir, { editionId: edition.editionId, requestId: 'bidder-privacy-http' }, { now, random: () => 0 });
+  bidOnPaletteAuction(dir, bidder, auction.id, auction.reserve, { now });
+  const session = id => accounts.atomic(db => accounts.session(db, id));
+  const read = async (token, expected) => {
+    const response = await fetch(`${base}/api/palette-auctions/${auction.id}`, {
+      headers: token === undefined ? {} : { cookie: `jg_session=${token}` }
+    });
+    assert.equal(response.status, 200);
+    const result = (await response.json()).auction;
+    assert.equal(result.id, auction.id);
+    assert.deepEqual(result.bids.map(bid => bid.bidderUsername), [expected]);
+    assert.equal(result.bids[0].amount, auction.reserve);
+  };
+  for (const token of [undefined, 'invalid', 'a'.repeat(64)]) await read(token, 'ad****');
+  await read(session(bidder.id), 'admin');
+  await read(session('privacy-viewer'), 'admin');
+  const loggedOut = session('privacy-viewer');
+  accounts.logout(loggedOut);
+  await read(loggedOut, 'ad****');
+  for (const state of ['expired', 'banned', 'temporary']) {
+    accounts.db(db => db.prepare("UPDATE users SET banned=0,must_change_password=0 WHERE id='privacy-viewer'").run());
+    const token = session('privacy-viewer');
+    accounts.db(db => {
+      if (state === 'expired') db.prepare("UPDATE account_sessions SET expires=0 WHERE user_id='privacy-viewer'").run();
+      else if (state === 'banned') db.prepare("UPDATE users SET banned=1 WHERE id='privacy-viewer'").run();
+      else db.prepare("UPDATE users SET must_change_password=2 WHERE id='privacy-viewer'").run();
+    });
+    await read(token, 'ad****');
+  }
+});

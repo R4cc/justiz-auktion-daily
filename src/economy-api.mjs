@@ -9,7 +9,7 @@ import { listResales, getResale } from './resale.mjs';
 import { getPaletteAuction, listPaletteAuctions } from './palette-auctions.mjs';
 import { AccountError } from './errors.mjs';
 import { Accounts } from './accounts.mjs';
-import { maskListing } from './username-privacy.mjs';
+import { maskBidHistory, maskListing } from './username-privacy.mjs';
 import { supplyStockAuctions } from './businesses.mjs';
 import { supplyCaseAuctions } from './case-supply.mjs';
 import { listStores, visitStore } from './storefronts.mjs';
@@ -86,9 +86,10 @@ export function createEconomyApi({ dataDir, json, flags = featureFlags(), accoun
         return true;
       }
       if (flags.paletteAuctions && url.pathname.startsWith('/api/palette-auctions/')) {
-        json(response, 200, { auction: getPaletteAuction(dataDir,
+        const auction = getPaletteAuction(dataDir,
           decoded(url.pathname.slice('/api/palette-auctions/'.length)),
-          { viewerId: player?.must_change_password ? null : player?.id }) });
+          { viewerId: player?.id });
+        json(response, 200, { auction: player ? auction : maskBidHistory(auction) });
         return true;
       }
       if (flags.resales && url.pathname === '/api/resales') {

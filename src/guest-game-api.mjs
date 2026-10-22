@@ -8,6 +8,7 @@ import { jsonBody } from './json-body.mjs';
 const digest = value => createHash('sha256').update(value).digest('hex');
 const day = now => new Date(now).toISOString().slice(0, 10);
 const fail = (code, status = 400) => { throw new AccountError(code, status); };
+const QUESTION_SET_VERSION = 2;
 
 // Guest rounds have no account, inventory or currency side effects. Daily
 // owns one resumable run per session/day; practice runs have bounded storage.
@@ -22,7 +23,8 @@ export function createGuestGameApi({ dataDir, dailyPayload, randomPayload, highe
   CREATE UNIQUE INDEX IF NOT EXISTS guest_daily_session ON guest_game_runs(session_hash,date) WHERE mode='daily';
   CREATE TABLE IF NOT EXISTS guest_game_limits (
     key TEXT PRIMARY KEY, count INTEGER NOT NULL, expires_at INTEGER NOT NULL
-  ) STRICT;`));
+  ) STRICT;
+  DELETE FROM guest_game_runs WHERE COALESCE(json_extract(payload,'$.questionSetVersion'),0) != ${QUESTION_SET_VERSION};`));
   function throttle(request, kind, limit, window = 15 * 60_000) {
     atomic(db => {
       const at = now(), key = digest(`${kind}:${clientIp(request, env.TRUST_CLOUDFLARE_IP === 'true')}`);
@@ -34,7 +36,7 @@ export function createGuestGameApi({ dataDir, dailyPayload, randomPayload, highe
     });
   }
   const view = run => {
-    const { submittedAnswers, ...result } = run;
+    const { submittedAnswers, questionSetVersion, ...result } = run;
     return { ...result, guest: true, serverNow: now(), auctions: publicRunAuctions(run) };
   };
   return async (request, response, url) => {
@@ -70,7 +72,7 @@ export function createGuestGameApi({ dataDir, dailyPayload, randomPayload, highe
           db.prepare('DELETE FROM guest_game_runs WHERE expires_at <= ?').run(at);
           // Retain at most 2,000 anonymous runs including this insertion.
           db.exec('DELETE FROM guest_game_runs WHERE rowid NOT IN (SELECT rowid FROM guest_game_runs ORDER BY rowid DESC LIMIT 1999)');
-          const next = { id: randomUUID(), date, mode: payload.mode, auctions: game.auctions,
+          const next = { id: randomUUID(), date, mode: payload.mode, questionSetVersion: QUESTION_SET_VERSION, auctions: game.auctions,
             answers: [], streak: 0, complete: false, earned: 0 };
           if (next.mode !== 'higher-lower') startDailyRound(next, 0, at);
           db.prepare('INSERT INTO guest_game_runs VALUES (?,?,?,?,?,?)')

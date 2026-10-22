@@ -16,9 +16,13 @@ export function maskLeaderboard(board) {
   return { ...board, leaders: board.leaders.map(leader => ({ ...leader, username: maskUsername(leader.username) })) };
 }
 
-export function maskListing(listing) {
-  return { ...listing, sellerUsername: maskUsername(listing.sellerUsername),
+export function maskBidHistory(listing) {
+  return { ...listing,
     ...(Array.isArray(listing.bids)
       ? { bids: listing.bids.map(bid => ({ ...bid, bidderUsername: maskUsername(bid.bidderUsername) })) }
       : {}) };
+}
+
+export function maskListing(listing) {
+  return { ...maskBidHistory(listing), sellerUsername: maskUsername(listing.sellerUsername) };
 }

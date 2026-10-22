@@ -3,9 +3,9 @@ import { auctionGallery } from './src/auction-images.mjs';
 import { createAccountApi } from './src/account-api.mjs';
 import { createEconomyApi } from './src/economy-api.mjs';
 import { createGuestGameApi } from './src/guest-game-api.mjs';
+import { createGuestGamePayloads } from './src/guest-game-payloads.mjs';
 import { publicDailySummary } from './src/game-rounds.mjs';
 import { startEconomyRuntime } from './src/economy-runtime.mjs';
-import { higherLowerDeck } from './src/higher-lower.mjs';
 import {
   createServer
 } from 'node:http';
@@ -30,7 +30,6 @@ import {
 
 import {
   censorCurrencyValues,
-  selectRandomSet,
   utcDateKey
 } from './src/core.mjs';
 
@@ -40,9 +39,7 @@ import {
   readArchive,
   readDailyGames,
   readQueue as readStoredQueue,
-  readRandomStats,
-  readRandomUsage,
-  recordRandomGame
+  readRandomStats
 } from './src/database.mjs';
 
 import {
@@ -431,50 +428,6 @@ async function dailyPayload() {
 
           images: auctionGallery(archived.get(auction.id) || auction),
           image: auctionGallery(archived.get(auction.id) || auction)[0] || auction.image,
-
-          description:
-            censorCurrencyValues(
-              auction.description
-            ),
-
-          actualBid:
-            auction.correctPrice
-        })
-      )
-  };
-}
-
-async function randomPayload() {
-  const archive =
-    readArchive(
-      dataDir
-    );
-
-  const usage =
-    readRandomUsage(
-      dataDir
-    );
-
-  const game =
-    selectRandomSet(
-      archive.auctions || [],
-      5,
-      Math.random,
-      usage
-    );
-
-  recordRandomGame(
-    dataDir,
-    game
-  );
-
-  return {
-    ...game,
-
-    auctions:
-      game.auctions.map(
-        auction => ({
-          ...auction,
 
           description:
             censorCurrencyValues(
@@ -882,8 +835,8 @@ await maybeScheduleDiscovery({
 const accountApi = await createAccountApi({ dataDir, dailyPayload, json });
 
 const economyApi = createEconomyApi({ dataDir, json });
-const guestGameApi = createGuestGameApi({ dataDir, dailyPayload, randomPayload,
-  higherLowerPayload: () => higherLowerDeck(readArchive(dataDir).auctions || []), json });
+const guestGameApi = createGuestGameApi({ dataDir, json,
+  ...createGuestGamePayloads({ dataDir, dailyPayload }) });
 const stopEconomyRuntime = startEconomyRuntime(dataDir);
 
 const server =
