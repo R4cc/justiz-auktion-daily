@@ -422,7 +422,12 @@ async function navigateAccountPage(path, push = true) {
   window.storeReputationUi?.stop();
   const destination = new URL(path, location.origin);
   if(!push&&!path.includes('?')&&destination.pathname===location.pathname)destination.search=location.search;
-  if(destination.pathname==='/town'&&!destination.searchParams.has('plot')&&!destination.searchParams.has('view')&&!destination.searchParams.has('district')){destination.pathname='/stores';if(!push)history.replaceState({},'',destination.pathname+destination.search);}
+  if(destination.pathname==='/town'){
+    const view=destination.searchParams.get('view');
+    if(view==='shops'||view==='mine'){destination.pathname=view==='mine'?'/businesses':'/stores';destination.search='';}
+    else for(const key of ['view','display','district','zoom','x','y','type'])destination.searchParams.delete(key);
+    if(!push)history.replaceState({},'',destination.pathname+destination.search);
+  }
   if(destination.pathname==='/palettes'){
     if(destination.searchParams.has('open'))destination.searchParams.set('open-palette',destination.searchParams.get('open'));
     if(destination.searchParams.has('auction'))destination.searchParams.set('reveal',destination.searchParams.get('auction'));
