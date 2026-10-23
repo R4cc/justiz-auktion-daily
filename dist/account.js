@@ -946,8 +946,7 @@ function renderShop() {
   const header=`<header class="case-boutique-header">${pageHeading(t('Case Store','Kisten-Shop'))}<a class="secondary-button" href="/inventory" data-page>${t('Inventory','Inventar')} ↗</a></header>`;
   if(!category){
     accountContent.innerHTML=`<div class="case-boutique">${header}<section class="case-category-grid" aria-label="${t('Case categories','Kistenkategorien')}">${accountStore.categories.map(category=>{
-      const offers=accountStore.cases.filter(box=>box.category===category.id),cheapest=Math.min(...offers.map(box=>box.cost));
-      return `<a class="case-category-card case-design-${accountEscape(offers[0].design)}" href="/shop?category=${encodeURIComponent(category.id)}" data-page data-case-category="${accountEscape(category.id)}">${caseArtwork({...offers[0],badge:category.badge})}<h2>${accountEscape(t(category.name,category.nameDe))}</h2><span>${t('From','Ab')} ${justizEuro(cheapest)}</span><strong>${t('Choose tier','Stufe wählen')} →</strong></a>`;
+      return caseCategoryCard(category,accountStore.cases.filter(box=>box.category===category.id));
     }).join('')}</section></div>`;return;
   }
   const offers=accountStore.cases.filter(box=>box.category===category.id);

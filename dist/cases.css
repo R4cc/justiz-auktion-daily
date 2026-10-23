@@ -136,19 +136,39 @@
 
 .case-price-row{flex-wrap:wrap}
 
-.case-category-grid { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:18px; }
-.case-category-card { display:flex; flex-direction:column; align-items:center; min-width:0; padding:20px; border:1px solid #ced5c7; border-radius:18px; background:#fffdf6; color:var(--ink); text-decoration:none; transition:box-shadow .2s,border-color .2s; }
-.case-category-card:hover { border-color:#315c4b; box-shadow:0 10px 24px #193b3315; }
-.case-category-card:focus-visible { outline:3px solid #c2783d; outline-offset:4px; }
-.case-category-card .case-object { width:min(100%,260px); }
-.case-category-card h2 { margin:0 0 12px; font-size:22px; overflow-wrap:anywhere; }
-.case-category-card > span { font:14px 'DM Mono',monospace; }
-.case-category-card > strong { margin-top:18px; font-size:13px; }
+.case-category-grid { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:22px; }
+.case-category-electronics { --category-accent:#65e5df; --category-stage:#153846; --category-glow:#347b83; --category-paper:#edf5ef; --category-ink:#234e55; }
+.case-category-cars { --category-accent:#ffb16e; --category-stage:#442f2d; --category-glow:#946044; --category-paper:#faf0df; --category-ink:#78462c; }
+.case-category-wine { --category-accent:#edb8c4; --category-stage:#422b3c; --category-glow:#835269; --category-paper:#f6eaf0; --category-ink:#76475b; }
+.case-category-tools { --category-accent:#f6d374; --category-stage:#303b32; --category-glow:#72734b; --category-paper:#f5f0d9; --category-ink:#63602d; }
+.case-category-jewellery { --category-accent:#f4d29b; --category-stage:#382b47; --category-glow:#805778; --category-paper:#f7ebef; --category-ink:#79536d; }
+.case-category-collectibles { --category-accent:#cec1fa; --category-stage:#2b304f; --category-glow:#62699e; --category-paper:#eeeefa; --category-ink:#545384; }
+.case-category-card { display:flex; flex-direction:column; min-width:0; overflow:hidden; border:1px solid #203c322b; border-radius:20px; background:var(--category-paper); color:var(--ink); text-decoration:none; box-shadow:0 4px 0 #193b330b; transition:transform .22s,box-shadow .22s; }
+.case-category-card:hover { transform:translateY(-5px); box-shadow:0 9px 0 #193b330b,0 18px 30px #193b3314; }
+.case-category-card:focus-visible { outline:3px solid var(--category-ink); outline-offset:5px; }
+.case-category-scene { position:relative; isolation:isolate; display:grid; place-items:center; overflow:hidden; background:radial-gradient(ellipse at 50% 60%,var(--category-glow),var(--category-stage) 78%); }
+.case-category-scene::before { content:''; position:absolute; inset:0; z-index:-1; opacity:.08; background:repeating-linear-gradient(0deg,transparent 0 3px,#fff 3px 4px); pointer-events:none; }
+.case-category-scene::after { content:''; position:absolute; inset:0; border:1px solid #ffffff12; border-radius:19px 19px 0 0; pointer-events:none; }
+.case-category-code { position:absolute; top:18px; left:20px; padding:5px 8px; border:1px solid currentColor; border-radius:4px; color:var(--category-accent); font:10px 'DM Mono',monospace; letter-spacing:.12em; opacity:.85; }
+.case-category-scene svg { display:block; width:100%; max-width:360px; height:auto; margin:12px auto 0; overflow:visible; }
+.case-scene-object { transform-origin:50% 75%; transition:transform .35s cubic-bezier(.2,.7,.2,1); }
+.case-scene-detail { transition:opacity .35s; }
+.case-category-card:hover .case-scene-object,.case-category-card:focus-visible .case-scene-object { transform:translateY(-5px) rotate(-2deg); }
+.case-category-card:hover .case-scene-detail,.case-category-card:focus-visible .case-scene-detail { opacity:.6; }
+.case-category-info { padding:21px 22px 20px; border-top:3px solid var(--category-accent); }
+.case-category-card h2 { margin:0 0 16px; font-size:clamp(20px,2.3vw,27px); line-height:1.2; letter-spacing:-.04em; overflow-wrap:anywhere; }
+.case-category-bottom { display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:12px; }
+.case-category-price { display:flex; flex-wrap:wrap; align-items:baseline; gap:6px; color:var(--category-ink); font-size:11px; }
+.case-category-price b { color:var(--ink); font:600 14px 'DM Mono',monospace; }
+.case-category-action { display:flex; align-items:center; gap:12px; color:var(--category-ink); font-size:11px; font-weight:700; }
+.case-category-action > span { display:grid; place-items:center; width:29px; height:29px; border:1px solid currentColor; border-radius:50%; font-size:18px; transition:background .2s,color .2s; }
+.case-category-card:hover .case-category-action > span,.case-category-card:focus-visible .case-category-action > span { background:var(--category-ink); color:var(--category-paper); }
 .case-category-back { display:inline-block; margin-bottom:18px; color:var(--ink); }
 .case-tier-grid { grid-template-columns:repeat(3,minmax(0,1fr)); }
 .case-tier-grid .case-selector > strong { min-height:0; }
 @media(max-width:900px) { .case-category-grid { grid-template-columns:repeat(2,minmax(0,1fr)); } }
 @media(max-width:700px) { .case-boutique > .case-category-back { order:0; } .case-tier-grid { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); overflow:visible; } .case-tier-grid .case-selector { width:auto; min-width:0; padding:10px 7px 25px; } .case-tier-grid .case-selector-price { font-size:11px; overflow-wrap:anywhere; } .case-tier-grid .case-selector-stock { font-size:8px; } }
-@media(max-width:400px) { .case-category-grid { gap:10px; } .case-category-card { padding:12px 8px; } .case-category-card h2 { font-size:15px; } .case-category-card > span { font-size:12px; } }
+@media(max-width:600px) { .case-category-grid { grid-template-columns:1fr; gap:20px; } .case-category-scene svg { max-width:310px; } .case-category-card h2 { font-size:25px; } .case-category-info { padding:18px 20px; } }
+@media(prefers-reduced-motion:reduce) { .case-category-card,.case-scene-object,.case-scene-detail,.case-category-action > span { transition:none; } .case-category-card:hover,.case-category-card:hover .case-scene-object,.case-category-card:focus-visible .case-scene-object { transform:none; } }
 
 @media(max-width:430px) { .case-showcase-info .case-odds-list { grid-template-columns:repeat(3,minmax(0,1fr)); row-gap:12px; } }
