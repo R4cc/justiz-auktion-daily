@@ -14,8 +14,10 @@ const rows=[];
 for(const index of [50,100,150])for(let day=0;day<days;day++){
  const catalog=caseCatalog(source,start+day*86400000),indexes=Object.fromEntries(MARKET_CATEGORIES.map(category=>[category.id,index]));
  if(!catalog.cases[0].available)throw new Error('insufficient_audit_archive');
- for(const box of quoteCaseStore(catalog,indexes).cases){
-  const definition=STORE_CASES.find(d=>d.id===box.id),outcomes=caseOutcomeDistribution(box.items,definition.weights,{basis:box.valueBasis,indexes});
+ const offers=quoteCaseStore(catalog,indexes).cases;
+ for(let i=1;i<offers.length;i++)if(!(offers[i].legendaryProbability>offers[i-1].legendaryProbability))throw new Error('inverted_legendary_odds');
+ for(const box of offers){
+  const definition=STORE_CASES.find(d=>d.id===box.id),outcomes=caseOutcomeDistribution(box.items,definition.weights,{basis:box.valueBasis,indexes,legendaryProbability:box.legendaryProbability});
   const original=catalog.cases[0].items,baseline=[];
   for(const [n,rarity] of RARITIES.entries()){
    const pool=original.filter(item=>item.rarity===rarity.id);
@@ -24,15 +26,15 @@ for(const index of [50,100,150])for(let day=0;day<days;day++){
   const chance=(list,predicate)=>list.reduce((sum,item)=>sum+(predicate(item.value)?item.probability:0),0);
   const mean=list=>list.reduce((sum,item)=>sum+item.value*item.probability,0)/box.cost;
   const median=list=>{let p=0;for(const item of [...list].sort((a,b)=>a.value-b.value)){p+=item.probability;if(p>=.5)return item.value/box.cost;}};
-  rows.push({index,id:box.id,beforeMean:mean(baseline),mean:mean(outcomes),beforeLow:chance(baseline,value=>value<box.cost*.1),low:chance(outcomes,value=>value<box.cost*.1),usual:chance(outcomes,value=>value>=box.cost*.5),profit:chance(outcomes,value=>value>=box.cost),median:median(outcomes)});
+  rows.push({index,id:box.id,legendary:outcomes.filter(outcome=>outcome.item.rarity==='legendary').reduce((sum,outcome)=>sum+outcome.probability,0),beforeMean:mean(baseline),mean:mean(outcomes),beforeLow:chance(baseline,value=>value<box.cost*.1),low:chance(outcomes,value=>value<box.cost*.1),usual:chance(outcomes,value=>value>=box.cost*.5),profit:chance(outcomes,value=>value>=box.cost),median:median(outcomes)});
  }
 }
 const avg=(list,key)=>list.reduce((sum,row)=>sum+row[key],0)/list.length;
 const pct=value=>`${(value*100).toFixed(2)}%`;
 console.log(`# Case value audit\n\nSource: ${input}; ${archive.length} archived lots; ${days} rotations. Exact reference-value probabilities, not production telemetry or guaranteed resale proceeds.\n`);
-console.log('| Market | Case | Old mean return | New mean return | Old below tenth of cost | New below tenth | At least half cost | Median return | Break-even or better |\n|---:|---|---:|---:|---:|---:|---:|---:|---:|');
+console.log('| Market | Case | Old mean return | New mean return | Legendary | Old below tenth of cost | New below tenth | At least half cost | Median return | Break-even or better |\n|---:|---|---:|---:|---:|---:|---:|---:|---:|---:|');
 for(const index of [50,100,150])for(const definition of STORE_CASES){
  const group=rows.filter(row=>row.index===index&&row.id===definition.id);
- console.log(`| ${index} | ${definition.name} | ${pct(avg(group,'beforeMean'))} | ${pct(avg(group,'mean'))} | ${pct(avg(group,'beforeLow'))} | ${pct(avg(group,'low'))} | ${pct(avg(group,'usual'))} | ${pct(avg(group,'median'))} | ${pct(avg(group,'profit'))} |`);
+ console.log(`| ${index} | ${definition.name} | ${pct(avg(group,'beforeMean'))} | ${pct(avg(group,'mean'))} | ${(avg(group,'legendary')*100).toFixed(6)}% | ${pct(avg(group,'beforeLow'))} | ${pct(avg(group,'low'))} | ${pct(avg(group,'usual'))} | ${pct(avg(group,'median'))} | ${pct(avg(group,'profit'))} |`);
 }
 console.log(`\nWorst chance of a very low return: ${pct(Math.max(...rows.map(row=>row.low)))}. Lowest usual-value probability: ${pct(Math.min(...rows.map(row=>row.usual)))}.`);

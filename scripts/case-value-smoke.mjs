@@ -57,7 +57,8 @@ try {
       await page.locator(`[data-account="select-store-case"][data-id="${definition.id}"]`).click();
       const correct=await page.evaluate(()=>{
         const box=accountStore.cases.find(box=>box.id===accountSelectedStoreCase),labels=[...document.querySelectorAll('.case-odds-list dd')].map(node=>node.textContent);
-        return labels.every((label,index)=>label===number(box.dropChances[index].percent,2)+'%');
+        return labels.every((label,index)=>label===caseChanceLabel(box.dropChances[index].percent)&&Number(label.replace(',','.').replace('%',''))>0)
+          &&accountStore.cases.every((offer,index,list)=>!index||offer.dropChances.at(-1).percent>list[index-1].dropChances.at(-1).percent);
       });assert.equal(correct,true);
       assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1));
     }

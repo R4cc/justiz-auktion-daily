@@ -46,10 +46,10 @@ function mixedPool(catalog, fallback) {
 
 // Store cases and tiered rewards share the same sealed draw and valuation.
 // The winner is private and frozen when the case is created.
-export function prepareMysteryCase(catalog, definition, { fallback = [], now = Date.now(), random = randomInt, luckPercent = 0, valueBasis = 0, indexes = {}, drawItems = null } = {}) {
+export function prepareMysteryCase(catalog, definition, { fallback = [], now = Date.now(), random = randomInt, luckPercent = 0, valueBasis = 0, indexes = {}, drawItems = null, legendaryProbability } = {}) {
   const items = drawItems || mixedPool(catalog, fallback);
   if (!items.length) throw new Error('empty_catalog');
-  const outcomes=valueBasis>0?caseOutcomeDistribution(items,definition.weights,{basis:valueBasis,indexes,luckPercent}):null;
+  const outcomes=valueBasis>0?caseOutcomeDistribution(items,definition.weights,{basis:valueBasis,indexes,luckPercent,legendaryProbability}):null;
   const winner=outcomes?drawCaseOutcome(outcomes,random):drawItem(catalog,{items,weights:luckWeights(definition.weights,luckPercent)},random);
   const expected=outcomes?outcomes.reduce((sum,outcome)=>sum+outcome.probability*outcome.value,0):expectedItemValue(items,definition.weights);
   const price = Math.max(1, Math.round(expected * ECONOMY_BALANCE.sealedCaseValueRate));

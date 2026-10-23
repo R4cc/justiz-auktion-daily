@@ -68,7 +68,7 @@ test('all five store cases expose 50 distinct possible contents with odds matchi
   for (const [index, offer] of f.quote().cases.entries()) {
     assert.equal(offer.items.length, 50, offer.id);
     assert.equal(new Set(offer.items.map(item => item.auctionId)).size, 50);
-    const outcomes=caseOutcomeDistribution(offer.items,STORE_CASES[index].weights,{basis:offer.valueBasis});
+    const outcomes=caseOutcomeDistribution(offer.items,STORE_CASES[index].weights,{basis:offer.valueBasis,legendaryProbability:offer.legendaryProbability});
     for(const chance of offer.dropChances)assert.ok(Math.abs(chance.percent-100*outcomes.filter(outcome=>outcome.item.rarity===chance.rarity).reduce((sum,outcome)=>sum+outcome.probability,0))<1e-9);
   }
 });
@@ -193,7 +193,7 @@ test('named cases publish exact value-aware rarity odds while retaining their ba
     }
     RARITIES.forEach((rarity, n) => {
       assert.equal(counts[rarity.id], definition.weights[n]);
-      const outcomes=caseOutcomeDistribution(offer.items,definition.weights,{basis:offer.valueBasis});
+      const outcomes=caseOutcomeDistribution(offer.items,definition.weights,{basis:offer.valueBasis,legendaryProbability:offer.legendaryProbability});
       assert.ok(Math.abs(offer.dropChances[n].percent-100*outcomes.filter(outcome=>outcome.item.rarity===rarity.id).reduce((sum,outcome)=>sum+outcome.probability,0))<1e-9);
       // Exercise the actual sealed preparation at each bucket's first ticket.
       const ticket = definition.weights.slice(0, n).reduce((sum, weight) => sum + weight, 0);

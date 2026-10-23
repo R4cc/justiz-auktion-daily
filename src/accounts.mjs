@@ -649,7 +649,7 @@ export class Accounts {
       }
       if (revision !== quote.revision) fail('catalog_changed', 409);
       consumeCaseStock(db, caseId, now);
-      const prepared = prepareMysteryCase(catalog, STORE_CASES.find(box => box.id === caseId), { now, luckPercent, valueBasis:offer.valueBasis, indexes:marketIndexes(db,now), drawItems:offer.items });
+      const prepared = prepareMysteryCase(catalog, STORE_CASES.find(box => box.id === caseId), { now, luckPercent, valueBasis:offer.valueBasis, indexes:marketIndexes(db,now), drawItems:offer.items, legendaryProbability:offer.legendaryProbability });
       prepared.item.caseCost = offer.cost;
       prepared.item.edition = catalog.rotationDate;
       prepared.reward.caseCost = offer.cost;

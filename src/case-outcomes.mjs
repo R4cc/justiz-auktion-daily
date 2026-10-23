@@ -34,6 +34,24 @@ export function caseValuePool(catalog, source, basis, indexes={}) {
 }
 
 const normalize=values=>{const sum=values.reduce((a,b)=>a+b,0);return values.map(value=>value/sum);};
+function fitValueProbabilities(prior,values,target,basis) {
+  const supported=values.filter((_,i)=>prior[i]>0),minimum=Math.min(...supported),maximum=Math.max(...supported);
+  if(target<=minimum||target>=maximum){
+    const boundary=target<=minimum?minimum:maximum;
+    return normalize(prior.map((p,i)=>values[i]===boundary?p:0));
+  }
+  const distribution=exponent=>{
+    const logs=prior.map((p,i)=>p>0?Math.log(p)+exponent*Math.log(values[i]/basis):-Infinity);
+    const largest=Math.max(...logs);
+    return normalize(logs.map(log=>Math.exp(log-largest)));
+  };
+  let low=-128,high=128;
+  for(let n=0;n<60;n++){
+    const mid=(low+high)/2,p=distribution(mid),mean=p.reduce((sum,p,i)=>sum+p*values[i],0);
+    if(mean<target)low=mid;else high=mid;
+  }
+  return distribution((low+high)/2);
+}
 function tierProbabilities(items,weights) {
   const total=weights.reduce((a,b)=>a+b,0);
   const counts=rarities.map(rarity=>items.filter(item=>item.rarity===rarity).length);
@@ -43,7 +61,7 @@ function tierProbabilities(items,weights) {
 // Most draws come from a price-appropriate pool. A small ordinary draw tail
 // preserves every real item and jackpot. Fit the usual pool's expectation to
 // a modest return target instead of letting enormous jackpot values price it.
-export function caseOutcomeDistribution(items,weights,{basis,indexes={},luckPercent=0}={}) {
+export function caseOutcomeDistribution(items,weights,{basis,indexes={},luckPercent=0,legendaryProbability}={}) {
   if(!items.length||!Number.isFinite(basis)||basis<=0)throw new Error('invalid_case_basis');
   const values=items.map(item=>valueOf(item,indexes));
   const baseline=tierProbabilities(items,weights),lucky=tierProbabilities(items,luckWeights(weights,luckPercent));
@@ -53,29 +71,32 @@ export function caseOutcomeDistribution(items,weights,{basis,indexes={},luckPerc
     const best=Math.max(...values.filter((_,i)=>baseline[i]>0));
     eligible=values.map((value,i)=>baseline[i]>0&&value===best);
   }
-  const eligibleValues=values.filter((_,i)=>eligible[i]),minimum=Math.min(...eligibleValues),maximum=Math.max(...eligibleValues);
   const ordinaryMean=values.reduce((sum,value,i)=>sum+value*baseline[i],0);
   const target=(basis*ECONOMY_BALANCE.caseOpeningReturnTarget-tail*ordinaryMean)/(1-tail);
-  let protectedProbabilities;
-  if(target<=minimum||target>=maximum){
-    const boundary=target<=minimum?minimum:maximum;
-    protectedProbabilities=normalize(baseline.map((p,i)=>eligible[i]&&values[i]===boundary?p:0));
-  }else{
-    const distribution=exponent=>{
-      const logs=baseline.map((p,i)=>eligible[i]?Math.log(p)+exponent*Math.log(values[i]/basis):-Infinity);
-      const largest=Math.max(...logs);
-      return normalize(logs.map(log=>Math.exp(log-largest)));
-    };
-    let low=-128,high=128;
-    for(let n=0;n<60;n++){
-      const mid=(low+high)/2,p=distribution(mid),mean=p.reduce((sum,p,i)=>sum+p*values[i],0);
-      if(mean<target)low=mid;else high=mid;
-    }
-    protectedProbabilities=distribution((low+high)/2);
-  }
+  const protectedProbabilities=fitValueProbabilities(baseline.map((p,i)=>eligible[i]?p:0),values,target,basis);
   // Apply Luck after fitting the unbuffed value model. Discounts never change
   // this basis, and Luck remains a relative improvement rather than repricing.
-  const protectedLucky=normalize(protectedProbabilities.map((p,i)=>baseline[i]?p*lucky[i]/baseline[i]:0));
+  let protectedLucky=normalize(protectedProbabilities.map((p,i)=>baseline[i]?p*lucky[i]/baseline[i]:0));
+  const legendary=items.map(item=>item.rarity==='legendary');
+  const tailLegendary=tail*lucky.reduce((sum,p,i)=>sum+(legendary[i]?p:0),0);
+  const protectedLegendary=protectedLucky.reduce((sum,p,i)=>sum+(legendary[i]?p:0),0);
+  const originalLegendary=tailLegendary+(1-tail)*protectedLegendary;
+  if(Number.isFinite(legendaryProbability)&&legendaryProbability<originalLegendary-1e-14){
+    // The store fits the whole price ladder together. Hold its calibrated
+    // legendary chance fixed, then fit the remaining useful finds to retain
+    // the original return instead of replacing jackpots with cheap losses.
+    const share=Math.max(0,(legendaryProbability-tailLegendary)/(1-tail));
+    const legend=protectedLucky.map((p,i)=>legendary[i]&&protectedLegendary?p/protectedLegendary:0);
+    let ordinary=lucky.map((p,i)=>!legendary[i]&&eligible[i]?p:0);
+    if(!ordinary.some(p=>p>0)){
+      const best=Math.max(...values.filter((_,i)=>!legendary[i]&&lucky[i]>0));
+      ordinary=lucky.map((p,i)=>!legendary[i]&&values[i]===best?p:0);
+    }
+    const originalMean=protectedLucky.reduce((sum,p,i)=>sum+p*values[i],0);
+    const legendaryMean=legend.reduce((sum,p,i)=>sum+p*values[i],0);
+    const rest=fitValueProbabilities(ordinary,values,(originalMean-share*legendaryMean)/(1-share),basis);
+    protectedLucky=rest.map((p,i)=>(1-share)*p+share*legend[i]);
+  }
   const probabilities=normalize(baseline.map((_,i)=>tail*lucky[i]+(1-tail)*protectedLucky[i]));
   return items.map((item,i)=>({item,probability:probabilities[i],value:values[i]}));
 }

@@ -3,8 +3,9 @@ import assert from 'node:assert/strict';
 import {mkdtemp,rm} from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
+import {readFileSync} from 'node:fs';
 import {caseOutcomeDistribution,drawCaseOutcome} from '../src/case-outcomes.mjs';
-import {priceCaseCatalog} from '../src/cases.mjs';
+import {priceCaseCatalog,caseCatalog} from '../src/cases.mjs';
 import {STORE_CASES,quoteCaseStore,loadCaseStoreCatalog} from '../src/case-store.mjs';
 import {prepareMysteryCase,insertSealedCase} from '../src/sealed-cases.mjs';
 import {Accounts} from '../src/accounts.mjs';
@@ -61,13 +62,48 @@ test('published odds match prepared winners, prices and rebates do not weaken co
   for(const [i,definition]of STORE_CASES.entries()){
     const offer=normal.cases[i],discount=sale.cases[i];
     assert.equal(offer.valueBasis,discount.valueBasis);assert.deepEqual(offer.items,discount.items);assert.deepEqual(offer.dropChances,discount.dropChances);
-    const outcomes=caseOutcomeDistribution(offer.items,definition.weights,{basis:offer.valueBasis});
+    const outcomes=caseOutcomeDistribution(offer.items,definition.weights,{basis:offer.valueBasis,legendaryProbability:offer.legendaryProbability});
     for(const chance of offer.dropChances)assert.ok(Math.abs(chance.percent/100-probability(outcomes,outcome=>outcome.item.rarity===chance.rarity))<1e-9);
     for(const q of [.001,.1,.5,.9,.999]){
       const random=max=>Math.floor(q*max);
-      const prepared=prepareMysteryCase(catalog,definition,{now,random,valueBasis:offer.valueBasis,drawItems:offer.items});
+      const prepared=prepareMysteryCase(catalog,definition,{now,random,valueBasis:offer.valueBasis,drawItems:offer.items,legendaryProbability:offer.legendaryProbability});
       assert.equal(prepared.reward.auctionId,drawCaseOutcome(outcomes,random).auctionId);
       assert.equal(prepared.item.caseBalanceVersion,1);assert.ok(!('reward'in prepared.item));
+    }
+  }
+});
+
+test('legendary odds increase along the price ladder across rotations, markets and Luck, preserving useful returns',()=>{
+  const starter=JSON.parse(readFileSync(new URL('../seed/auctions.json',import.meta.url),'utf8')).auctions;
+  const synthetic=Array.from({length:160},(_,n)=>({id:20000+n,title:`Laptop ${20000+n}`,category:'Elektronik',finalPrice:Math.round(10*(n+1)**1.8),image:'/test.jpg'}));
+  for(const archive of [starter,synthetic])for(const day of [0,1,7])for(const index of [50,100,150]){
+    const catalog=caseCatalog(archive,now+day*86400000),indexes={electronics:index,cars:200-index,wine:index};
+    let previousLuck=null;
+    for(const luckPercent of [0,7,32]){
+      const quote=quoteCaseStore(catalog,indexes,{luckPercent});let previousChance=0;
+      for(const [i,box]of quote.cases.entries()){
+        const options={basis:box.valueBasis,indexes,luckPercent,legendaryProbability:box.legendaryProbability};
+        const outcomes=caseOutcomeDistribution(box.items,STORE_CASES[i].weights,options);
+        const chance=probability(outcomes,outcome=>outcome.item.rarity==='legendary');
+        assert.ok(chance>previousChance,`${box.id}: legendary chance must increase with price`);previousChance=chance;
+        assert.ok(Math.abs(box.dropChances.at(-1).percent/100-chance)<1e-12);
+        assert.ok(Math.abs(outcomes.reduce((sum,outcome)=>sum+outcome.probability,0)-1)<1e-12);
+        assert.ok(outcomes.every(outcome=>Number.isFinite(outcome.probability)&&outcome.probability>0));
+        assert.ok(probability(outcomes,outcome=>outcome.value>=box.valueBasis*.5)>=.99-1e-12);
+        const independent=caseOutcomeDistribution(box.items,STORE_CASES[i].weights,{basis:box.valueBasis,indexes,luckPercent});
+        const ordinaryMaximum=Math.max(...outcomes.filter(outcome=>outcome.item.rarity!=='legendary').map(outcome=>outcome.value));
+        assert.ok(mean(outcomes)>=Math.min(mean(independent),ordinaryMaximum*.99)-1e-8);
+        if(previousLuck)assert.ok(chance>=previousLuck.cases[i].legendaryProbability-1e-12,'Luck never reduces legendary odds');
+        // Exercise both sides of the actual legendary sampler interval, rather
+        // than checking labels alone. Highest-value legendary items are last.
+        for(const factor of [.9,1.1]){
+          const random=max=>Math.floor((1-chance*factor)*max);
+          const prepared=prepareMysteryCase(catalog,STORE_CASES[i],{now,random,valueBasis:box.valueBasis,drawItems:box.items,...options});
+          assert.equal(prepared.reward.rarity==='legendary',factor<1);
+          assert.equal(prepared.reward.auctionId,drawCaseOutcome(outcomes,random).auctionId);
+        }
+      }
+      previousLuck=quote;
     }
   }
 });

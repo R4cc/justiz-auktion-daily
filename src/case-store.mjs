@@ -6,6 +6,7 @@ import { caseCatalog, loadCaseCatalog, RARITIES } from './cases.mjs';
 import { ECONOMY_BALANCE, expectedItemValue } from './economy-balance.mjs';
 import { estimatedValueTokens } from './market.mjs';
 import { ensureCaseStockSchema } from './case-stock.mjs';
+import { luckWeights } from './skill-effects.mjs';
 
 // Every store case can draw every rarity. Moving up the price ladder shifts
 // probability toward rarer finds, rather than guaranteeing a minimum tier.
@@ -36,6 +37,7 @@ export function loadCaseStoreCatalog(dataDir, now = Date.now()) {
 export function quoteCaseStore(catalog, indexes = {}, {luckPercent=0,caseDiscountPercent=0,rebates=[]} = {}) {
   const items = catalog.cases.find(box => box.id === 'fundkiste').items;
   let previousCost = 0;
+  const distributions=[];
   const cases = STORE_CASES.map(box => {
     const base = expectedItemValue(items, box.weights);
     const live = expectedItemValue(items, box.weights, item => estimatedValueTokens(item, indexes));
@@ -44,14 +46,30 @@ export function quoteCaseStore(catalog, indexes = {}, {luckPercent=0,caseDiscoun
     previousCost = cost;
     const drawItems=caseValuePool(catalog,items,cost,indexes);
     const outcomes=caseOutcomeDistribution(drawItems,box.weights,{basis:cost,indexes,luckPercent});
+    distributions.push(outcomes);
     const regularCost=discountedCaseCost(cost,caseDiscountPercent);
     const rebate=rebates.filter(rebate=>rebate.caseId==='all'||rebate.caseId===box.id)
       .sort((a,b)=>b.percent-a.percent || b.endsAt-a.endsAt || a.id.localeCompare(b.id))[0] || null;
     const finalCost=rebate?Math.ceil(regularCost*(100-rebate.percent)/100):regularCost;
-    return { id: box.id, name: box.name, nameDe: box.nameDe, badge: box.badge, cost:finalCost, regularCost, rebate, valueBasis:cost, items:drawItems,
-      dropChances: RARITIES.map(rarity => ({rarity:rarity.id,percent:100*outcomes.filter(outcome=>outcome.item.rarity===rarity.id).reduce((sum,outcome)=>sum+outcome.probability,0)})) };
+    return { id: box.id, name: box.name, nameDe: box.nameDe, badge: box.badge, cost:finalCost, regularCost, rebate, valueBasis:cost, items:drawItems };
   });
-  const revision = createHash('sha256').update(JSON.stringify({ version: 3, balance:[ECONOMY_BALANCE.caseOpeningReturnTarget,ECONOMY_BALANCE.caseUsualMinimumReturnPercent,ECONOMY_BALANCE.caseLowValueTailPercent], pools:cases.map(box=>box.items), bases:cases.map(box=>box.valueBasis), values:cases.map(box=>box.items.map(item=>estimatedValueTokens(item,indexes))), pool: catalog.revision,
+  // Independent value fits can invert the advertised rarity progression.
+  // Keep the premium case's value-aware jackpot chance, then bound cheaper
+  // cases by the original tier ratios. Use Luck-adjusted ratios so the small
+  // ordinary tail is preserved, including for sparse archives.
+  let nextChance=null,nextRate=null;
+  for(let i=cases.length-1;i>=0;i--){
+    const box=cases[i],weights=luckWeights(STORE_CASES[i].weights,luckPercent);
+    const rate=weights.at(-1)/weights.reduce((sum,weight)=>sum+weight,0);
+    const original=distributions[i].filter(outcome=>outcome.item.rarity==='legendary').reduce((sum,outcome)=>sum+outcome.probability,0);
+    box.legendaryProbability=nextChance===null?original:Math.min(original,nextChance*rate/nextRate);
+    const outcomes=box.legendaryProbability<original-1e-14
+      ?caseOutcomeDistribution(box.items,STORE_CASES[i].weights,{basis:box.valueBasis,indexes,luckPercent,legendaryProbability:box.legendaryProbability})
+      :distributions[i];
+    box.dropChances=RARITIES.map(rarity=>({rarity:rarity.id,percent:100*outcomes.filter(outcome=>outcome.item.rarity===rarity.id).reduce((sum,outcome)=>sum+outcome.probability,0)}));
+    nextChance=box.legendaryProbability;nextRate=rate;
+  }
+  const revision = createHash('sha256').update(JSON.stringify({ version: 4, legendary:cases.map(box=>box.legendaryProbability), balance:[ECONOMY_BALANCE.caseOpeningReturnTarget,ECONOMY_BALANCE.caseUsualMinimumReturnPercent,ECONOMY_BALANCE.caseLowValueTailPercent], pools:cases.map(box=>box.items), bases:cases.map(box=>box.valueBasis), values:cases.map(box=>box.items.map(item=>estimatedValueTokens(item,indexes))), pool: catalog.revision,
     definitions: STORE_CASES, ...(luckPercent?{luckPercent}:{}), costs: cases.map(box => box.cost), ...(rebates.length?{rebates:cases.map(box=>box.rebate)}:{}) })).digest('hex');
   return { revision, luckPercent, caseDiscountPercent, rotationDate: catalog.rotationDate, rotatesAt: catalog.rotatesAt, cases };
 }

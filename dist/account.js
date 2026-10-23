@@ -894,6 +894,10 @@ function updateCasePurchaseButtons() {
 setInterval(() => {
   if (currentAccountPage === '/shop' && pageLoaded && !accountBusy) refreshCaseStock(accountVisit).catch(() => {});
 }, 30_000);
+function caseChanceLabel(percent) {
+  const digits=percent>0&&percent<.01?Math.min(6,Math.ceil(-Math.log10(percent))+1):2;
+  return number(percent,digits)+'%';
+}
 function renderShop() {
   if (!accountStore) return;
   const selectionScroll = accountContent.querySelector('.case-selector-grid')?.scrollLeft || 0;
@@ -913,7 +917,7 @@ function renderShop() {
         ${account ? `<button class="primary-button case-buy-button" data-account="buy-case" data-id="${accountEscape(box.id)}" ${accountBusy || account.tokens < box.cost || soldOut ? 'disabled' : ''}>${soldOut ? t('Sold out', 'Ausverkauft') : t('Buy case', 'Kiste kaufen')}</button>${account.tokens < box.cost ? `<p class="case-store-shortfall">${t(`You need ${justizEuro(box.cost - account.tokens)} more`, `Dir fehlen ${justizEuro(box.cost - account.tokens)}`)} · <a href="/" data-page>Daily →</a></p>` : ''}` : `<a class="primary-button case-buy-button" href="/login" data-page>${t('Log in to buy', 'Zum Kaufen anmelden')}</a>`}
         <div class="case-odds-heading"><h3>${t('Drop chances', 'Fundchancen')}</h3>${infoTip(t('Case pools favor items worth a meaningful share of the case price. Very low-value pulls are rare. Displayed rarity odds include your Luck; market values can change.', 'Die Kistenauswahl bevorzugt Artikel mit einem angemessenen Anteil am Kistenpreis. Sehr geringwertige Funde sind selten. Die angezeigten Seltenheitschancen enthalten dein Glück; Marktwerte können sich ändern.'), t('About drop chances', 'Über Fundchancen'))}</div>
         <div class="case-odds-track" aria-hidden="true">${box.dropChances.map(chance => `<i class="rarity-${accountEscape(chance.rarity)}" style="flex-grow:${Math.max(0, Number(chance.percent) || 0)}"></i>`).join('')}</div>
-        <dl class="case-odds-list">${box.dropChances.map(chance => `<div><dt class="rarity-${accountEscape(chance.rarity)}">${rarityLabel(chance.rarity)}</dt><dd>${number(chance.percent, 2)}%</dd></div>`).join('')}</dl>
+        <dl class="case-odds-list">${box.dropChances.map(chance => `<div><dt class="rarity-${accountEscape(chance.rarity)}">${rarityLabel(chance.rarity)}</dt><dd>${caseChanceLabel(chance.percent)}</dd></div>`).join('')}</dl>
       </div>
     </section>
     <section class="case-selection" aria-label="${t('Case selection', 'Kistenauswahl')}"><div class="case-selection-heading"><h2>${t('Choose a case', 'Kiste auswählen')}</h2><span>${t('Global stock · refills every 4 hours', 'Globaler Bestand · alle 4 Stunden aufgefüllt')}</span></div><div class="case-selector-grid">${accountStore.cases.map((entry, index) => `<button class="case-selector case-design-${accountEscape(entry.id)} ${entry.id === box.id ? 'is-selected' : ''} ${entry.stock?.remaining === 0 ? 'is-sold-out' : ''}" type="button" data-account="select-store-case" data-id="${accountEscape(entry.id)}" aria-pressed="${entry.id === box.id}"><span class="case-selector-number" aria-hidden="true">0${index + 1}</span>${caseArtwork(entry)}<strong>${accountEscape(t(entry.name, entry.nameDe))}</strong><span class="case-selector-price">${justizEuro(entry.cost)}${entry.rebate?` · −${entry.rebate.percent}%`: ''}</span><span class="case-selector-stock" data-case-stock="${accountEscape(entry.id)}">${accountEscape(caseStockLabel(entry))}</span><span class="case-selector-check" aria-hidden="true">${entry.id === box.id ? '✓' : '+'}</span></button>`).join('')}</div></section>
