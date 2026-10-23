@@ -560,6 +560,7 @@ async function claimDailyCase(choice = 'keep') {
 }
 
 async function showDailyCaseItem(item, isCurrent, sealedItem = {}) {
+  caseRevealState=null;
   caseReveal.innerHTML = `<div class="case-reveal-content rarity-${auctionEscape(item.rarity)}"><h2 id="case-reveal-title">${t('Opening case…', 'Kiste wird geöffnet …')}</h2><div class="case-window"><div class="case-marker"></div><div class="case-reel"></div></div></div>`;
   caseReveal.showModal();
   const pool = accountCatalog?.cases?.find(box => box.id === 'fundkiste')?.items || [];
@@ -570,8 +571,7 @@ async function showDailyCaseItem(item, isCurrent, sealedItem = {}) {
   const store = await accountApi('case-store').catch(() => null);
   if (!caseReveal.open || !isCurrent()) return;
   if (store) accountStore = store;
-  caseReveal.innerHTML = `<div class="case-reveal-content rarity-${auctionEscape(item.rarity)}"><h2 id="case-reveal-title">${auctionEscape(item.title)}</h2>${item.image ? `<img src="${auctionEscape(item.image)}" alt="">` : ''}<p class="rarity-label">${rarityLabel(item.rarity)}</p><p>${t('Added to inventory.', 'Zum Inventar hinzugefügt.')}</p><div class="case-reveal-actions">${caseResultActions(item, sealedItem)}</div></div>`;
-  caseReveal.querySelector('[data-account="close-reveal"]').focus({ preventScroll: true });
+  renderCaseResult(item,sealedItem);
 }
 
 function renderResults() {
@@ -710,12 +710,12 @@ document.addEventListener('click', event => {
   if (action === 'sidebar-close') closeSidebar();
 });
 
-// A click on the dark area around any open modal (the backdrop targets the
-// dialog element itself) closes it — the standard close flows stay intact.
+// Backdrop dismissal follows the same cancellation rules as Escape, including
+// mandatory police choices and in-progress actions which cannot be dismissed.
 document.addEventListener('click', event => {
   if (event.target instanceof HTMLDialogElement && event.target.open) {
     if (event.target === dailyCaseDialog && dailyCaseBusy) return;
-    event.target.close();
+    if (event.target.dispatchEvent(new Event('cancel', {cancelable:true})) && event.target.open) event.target.close();
   }
 });
 

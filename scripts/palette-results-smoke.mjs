@@ -98,7 +98,7 @@ try {
     assert.ok(await page.locator('.palette-value-overview>div,.palette-summary-items article').evaluateAll(nodes=>nodes.every(el=>el.scrollWidth<=el.clientWidth+1)),`profit/loss fits ${width} ${lang}`);
     if([1440,320].includes(width))await page.screenshot({path:`/tmp/jg-palette-profit-loss-${width}-${lang}.png`,fullPage:true});
   }
-  await page.locator('.palette-summary-actions a[href="/inventory"]').click();await page.waitForSelector('.inventory-grid');
+  assert.equal(await page.locator('.palette-reveal-screen button,.palette-reveal-screen a').count(),1);await page.locator('.palette-summary-actions [data-palette-finish]').press('Enter');await page.waitForSelector('.inventory-grid');
   // Existing paid pallets retain their purchase cost and the old opening link.
   const legacyResponse=page.waitForResponse(response=>response.url().endsWith('/api/account/stock-palettes/reveal'));
   await page.goto(base+'/palettes?open='+legacy.id);await page.waitForSelector('.palette-reveal-screen');

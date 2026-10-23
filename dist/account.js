@@ -17,12 +17,13 @@ auctionReveal.className = 'auction-reveal';
 auctionReveal.setAttribute('aria-labelledby', 'auction-detail-title');
 document.body.append(auctionReveal);
 let accountBusy = false, accountDailyRun = null, accountResult = null;
-let caseOpening = null;
+let caseOpening = null, caseRevealState = null;
 const caseReveal = document.createElement('dialog');
 caseReveal.className = 'case-reveal';
 caseReveal.setAttribute('aria-labelledby', 'case-reveal-title');
 document.body.append(caseReveal);
 caseReveal.addEventListener('close', () => {
+  caseRevealState = null;
   for (const animation of caseReveal.querySelector('.case-reel')?.getAnimations() || []) animation.cancel();
   if (currentAccountPage === '/shop') (accountContent.querySelector('[data-account="buy-case"]') || accountContent.querySelector('[data-account="pull"]'))?.focus({ preventScroll: true });
   else if (currentAccountPage === '/inventory') accountContent.querySelector('h1')?.focus({ preventScroll: true });
@@ -768,7 +769,7 @@ function renderAuctionDetail(auction) {
     ${auction.image ? `<img class="auction-detail-cover" src="${accountEscape(auction.image)}" alt="">` : ''}
     <dl class="auction-facts">${facts.filter(([, value]) => value !== null && value !== undefined && value !== '').map(([label, value]) => `<div><dt>${label}</dt><dd>${accountEscape(value)}</dd></div>`).join('')}</dl>
     ${auction.description ? `<p class="auction-description">${accountEscape(auction.description)}</p>` : ''}
-    <div class="auction-reveal-actions">${auction.url ? `<a class="secondary-button" href="${accountEscape(auction.url)}" target="_blank" rel="noopener">${t('Open listing', 'Angebot öffnen')}</a>` : ''}<button class="text-button" data-account="close-auction" autofocus>${t('Close', 'Schließen')}</button></div></div>`;
+    ${auction.url ? `<p><a href="${accountEscape(auction.url)}" target="_blank" rel="noopener">${t('Original listing', 'Originalangebot')} ↗</a></p>` : ''}<div class="auction-reveal-actions"><button class="primary-button" data-account="close-auction" autofocus>${t('Continue', 'Weiter')}</button></div></div>`;
   auctionReveal.querySelector('[data-account="close-auction"]').focus({ preventScroll: true });
 }
 function adminMarketMarkup() {
@@ -946,7 +947,11 @@ async function buyStoreCase(caseId, visit) {
   accountStore = result.store;
   accountItems = [result.item, ...accountItems.filter(item => item.id !== result.item.id)];
   renderAccountPage();
-  caseReveal.innerHTML = `<div class="case-purchase-content"><button class="dialog-close" data-account="close-reveal" aria-label="${t('Close', 'Schließen')}">×</button><div class="case-purchase-burst" aria-hidden="true">${Array.from({length: 12}, (_, i) => `<i style="--particle:${i}"></i>`).join('')}</div><p class="case-receipt-label">${t('ADDED TO INVENTORY', 'ZUM INVENTAR HINZUGEFÜGT')}</p>${caseArtwork(result.item)}<h2 id="case-reveal-title">${accountEscape(t(result.item.title, result.item.titleDe))}</h2><div class="case-reveal-actions"><button class="primary-button" data-account="open-inventory-case" data-id="${accountEscape(result.item.id)}">${t('Open case', 'Kiste öffnen')}</button><button class="secondary-button" data-account="close-reveal">${t('Keep sealed', 'Versiegelt behalten')}</button></div></div>`;
+  renderCasePurchase(result.item);
+}
+function renderCasePurchase(item) {
+  caseRevealState={kind:'purchase',item};
+  caseReveal.innerHTML = `<div class="case-purchase-content"><button class="dialog-close" data-account="close-reveal" aria-label="${t('Close', 'Schließen')}">×</button><div class="case-purchase-burst" aria-hidden="true">${Array.from({length: 12}, (_, i) => `<i style="--particle:${i}"></i>`).join('')}</div><p class="case-receipt-label">${t('ADDED TO INVENTORY', 'ZUM INVENTAR HINZUGEFÜGT')}</p>${caseArtwork(item)}<h2 id="case-reveal-title">${accountEscape(t(item.title, item.titleDe))}</h2><div class="case-reveal-actions"><button class="primary-button" data-account="open-inventory-case" data-id="${accountEscape(item.id)}">${t('Open case', 'Kiste öffnen')}</button><button class="secondary-button" data-account="close-reveal">${t('Continue', 'Weiter')}</button></div></div>`;
   if (!caseReveal.open) caseReveal.showModal();
   caseReveal.querySelector('[data-account="open-inventory-case"]').focus({preventScroll: true});
 }
@@ -971,21 +976,21 @@ function resultMarkup() {
   return `<p class="rarity-label rarity-${accountResult.rarity}">${rarityLabel(accountResult.rarity)}</p><h2>${accountEscape(accountResult.title)}</h2>${accountResult.sold ? `<p>${t('Sold. J€ added.', 'Verkauft. J€ gutgeschrieben.')}</p>` : ''}`;
 }
 function caseResultActions(item, sealedItem = {}, legacy = false) {
-  const tiers = ['common', 'uncommon', 'rare', 'epic', 'legendary'];
-  const cases = ['lost-property', 'evidence-locker', 'seizure', 'vault', 'collectors-cache'];
-  const caseId = legacy ? item.caseId : sealedItem.caseType || cases[tiers.indexOf(sealedItem.caseTier)] || cases[0];
+  const caseId = legacy ? item.caseId : sealedItem.caseType;
   const offer = (legacy ? accountCatalog : accountStore)?.cases?.find(box => box.id === caseId);
-  const disabled = !account || !offer || offer.available === false || account.tokens < offer.cost || offer.stock?.remaining === 0;
-  return `<button class="primary-button" data-account="${legacy ? 'pull' : 'buy-case'}" data-id="${accountEscape(caseId)}" ${disabled ? 'disabled' : ''}>${t('Buy another case', 'Weitere Kiste kaufen')} (${offer ? justizEuro(offer.cost) : '—'})</button><a class="secondary-button" href="/inventory?focus=${encodeURIComponent(item.id)}" data-page>${t('View in inventory', 'Im Inventar ansehen')}</a><button class="text-button" data-account="close-reveal">${t('Exit', 'Verlassen')}</button>`;
+  const canBuy = account && offer && offer.available !== false && account.tokens >= offer.cost && offer.stock?.remaining !== 0;
+  return `<button class="primary-button" data-account="close-reveal">${t('Continue', 'Weiter')}</button>${canBuy ? `<button class="secondary-button" data-account="${legacy ? 'pull' : 'buy-case'}" data-id="${accountEscape(caseId)}">${t('Buy another case', 'Weitere Kiste kaufen')} · ${justizEuro(offer.cost)}</button>` : ''}`;
+}
+function renderCaseResult(item, sealedItem = {}, legacy = false) {
+  caseRevealState={kind:'result',item,sealedItem,legacy};
+  caseReveal.innerHTML = `<div class="case-reveal-content case-unboxed rarity-${accountEscape(item.rarity)}"><p class="case-receipt-label">${t('CASE OPENED','KISTE GEÖFFNET')}</p><h2 id="case-reveal-title">${accountEscape(item.title)}</h2>${item.image?`<img src="${accountEscape(item.image)}" alt="">`:''}<p class="rarity-label">${rarityLabel(item.rarity)}</p><p>${t('Historical real-auction value','Historischer Wert der echten Auktion')} ${euro(item.price)}</p><p role="status">${item.sold?t('Sold. J€ added.','Verkauft. J€ gutgeschrieben.'):t('Added to inventory.','Zum Inventar hinzugefügt.')}</p><div class="case-reveal-actions">${caseResultActions(item,sealedItem,legacy)}</div></div>`;
+  if(!caseReveal.open)caseReveal.showModal();
+  caseReveal.querySelector('[data-account="close-reveal"]').focus({preventScroll:true});
 }
 function tierCard(rarity) {
   return `<div class="case-tier rarity-${accountEscape(rarity)}"><span class="case-tier-symbol" aria-hidden="true">◇</span><span class="rarity-label">${rarityLabel(rarity)}</span></div>`;
 }
-function revealCaseItem() {
-  caseReveal.innerHTML = `<div class="case-reveal-content case-unboxed rarity-${accountEscape(accountResult.rarity)}"><h2 id="case-reveal-title">${accountEscape(accountResult.title)}</h2><img src="${accountEscape(accountResult.image)}" alt=""><p class="rarity-label">${rarityLabel(accountResult.rarity)}</p><p>${t('Historical real-auction value', 'Historischer Wert der echten Auktion')} ${euro(accountResult.price)}</p><p role="status">${accountResult.sold ? t('Sold. J€ added.', 'Verkauft. J€ gutgeschrieben.') : t('Added to inventory.', 'Zum Inventar hinzugefügt.')}</p><div class="case-reveal-actions">${caseResultActions(accountResult, {}, true)}</div></div>`;
-  if (!caseReveal.open) caseReveal.showModal();
-  caseReveal.querySelector('[data-account="close-reveal"]').focus({ preventScroll: true });
-}
+function revealCaseItem() { renderCaseResult(accountResult,{},true); }
 async function accountGameStart(mode) {
   await accountReady;
   if (!account) return guestGameRequest('start', { mode });
@@ -1160,6 +1165,7 @@ document.addEventListener('click', async event => {
       if (store) accountStore = store;
       if (dialogWasOpen && !caseReveal.open) { renderAccountPage(); return; }
       renderAccountPage();
+      caseRevealState=null;
       caseReveal.innerHTML = `<div class="case-opening-content"><button class="dialog-close" data-account="close-reveal" aria-label="${t('Close', 'Schließen')}">×</button>${caseArtwork(sealedItem)}<h2 id="case-reveal-title">${t('Opening case…', 'Kiste wird geöffnet …')}</h2><div class="case-window" aria-hidden="true"><div class="case-marker"></div><div class="case-reel"></div></div><p>${t('Saved to inventory.', 'Im Inventar gespeichert.')}</p></div>`;
       if (!caseReveal.open) caseReveal.showModal();
       caseReveal.querySelector('[data-account="close-reveal"]').focus({preventScroll: true});
@@ -1168,8 +1174,7 @@ document.addEventListener('click', async event => {
         pool.length ? pool : [result.item], () => caseReveal.open && visit === accountVisit && account?.id === owner); }
       catch { /* The awarded item is already in inventory; still show it. */ }
       if (visit !== accountVisit || account?.id !== owner || !caseReveal.open) return;
-      caseReveal.innerHTML = `<div class="case-reveal-content case-unboxed rarity-${accountEscape(result.item.rarity)}"><p class="case-receipt-label">${t('CASE OPENED', 'KISTE GEÖFFNET')}</p><h2 id="case-reveal-title">${accountEscape(result.item.title)}</h2>${result.item.image ? `<img src="${accountEscape(result.item.image)}" alt="">` : ''}<p class="rarity-label">${rarityLabel(result.item.rarity)}</p><p>${t('Historical real-auction value', 'Historischer Wert der echten Auktion')} ${euro(result.item.price)}</p><p>${t('Added to inventory.', 'Zum Inventar hinzugefügt.')}</p><div class="case-reveal-actions">${caseResultActions(result.item, sealedItem)}</div></div>`;
-      caseReveal.querySelector('[data-account="close-reveal"]').focus({ preventScroll: true });
+      renderCaseResult(result.item,sealedItem);
     }
     if (action === 'sell' || action === 'sell-all' || action === 'sell-result') {
       const owner = account.id, result = await accountApi(action === 'sell-all' ? 'inventory/sell-all' : 'inventory/sell', { id: button.dataset.id });
@@ -1302,6 +1307,12 @@ document.addEventListener('input', event => {
   }
 });
 document.addEventListener('jg:language', () => {
+  if(caseReveal.open&&caseRevealState){
+    const action=document.activeElement?.dataset?.account,saved=caseRevealState;
+    if(saved.kind==='purchase')renderCasePurchase(saved.item);
+    else renderCaseResult(saved.item,saved.sealedItem,saved.legacy);
+    if(action)caseReveal.querySelector(`[data-account="${action}"]`)?.focus({preventScroll:true});
+  }
   updateNavigation();
   renderNotificationPanel();
   if (currentAccountPage && pageLoaded) {

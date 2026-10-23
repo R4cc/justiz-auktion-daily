@@ -56,7 +56,7 @@ try {
     assert.ok(await page.locator('.justice-dialog').evaluate(el=>el.scrollWidth<=el.clientWidth+1));
     if([1440,320].includes(width))await page.locator('.justice-dialog').screenshot({path:`/tmp/jg-police-recognition-${width}-${lang}.png`});
   }
-  await page.keyboard.press('Escape');assert.equal(await page.locator('.justice-dialog').evaluate(el=>el.open),true);
+  await page.keyboard.press('Escape');await page.locator('.justice-dialog').evaluate(el=>el.click());assert.equal(await page.locator('.justice-dialog').evaluate(el=>el.open),true);
   await page.reload();await page.waitForSelector('.police-recognition-content');assert.equal(accounts.profile(owner).justice.policeEncounter.id,first.id);
   const cash=accounts.profile(owner).tokens;
   await page.locator('[data-police-choice="pay"]').evaluate(button=>{button.click();button.click();});

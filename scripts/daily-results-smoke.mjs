@@ -88,7 +88,9 @@ try {
     await page.locator(`.daily-case-dialog [data-choice="${choice}"]`).click();
     await page.waitForFunction(() => !dailyCaseBusy && !dailyCaseDialog.open);
     if (choice === 'open') {
-      await page.waitForSelector('.case-reveal[open]');
+      await page.waitForSelector('.case-reveal[open] [data-account="close-reveal"]');
+      assert.equal(await page.locator('.case-reveal[open] .case-reveal-actions button').count(),1);
+      assert.equal(await page.locator('.case-reveal[open] .case-reveal-actions a').count(),0);
       assert.equal(accounts.inventory(accounts.user(token)).filter(item => item.kind === 'case').length, 0);
       await page.locator('.case-reveal[open] [data-account="close-reveal"]').click();
     } else assert.equal(accounts.inventory(accounts.user(token)).filter(item => item.kind === 'case').length, 1);

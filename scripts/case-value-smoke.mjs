@@ -71,7 +71,20 @@ try {
   const frozen=accounts.db(db=>JSON.parse(db.prepare('SELECT reward FROM sealed_cases WHERE inventory_id=?').get(bought.id).reward));
   await page.locator('.case-reveal [data-account="open-inventory-case"]').click();await page.waitForSelector('.case-unboxed');
   const opened=accounts.inventory(owner).find(item=>item.id===frozen.id);assert.equal(opened.auctionId,frozen.auctionId);assert.equal(opened.price,frozen.price);
-  await page.locator('.case-reveal [data-account="close-reveal"]').click();
+  for(const width of [1440,320])for(const lang of ['en','de']){
+    await page.setViewportSize({width,height:1000});
+    await page.locator('#language-select').evaluate((select,value)=>{select.value=value;select.dispatchEvent(new Event('change',{bubbles:true}));},lang);
+    assert.equal(await page.locator('.case-reveal-actions a').count(),0);
+    assert.equal(await page.locator('.case-reveal-actions button').count(),2);
+    assert.equal(await page.locator('.case-reveal-actions [data-account="close-reveal"]').innerText(),lang==='en'?'Continue':'Weiter');
+    assert.ok(await page.locator('.case-reveal[open]').evaluate(el=>el.scrollWidth<=el.clientWidth+1));
+    await page.locator('.case-reveal[open]').screenshot({path:`/tmp/jg-case-modal-actions-${width}-${lang}.png`});
+  }
+  const cashBeforeRepeat=accounts.profile(owner).tokens,sealedBeforeRepeat=accounts.inventory(owner).filter(item=>item.kind==='case').length;
+  await page.locator('.case-reveal-actions [data-account="buy-case"]').click();await page.waitForSelector('.case-purchase-content');
+  assert.equal(accounts.profile(owner).tokens,cashBeforeRepeat-bought.caseCost);
+  assert.equal(accounts.inventory(owner).filter(item=>item.kind==='case').length,sealedBeforeRepeat+1);
+  await page.locator('.case-reveal-actions [data-account="close-reveal"]').click();
   await page.goto(base+'/inventory');await page.waitForSelector(`[data-account="open-inventory-case"][data-id="${old.item.id}"]`);
   await page.locator(`[data-account="open-inventory-case"][data-id="${old.item.id}"]`).click();await page.waitForSelector('.case-unboxed');
   const upgraded=accounts.inventory(owner).find(item=>item.id===old.reward.id);

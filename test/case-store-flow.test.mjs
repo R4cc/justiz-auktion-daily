@@ -22,7 +22,7 @@ function fixture() {
     account:{id:'buyer',tokens:500},accountStore:store,accountSelectedStoreCase:'lost-property',
     caseStockRequest:0,accountVisit:1,currentAccountPage:'/shop',accountBusy:false,
     accountItems:[item],accountCatalog:null,traderStores:[],economyFlags:{businesses:true,resales:true},
-    caseReveal,accountContent:{querySelector(){return null;},querySelectorAll(){return []; }},
+    caseReveal,caseRevealState:null,accountContent:{querySelector(){return null;},querySelectorAll(){return []; }},
     localStorage:{getItem:key=>pending.get(key),setItem:(key,value)=>pending.set(key,value),removeItem:key=>pending.delete(key)},
     crypto:{randomUUID:()=> 'saved-purchase-request'},accountEscape:escape,rarityLabel:String,t:en=>en,euro:String,justizEuro:value=>`J€ ${value}`,
     updateAccount(user){context.account=user;},renderAccountPage(){renders++;},updateCasePurchaseButtons(){},
@@ -36,7 +36,7 @@ function fixture() {
   return {context,pending,calls,caseReveal,click,focused,get renders(){return renders;},get shows(){return shows;}};
 }
 
-test('case purchase retries reuse their receipt and offer open or keep without opening automatically', async()=>{
+test('case purchase retries reuse their receipt and offer open or continue without opening automatically', async()=>{
   const f=fixture(), realApi=f.context.accountApi;
   f.context.accountApi=async()=>{throw Error('offline');};
   await assert.rejects(vm.runInContext("buyStoreCase('lost-property',1)",f.context),/offline/);
@@ -46,7 +46,7 @@ test('case purchase retries reuse their receipt and offer open or keep without o
   assert.equal(f.pending.size,0);assert.equal(f.context.account.tokens,326);
   assert.equal(f.calls.length,1);assert.equal(f.calls[0].payload.requestId,'saved-purchase-request');
   assert.match(f.caseReveal.innerHTML,/data-account="open-inventory-case" data-id="sealed-one"/);
-  assert.match(f.caseReveal.innerHTML,/Keep sealed/);
+  assert.match(f.caseReveal.innerHTML,/Continue/);
   assert.equal(f.caseReveal.open,true);
 });
 
@@ -80,21 +80,21 @@ test('dismissing a purchased case while the opening request is pending does not 
   assert.equal(f.caseReveal.open,false);assert.equal(f.shows,0);assert.equal(f.context.accountItems[0].id,find.id);
 });
 
-test('opened inventory and purchased cases show only buy another, view in inventory and exit', async () => {
+test('opened inventory and purchased cases show Continue and an optional available repeat purchase', async () => {
   for (const resales of [true, false]) for (const page of ['/shop', '/inventory']) {
     const f = fixture(); f.context.currentAccountPage = page; f.context.economyFlags.resales = resales;
     await f.click('open-inventory-case', item.id);
     assert.equal(f.context.accountBusy, false);
-    assert.equal((f.caseReveal.innerHTML.match(/<(?:button|a)\b/g) || []).length, 3);
-    assert.match(f.caseReveal.innerHTML, /Buy another case \(J€ 174\)/);
-    assert.match(f.caseReveal.innerHTML, /href="\/inventory\?focus=find-one" data-page>View in inventory/);
-    assert.match(f.caseReveal.innerHTML, />Exit<\/button>/);
+    assert.equal((f.caseReveal.innerHTML.match(/<(?:button|a)\b/g) || []).length, 2);
+    assert.match(f.caseReveal.innerHTML, /Buy another case · J€ 174/);
+    assert.match(f.caseReveal.innerHTML, /class="primary-button" data-account="close-reveal">Continue/);
+    assert.doesNotMatch(f.caseReveal.innerHTML, /<a\b|View in inventory|Exit/);
     assert.doesNotMatch(f.caseReveal.innerHTML, /dialog-close|Keep item|Sell now|data-trader|disabled/);
     assert.equal(f.calls.filter(call => call.route === 'cases/buy').length, 0);
     await f.click('buy-case', 'lost-property');
     assert.equal(f.calls.filter(call => call.route === 'cases/buy').length, 1);
     assert.equal(f.calls.filter(call => call.route === 'inventory/case/open').length, 1);
-    assert.match(f.caseReveal.innerHTML, /Keep sealed/);
+    assert.match(f.caseReveal.innerHTML, /Continue/);
   }
 });
 
@@ -102,22 +102,20 @@ test('buy another uses the opened case type and current quote, even when another
   const f = fixture(); f.context.accountItems = [{ ...item, caseType: 'vault' }];
   await f.click('open-inventory-case', item.id);
   assert.match(f.caseReveal.innerHTML, /data-account="buy-case" data-id="vault"/);
-  assert.match(f.caseReveal.innerHTML, /Buy another case \(J€ 300\)/);
+  assert.match(f.caseReveal.innerHTML, /Buy another case · J€ 300/);
   for (const [tier, caseId] of [['common','lost-property'],['epic','vault']]) {
     const html = vm.runInContext(`caseResultActions({id:'find'}, {caseTier:'${tier}'})`, f.context);
-    assert.match(html, new RegExp(`data-id="${caseId}"`));
+    assert.equal(html, '<button class="primary-button" data-account="close-reveal">Continue</button>');
   }
 });
 
-test('sold-out or unaffordable repeat purchases retain all three result actions', async () => {
-  const f = fixture(); f.context.accountStore.cases[0].stock.remaining = 0;
-  let html = vm.runInContext("caseResultActions({id:'find'}, {caseType:'lost-property'})", f.context);
-  assert.match(html, /data-id="lost-property" disabled/);
-  assert.equal((html.match(/<(?:button|a)\b/g) || []).length, 3);
-  f.context.accountStore.cases[0].stock.remaining = 2; f.context.account.tokens = 1;
-  html = vm.runInContext("caseResultActions({id:'find'}, {caseType:'lost-property'})", f.context);
-  assert.match(html, /data-id="lost-property" disabled/);
-  assert.match(html, /View in inventory/); assert.match(html, /Exit/);
+test('sold-out, unaffordable, free and unknown cases leave only Continue', async () => {
+  const f = fixture();
+  for(const [sealed,remaining,tokens]of [[{caseType:'lost-property'},0,500],[{caseType:'lost-property'},2,1],[{caseTier:'legendary'},2,500],[{},2,500],[{caseType:'retired-case'},2,500]]){
+    f.context.accountStore.cases[0].stock.remaining=remaining;f.context.account.tokens=tokens;f.context.sealed=sealed;
+    const html=vm.runInContext("caseResultActions({id:'find'},sealed)",f.context);
+    assert.equal(html,'<button class="primary-button" data-account="close-reveal">Continue</button>');
+  }
 });
 
 test('case illustrations escape labels and resolve unknown IDs to a known design',()=>{

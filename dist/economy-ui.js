@@ -574,10 +574,8 @@ window.economyUi = (() => {
     detailId = id;
     detailPrimary = primary;
     const title = primary ? name(lot) : `${lot.quantity > 1 ? `${lot.quantity}× ` : ''}${t(lot.item.title, lot.item.titleDe || lot.item.title)}`;
-    const owned = !primary && lot.winnerId === account?.id && lot.settledAt ? (await accountApi('inventory?includeStores=1')).items.filter(item=>item.id===lot.inventoryId) : [];
-    if (request !== dialogSequence || visit !== accountVisit) return;
-    const wonLinks = owned.map(item=>`<p><a class="primary-button" href="/inventory?focus=${encodeURIComponent(item.id)}" data-page>${t('View item','Artikel ansehen')} →</a>${item.businessType&&!item.listed&&!item.storeId?`<a class="secondary-button" href="/inventory?focus=${encodeURIComponent(item.id)}&action=stock" data-page>${t('Stock a compatible store','In passenden Laden einräumen')} →</a>`:''}</p>`).join('');
-    const winAction = wonLinks || (primary && lot.revealAvailable ? `<div class="auction-win-panel"><h3>${t('Won palette', 'Gewonnene Palette')}</h3><div class="palette-seal" aria-hidden="true"><span>01 ◇</span><span>02 ◇</span><span>03 ◇</span></div><button class="primary-button" data-economy="reveal" data-id="${esc(lot.id)}">${lot.stockOffer?t('Reveal stock','Stock aufdecken'):t('Reveal three finds', 'Drei Funde aufdecken')} →</button></div>` : bidForm(lot, primary));
+    const finished=lot.status!=='active'||lot.endsAt<=Date.now();
+    const winAction = primary && lot.revealAvailable ? `<div class="auction-win-panel"><h3>${t('Won palette', 'Gewonnene Palette')}</h3><div class="palette-seal" aria-hidden="true"><span>01 ◇</span><span>02 ◇</span><span>03 ◇</span></div><button class="primary-button" data-economy="reveal" data-id="${esc(lot.id)}">${lot.stockOffer?t('Reveal stock','Stock aufdecken'):t('Reveal three finds', 'Drei Funde aufdecken')} →</button></div>` : finished ? `<button class="primary-button" data-economy="close">${t('Continue','Weiter')}</button>` : bidForm(lot, primary);
     openDialog(`<div class="auction-room"><section class="auction-room-media" aria-label="${primary ? t('Sealed palette illustration', 'Illustration der versiegelten Palette') : t('Auction pictures', 'Auktionsbilder')}">${auctionMedia(lot, primary)}</section>
       <section class="auction-room-story"><h2 id="economy-dialog-title" tabindex="-1">${esc(title)}</h2>${window.marketTrendUi?.markup(lotMarketCategory(lot,primary))||''}
       ${primary ? `<p class="auction-room-meta">${t('Required level', 'Benötigtes Level')} <strong>${lot.requiredLevel}</strong><br>${esc((lot.allowedMarketCategories || []).map(categoryName).join(' · ') || categoryName(null))}</p>${auctionContents(lot)}` : `<p class="auction-room-meta">${t('Seller', 'Verkäufer')}: <strong>${esc(lot.sellerUsername)}</strong><br>${t('Quantity', 'Anzahl')}: <strong>${lot.quantity}</strong><br>${lot.item.kind === 'review-pack' ? `${lot.item.reviewCount} ${t('Botted Reviews · choose 1–5 stars and a store in inventory','Bot-Bewertungen · 1–5 Sterne und einen Laden im Inventar wählen')}` : lot.item.kind === 'case' ? t('Sealed case · one item from any category', 'Versiegelte Kiste · ein Gegenstand aus jeder Kategorie') : `${t('Historical real-auction value', 'Historischer Wert der echten Auktion')}: <strong>${euro(lot.item.price * lot.quantity)}</strong>`}<br>${t('Estimated market value', 'Geschätzter Marktwert')}: <strong>${justizEuro(lot.estimatedValueTokens)}</strong>${lot.npcDemand?`<br>${t('NPC demand','NPC-Nachfrage')}: <strong>${npcDemandLabel(lot.npcDemand)}</strong>`:''}${economyFlags.market&&lot.item.marketCategory?`<br><a href="/market?category=${encodeURIComponent(lot.item.marketCategory)}" data-page>${t('Market Trends','Markttrends')} ↗</a>`:''}</p>`}
@@ -633,7 +631,7 @@ window.economyUi = (() => {
       <div class="palette-ledger-row"><span>${t('Winning bid', 'Gewinngebot')}</span><b>−${justizEuro(fixed.bundleCostTokens)}</b></div>
       <div class="palette-ledger-verdict ${verdict.className}"><span>${verdict.label}</span><strong>${difference > 0 ? '+' : difference < 0 ? '−' : ''}${justizEuro(Math.abs(difference))}</strong></div>
       <div class="palette-ledger-note">${infoTip(t('Historical values are not guaranteed sale prices. Your finds are already in your inventory.', 'Historische Werte sind keine garantierten Verkaufspreise. Deine Funde liegen bereits im Inventar.'), t('About this estimate', 'Über diese Schätzung'))}</div></div>
-      ${fixed.rewards.map(r=>`<p><a href="/inventory?focus=${encodeURIComponent(r.inventoryId || r.item.id)}" data-page>${t('Manage find','Fund verwalten')}: ${esc(r.item.title)} →</a></p>`).join('')}<a class="primary-button" href="/inventory" data-page>${t('Go to inventory', 'Zum Inventar')} →</a>`);
+      <button class="primary-button" data-economy="close">${t('Continue','Weiter')}</button>`);
   }
   async function loadHistory(id, visit = accountVisit, repaint = true) {
     if (!id) return;
@@ -903,7 +901,13 @@ window.economyUi = (() => {
         : type === 'primary' ? await api.paletteAuctionBid(id, amount) : await api.resaleBid(id, amount);
       if (visit !== accountVisit || account?.id !== owner) return;
       updateAccount(result.user); busy = false;
-      if (type === 'list') { dialog.close(); await navigateAccountPage('/marketplace?view=mine'); }
+      if (type === 'list') {
+        dialog.close();
+        const inventory=await accountApi('inventory');
+        if(visit!==accountVisit||owner!==account?.id)return;
+        accountItems=inventory.items;renderAccountPage();window.inventoryItemUi?.focus(id);
+        showToast(t('Listed for auction.','Zur Auktion angeboten.'));
+      }
       else {
         await refresh(currentAccountPage, visit, true);
         if (visit !== accountVisit || owner !== account?.id) return;
