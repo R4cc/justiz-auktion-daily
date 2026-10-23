@@ -39,7 +39,10 @@ try {
   const context=await browser.newContext({viewport:{width:1440,height:1000},reducedMotion:'reduce'}),page=await context.newPage(),errors=[];
   page.on('pageerror',error=>errors.push(error.message));await context.addCookies([{name:'jg_session',value:token,url:base}]);
   const heat=()=>accounts.db(db=>{playerHeat(db,owner.id);db.prepare('INSERT INTO player_heat VALUES(?,?,?) ON CONFLICT(user_id) DO UPDATE SET value=excluded.value,updated_at=excluded.updated_at').run(owner.id,10,Date.now());db.prepare('UPDATE police_activity_checks SET checked_at=checked_at-?').run(POLICE_CHECK_INTERVAL+1);});
-  heat();await page.goto(base+'/shop');await page.waitForSelector('[data-account="buy-case"]');
+  heat();await page.goto(base+'/profile');await page.waitForSelector('.theft-heat');
+  assert.doesNotMatch(await page.locator('.theft-heat').innerText(),/×|multiplier|Multiplikator/);
+  assert.match(await page.locator('.heat-risk').innerText(),/15%/);
+  await page.goto(base+'/shop');await page.waitForSelector('[data-account="buy-case"]');
   const before=accounts.profile(owner).tokens;
   await page.locator('[data-account="buy-case"]').click();await page.waitForSelector('.police-recognition-content');
   const first=accounts.profile(owner).justice.policeEncounter;assert.ok(first);assert.equal(first.fineMultiplier,30);
@@ -48,7 +51,7 @@ try {
   const language=async lang=>page.locator('#language-select').evaluate((select,value)=>{select.value=value;select.dispatchEvent(new Event('change',{bubbles:true}));},lang);
   for(const width of [1440,768,390,320])for(const lang of ['en','de']){
     await page.setViewportSize({width,height:1000});await language(lang);
-    assert.match(await page.locator('.police-recognition-content').innerText(),/30×/);
+    assert.doesNotMatch(await page.locator('.police-recognition-content').innerText(),/×|multiplier|Multiplikator/);
     assert.ok(await page.locator('[data-police-choice="pay"]').isEnabled());
     assert.ok(await page.locator('.justice-dialog').evaluate(el=>el.scrollWidth<=el.clientWidth+1));
     if([1440,320].includes(width))await page.locator('.justice-dialog').screenshot({path:`/tmp/jg-police-recognition-${width}-${lang}.png`});
