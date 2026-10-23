@@ -176,6 +176,34 @@
 .shop-color-jeweler{--shop-color:#9879b0;--shop-roof:#5f4772;--choice-accent:#9879b0;--choice-tint:#ede4f3}
 .shop-color-hardware{--shop-color:#b18143;--shop-roof:#76582d;--choice-accent:#b18143;--choice-tint:#f1e7d4}
 
+/* Portfolio cards keep the same footprint while cash and stock update. */
+.stores-workspace>.shop-metrics dt{min-height:2.6em;line-height:1.3}
+.stores-workspace>.shop-metrics dd{height:36px;line-height:1.4}
+.shop-metrics dd.is-long{font-size:12px}
+.shop-card-grid{grid-template-columns:repeat(auto-fit,minmax(min(100%,300px),1fr))}
+.business-shop{overflow:visible}
+.business-shop .shop-card-picture{height:100px;border-radius:17px 17px 0 0;overflow:hidden}
+.business-shop .shop-card-content{padding:16px;gap:10px}
+.shop-card-heading{display:grid;gap:4px;min-width:0}
+.shop-card-heading>small{font-size:10px;color:var(--shop-muted)}
+.shop-card-heading h2{font-size:18px;line-height:1.25;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.shop-card-heading .shop-review-rating{height:20px;flex-wrap:nowrap;white-space:nowrap;overflow:hidden;font-size:11px}
+.business-shop .shop-metrics{grid-template-columns:minmax(0,1.5fr) repeat(2,minmax(0,1fr));padding:4px}
+.business-shop .shop-metrics>div{padding:7px 5px}
+.business-shop .shop-metrics dt{font-size:10px;min-height:2.6em;line-height:1.3;margin-bottom:3px}
+.business-shop .shop-metrics dd{font-size:14px;line-height:1.4;height:2.8em;overflow:hidden}
+.shop-shelf-meter{width:100%;height:6px;accent-color:var(--shop-color);margin-top:-6px}
+.shop-card-actions{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.business-shop .shop-card-actions>*{font-size:11px;padding:8px;height:48px}
+.business-shop .shop-card-actions>.primary-button{margin:0}
+.business-shop .shop-shortcuts{display:grid;grid-auto-flow:column;grid-auto-columns:minmax(0,1fr);gap:6px}
+.business-shop .shop-shortcuts>*{font-size:10px;padding:6px;height:44px}
+.business-shop .business-cash-button{grid-template-columns:32px minmax(0,1fr);gap:10px;height:84px;padding:10px 12px}
+.business-shop .business-cash-button>svg{width:32px;height:32px}
+.business-cash-copy>span{line-height:1.3;min-height:2.6em}
+.business-cash-copy strong{font-size:clamp(.8rem,1.4vw,1.15rem);line-height:1.3}
+.business-shop .business-cash-status{font-variant-numeric:tabular-nums}
+
 .shop-upgrade{margin:18px 0;padding:20px;border:1px solid #d7c58e;border-radius:18px;background:#faf6e7;min-width:0}
 .shop-upgrade header{display:flex;align-items:center;gap:10px;margin-bottom:12px}.shop-upgrade header>span{font-size:26px}.shop-upgrade h3{margin:0;font-size:1.05rem;overflow-wrap:anywhere}
 .shop-upgrade dl{display:grid;grid-template-columns:repeat(auto-fit,minmax(145px,1fr));gap:12px;margin:12px 0}.shop-upgrade dt{font-size:.8rem;color:var(--muted)}.shop-upgrade dd{margin:4px 0 0;font-weight:700;overflow-wrap:anywhere}.shop-upgrade p{line-height:1.5}.shop-upgrade progress{display:block;width:100%;accent-color:#ae7c22;height:12px}.shop-upgrade small{display:block;line-height:1.5}.shop-upgrade button{max-width:100%;white-space:normal}.shop-upgrade-link{display:block;margin-top:12px}.shop-upgrade.is-building{border-color:#bc914b}

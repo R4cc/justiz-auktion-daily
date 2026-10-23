@@ -1,16 +1,33 @@
 window.storeReputationUi = (() => {
   const esc = value => accountEscape(value);
-  function meter(store) {
+  let popularitySequence = 0;
+  for (const eventName of ['pointerover','focusin']) document.addEventListener(eventName, event => {
+    const tip = event.target.closest?.('.shop-popularity-tip');
+    if (tip && !tip.contains(event.relatedTarget)) tip.classList.remove('is-dismissed');
+  });
+  document.addEventListener('keydown', event => {
+    if (event.key !== 'Escape') return;
+    const tip = document.activeElement?.closest('.shop-popularity-tip') || document.querySelector('.shop-popularity-tip:hover');
+    tip?.classList.add('is-dismissed');
+  });
+  function meter(store, explain = false) {
     const value = Math.max(0, Math.min(100, Number(store.popularityPercent) || 0));
-    return `<div class="store-popularity"><div class="store-popularity-label"><span>${t('Popularity', 'Beliebtheit')}</span><strong>${number(value)}%</strong></div><div class="store-popularity-track" role="meter" aria-label="${esc(t('Store popularity', 'Beliebtheit des Ladens'))}" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${value}"><span style="width:${value}%"></span></div></div>`;
+    const content = `<span class="store-popularity-label"><span>${t('Popularity', 'Beliebtheit')}</span><strong>${number(value)}%</strong></span><span class="store-popularity-track" role="meter" aria-label="${esc(t('Store popularity', 'Beliebtheit des Ladens'))}" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${value}"><span style="width:${value}%"></span></span>`;
+    if (!explain || !store.popularityBreakdown) return `<div class="store-popularity">${content}</div>`;
+    const id = `popularity-tip-${++popularitySequence}`;
+    return `<div class="store-popularity info-tip shop-popularity-tip"><button type="button" aria-describedby="${id}">${content}</button><div id="${id}" role="tooltip" data-popularity-breakdown>${explanation(store)}</div></div>`;
   }
   function breakdown(store,expanded=false) {
+    if (!store.popularityBreakdown) return '';
+    return `<details class="shop-popularity-breakdown" data-popularity-breakdown ${expanded?'open':''}><summary>${t('Why this popularity?','Warum diese Beliebtheit?')}</summary>${explanation(store)}</details>`;
+  }
+  function explanation(store) {
     const b=store.popularityBreakdown;if(!b)return '';
     const sign=points=>`${points>0?'+':points<0?'−':''}${number(Math.abs(points))}`;
     const label=factor=>factor.id==='variety'?`${t('Product variety','Produktvielfalt')} · ${number(factor.count)}`:factor.id==='stock_value'?(factor.points<0?t('Low-value stock','Waren mit niedrigem Wert'):factor.points>0?t('High-value stock','Hochwertige Waren'):t('Stock value','Warenwert')):factor.id==='shelf_fill'?`${t('Shelf fill','Regalfüllung')} · ${number(factor.count)} / ${number(factor.capacity)}`:factor.id==='empty_shelves'?t('No stocked items','Keine eingeräumten Artikel'):factor.direction<0?t('Poor reviews','Schlechte Bewertungen'):factor.direction>0?t('Good reviews','Gute Bewertungen'):store.reviewCount?t('Neutral reviews','Neutrale Bewertungen'):t('No reviews yet','Noch keine Bewertungen');
     const row=(text,points)=>`<div><dt>${esc(text)}</dt><dd class="${points>0?'is-positive':points<0?'is-negative':'is-neutral'}">${sign(points)} <small>${t('pts','Pkt.')}</small></dd></div>`;
     const traffic=b.visitorEffectPercent,location=traffic<0?t('Low foot traffic area','Wenig Laufkundschaft am Standort'):traffic>0?t('Busy shopping area','Belebter Einkaufsstandort'):t('Normal foot traffic area','Normale Laufkundschaft am Standort');
-    return `<details class="shop-popularity-breakdown" data-popularity-breakdown ${expanded?'open':''}><summary>${t('Why this popularity?','Warum diese Beliebtheit?')}</summary><div class="shop-popularity-explanation"><dl>${row(b.baseLabel==='base'?t('Base appeal','Grundattraktivität'):t('Recorded stock mix','Gespeichertes Warensortiment'),b.basePercent)}${b.factors.map(f=>row(label(f),f.points)).join('')}<div class="shop-popularity-total"><dt>${t('Popularity','Beliebtheit')}</dt><dd>${number(b.totalPercent)}%</dd></div></dl><div class="shop-popularity-traffic"><span>${esc(location)}</span><strong class="${traffic<0?'is-negative':traffic>0?'is-positive':'is-neutral'}">${sign(traffic)}% ${t('visitors','Besucher')}</strong></div>${!b.recordedAt?`<small class="shop-popularity-legacy">${t('Detailed stock factors appear after your next stock change.','Detaillierte Warenfaktoren erscheinen nach deiner nächsten Warenänderung.')}</small>`:''}</div></details>`;
+    return `<div class="shop-popularity-explanation"><dl>${row(b.baseLabel==='base'?t('Base appeal','Grundattraktivität'):t('Recorded stock mix','Gespeichertes Warensortiment'),b.basePercent)}${b.factors.map(f=>row(label(f),f.points)).join('')}<div class="shop-popularity-total"><dt>${t('Popularity','Beliebtheit')}</dt><dd>${number(b.totalPercent)}%</dd></div></dl><div class="shop-popularity-traffic"><span>${esc(location)}</span><strong class="${traffic<0?'is-negative':traffic>0?'is-positive':'is-neutral'}">${sign(traffic)}% ${t('visitors','Besucher')}</strong></div>${!b.recordedAt?`<small class="shop-popularity-legacy">${t('Detailed stock factors appear after your next stock change.','Detaillierte Warenfaktoren erscheinen nach deiner nächsten Warenänderung.')}</small>`:''}</div>`;
   }
   function histogram(store) {
     const rows = store.reviewDistribution || [1,2,3,4,5].map(stars => ({ stars, count: 0 }));

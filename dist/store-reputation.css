@@ -71,3 +71,14 @@
 .shop-popularity-explanation .is-neutral { color:#667466; }
 @media(min-width:650px) { .shop-surface>.shop-popularity-breakdown .shop-popularity-explanation { max-width:560px; } }
 .shop-popularity-legacy { display:block;font-size:10px;color:#667466;line-height:1.5;margin:0 0 8px; }
+.shop-popularity-tip{display:block;margin:0;min-width:0}
+.shop-popularity-tip>button{display:block;width:100%;height:auto;min-height:44px;padding:6px 0;border:0;border-radius:5px;background:none;color:inherit;font:inherit;text-align:left}
+.shop-popularity-tip :is(.store-popularity-label,.store-popularity-track){width:100%}
+.shop-popularity-tip .store-popularity-label>span{text-decoration:underline dotted;text-underline-offset:3px}
+.shop-popularity-tip>button:hover,.shop-popularity-tip>button:focus-visible{color:inherit;background:#e8ebdd}
+.shop-popularity-tip [role="tooltip"]{width:min(360px,calc(100vw - 32px));max-height:calc(100dvh - 32px);overflow:auto;padding:14px;border-color:#b7c3a8;background:#fffcf2;color:#244d40;visibility:hidden}
+.shop-popularity-tip:hover,.shop-popularity-tip:focus-within{z-index:30}
+.shop-popularity-tip:hover [role="tooltip"],.shop-popularity-tip:focus-within [role="tooltip"]{visibility:visible;pointer-events:auto}
+.shop-popularity-tip.is-dismissed [role="tooltip"]{opacity:0;visibility:hidden;pointer-events:none}
+.shop-popularity-tip .shop-popularity-explanation{padding:0}
+@media(max-width:680px){.shop-popularity-tip [role="tooltip"]{position:fixed;top:auto!important;right:auto!important;bottom:16px;left:16px!important;transform:none}}
