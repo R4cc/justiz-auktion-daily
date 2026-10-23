@@ -299,6 +299,7 @@ function renderRound() {
   stopGuessTimer();
   const auction = AUCTIONS[state.round];
   const images = auctionImages(auction);
+  const draft = galleryAuction?.id === auction.id ? app.querySelector('#price-input')?.value || '' : '';
   if (galleryAuction !== auction) {
     galleryAuction = auction;
     galleryIndex = 0;
@@ -328,7 +329,7 @@ function renderRound() {
         </div>
         <div class="auction-panel${answer ? ' auction-panel--result' : ''}">
           <p class="auction-id">${answer ? t("REVEALED", "AUFGEDECKT") : t("AUCTION", "AUKTION")} · #${auctionEscape(auction.id)}</p>
-          <h1 class="auction-title${auctionTitleSizeClass(auction.title)}">${auctionEscape(auction.title)}</h1>
+          <h1 tabindex="-1" class="auction-title${auctionTitleSizeClass(auction.title)}">${auctionEscape(auction.title)}</h1>
           ${answer ? revealMarkup(auction, answer) : `
             <p class="auction-description" tabindex="0" role="region" aria-label="${t("Auction description", "Auktionsbeschreibung")}">${auctionEscape(censorCurrencyValues(auction.description))}</p>
             <div class="fact-list">
@@ -348,7 +349,28 @@ function renderRound() {
   }, 30000);
   window.scrollTo({ top: 0, behavior: 'instant' });
   if (!answer) startGuessTimer();
-  setTimeout(() => document.querySelector(answer ? '[data-action="next"]' : '#price-input')?.focus({ preventScroll: true }), 50);
+  const shell = app.querySelector('.game-shell');
+  if (!answer) shell.querySelector('#price-input').value = draft;
+  setTimeout(() => {
+    if (!shell.isConnected || state.view !== 'game') return;
+    // Touch players inspect the lot before opening their keyboard. Desktop
+    // players retain the existing type-and-Enter workflow.
+    const touch = window.matchMedia('(pointer: coarse)').matches;
+    const target = answer ? shell.querySelector('[data-action="next"]') : shell.querySelector(touch ? '.auction-title' : '#price-input');
+    const compact = window.matchMedia('(max-width: 700px), (max-width: 900px) and (max-height: 500px)').matches;
+    const viewport = window.visualViewport;
+    const bottom = viewport ? viewport.offsetTop + viewport.height : window.innerHeight;
+    if (answer && compact) {
+      shell.querySelector('.auction-panel').scrollIntoView({ block: 'start', behavior: 'instant' });
+      // Short screens and an onscreen keyboard may leave less room than the
+      // full reveal needs. Keep its next action in the visible viewport.
+      if (target?.getBoundingClientRect().bottom > bottom - 16) target.scrollIntoView({ block: 'end', behavior: 'instant' });
+    } else if (touch && compact) {
+      const form = shell.querySelector('.guess-form');
+      if (form.getBoundingClientRect().bottom > bottom - 16) form.scrollIntoView({ block: 'end', behavior: 'instant' });
+    }
+    target?.focus({ preventScroll: true });
+  }, 50);
 }
 
 function guessMarkup(ended = false) {
@@ -356,12 +378,31 @@ function guessMarkup(ended = false) {
     <form class="guess-form" id="guess-form">
       <label for="price-input">${ended ? t("What was the final bid?", "Was war das Endgebot?") : t("What is the current bid?", "Was ist das aktuelle Gebot?")}</label>
       <div class="guess-control">
-        <div class="input-wrap"><span class="currency">€</span><input id="price-input" class="price-input" inputmode="decimal" autocomplete="off" placeholder="0" /></div>
+        <div class="input-wrap"><span class="currency">€</span><input id="price-input" class="price-input" inputmode="decimal" enterkeyhint="done" autocomplete="off" spellcheck="false" aria-describedby="guess-input-hint" placeholder="0" /></div>
         <button class="submit-guess" type="submit">${t("Submit guess", "Tipp abgeben")} <span aria-hidden="true">↗</span></button>
       </div>
-      <p class="input-hint">${t("One guess per 25 seconds", "Ein Tipp pro 25 Sekunden")} <span>Enter ↵</span></p>
+      <p class="input-hint" id="guess-input-hint">${t("One guess per 25 seconds", "Ein Tipp pro 25 Sekunden")} <span>Enter ↵</span></p>
     </form>`;
 }
+
+// Keyboard and orientation changes can shrink the visible viewport without a
+// new round. Scroll the active control without repainting or restarting time.
+function keepGuessControlVisible() {
+  const input = app.querySelector('#price-input');
+  if (state.view !== 'game' || document.activeElement !== input || !input || !window.matchMedia('(pointer: coarse)').matches) return;
+  const viewport = window.visualViewport;
+  if (viewport?.scale > 1) return;
+  const control = input.closest('.guess-control');
+  const bottom = viewport ? viewport.offsetTop + viewport.height : window.innerHeight;
+  const bounds = control.getBoundingClientRect();
+  const chromeBottom = Math.max(sidebar.getBoundingClientRect().bottom, document.querySelector('#persistent-wallet')?.getBoundingClientRect().bottom || 0);
+  if (bounds.bottom > bottom - 16 || bounds.top < chromeBottom + 12) control.scrollIntoView({ block: 'end', behavior: 'instant' });
+}
+window.addEventListener('resize', keepGuessControlVisible);
+window.visualViewport?.addEventListener('resize', keepGuessControlVisible);
+document.addEventListener('focusin', event => {
+  if (event.target.id === 'price-input') requestAnimationFrame(keepGuessControlVisible);
+});
 
 function revealMarkup(auction, answer) {
   const level = accuracy(answer.score);

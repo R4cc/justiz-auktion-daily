@@ -1,0 +1,137 @@
+/* Daily, Free Play and Higher or Lower: keep the controls within reach. */
+@media (max-width: 700px), (max-width: 900px) and (max-height: 500px) {
+  #app .game-shell { padding: 14px 0 28px; }
+  #app .game-topline { grid-template-columns: auto minmax(0,1fr) auto; gap: 10px; margin-bottom: 12px; }
+  #app .round-count { font-size: 11px; letter-spacing: 0; }
+  #app .round-count small { margin-top: 3px; font-size: 8px; letter-spacing: 0; }
+  #app .lot-progress { grid-row: 1; grid-column: 2; justify-content: center; gap: 4px; }
+  #app .lot-step { width: 24px; height: 24px; font-size: 10px; }
+  #app .running-score { grid-column: 3; grid-row: 1; min-width: 0; padding: 7px 8px; font-size: 11px; letter-spacing: 0; white-space: nowrap; }
+  #app .guess-timer { margin-bottom: 10px; }
+  #app .game-shell .auction-layout { grid-template-columns: minmax(0,1fr); min-height: 0; border-radius: 14px; }
+  #app .game-shell .auction-image-wrap { height: clamp(150px,26svh,220px); min-height: 0; max-height: none; }
+  #app .game-shell .auction-image { height: 100%; padding: 34px 48px 40px; }
+  #app .game-shell .category-tag { top: 9px; left: 10px; padding: 6px 8px; font-size: 9px; letter-spacing: 0; }
+  #app .game-shell .image-count { top: 9px; right: 10px; padding: 6px 8px; font-size: 10px; }
+  #app .game-shell .time-tag { bottom: 8px; left: 10px; padding: 7px 9px; gap: 7px; font-size: 10px; max-width: calc(100% - 20px); }
+  #app .game-shell .carousel-arrow { width: 44px; height: 44px; }
+  #app .game-shell .carousel-arrow--previous { left: 5px; }
+  #app .game-shell .carousel-arrow--next { right: 5px; }
+  #app .game-shell .auction-panel { padding: 16px; min-height: 0; }
+  #app .game-shell .auction-id { order: 0; margin: 0 0 7px; font-size: 9px; overflow-wrap: anywhere; }
+  #app .game-shell .auction-title { order: 1; font-size: 22px; line-height: 1.2; letter-spacing: -.035em; }
+  #app .game-shell .auction-title--long { font-size: 20px; }
+  #app .game-shell .auction-title--very-long { font-size: 18px; }
+  #app .game-shell .auction-title:focus { outline: none; }
+  #app .game-shell .fact-list { order: 2; border: 0; margin: 10px 0 14px; }
+  #app .game-shell .fact { display: flex; align-items: baseline; flex-wrap: wrap; gap: 5px 10px; padding: 0; }
+  #app .game-shell .fact span { margin: 0; font-size: 10px; }
+  #app .game-shell .fact strong { font-size: 12px; overflow-wrap: anywhere; }
+  #app .game-shell .guess-form { order: 3; margin: 0; scroll-margin-bottom: 16px; }
+  #app .game-shell .guess-form label { margin-bottom: 8px; font-size: 14px; }
+  #app .game-shell .guess-control { grid-template-columns: minmax(0,1fr) auto; scroll-margin-bottom: 16px; }
+  #app .game-shell .input-wrap { padding: 0 10px; }
+  #app .game-shell .currency { margin-right: 7px; font-size: 22px; }
+  #app .game-shell .price-input { height: 54px; font-size: 22px; }
+  #app .game-shell .submit-guess { border-left: 2px solid var(--ink); min-height: 54px; padding: 0 12px; font-size: 12px; touch-action: manipulation; }
+  #app .game-shell .input-hint { font-size: 11px; margin: 8px 0 0; }
+  #app .game-shell .auction-description { order: 4; max-height: 9em; margin: 16px 0 0; padding: 12px; font-size: 13px; line-height: 1.6; -webkit-overflow-scrolling: touch; }
+  #app .game-shell .auction-panel--result { scroll-margin-top: 86px; }
+  body.has-wallet #app .game-shell .auction-panel--result { scroll-margin-top: 182px; }
+  #app .game-shell .reveal-panel { order: 2; margin-top: 14px; }
+  #app .game-shell .result-feedback { padding: 10px 12px; gap: 10px; }
+  #app .game-shell .feedback-icon { width: 34px; height: 34px; font-size: 16px; }
+  #app .game-shell .result-feedback strong { font-size: 18px; }
+  #app .game-shell .result-feedback small { font-size: 12px; line-height: 1.4; }
+  #app .game-shell .bid-comparison { grid-template-columns: minmax(0,1fr) minmax(0,1fr); gap: 10px; margin-top: 14px; }
+  #app .game-shell .bid-value > span { font-size: 10px; }
+  #app .game-shell .bid-value > strong { font-size: clamp(20px,6vw,28px); line-height: 1.2; white-space: normal; overflow-wrap: anywhere; letter-spacing: -.04em; }
+  #app .game-shell .bid-value--actual { grid-column: 2; grid-row: 1; }
+  #app .game-shell .difference-indicator { grid-column: 1 / -1; grid-row: 2; display: flex; justify-content: center; align-items: center; gap: 8px; min-width: 0; }
+  #app .game-shell .difference-indicator strong { font-size: 12px; white-space: normal; overflow-wrap: anywhere; }
+  #app .game-shell .difference-indicator span { font-size: 16px; margin: 0; }
+  #app .game-shell .start-bid { font-size: 11px; margin-top: 10px; padding-top: 9px; }
+  #app .game-shell .round-reward { min-height: 74px; grid-template-columns: 40px minmax(0,1fr); gap: 12px; margin-top: 12px; padding: 13px 16px; }
+  #app .game-shell .reward-star { width: 40px; height: 40px; font-size: 22px; }
+  #app .game-shell .reward-copy > span { font-size: 10px; }
+  #app .game-shell .reward-copy > strong { font-size: 36px; }
+  #app .game-shell .next-row { gap: 10px; margin-top: 14px; }
+  #app .game-shell .next-row .primary-button { min-height: 48px; padding: 10px 15px; font-size: 14px; touch-action: manipulation; scroll-margin-bottom: 16px; }
+  #app .game-shell .auction-link { min-height: 44px; padding: 12px; font-size: 12px; }
+  #app .results-screen { padding: 24px 0 34px; }
+  #app .results-header { gap: 16px; }
+  #app .results-header h1 { font-size: clamp(30px,7vw,42px); }
+  #app .results-score { padding: 16px; }
+  #app .result-stats { gap: 8px; }
+  #app .result-stat { padding: 12px 8px; min-width: 0; }
+  #app .result-stat strong { font-size: 18px; overflow-wrap: anywhere; }
+  #app .result-stat > span { font-size: 10px; line-height: 1.5; }
+  #app .results-screen .result-row { grid-template-columns: repeat(3,minmax(0,1fr)); gap: 12px 8px; }
+  #app .results-screen .result-cell strong { font-size: 13px; white-space: normal; overflow-wrap: anywhere; }
+  #app .results-screen .result-cell > span { font-size: 10px; line-height: 1.5; }
+  #app .results-screen .result-name { font-size: 14px; line-height: 1.45; }
+  #app .results-screen .result-name span { font-size: 10px; }
+  #app .results-actions { gap: 12px; padding-top: 18px; }
+  #app .results-actions .primary-button, #app .results-actions .secondary-button { width: 100%; margin: 0; min-height: 48px; padding: 12px; font-size: 14px; }
+  #app .hl-gallery { bottom: 5px; border-radius: 12px; gap: 0; font-size: 10px; }
+  #app .hl-gallery button { min-width: 44px; min-height: 44px; padding: 0; touch-action: manipulation; }
+  #app .hl-photo { height: clamp(120px,23svh,180px); }
+  #app .hl-card h2 { font-size: 13px; line-height: 1.4; margin-top: 12px; }
+  #app .hl-card .eyebrow { font-size: 10px; margin-bottom: 10px; }
+  #app .hl-price-label { font-size: 10px; line-height: 1.5; }
+  #app .hl-price { font-size: clamp(18px,5vw,26px); }
+  #app .hl-streak span { font-size: 10px; line-height: 1.5; }
+  #app .hl-heading h1 { font-size: clamp(22px,5vw,30px); }
+  #app .hl-heading .eyebrow { margin-bottom: 8px; font-size: 10px; }
+  #app .hl-controls { margin-top: 18px; }
+  #app .hl-home { min-height: 44px; font-size: 13px; touch-action: manipulation; }
+}
+@media (max-width: 360px) {
+  #app .lot-step { width: 20px; height: 20px; font-size: 9px; }
+  #app .game-topline { gap: 6px; }
+  #app .running-score { padding: 7px 6px; font-size: 10px; }
+  #app .game-shell .auction-panel { padding: 14px; }
+  #app .game-shell .submit-guess { padding: 0 9px; font-size: 11px; }
+}
+@media (max-width: 700px) and (max-height: 740px) {
+  #app .game-shell .auction-image-wrap { height: 140px; }
+  #app .game-shell .auction-image { padding: 12px 48px; }
+}
+@media (pointer: coarse) {
+  #app .game-shell .input-hint > span { display: none; }
+  #app .hl-gallery button { min-width: 44px; min-height: 44px; }
+  #app .hl-home { min-height: 44px; }
+}
+/* Increase secondary text without letting the decorative case squeeze rewards. */
+@media (max-width: 600px) {
+  #app .daily-home { padding-top: 22px; }
+  #app .daily-feature-badge { font-size: 12px; margin-bottom: 16px; }
+  #app .daily-challenge-facts > span { font-size: 11px; }
+  #app .daily-challenge-facts strong { font-size: 14px; }
+  #app .daily-challenge-bottom { font-size: 10px; line-height: 1.5; }
+  #app .daily-edition { font-size: 11px; }
+  #app .daily-play { font-size: 15px; }
+  #app .daily-reward-art { width: 100px; right: 12px; top: 54px; }
+  #app .daily-reward-art .case-object { width: 100px; }
+  #app .daily-reward-art > span { font-size: 10px; }
+  #app .daily-reward-amount { padding-right: 90px; }
+  #app .daily-reward-amount > span, #app .daily-reward-footnote { font-size: 11px; line-height: 1.6; }
+  #app .daily-case-reward { font-size: 12px; padding-right: 70px; }
+  #app .daily-reward-login, #app .daily-mode-detail { font-size: 12px; line-height: 1.6; }
+  #app .daily-menu-progress > div { font-size: 12px; }
+  #app .daily-mode p:not(.eyebrow) { font-size: 13px; }
+  #app .daily-mode-play { font-size: 14px; }
+  #app .daily-personal dt, #app .daily-personal small { font-size: 11px; }
+  #app .daily-next-links strong { font-size: 13px; }
+}
+@media (max-width: 360px) {
+  #app .daily-reward-art { position: static; float: right; height: 70px; margin: 4px 0 8px 8px; }
+  #app .daily-reward-amount { padding-right: 0; }
+  #app .daily-case-reward { clear: both; padding-right: 0; }
+}
+
+@media (min-width: 701px) and (max-width: 900px) and (max-height: 500px) {
+  #app .game-shell .auction-layout { grid-template-columns: minmax(0,.9fr) minmax(0,1.1fr); }
+  #app .game-shell .auction-image-wrap { height: 100%; min-height: 220px; border: 0; }
+  #app .game-shell .auction-image { position: absolute; inset: 0; }
+}
