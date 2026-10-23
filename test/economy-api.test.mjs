@@ -92,7 +92,16 @@ test('public storefronts and player interactions use feature flags, sessions, CS
   assert.equal(accounts.db(db=>db.prepare('SELECT tokens FROM users WHERE id=?').get(owner.id).tokens),ownerBalance+120);
   assert.equal((await post(base, 'stores/review', { shopId: shop.id, stars: 5, comment: 'Great shop!' }, winnerCookie)).status, 200);
   assert.equal((await view(winnerCookie)).reviewCount, 1);
-  assert.equal((await post(base, 'stores/visit', { shopId: shop.id }, winnerCookie)).status, 200);
+  const visit = await post(base, 'stores/visit', { shopId: shop.id }, winnerCookie);
+  assert.equal(visit.status, 200);
+  const visited = await visit.json();
+  assert.equal(visited.visited, true);
+  assert.equal(visited.store.id, shop.id);
+  assert.equal(visited.store.stock.length, 2);
+  assert.equal(visited.store.canReview, true);
+  assert.equal(visited.store.playerVisits, 1);
+  const repeatedVisit = await (await post(base, 'stores/visit', { shopId: shop.id }, winnerCookie)).json();
+  assert.equal(repeatedVisit.store.playerVisits, 1, 'reopening a store still counts once per day');
   assert.equal((await post(base, 'stores/react', { shopId: shop.id, reaction: 'bell' }, winnerCookie)).status, 200);
   assert.ok((await view(winnerCookie)).stock[0].theft);
   assert.equal((await post(base, 'businesses/profile', {shopId:shop.id,name:'API shop',motto:'',securityGuard:false,mischiefEnabled:true,requestId:'enable-mischief-http-001'}, ownerCookie)).status, 200);

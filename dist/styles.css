@@ -76,10 +76,35 @@ button { color: inherit; }
   width: 36px; height: 36px; border: 1px solid var(--line); border-radius: 50%; background: rgba(255,255,255,.45); cursor: pointer; font-weight: 700;
 }
 
-#app:empty, .account-page:has(> #account-content > .collection-loading) { min-height: 100svh; }
-/* Session-confirmed mobile wallet/XP bars must not move the loading text. */
-@media (max-width: 900px) {
-  #account-content > .collection-loading { position: fixed; top: 152px; left: 16px; right: 16px; margin: 0; }
+#app:empty, .account-page:has(.page-loading) { min-height: 100svh; }
+.page-loading { width: 100%; padding-block: 28px; }
+.loading-heading { display: flex; align-items: center; justify-content: space-between; gap: 24px; margin-bottom: 28px; }
+.page-loading .loading-line { display: block; height: 16px; width: 72%; border-radius: 6px; }
+.loading-heading .loading-line { height: 36px; width: min(40%, 280px); }
+.loading-button { display: block; width: 136px; height: 42px; border-radius: 12px; }
+.loading-hero { height: 190px; border-radius: 22px; margin-bottom: 24px; }
+.is-store-detail .loading-hero { height: 240px; }
+.loading-toolbar { height: 52px; border-radius: 12px; margin-bottom: 28px; }
+.loading-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 20px; }
+.loading-card, .loading-panel { padding: 16px; border: 1px solid var(--line); border-radius: 18px; }
+.loading-picture { height: 164px; border-radius: 12px; margin-bottom: 20px; }
+.loading-card .loading-line, .loading-panel .loading-line { margin-bottom: 14px; }
+.loading-card .loading-line + .loading-line { width: 45%; }
+.loading-card .loading-button { width: 100%; margin-top: 24px; }
+.loading-panel { min-height: 240px; padding: 28px; }
+.loading-line, .loading-button, .loading-hero, .loading-toolbar, .loading-picture {
+  background: linear-gradient(100deg, var(--line) 30%, var(--paper) 50%, var(--line) 70%);
+  background-size: 240% 100%; animation: loading-shimmer 1.6s ease-in-out infinite;
+}
+@keyframes loading-shimmer { from { background-position: 100% 0; } to { background-position: -100% 0; } }
+@media (max-width: 1100px) { .loading-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 600px) {
+  .page-loading { padding-block: 20px; }
+  .loading-grid { grid-template-columns: minmax(0, 1fr); }
+  .loading-hero { height: 160px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .loading-line, .loading-button, .loading-hero, .loading-toolbar, .loading-picture { animation: none; }
 }
 #app { width: min(1180px, calc(100% - 40px)); margin: 0 auto; }
 .site-disclaimer { width: min(1180px, calc(100% - 40px)); margin: auto auto 0; padding: 24px 0 30px; border-top: 1px solid var(--line); color: var(--muted); }

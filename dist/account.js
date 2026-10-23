@@ -379,7 +379,7 @@ function updateAccountCatalog(catalog) {
   renderStaticUi();
 }
 const catalogReady = accountApi('cases').then(updateAccountCatalog).catch(() => {});
-const accountReady = Promise.all([accountApi('me'), catalogReady, economyReady]).then(([result]) => {
+const accountReady = Promise.all([accountApi('me'), economyReady]).then(([result]) => {
   updateAccount(result.user);
   renderStaticUi();
   if (typeof renderStart === 'function' && state.view === 'start' && location.pathname === '/') renderStart();
@@ -405,6 +405,13 @@ function showGamePage() {
   accountPage.hidden = true; document.querySelector('#app').hidden = false;
   if (location.pathname !== '/') history.pushState({}, '', '/');
   updateNavigation();
+}
+function accountLoading(path, params) {
+  const stores = path === '/stores', detail = stores && params.has('shop');
+  const grid = stores || ['/businesses','/inventory','/shop','/auction-house'].includes(path);
+  const line = '<span class="loading-line"></span>';
+  const cards = Array.from({length: 6}, () => `<div class="loading-card"><div class="loading-picture"></div>${line}${line}<span class="loading-button"></span></div>`).join('');
+  return `<section class="page-loading${stores ? ' is-stores' : ''}${detail ? ' is-store-detail' : ''}" aria-busy="true"><span class="sr-only" role="status" tabindex="-1">${t('Loading…', 'Wird geladen …')}</span><div aria-hidden="true"><div class="loading-heading">${line}<span class="loading-button"></span></div>${stores ? '<div class="loading-hero"></div><div class="loading-toolbar"></div>' : ''}${grid ? `<div class="loading-grid">${cards}</div>` : `<div class="loading-panel">${line}${line}${line}</div>`}</div></section>`;
 }
 async function navigateAccountPage(path, push = true) {
   window.storeReputationUi?.stop();
@@ -448,7 +455,8 @@ async function navigateAccountPage(path, push = true) {
   currentAccountPage = path; pageLoaded = false;
   higherLowerRequest++; clearInterval(countdownTimer); state.view = 'account';
   document.querySelector('#app').hidden = true; accountPage.hidden = false; updateNavigation();
-  accountContent.innerHTML = `<p class="collection-loading">${t('Loading…', 'Wird geladen …')}</p>`;
+  accountContent.innerHTML = accountLoading(path, destination.searchParams);
+  accountContent.querySelector('[role="status"]')?.focus({ preventScroll: true });
   window.scrollTo({ top: 0, behavior: 'instant' });
   try {
     // Reuse the fresh startup session on direct entry. Later SPA navigation

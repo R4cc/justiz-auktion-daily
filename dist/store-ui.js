@@ -22,26 +22,27 @@ window.storeUi = (() => {
     if (!response.ok) { const error = new Error(accountError(result.error)); error.code = result.error; if(result.justice&&account){account.justice=result.justice;window.justiceUi?.sync(account);} throw error; }
     return result;
   }
-  async function refresh(visit, repaint = true) {
+  async function refresh(visit, repaint = true, recordVisit = false, events = null) {
     const current = ++generation, owner = account?.id, params = new URLSearchParams(location.search), id = params.get('shop');
-    const result = await read(id ? `/api/stores/${encodeURIComponent(id)}` : `/api/stores?${params}`);
+    const result = recordVisit && owner && id ? await accountApi('stores/visit', { shopId: id })
+      : await read(id ? `/api/stores/${encodeURIComponent(id)}` : `/api/stores?${params}`);
     if (current !== generation || visit !== accountVisit || account?.id !== owner) return;
-    if (owner) { await window.businessUi.refresh(visit, false); if (current !== generation || visit !== accountVisit || account?.id !== owner) return; }
+    // Only the management view needs the owner's full stock and inventory.
+    if (result.store?.own) {
+      await events;
+      if (current !== generation || visit !== accountVisit || account?.id !== owner) return;
+      await window.businessUi.refresh(visit, false, !recordVisit);
+      if (current !== generation || visit !== accountVisit || account?.id !== owner) return;
+    }
     data = result;
     if (repaint) render();
   }
   async function load(visit) {
     await economyReady;
     if (!economyFlags.businesses) { data = { disabled: true }; return; }
-    await loadEvents(visit);
+    const events = loadEvents(visit);
+    await Promise.all([events, refresh(visit, false, true, events)]);
     if (visit !== accountVisit) return;
-    await refresh(visit, false);
-    if (visit !== accountVisit) return;
-    if (account && data?.store && !data.store.own) {
-      await accountApi('stores/visit', { shopId: data.store.id });
-      if (visit !== accountVisit) return;
-      await refresh(visit, false);
-    }
     timer = setInterval(() => {
       if (!document.hidden && !busy && !heistDialog.open && !eventDialog.open && !window.businessUi.isInteracting() && !document.activeElement?.closest('.store-review-form, .store-search')) refresh(visit).catch(() => {});
     }, 30000);

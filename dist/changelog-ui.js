@@ -3,6 +3,20 @@ window.changelogUi = (() => {
   const entries = [
     {
       "date": "2026-10-23",
+      "title": "Faster Loading",
+      "changes": [
+        {
+          "en": "Stores load with fewer requests. Browsing no longer downloads your full business inventory, and opening a store records the visit and loads its shelves together.",
+          "de": "Läden laden mit weniger Anfragen. Beim Stöbern wird nicht mehr dein gesamtes Ladeninventar geladen; beim Öffnen werden Besuch und Regale gemeinsam geladen."
+        },
+        {
+          "en": "Page skeletons appear immediately during navigation. Session loading no longer waits for the case catalog.",
+          "de": "Beim Seitenwechsel erscheinen sofort Ladeplatzhalter. Das Laden der Sitzung wartet nicht mehr auf den Kistenkatalog."
+        }
+      ]
+    },
+    {
+      "date": "2026-10-23",
       "title": "Theft Security",
       "changes": [
         {

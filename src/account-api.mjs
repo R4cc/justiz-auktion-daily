@@ -243,7 +243,7 @@ export async function createAccountApi({ dataDir, dailyPayload, json, env = proc
       else if (flags.businesses && route === 'businesses/profile') result = { receipt: customizeStore(dataDir, user, payload), user: accounts.profile(user) };
       else if (flags.businesses && route === 'stores/events/check') result = { ...checkStoreEvents(dataDir, user), user: accounts.profile(user) };
       else if (flags.businesses && route === 'stores/events/acknowledge') result = acknowledgeStoreEvents(dataDir, user, payload.ids);
-      else if (flags.businesses && route === 'stores/visit') result = recordStoreVisit(dataDir, user, payload.shopId);
+      else if (flags.businesses && route === 'stores/visit') result = { ...recordStoreVisit(dataDir, user, payload.shopId), ...visitStore(dataDir, user, payload.shopId) };
       else if (flags.businesses && route === 'stores/buy') result = { receipt: buyStoreItem(dataDir, user, payload), user: accounts.profile(user) };
       else if (flags.businesses && route === 'inventory/reviews/redeem') result = { receipt: redeemReviewPack(dataDir, user, payload), user: accounts.profile(user) };
       else if (flags.businesses && route === 'stores/review') result = reviewStore(dataDir, user, payload);
