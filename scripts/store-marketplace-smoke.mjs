@@ -61,7 +61,7 @@ try {
  await context.addCookies([{name:'jg_session',value:token,url:base}]);
  const shot=async name=>page.screenshot({path:path.join(os.tmpdir(),'store-marketplace-'+name+'.png'),fullPage:true});
  const ready=()=>page.waitForSelector('.market-store-card');
- await page.goto(base+'/town');await page.waitForURL('**/stores');await ready();
+ await page.goto(base+'/town?view=shops');await page.waitForURL('**/stores');await ready();
  assert.equal(await page.locator('.market-store-card').count(),6);
  assert.equal(await page.locator('.market-store-motto').count(),0);
  assert.equal(await page.locator('a.market-store-card[data-page]').count(),6);
@@ -106,8 +106,8 @@ try {
  await page.waitForFunction(()=>[...document.querySelectorAll('.market-store-card img')].every(img=>img.complete&&img.naturalWidth>0));
  await page.locator('.market-store-card .market-visit').click();await page.waitForSelector('[data-shop-settings],.shop-overview-actions');
  assert.equal(await page.locator('.shop-header.brand-ocean').count(),1);
- await page.goto(base+'/town?view=open');await page.waitForSelector('.town-page');assert.equal(await page.locator('.town-page h1').innerText(),'Store locations');
- await page.locator('.town-place-row').first().click();await page.waitForSelector('[data-town-open]');await page.locator('[data-town-open]').click();await page.waitForSelector('.town-purchase-dialog[open]');
+ await page.goto(base+'/town?view=open');await page.waitForSelector('.town-page');assert.equal(await page.locator('.town-page h1').innerText(),'Open a store');
+ await page.locator('.town-place-row').first().click();await page.waitForSelector('.town-purchase-dialog[open]');
  assert.ok(await page.locator('.town-purchase [name="type"]').count());await page.keyboard.press('Escape');
  const widths=new Map();
  for(const width of [3840,1920,1440,1024,900,768,600,390,320])for(const lang of ['en','de']){
@@ -128,7 +128,8 @@ try {
  }
  assert.ok(widths.get(3840)>widths.get(1920)*1.7,'Directory expands on 4K screens');
  await page.locator('.market-store-card').first().focus();await page.keyboard.press('Enter');await page.waitForSelector('.shop-header');
- await page.locator('#persistent-wallet').click();await page.waitForURL('**/profile');await page.waitForSelector('.profile-hub');
+ await page.locator('#persistent-wallet').click();await page.waitForURL('**/profile');
+ await page.waitForSelector('.profile-hub').catch(async error=>{throw new Error(`${error.message}\n${await page.locator('#account-content').innerText()}\n${errors.join('\n')}`);});
  assert.equal(await page.locator('#persistent-wallet').getAttribute('aria-current'),'page');
  await page.goto(base+'/stores');await ready();
  await page.locator('.market-store-card').first().locator('.store-brand-banner').click();await page.waitForSelector('.shop-header');

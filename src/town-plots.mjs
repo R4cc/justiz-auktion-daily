@@ -1,4 +1,5 @@
 import { AccountError } from './errors.mjs';
+import { randomUUID } from 'node:crypto';
 
 // Six real district names, deliberately simplified game traits and geography.
 export const TOWN_DISTRICTS = [
@@ -29,6 +30,20 @@ export const TOWN_PLOTS = TOWN_DISTRICTS.flatMap(district => roads[district.id].
   return {id:`${district.id}-${n+1}`,districtId:district.id,streetName,streetType:['side','main','main','residential','side'][n],size:['popup','tiny','medium','large','popup'][n],x:Math.round(x+w*positions[n][0]),y:Math.round(y+h*positions[n][1])};
 }));
 const districtFor = id => TOWN_DISTRICTS.find(district=>district.id===id);
+function addTownPlot(db, template) {
+  const id = `${template.id}-${randomUUID()}`;
+  db.prepare('INSERT INTO town_plots VALUES (?,?,?,?,?,?,?)').run(id,template.districtId,template.streetName,template.streetType,template.size,template.x,template.y);
+  return db.prepare('SELECT * FROM town_plots WHERE id=?').get(id);
+}
+export function replenishTownPlots(db) {
+  const key = plot => JSON.stringify([plot.district_id,plot.street_name,plot.street_type,plot.size]);
+  const available = new Set(db.prepare(`SELECT p.* FROM town_plots p WHERE NOT EXISTS
+    (SELECT 1 FROM businesses b WHERE b.plot_id=p.id)`).all().map(key));
+  for (const plot of TOWN_PLOTS) {
+    const signature = key({district_id:plot.districtId,street_name:plot.streetName,street_type:plot.streetType,size:plot.size});
+    if (!available.has(signature)) { addTownPlot(db,plot); available.add(signature); }
+  }
+}
 export function plotLocation(db, plotId) {
   if (!plotId) return null;
   const plot=db.prepare('SELECT * FROM town_plots WHERE id=?').get(plotId); if (!plot) return null;
@@ -44,8 +59,7 @@ export function ensureTownSchema(db,{now=Date.now()}={}) {
   if (!db.prepare('SELECT 1 FROM town_plots LIMIT 1').get()) {
     const existingCount=db.prepare('SELECT COUNT(*) AS n FROM businesses').get().n;
     const plots=TOWN_PLOTS.map(plot=>({...plot}));
-    // The first activation must fit every existing store. These extra plots
-    // are grandfathered into the finite catalog; purchases never add plots.
+    // Preserve every existing store during the initial location migration.
     for (let n=25;n<existingCount;n++) {
       const district=TOWN_DISTRICTS[(n-25)%TOWN_DISTRICTS.length];
       plots.push({id:`${district.id}-legacy-${n-24}`,districtId:district.id,streetName:`Altbestand ${n-24}`,streetType:'side',size:'popup',x:0,y:0});
@@ -65,10 +79,9 @@ export function ensureTownSchema(db,{now=Date.now()}={}) {
   db.exec('CREATE UNIQUE INDEX IF NOT EXISTS businesses_plot ON businesses(plot_id)');
   const existing=db.prepare('SELECT id,size FROM businesses WHERE plot_id IS NULL AND retired=0 ORDER BY bought_at,id').all();
   const free=db.prepare('SELECT p.* FROM town_plots p WHERE NOT EXISTS (SELECT 1 FROM businesses b WHERE b.plot_id=p.id) ORDER BY p.id').all();
-  if (existing.length>free.length) throw new AccountError('town_migration_capacity',409);
   for (const shop of existing) {
     let index=free.findIndex(plot=>plot.size===shop.size); if (index<0) index=0;
-    const [plot]=free.splice(index,1);
+    const plot=free.splice(index,1)[0] || addTownPlot(db,TOWN_PLOTS.find(plot=>plot.size===shop.size) || TOWN_PLOTS[0]);
     // Backfill preserves existing sizes and capacity. A fallback plot gets its
     // final size once during migration; new buyers can never resize a plot.
     if (plot.size!==shop.size) db.prepare('UPDATE town_plots SET size=? WHERE id=?').run(shop.size,plot.id);
@@ -88,7 +101,11 @@ export function availableTownPlot(db,size,plotId=null) {
     // size, preferring the original neutral district.
     plot=db.prepare(`SELECT p.* FROM town_plots p WHERE size=? AND NOT EXISTS (SELECT 1 FROM businesses b WHERE b.plot_id=p.id)
       ORDER BY CASE WHEN district_id='leopoldstadt' THEN 0 ELSE 1 END,p.id LIMIT 1`).get(size);
-    if (!plot) throw new AccountError('no_available_plot',409);
+    if (!plot) {
+      const template=TOWN_PLOTS.find(plot=>plot.size===size && plot.districtId==='leopoldstadt');
+      if (!template) throw new AccountError('invalid_plot');
+      plot=addTownPlot(db,template);
+    }
   }
   return plot;
 }

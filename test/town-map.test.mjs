@@ -28,7 +28,7 @@ async function fixture(t) {
   return { dir, accounts, owner, buyer, balance: user => accounts.db(db => db.prepare('SELECT tokens FROM users WHERE id=?').get(user.id).tokens) };
 }
 
-test('town has 25 durable plots in six districts, fixed sizes, prices and public store locations', async t => {
+test('location choices replenish while existing stores keep durable sizes, prices and public locations', async t => {
   const f = await fixture(t), initial = townMap(f.dir, null, { now });
   assert.equal(initial.total, 25); assert.equal(initial.available, 25);
   assert.equal(initial.districts.length, 6); assert.equal(new Set(initial.plots.map(p => p.id)).size, 25);
@@ -37,7 +37,7 @@ test('town has 25 durable plots in six districts, fixed sizes, prices and public
   assert.equal(initial.plots.find(p => p.id === 'favoriten-1').theftMultiplier, 1.8);
   const shop = buyBusiness(f.dir, f.owner, 'wine', null, { now, plotId: 'hietzing-1' }).shop;
   const guest = townMap(f.dir, null, { now }), signed = townMap(f.dir, f.owner, { now });
-  assert.equal(guest.available, 24); assert.equal(guest.myStoreCount, 0);
+  assert.equal(guest.available, 25); assert.equal(guest.total,26); assert.equal(guest.myStoreCount, 0);
   assert.equal(guest.plots.find(p => p.id === 'hietzing-1').business.owner, 'ow****');
   assert.equal(signed.plots.find(p => p.id === 'hietzing-1').business.owner, 'ownerName');
   assert.equal(signed.plots.find(p => p.id === 'hietzing-1').business.own, true);
@@ -50,7 +50,8 @@ test('town has 25 durable plots in six districts, fixed sizes, prices and public
   const reserved = townMap(f.dir, f.buyer, { now }).plots.find(p => p.id === 'hietzing-1');
   assert.equal(reserved.occupied, true); assert.equal(reserved.business, null);
   closeDataStore(f.dir);
-  assert.deepEqual(townMap(f.dir, null, { now }).plots.map(p => [p.id, p.size]), initial.plots.map(p => [p.id, p.size]));
+  const originalIds=new Set(initial.plots.map(p=>p.id));
+  assert.deepEqual(townMap(f.dir, null, { now }).plots.filter(p=>originalIds.has(p.id)).map(p => [p.id, p.size]), initial.plots.map(p => [p.id, p.size]));
 });
 
 test('store size levels use persisted XP, enforce exact thresholds and preserve existing stores', async t => {
@@ -95,10 +96,10 @@ test('legacy businesses receive unique plots once without losing size, stock, na
   const balance = f.balance(f.owner);
   f.accounts.db(db => transaction(db, () => ensureBusinessSchema(db, { now })));
   const migrated = townMap(f.dir, f.owner, { now });
-  assert.equal(migrated.total, 25); assert.equal(migrated.available, 0);
+  assert.equal(migrated.total, 50); assert.equal(migrated.available, 25);
   assert.equal(migrated.myStoreCount, 25);
-  assert.ok(migrated.plots.every(p => p.size === 'large' && p.business.name === 'Legacy cellar'));
-  assert.equal(migrated.plots.reduce((sum, p) => sum + p.business.stockCount, 0), 1);
+  assert.ok(migrated.plots.filter(p=>p.occupied).every(p => p.size === 'large' && p.business.name === 'Legacy cellar'));
+  assert.equal(migrated.plots.reduce((sum, p) => sum + (p.business?.stockCount||0), 0), 1);
   assert.equal(f.balance(f.owner), balance);
   const assignments = () => f.accounts.db(db => db.prepare('SELECT id,plot_id,plot_since,size FROM businesses ORDER BY id').all());
   const first = assignments();
@@ -108,10 +109,10 @@ test('legacy businesses receive unique plots once without losing size, stock, na
   f.accounts.db(db => ensureBusinessSchema(db, { now: now + hour }));
   assert.deepEqual(assignments(), first);
   assert.throws(() => buyBusiness(f.dir, f.owner, 'wine', null, { now, plotId: 'hietzing-1' }), /store_limit_reached/);
-  assert.throws(() => buyBusiness(f.dir, f.buyer, 'wine', 'large', { now }), /no_available_plot/);
+  assert.equal(buyBusiness(f.dir, f.buyer, 'wine', 'large', { now }).shop.size,'large');
 });
 
-test('saves already above 25 stores get only enough grandfathered plots; future purchases never expand the catalog', async t => {
+test('saves above 25 stores preserve every assignment and offer additional locations after restart', async t => {
   const f = await fixture(t);
   f.accounts.db(db => {
     db.prepare('DELETE FROM town_plots').run();
@@ -121,10 +122,29 @@ test('saves already above 25 stores get only enough grandfathered plots; future 
     assert.equal(db.prepare('SELECT COUNT(*) AS n FROM businesses WHERE plot_id IS NULL').get().n, 0);
     assert.equal(db.prepare('SELECT COUNT(*) AS n FROM town_plots').get().n, 32);
   });
-  assert.equal(townMap(f.dir, f.owner, { now }).total,32);
-  assert.throws(() => buyBusiness(f.dir, f.buyer, 'wine', 'popup', { now }), /no_available_plot/);
+  assert.equal(townMap(f.dir, f.owner, { now }).available,25);
+  assert.equal(buyBusiness(f.dir, f.buyer, 'wine', 'popup', { now }).shop.size,'popup');
   closeDataStore(f.dir);
-  assert.equal(townMap(f.dir, f.owner, { now }).total,32);
+  const reopened=townMap(f.dir, f.owner, { now });
+  assert.equal(reopened.plots.filter(p=>p.occupied).length,33);assert.equal(reopened.available,25);
+});
+
+test('more than 25 stores can open without visiting the catalogue; player limits and failed-purchase rollback remain enforced',async t=>{
+  const f=await fixture(t),ids=new Set();
+  for(let n=0;n<10;n++){
+    const user={id:`unlimited-${n}`};
+    f.accounts.db(db=>db.prepare("INSERT INTO users(id,username,password_hash,tokens,xp,created_at) VALUES(?,?,'disabled',1000000,8100,?)").run(user.id,user.id,now));
+    for(let i=0;i<3;i++)ids.add(buyBusiness(f.dir,user,'wine','popup',{now}).shop.location.plotId);
+    const balance=f.balance(user);
+    assert.throws(()=>buyBusiness(f.dir,user,'wine','popup',{now}),/store_limit_reached/);
+    assert.equal(f.balance(user),balance);
+  }
+  assert.equal(ids.size,30);
+  const count=()=>f.accounts.db(db=>db.prepare('SELECT COUNT(*) AS n FROM town_plots').get().n),before=count();
+  f.accounts.db(db=>db.prepare('UPDATE users SET tokens=1 WHERE id=?').run(f.buyer.id));
+  assert.throws(()=>buyBusiness(f.dir,f.buyer,'wine','popup',{now}),/insufficient_tokens/);assert.equal(count(),before);
+  closeDataStore(f.dir);
+  const locations=townMap(f.dir,null,{now});assert.equal(locations.plots.filter(p=>p.occupied).length,30);assert.equal(locations.available,25);
 });
 
 test('plot purchase enforces fixed capacity, location price, exclusivity and the three-store cap atomically', async t => {
