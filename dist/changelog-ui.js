@@ -2,6 +2,13 @@ window.changelogUi = (() => {
   // Curated manually. Only update for a feature when the user explicitly asks.
   const entries = [
     {
+      date: '2026-10-23', title: 'Theft Heat',
+      changes: [
+        {en:'Removed player and store stealing cooldowns. Finish your active attempt before starting another.',de:'Wartezeiten für Diebstähle pro Spieler und Laden entfernt. Beende deinen laufenden Versuch, bevor du einen neuen startest.'},
+        {en:'Heat now uses five wanted stars with half-stars. Each attempt adds half a star; each stolen item adds more based on its value. More stolen items build Heat faster. Each full star adds 10 percentage points to later police catch odds, capped at 95%. Half a star fades every 30 minutes, including offline. View Heat in stores and your profile; existing attempts retain saved odds.',de:'Heat zeigt fünf Fahndungssterne mit halben Sternen. Jeder Versuch bringt einen halben Stern; jeder gestohlene Artikel erhöht Heat zusätzlich nach seinem Wert. Mehr gestohlene Artikel bauen Heat schneller auf. Jeder volle Stern erhöht die spätere Fangchance um 10 Prozentpunkte, bis maximal 95%. Alle 30 Minuten verschwindet ein halber Stern, auch offline. Heat ist in Läden und deinem Profil sichtbar; laufende Versuche behalten ihre gespeicherten Chancen.'}
+      ]
+    },
+    {
       date: '2026-10-20', title: 'Store Upgrades',
       changes: [
         {en:'Upgrade an existing store one size at a time for 10% less than buying the target size at the same location. Pop-up to Small takes 2 hours, Small to Medium 8 hours, and Medium to Large 48 hours. Target-size level requirements apply.',de:'Baue bestehende Läden schrittweise aus: 10% günstiger als ein Neukauf der Zielgröße am selben Standort. Vom Straßenstand zu Klein dauert es 2 Stunden, von Klein zu Mittel 8 Stunden und von Mittel zu Groß 48 Stunden. Die Level-Anforderungen der Zielgröße gelten.'},

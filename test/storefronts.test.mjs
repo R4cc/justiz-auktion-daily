@@ -1,3 +1,4 @@
+import { playerHeat, HEAT_DECAY_INTERVAL } from '../src/theft-heat.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtemp, rm } from 'node:fs/promises';
@@ -238,14 +239,17 @@ test('abandoned hands are caught offline; insolvency causes persisted, escalatin
   assert.equal(status.offences,1);assert.equal(status.fineDue,0);assert.equal(status.jailedUntil,end+5*60000);assert.equal(status.lastConsequence.convertedToSentence,200);
   assert.throws(()=>visitStore(f.dir,f.buyer,f.shop.id,{now:end+1}),/player_jailed/);
   tickStoreJustice(f.dir,{now:end+1});assert.equal(f.accounts.profile(f.buyer).justice.offences,1);
-  const next=now+HEIST_COOLDOWN+1;startStoreHeist(f.dir,f.buyer,f.payload('wine-1'),{now:next,draw:success});tickStoreJustice(f.dir,{now:next+HEIST_DURATION+POLICE_WHEEL_DURATION,policeDraw:()=>0});
+  const next=end+5*60000+1;startStoreHeist(f.dir,f.buyer,f.payload('wine-1'),{now:next,draw:success});tickStoreJustice(f.dir,{now:next+HEIST_DURATION+POLICE_WHEEL_DURATION,policeDraw:()=>0});
   const again=f.accounts.profile(f.buyer).justice;assert.equal(again.offences,2);assert.equal(again.jailedUntil,next+HEIST_DURATION+POLICE_WHEEL_DURATION+15*60000);
 });
-test('stock races grant no missing item or fine on a win, and cooldowns cover player and store',async t=>{
+test('stock races grant no missing item or fine; player and store cooldowns are removed',async t=>{
   const f=await fixture(t),id=startStoreHeist(f.dir,f.buyer,f.payload(),{now,draw:success}).id;setHand(f,id);unstockBusiness(f.dir,f.owner,f.shop.id,'wine-0',{now});
   assert.equal(action(f,id).outcome,'gone');assert.equal(f.balance(f.buyer),100000);
-  assert.throws(()=>startStoreHeist(f.dir,f.buyer,f.payload('wine-1'),{now:now+1}),/heist_cooldown/);
-  assert.throws(()=>startStoreHeist(f.dir,f.rival,f.payload('wine-1'),{now:now+1}),/heist_cooldown/);
+  assert.equal(HEIST_COOLDOWN,0);assert.equal(STORE_HEIST_COOLDOWN,0);
+  startStoreHeist(f.dir,f.buyer,f.payload('wine-1'),{now:now+1,draw:success});
+  startStoreHeist(f.dir,f.rival,f.payload('wine-2'),{now:now+1,draw:success});
+  assert.equal(f.view().cooldownUntil,0);
+  assert.throws(()=>startStoreHeist(f.dir,f.buyer,f.payload('wine-3'),{now:now+2}),/heist_active/);
 });
 
 test('stock transfer failures roll back payment, sale history and notifications; live authority and economy reset apply to new store state', async t => {
@@ -262,7 +266,7 @@ test('stock transfer failures roll back payment, sale history and notifications;
   reviewStore(f.dir, f.buyer, { shopId: f.shop.id, stars: 5 }, { now });
   startStoreHeist(f.dir, f.rival, f.payload('wine-1'), { now, draw: success });
   f.accounts.resetEconomy(f.owner, 'RESET ECONOMY');
-  for (const table of ['business_sales','store_receipts','store_visits','store_reviews','store_heists','businesses']) assert.equal(f.accounts.db(db => db.prepare(`SELECT COUNT(*) AS n FROM ${table}`).get().n), 0);
+  for (const table of ['business_sales','store_receipts','store_visits','store_reviews','store_heists','player_heat','businesses']) assert.equal(f.accounts.db(db => db.prepare(`SELECT COUNT(*) AS n FROM ${table}`).get().n), 0);
 });
 
 test('old paid attempts migrate without exposing the memory sequence or changing their frozen fee', async t => {
@@ -428,4 +432,84 @@ test('natural dealer blackjack enters the wheel immediately; natural player blac
  const g=await fixture(t);
  const win=startStoreHeist(g.dir,g.buyer,g.payload(),{now,draw:drawFor([0,2,9,3]),policeDraw:()=>{throw Error('win must skip police');}}).heist;
  assert.equal(win.outcome,'stolen');assert.ok(!('policeWheel' in win));assert.equal(g.itemOwner('wine-0'),g.buyer.id);
+});
+
+
+test('Heat persists per player, rises only on committed starts, and freezes quoted odds for the hand',async t=>{
+  const f=await fixture(t),payload=f.payload();
+  assert.equal(f.view().heat.value,0);
+  assert.throws(()=>startStoreHeist(f.dir,f.buyer,{...payload,expectedPrice:1},{now}),/store_price_changed/);
+  assert.equal(f.view().heat.value,0);
+  const first=startStoreHeist(f.dir,f.buyer,{...payload,heat:100},{now,draw:success});
+  assert.equal(first.heist.policeCatchPercent,30);
+  assert.equal(f.view().heat.value,1);
+  assert.equal(f.view().stock[1].theft.policeCatchPercent,35);
+  assert.equal(f.view().heistInProgress,true);
+  assert.equal(f.view(f.rival).heat.value,0);
+  assert.equal(f.view(null).heat,null);
+  assert.deepEqual(startStoreHeist(f.dir,f.buyer,{...payload,heat:100},{now,draw:success}),first);
+  assert.equal(f.accounts.profile(f.buyer).heat.value,1);
+  closeDataStore(f.dir);
+  assert.equal(f.view().heat.value,1);
+  assert.equal(f.view().heist.policeCatchPercent,30);
+  assert.throws(()=>startStoreHeist(f.dir,f.buyer,f.payload('wine-1'),{now,draw:success}),/heist_active/);
+  assert.equal(f.view().heat.value,1);
+  setHand(f,first.id);action(f,first.id);
+  assert.equal(f.view().heat.value,2);assert.equal(f.view().heat.stars,1);
+  action(f,first.id);assert.equal(f.view().heat.value,2);
+  assert.equal(f.view().heistInProgress,false);
+  assert.throws(()=>startStoreHeist(f.dir,f.buyer,{...f.payload('wine-1'),expectedPoliceCatchPercent:30},{now,draw:success}),/store_risk_changed/);
+  assert.equal(f.view().heat.value,2);
+  const second=startStoreHeist(f.dir,f.buyer,{...f.payload('wine-1'),expectedPoliceCatchPercent:40},{now,draw:success});
+  assert.equal(second.heist.policeCatchPercent,40);
+  assert.equal(f.view().heat.value,3);
+  setHand(f,second.id,{player:[2,3],dealer:[9,8]});
+  const lost=actStoreHeist(f.dir,f.buyer,{heistId:second.id,action:'stand',turn:0,requestId:'heat-police-loss-0001'},{now:now+HEAT_DECAY_INTERVAL,policeDraw:()=>350000});
+  assert.equal(lost.policeWheel.catchPercent,40);
+  const caught=spinStoreHeist(f.dir,f.buyer,{heistId:second.id,requestId:'heat-police-spin-0001'},{now:now+HEAT_DECAY_INTERVAL});
+  assert.equal(caught.outcome,'caught'); // 35% would escape a cold 30% hand.
+  assert.ok(caught.policeWheel.stopAngle>126&&caught.policeWheel.stopAngle<127);
+});
+
+test('Heat catch odds include guards and Prestige, allow safer decayed quotes, and roll back failed starts',async t=>{
+  const f=await fixture(t);
+  assert.equal(theftQuote(100,false,1,0,25,2).policeCatchPercent,32.5);
+  assert.equal(theftQuote(100,true,1,0,25,2).policeCatchPercent,47.5);
+  assert.equal(theftQuote(100,true,1,0,0,10).policeCatchPercent,95);
+  assert.equal(theftQuote(100,false,1,0,0,10).policeCatchPercent,80);
+  assert.equal(theftQuote(100,false,1,0,0,1).policeCatchPercent,35);
+  f.accounts.db(db=>{
+    playerHeat(db,f.buyer.id,now);
+    db.prepare('INSERT INTO player_heat VALUES(?,?,?)').run(f.buyer.id,2,now);
+    db.exec("CREATE TRIGGER fail_heat_start BEFORE INSERT ON store_heists BEGIN SELECT RAISE(ABORT,'start_failed'); END");
+  });
+  assert.throws(()=>startStoreHeist(f.dir,f.buyer,f.payload(),{now,draw:success}),/start_failed/);
+  assert.equal(f.view().heat.value,2);
+  f.accounts.db(db=>db.exec('DROP TRIGGER fail_heat_start'));
+  const next=startStoreHeist(f.dir,f.buyer,{...f.payload(),expectedPoliceCatchPercent:40},{now:now+HEAT_DECAY_INTERVAL,draw:success});
+  assert.equal(next.heist.policeCatchPercent,35);
+  assert.equal(f.view(f.buyer,now+HEAT_DECAY_INTERVAL).heat.value,2);
+});
+
+
+test('stolen item value determines additional wanted stars from server-side value, not payload or shelf markup',async t=>{
+  for(const [price,extra] of [[100,1],[500,2],[2500,3],[10000,4]]) {
+    const f=await fixture(t);
+    f.accounts.db(db=>{
+      db.prepare("UPDATE inventory SET item=json_set(item,'$.price',?) WHERE id='wine-0'").run(price);
+      db.prepare('UPDATE businesses SET traffic_popularity=0 WHERE id=?').run(f.shop.id);
+    });
+    const entry=f.view().stock.find(item=>item.id==='wine-0');
+    assert.equal(entry.theft.successHeatStars,extra/2);
+    const started=startStoreHeist(f.dir,f.buyer,{...f.payload(),expectedPrice:entry.price,expectedFine:entry.theft.fine,stolenHeat:0},{now,draw:success});
+    assert.equal(f.view().heat.stars,.5);
+    // Later value changes cannot reduce the accepted attempt's Heat gain.
+    f.accounts.db(db=>db.prepare("UPDATE inventory SET item=json_set(item,'$.price',1) WHERE id='wine-0'").run());
+    setHand(f,started.id);
+    action(f,started.id);
+    assert.equal(f.view().heat.stars,(1+extra)/2);
+    action(f,started.id);
+    assert.equal(f.view().heat.stars,(1+extra)/2);
+    assert.equal(f.view(f.buyer,now+HEAT_DECAY_INTERVAL).heat.stars,extra/2);
+  }
 });

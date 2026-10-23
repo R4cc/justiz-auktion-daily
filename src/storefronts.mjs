@@ -1,3 +1,4 @@
+import { playerHeat, increasePlayerHeat, HEAT_CATCH_BONUS, stolenItemHeat } from './theft-heat.mjs';
 import { checkDueStoreEvent } from './store-events.mjs';
 import { businessAbandonment } from './business-abandonment.mjs';
 import { prestigeEffects } from './prestige-effects.mjs';
@@ -19,8 +20,8 @@ import { dealBlackjack, playBlackjack, publicBlackjack } from './blackjack.mjs';
 import { ensureJusticeSchema, assertPlayerFree, imposeFine, collectFine } from './justice.mjs';
 import { creditStoreCash } from './store-cash.mjs';
 
-export const HEIST_COOLDOWN = 30 * 60000;
-export const STORE_HEIST_COOLDOWN = 5 * 60000;
+export const HEIST_COOLDOWN = 0;
+export const STORE_HEIST_COOLDOWN = 0;
 export const HEIST_DURATION = 10 * 60000;
 export const POLICE_WHEEL_DURATION = 2 * 60000;
 export const POLICE_CATCH_PERCENT = ECONOMY_BALANCE.theftPoliceCatchPercent;
@@ -55,6 +56,7 @@ export function ensureStoreSchema(db) {
   ) STRICT;
   CREATE INDEX IF NOT EXISTS store_heists_actor ON store_heists(user_id, created_at DESC);
   CREATE INDEX IF NOT EXISTS store_heists_shop ON store_heists(business_id, created_at DESC)`);
+  if (!db.prepare('PRAGMA table_info(store_heists)').all().some(column => column.name === 'stolen_heat')) db.exec('ALTER TABLE store_heists ADD COLUMN stolen_heat INTEGER NOT NULL DEFAULT 0');
   if (!db.prepare('PRAGMA table_info(store_heists)').all().some(column => column.name === 'chance_basis_points')) db.exec('ALTER TABLE store_heists ADD COLUMN chance_basis_points INTEGER');
   if (!db.prepare('PRAGMA table_info(store_heists)').all().some(column => column.name === 'retired')) db.exec('ALTER TABLE store_heists ADD COLUMN retired INTEGER NOT NULL DEFAULT 0');
   if (!db.prepare('PRAGMA table_info(store_heists)').all().some(column => column.name === 'choice')) {
@@ -127,11 +129,12 @@ function moveItem(db, shop, player, inventoryId) {
   if (!db.prepare('DELETE FROM business_stock WHERE business_id = ? AND inventory_id = ? AND sold_at IS NULL').run(shop.id, inventoryId).changes) fail('stock_not_found', 409);
   if (!db.prepare('UPDATE inventory SET user_id = ? WHERE id = ? AND user_id = ? AND sold_at IS NULL').run(player.id, inventoryId, shop.user_id).changes) fail('stock_conflict', 409);
 }
-export function theftQuote(referencePrice, securityGuard, locationMultiplier = 1, securityPercent = 0, catchReductionPercent = 0) {
+export function theftQuote(referencePrice, securityGuard, locationMultiplier = 1, securityPercent = 0, catchReductionPercent = 0, heat = 0) {
   const baseFine = Math.max(20, Math.ceil(referencePrice * ECONOMY_BALANCE.theftFineMultiplier * Math.max(1, 1 / locationMultiplier)));
   const fine = Math.max(Math.ceil(referencePrice * ECONOMY_BALANCE.theftFineMinimumMultiplier),
     Math.ceil(Math.ceil(baseFine * (100 + securityPercent) / 100) * ECONOMY_BALANCE.theftFineScale));
-  return { fine, policeCatchPercent: (securityGuard ? ECONOMY_BALANCE.securityGuardCatchPercent : POLICE_CATCH_PERCENT) * (100-catchReductionPercent)/100, rules: 'single-deck-s17' };
+  const baseChance = (securityGuard ? ECONOMY_BALANCE.securityGuardCatchPercent : POLICE_CATCH_PERCENT) * (100-catchReductionPercent)/100;
+  return { fine, policeCatchPercent: Math.min(95, baseChance + heat * HEAT_CATCH_BONUS), successHeatStars: stolenItemHeat(referencePrice) / 2, rules: 'single-deck-s17' };
 }
 function publicCard(db, shop, viewer, now) {
   return { ...businessAbandonment(shop,now), takeoverPrice: Math.round(SHOP_SIZES.find(size=>size.id===shop.size).cost * SHOP_TYPES.find(type=>type.id===shop.type).costFactor * (plotLocation(db,shop.plot_id)?.priceMultiplier ?? 1)), id: shop.id, ownerId: shop.user_id, owner: viewer ? shop.username : maskUsername(shop.username),
@@ -176,17 +179,17 @@ export function visitStore(dataDir, viewer, shopId, { now = Date.now() } = {}) {
     const rows = storeReviewList(db,shop.id,player?.id || '');
     const reactions = db.prepare('SELECT reaction, COUNT(*) AS count FROM store_reactions WHERE business_id = ? GROUP BY reaction').all(shop.id);
     const lastHeist = player ? db.prepare('SELECT * FROM store_heists WHERE user_id = ? AND retired=0 ORDER BY created_at DESC, id DESC LIMIT 1').get(player.id) : null;
-    const storeHeist = db.prepare('SELECT MAX(created_at) AS last FROM store_heists WHERE business_id = ?').get(shop.id).last;
-    const cooldownUntil = Math.max(lastHeist ? lastHeist.created_at + HEIST_COOLDOWN : 0, storeHeist === null ? 0 : storeHeist + STORE_HEIST_COOLDOWN);
+    const heat = player ? playerHeat(db, player.id, now) : null;
+    const heistInProgress = Boolean(player && db.prepare("SELECT 1 FROM store_heists WHERE user_id=? AND status IN ('active','police')").get(player.id));
     return { store: { ...publicCard(db, shop, player, now), own,
       stock: shopStock(db, shop.id, shop.type, shop.profit_margin, now).map(entry => ({ id: entry.id, price: entry.askingPrice,
         item: { title: entry.item.title, image: entry.item.image || null, rarity: entry.item.rarity || 'common' },
-        theft: !own ? theftQuote(entry.referencePrice, shop.security_guard, plotLocation(db, shop.plot_id)?.theftMultiplier ?? 1, skillEffects(db,shop.user_id).securityPercent,prestigeEffects(db,player?.id).catchReductionPercent) : null })),
+        theft: !own ? theftQuote(entry.referencePrice, shop.security_guard, plotLocation(db, shop.plot_id)?.theftMultiplier ?? 1, skillEffects(db,shop.user_id).securityPercent,prestigeEffects(db,player?.id).catchReductionPercent, heat?.value || 0) : null })),
       reviews: rows.map(row => ({ ...row, username: player ? row.username : maskUsername(row.username) })), reactions,
       canReview: Boolean(player && !own && db.prepare("SELECT 1 FROM store_receipts WHERE business_id = ? AND user_id = ? AND action = 'buy'").get(shop.id, player.id)),
       myReview: player ? db.prepare('SELECT stars, comment FROM store_reviews WHERE business_id = ? AND user_id = ?').get(shop.id, player.id) || null : null,
       myReactions: player ? db.prepare('SELECT reaction FROM store_reactions WHERE business_id = ? AND user_id = ? AND day = ?').all(shop.id, player.id, date(now)).map(r => r.reaction) : [],
-      cooldownUntil, heist: lastHeist?.business_id === shop.id ? serializeHeist(lastHeist, now) : null } };
+      heat, heistInProgress, cooldownUntil: 0, heist: lastHeist?.business_id === shop.id ? serializeHeist(lastHeist, now) : null } };
   }));
 }
 // Only caught attempts are recorded crimes. Successful, unresolved, tied and
@@ -318,24 +321,22 @@ export function startStoreHeist(dataDir, user, payload, { now = Date.now(), draw
   return atomic(dataDir, user, (db, player) => receipt(db, player, payload, 'heist', now, id => {
     const shop = store(db, payload.shopId); otherStore(shop, player);
     if (assertPlayerFree(db,player.id,now).fineDue) fail('unpaid_fine',409);
-    const last = db.prepare('SELECT created_at FROM store_heists WHERE user_id = ? AND retired=0 ORDER BY created_at DESC LIMIT 1').get(player.id);
-    const target = db.prepare('SELECT MAX(created_at) AS last FROM store_heists WHERE business_id = ?').get(shop.id).last;
-    if ((last && now < last.created_at + HEIST_COOLDOWN) || (target !== null && now < target + STORE_HEIST_COOLDOWN)) fail('heist_cooldown', 409);
     if (db.prepare("SELECT 1 FROM store_heists WHERE user_id=? AND status IN ('active','police')").get(player.id)) fail('heist_active',409);
     const entry = shelf(db, shop, payload.inventoryId, now);
     if (payload.expectedPrice !== entry.askingPrice) fail('store_price_changed', 409);
-    const quote = theftQuote(entry.referencePrice, shop.security_guard, plotLocation(db, shop.plot_id)?.theftMultiplier ?? 1, skillEffects(db,shop.user_id).securityPercent,prestigeEffects(db,player.id).catchReductionPercent);
-    if (payload.expectedFine !== quote.fine || (payload.expectedPoliceCatchPercent !== undefined && payload.expectedPoliceCatchPercent !== quote.policeCatchPercent)) fail('store_risk_changed', 409);
+    const quote = theftQuote(entry.referencePrice, shop.security_guard, plotLocation(db, shop.plot_id)?.theftMultiplier ?? 1, skillEffects(db,shop.user_id).securityPercent,prestigeEffects(db,player.id).catchReductionPercent, playerHeat(db,player.id,now).value);
+    if (payload.expectedFine !== quote.fine || (payload.expectedPoliceCatchPercent !== undefined && (!Number.isFinite(payload.expectedPoliceCatchPercent) || payload.expectedPoliceCatchPercent < quote.policeCatchPercent))) fail('store_risk_changed', 409);
     const game = dealBlackjack(draw);
-    db.prepare(`INSERT INTO store_heists (id,user_id,business_id,owner_id,inventory_id,sequence,roll,chance,fee,created_at,ready_at,expires_at,blackjack,chance_basis_points)
-      VALUES (?,?,?,?,?,'[]',0,?,?,?,?,?,?,?)`).run(id,player.id,shop.id,shop.user_id,entry.id,Math.round(quote.policeCatchPercent),quote.fine,now,now,now+HEIST_DURATION,JSON.stringify(game),Math.round(quote.policeCatchPercent*100));
+    increasePlayerHeat(db, player.id, now);
+    db.prepare(`INSERT INTO store_heists (id,user_id,business_id,owner_id,inventory_id,sequence,roll,chance,fee,created_at,ready_at,expires_at,blackjack,chance_basis_points,stolen_heat)
+      VALUES (?,?,?,?,?,'[]',0,?,?,?,?,?,?,?,?)`).run(id,player.id,shop.id,shop.user_id,entry.id,Math.round(quote.policeCatchPercent),quote.fine,now,now,now+HEIST_DURATION,JSON.stringify(game),Math.round(quote.policeCatchPercent*100),stolenItemHeat(entry.referencePrice));
     if (game.outcome !== 'active') settleBlackjack(db,player,db.prepare('SELECT * FROM store_heists WHERE id=?').get(id),game,now,policeDraw);
     return { id, amount:0, heist:serializeHeist(db.prepare('SELECT * FROM store_heists WHERE id=?').get(id),now) };
   }), now);
 }
 function policeWheel(attempt, spun = false, autoSpun = false) {
   return { catchPercent: policeChance(attempt), escapePercent: 100 - policeChance(attempt), spun,
-    ...(spun ? { sector: Math.floor(attempt.roll / 100000), outcome: attempt.roll < policeChance(attempt) * 10000 ? 'caught' : 'escaped', autoSpun } : {}) };
+    ...(spun ? { sector: Math.floor(attempt.roll / 100000), stopAngle: (attempt.roll + .5) / 1000000 * 360, outcome: attempt.roll < policeChance(attempt) * 10000 ? 'caught' : 'escaped', autoSpun } : {}) };
 }
 function queuePoliceWheel(db,attempt,game,now,draw) {
   const roll = draw(1000000);
@@ -363,7 +364,8 @@ function settleBlackjack(db,player,attempt,game,now,policeDraw = randomInt, poli
     WHERE s.business_id=? AND s.inventory_id=? AND s.sold_at IS NULL AND i.sold_at IS NULL AND i.user_id=?`).get(shop.id,attempt.inventory_id,attempt.owner_id) && !inventoryIsLocked(db,attempt.inventory_id);
   const outcome = policeResult?.outcome ?? (game.outcome === 'push' ? 'push' : present ? 'stolen' : 'gone');
   let consequence = null;
-  if (outcome === 'stolen') { moveItem(db,shop,player,attempt.inventory_id); acquireItems(db,player.id,[attempt.inventory_id],0,'mischief',now); }
+  if (outcome === 'stolen') { moveItem(db,shop,player,attempt.inventory_id); acquireItems(db,player.id,[attempt.inventory_id],0,'mischief',now);
+    if (attempt.stolen_heat) increasePlayerHeat(db,player.id,now,attempt.stolen_heat); }
   if (outcome === 'caught') {
     consequence = imposeFine(db,player.id,attempt.fee,now);
     const owner = db.prepare('SELECT tokens FROM users WHERE id=?').get(attempt.owner_id);
