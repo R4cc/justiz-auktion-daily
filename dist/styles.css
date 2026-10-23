@@ -1873,27 +1873,32 @@ button.store-review-like:hover, .store-review-like.is-liked { color: var(--ink);
 }
 
 /* One available balance in the persistent app chrome. */
-.persistent-wallet { display:grid;flex:none;align-self:stretch;gap:10px;min-width:0;padding:14px;border:1px solid #cbb477;border-radius:12px;background:linear-gradient(110deg,#fff8df,#f0e8c9);color:var(--ink);box-shadow:0 3px 0 #183e360b;text-decoration:none; }
-.persistent-wallet:hover { border-color:var(--ink);box-shadow:0 4px 0 #183e3618; }
+.persistent-wallet { display:grid;flex:none;align-self:stretch;gap:12px;min-width:0;padding:14px;border:1px solid #35795d;border-radius:14px;background:linear-gradient(135deg,#23664c,#153f32);color:#f4fff6;box-shadow:0 3px 0 #0d3026;text-decoration:none; }
+.persistent-wallet:hover { border-color:#8bc6a3;box-shadow:0 4px 0 #0d3026; }
 .persistent-wallet:focus-visible { outline:3px solid var(--trader-accent);outline-offset:3px; }
-.persistent-wallet[aria-current] { border-color:var(--ink); }
+.persistent-wallet[aria-current] { border-color:#a7dfb3; }
+.user-card-identity { display:flex;align-items:center;gap:9px;min-width:0; }
+.user-card-avatar { flex:none;width:34px;height:34px;padding:6px;border:1px solid #b8e1c64d;border-radius:50%;background:#e0ffe914;color:#d3f3dc; }
 .user-card-name { overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:.9rem; }
 .wallet-balance { display:flex;align-items:center;gap:9px;min-width:0; }
 .wallet-coin { display:grid;place-items:center;flex:none;width:29px;height:29px;border:2px solid #b88933;border-radius:50%;background:#f6d67c;box-shadow:inset 0 0 0 2px #fff0b2;color:#73501c;font:700 18px 'DM Mono',monospace; }
 .wallet-copy { min-width:0; }
-.wallet-label { display:block;color:#59634a;font-size:.65rem;font-weight:700;line-height:1.2; }
+.wallet-label { display:block;color:#bfddcc;font-size:.65rem;font-weight:700;line-height:1.2; }
 #wallet-amount { display:block;margin-top:4px;font:600 1rem/1.3 'DM Mono',monospace;white-space:nowrap;font-variant-numeric:tabular-nums; }
 .persistent-wallet.is-long #wallet-amount { font-size:.64rem; }
 .user-card-progression { display:grid;grid-template-columns:1fr auto;gap:6px;min-width:0; }
 .user-card-progression .xp-level { font-size:.8rem; }
-.user-card-progression .xp-total { font-size:.65rem; }
-.user-card-progression .xp-meter { height:5px;background:#183e3620; }
-.user-card-progression .xp-meter>span { background:var(--trader-accent); }
-.user-card-heat { display:flex;justify-content:space-between;align-items:center;gap:6px;border-top:1px solid #cbb47780;padding-top:8px;font-size:.7rem;font-weight:700; }
+.user-card-progression .xp-total { color:#bfddcc;font-size:.65rem; }
+.user-card-progression .xp-meter { height:5px;background:#0b2c22; }
+.user-card-progression .xp-meter>span { background:#a7dfb3; }
+.user-card-heat { display:flex;justify-content:space-between;align-items:center;gap:6px;border-top:1px solid #b8e1c633;padding-top:10px;font-size:.7rem;font-weight:700; }
+.user-card-heat .heat-star { color:#8ba99b; }
 .user-card-heat .heat-stars { font-size:1.2rem; }
 @media(max-width:900px) {
   .persistent-wallet { position:fixed;z-index:54;top:70px;left:0;right:0;height:96px;grid-template-columns:minmax(0,1fr) minmax(0,1fr);grid-template-rows:18px 16px 22px;column-gap:18px;row-gap:5px;padding:10px 16px;border:0;border-bottom:1px solid var(--line);border-radius:0;box-shadow:none; }
-  .user-card-name { grid-column:1;grid-row:1;font-size:.8rem; }
+  .user-card-identity { grid-column:1;grid-row:1;gap:6px; }
+  .user-card-avatar { width:20px;height:20px;padding:3px; }
+  .user-card-name { font-size:.8rem; }
   .wallet-balance { grid-column:1;grid-row:2 / 4; }
   .wallet-coin { width:24px;height:24px;font-size:15px; }
   #wallet-amount { margin-top:3px;font-size:.85rem; }
