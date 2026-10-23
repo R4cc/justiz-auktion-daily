@@ -1,3 +1,4 @@
+let traderStores = [];
 let accountAdminRebates = {cases:[],rebates:[]};
 let accountAdminMarket = { categories: [], presets: [], history: [] };
 let accountRevision = 0;
@@ -506,7 +507,7 @@ async function navigateAccountPage(path, push = true) {
       const catalog = await accountApi('cases'); if (visit !== accountVisit) return; updateAccountCatalog(catalog);
     }
     if (path === '/inventory' && account) {
-      const [result, stores] = await Promise.all([accountApi('inventory'), economyFlags.businesses ? accountApi('businesses') : null, window.marketTrendUi?.load(visit)]); if (visit !== accountVisit || account?.id !== owner) return; accountItems = result.items; traderStores = stores?.shops || [];
+      const [result, stores] = await Promise.all([accountApi('inventory'), economyFlags.businesses ? accountApi('businesses?view=summary') : null, window.marketTrendUi?.load(visit)]); if (visit !== accountVisit || account?.id !== owner) return; accountItems = result.items; traderStores = stores?.shops || [];
       await window.netWorthUi?.load(visit); if (visit !== accountVisit || account?.id !== owner) return;
       const focus = new URLSearchParams(location.search).get('focus');
       if (focus) { const query = new URLSearchParams(location.search); for (const key of ['state','category','rarity']) query.delete(key); history.replaceState({},'', '/inventory?'+query); accountInventoryPage = Math.max(0,Math.floor(groupedInventory(accountItems).findIndex(group=>group.copies.some(item=>item.id===focus))/24)); }
@@ -515,8 +516,8 @@ async function navigateAccountPage(path, push = true) {
       const result = await accountApi('leaderboard?view=' + (new URLSearchParams(location.search).get('view') === 'collection' ? 'collection' : 'daily')); if (visit !== accountVisit) return; accountLeaderboard = result;
     }
     if (path === '/profile' && account) {
-      const [friends, record, statistics] = await Promise.all([accountApi('friends'),accountApi('criminal-record'),accountApi('statistics')]);
-      if (visit !== accountVisit || account?.id !== owner) return; accountFriends = friends; accountCriminalRecord = record; accountStatistics = statistics;
+      await window.profileUi.load(visit);
+      if (visit !== accountVisit || account?.id !== owner) return;
     }
     if (path === '/admin' && account?.admin) {
       const auctionQuery = `admin/auctions?query=${encodeURIComponent(accountAuctions.query || '')}&page=${accountAuctions.page}`;
@@ -1190,7 +1191,7 @@ document.addEventListener('click', async event => {
       const result = await accountApi('inventory/case/open', { id: button.dataset.id });
       if (account?.id !== owner) return;
       updateAccount(result.user);
-      const [inventory, stores, store] = await Promise.all([accountApi('inventory'), economyFlags.businesses ? accountApi('businesses') : null, accountApi('case-store').catch(() => null)]);
+      const [inventory, stores, store] = await Promise.all([accountApi('inventory'), economyFlags.businesses ? accountApi('businesses?view=summary') : null, accountApi('case-store').catch(() => null)]);
       if (visit !== accountVisit || account?.id !== owner) return;
       accountItems = inventory.items; traderStores = stores?.shops || [];
       if (store) accountStore = store;

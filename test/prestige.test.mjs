@@ -153,6 +153,8 @@ test('reset preserves other players purchases and crime history, while clearing 
 test('profit applies to simulated NPC business sales and sale events without increasing customer prices',async t=>{
  const f=await fixture(t);f.prestige();f.accounts.db(db=>db.prepare('UPDATE users SET tokens=100000 WHERE id=?').run(f.user.id));
  const shop=buyBusiness(f.dir,f.user,'wine','popup',{now}).shop;
+ // Traffic is seeded by store id; keep this payout test independent of UUID luck.
+ f.accounts.db(db=>db.prepare('UPDATE businesses SET id=? WHERE id=?').run('prestige-profit-npc-fixture',shop.id));shop.id='prestige-profit-npc-fixture';
  for(let n=0;n<8;n++){f.item('npc-sale-'+n);stockBusiness(f.dir,f.user,shop.id,['npc-sale-'+n],{now});}
  const dashboard=businessDashboard(f.dir,f.user,{now:now+24*3600000});assert.ok(dashboard.shops[0].sales>0);
  const sales=f.accounts.db(db=>db.prepare('SELECT price FROM business_sales WHERE business_id=?').all(shop.id));

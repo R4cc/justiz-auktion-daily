@@ -1,15 +1,15 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
-import vm from 'node:vm';
+import { createPageAssets } from '../dist/modules/page-assets.js';
 
-const source = await readFile(new URL('../dist/page-assets.js', import.meta.url), 'utf8');
+
 
 test('feature dependencies stop on a download failure and concurrent retries execute each script once', async () => {
   const manifests = ['shared', 'consumer'].map(name => ({dataset:{pages:'/feature /other',src:`/${name}.js`}}));
   const downloaded = [], executed = [], preloaded = [], removed = [];
   let failShared = true;
-  const context = vm.createContext({window:{},location:{href:'http://localhost/',pathname:'/'},URL,document:{
+  const context = ({window:{},location:{href:'http://localhost/',pathname:'/'},URL,document:{
     querySelectorAll:selector => selector.startsWith('script') ? manifests : [],
     createElement:tag => ({tag,remove(){removed.push(this.src);}}),
     head:{append:node=>preloaded.push(node.href)},
@@ -22,7 +22,7 @@ test('feature dependencies stop on a download failure and concurrent retries exe
       });
     }}
   }});
-  vm.runInContext(source,context);
+  context.window.pageAssets=createPageAssets(context.document,context.location);
   await assert.rejects(context.window.pageAssets.load('/feature'),/script_load_failed/);
   assert.deepEqual(downloaded,['/shared.js']);
   assert.deepEqual(executed,[]);
@@ -47,10 +47,10 @@ test('a failed stylesheet clears its URL so assigning the same URL can retry', a
       href=value;attempts++;setImmediate(()=>listeners.get(fail?'error':'load')?.());
     }
   };
-  const context=vm.createContext({window:{},location:{href:'http://localhost/',pathname:'/'},URL,document:{
+  const context=({window:{},location:{href:'http://localhost/',pathname:'/'},URL,document:{
     querySelectorAll:selector=>selector.startsWith('link')?[link]:[]
   }});
-  vm.runInContext(source,context);
+  context.window.pageAssets=createPageAssets(context.document,context.location);
   await assert.rejects(context.window.pageAssets.load('/feature'),/stylesheet_load_failed/);
   assert.equal(href,'','a failed link must not retain its URL');
   fail=false;await context.window.pageAssets.load('/feature');

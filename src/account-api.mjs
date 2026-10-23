@@ -28,7 +28,7 @@ import { bidOnPaletteAuction, createPaletteAuction, getPaletteAuctionRewards, pa
 import { archivedListingsBidOnByUser, cancelListing, listItem, listingsBidOnByUser, listingsByUser, placeBid } from './resale.mjs';
 import { maskLeaderboard } from './username-privacy.mjs';
 import { markNotificationsRead, notificationsForUser } from './notifications.mjs';
-import { businessDashboard, upgradeBusiness, buyBusiness, takeOverBusiness, setBusinessMargin, stockBusiness, unstockBusiness } from './businesses.mjs';
+import { businessDashboard, businessRestockInventory, upgradeBusiness, buyBusiness, takeOverBusiness, setBusinessMargin, stockBusiness, unstockBusiness } from './businesses.mjs';
 import { saveStoreSettings, saveStoreStock, collectStoreCash, spinStoreHeist, actStoreHeist, buyStoreItem, customizeStore, finishStoreHeist, reactToStore, likeStoreReview, recordStoreVisit, playerCriminalRecord, reviewStore, startStoreHeist, tipStore, visitStore } from './storefronts.mjs';
 import { jsonBody as body } from './json-body.mjs';
 
@@ -123,7 +123,12 @@ export async function createAccountApi({ dataDir, dailyPayload, json, env = proc
           else if (route === 'resale/bids/archived' && flags.resales) json(response, 200, { listings: archivedListingsBidOnByUser(dataDir, user.id) });
           else if (route === 'palette-auctions' && flags.paletteAuctions) json(response, 200, { auctions: paletteAuctionsByUser(dataDir, user, { limit: Number(url.searchParams.get('limit')) || 50, offset: Number(url.searchParams.get('offset')) || 0 }) });
           else if (route === 'inventory/reviews/targets' && flags.businesses) json(response, 200, reviewPackTargets(dataDir, user, { query: url.searchParams.get('query') || '', offset: url.searchParams.get('offset') || 0 }));
-          else if (route === 'businesses' && flags.businesses) json(response, 200, businessDashboard(dataDir, user));
+          else if (route === 'businesses' && flags.businesses) {
+            const view=url.searchParams.get('view')==='summary'?'summary':'full';
+            const events=view==='summary'&&url.searchParams.get('events')==='1'?checkStoreEvents(dataDir,user):null;
+            json(response,200,{...businessDashboard(dataDir,user,{view}),...(events?{...events,user:accounts.profile(user)}:{})});
+          }
+          else if (route === 'businesses/inventory' && flags.businesses) json(response,200,businessRestockInventory(dataDir,user,{shopId:url.searchParams.get('shop'),offset:url.searchParams.get('offset'),limit:url.searchParams.get('limit'),quick:url.searchParams.get('quick')==='1',space:url.searchParams.get('space')??undefined}));
           else if (route === 'friends') json(response, 200, accounts.friends(user));
           else if (route === 'codes') json(response, 200, { codes: accounts.listCodes(user) });
           else if (route === 'admin/case-rebates') json(response,200,caseRebateDashboard(dataDir,user));
@@ -243,7 +248,7 @@ export async function createAccountApi({ dataDir, dailyPayload, json, env = proc
       else if (flags.businesses && route === 'businesses/profile') result = { receipt: customizeStore(dataDir, user, payload), user: accounts.profile(user) };
       else if (flags.businesses && route === 'stores/events/check') result = { ...checkStoreEvents(dataDir, user), user: accounts.profile(user) };
       else if (flags.businesses && route === 'stores/events/acknowledge') result = acknowledgeStoreEvents(dataDir, user, payload.ids);
-      else if (flags.businesses && route === 'stores/visit') result = { ...recordStoreVisit(dataDir, user, payload.shopId), ...visitStore(dataDir, user, payload.shopId) };
+      else if (flags.businesses && route === 'stores/visit') result = { ...recordStoreVisit(dataDir, user, payload.shopId), ...visitStore(dataDir, user, payload.shopId, {summary:payload.summary===true}) };
       else if (flags.businesses && route === 'stores/buy') result = { receipt: buyStoreItem(dataDir, user, payload), user: accounts.profile(user) };
       else if (flags.businesses && route === 'inventory/reviews/redeem') result = { receipt: redeemReviewPack(dataDir, user, payload), user: accounts.profile(user) };
       else if (flags.businesses && route === 'stores/review') result = reviewStore(dataDir, user, payload);

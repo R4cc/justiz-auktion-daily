@@ -1,5 +1,5 @@
 // Shared handoffs: the same find can be kept, auctioned or stocked.
-let traderStores = [];
+
 function traderCategoryLabel(id) {
   const labels={electronics:['Electronics','Elektronik'],vehicles:['Vehicles','Fahrzeuge'],wine:['Wine & drinks','Wein & Getränke'],collectibles:['Collectibles','Sammlerstücke'],watches_jewelry:['Watches & jewellery','Uhren & Schmuck'],tools:['Tools','Werkzeuge'],household:['Household','Haushalt'],luxury_goods:['Luxury goods','Luxuswaren'],bicycles:['Bicycles','Fahrräder'],books_media:['Books & media','Bücher & Medien'],fashion:['Fashion','Mode'],cosmetics:['Cosmetics','Kosmetik'],sport_leisure:['Sport & leisure','Sport & Freizeit'],other:['Other','Sonstiges']};
   return accountEscape(labels[id]?t(...labels[id]):id);

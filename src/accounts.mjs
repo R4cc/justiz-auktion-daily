@@ -468,21 +468,22 @@ export class Accounts {
       }
       const traderStock={available:0,listed:0,inStores:0}, hidden=sealedPaletteInventoryIds(db);
       const locked=lockedInventoryIds(db);
-      for (const item of db.prepare('SELECT id FROM inventory WHERE user_id=? AND sold_at IS NULL').all(user.id)) {
+      for (const item of db.prepare(`SELECT i.id,s.inventory_id AS shelved FROM inventory i
+        LEFT JOIN business_stock s ON s.inventory_id=i.id AND s.sold_at IS NULL
+        WHERE i.user_id=? AND i.sold_at IS NULL`).all(user.id)) {
         if (hidden.has(item.id)) continue;
-        const shelved=db.prepare('SELECT 1 FROM business_stock WHERE inventory_id=? AND sold_at IS NULL').get(item.id);
-        traderStock[shelved?'inStores':locked.has(item.id)?'listed':'available']++;
+        traderStock[item.shelved?'inStores':locked.has(item.id)?'listed':'available']++;
       }
-      recordNetWorth(db, user.id, { now: this.now() });
+      const wealth = recordNetWorth(db, user.id, { now: this.now() });
       // Progression derives from the freshly read users.xp through the shared
       // curve — no level arithmetic lives in this class.
       return { ...publicRow, heat:playerHeat(db,user.id,this.now()), loanDebt:loanDebt(db,user.id,this.now()), justice:justiceStatus(db,user.id,this.now()), mustChangePassword: Boolean(must_change_password),
-        prestige:prestigeState(db,user.id,xp,this.now()), progression: progressionForXp(xp), skills:skillSummary(db,user.id,xp), ...this.summary(db, user.id), heldInBids, traderStock,
+        prestige:prestigeState(db,user.id,xp,this.now()), progression: progressionForXp(xp), skills:skillSummary(db,user.id,xp), ...this.summary(db, user.id, wealth), heldInBids, traderStock,
         ...tradingTotals(db,user.id), traderMilestones: traderProgress(db,user.id,this.now()),
         admin: Boolean(row.admin), reward: reward || null, rewardsByMode, gifts, date: day(this.now()) };
     });
   }
-  summary(db, userId) {
+  summary(db, userId, wealth = null) {
     // Cases have a J€ reference value, not a real-auction euro value. Only
     // revealed finds count toward the euro collection total.
     const inventory = db.prepare(`SELECT COUNT(*) AS itemCount,
@@ -492,8 +493,7 @@ export class Accounts {
     const game = db.prepare(`SELECT payload FROM account_games WHERE user_id = ? AND date = ? AND mode = 'daily'
       ORDER BY rowid DESC LIMIT 1`).get(userId, day(this.now()));
     const run = game ? JSON.parse(game.payload) : null;
-    const indexes = marketIndexes(db, this.now());
-    const wealth = currentNetWorth(db, userId, { now: this.now(), indexes });
+    wealth ||= currentNetWorth(db, userId, { now: this.now() });
     const inventoryMarketValue = wealth.items + wealth.sealedPalettes;
     const hasTable = name => Boolean(db.prepare(`SELECT 1 FROM sqlite_schema WHERE type = 'table' AND name = ?`).get(name));
     let activeBids = 0;

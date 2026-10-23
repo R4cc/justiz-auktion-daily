@@ -82,23 +82,42 @@ window.profileUi = (() => {
   function overview(){
     return `${window.theftHeatUi.markup(account.heat)}${prestigeCard()}${journey()}<div class="profile-play-grid">${dailyCard()}<a class="profile-play-card profile-collection-card" href="/inventory" data-page><span class="profile-card-icon">${icon('find')}</span><div><h2>${number(account.itemCount)} ${t(account.itemCount===1?'item':'items',account.itemCount===1?'Gegenstand':'Gegenstände')}</h2></div><strong>${t('Inventory','Inventar')} →</strong></a></div><section class="profile-wallet" aria-label="${t('Your trading stats','Deine Handelsbilanz')}"><div><span>${t('Trading profit','Handelsgewinn')}</span><strong>${justizEuro(account.realizedTradingProfit||0)}</strong></div><a href="/leaderboard?view=collection" data-page><span>${t('Collection rank','Sammlungsrang')}</span><strong>${t('Leaderboard','Rangliste')} →</strong></a></section><details class="profile-breakdown"><summary>${t('Trading breakdown & rewards','Handelsdetails & Belohnungen')}</summary>${economyOverviewMarkup()}${rewardBanner()}</details>`;
   }
+  let dataVisit=0,dataOwner=null;
+  const tabData=new Map();
+  async function load(visit,tab=selectedTab()){
+    const owner=account?.id;
+    if(dataVisit!==visit||dataOwner!==owner){dataVisit=visit;dataOwner=owner;tabData.clear();accountStatistics=null;accountFriends={friends:[],date:''};accountCriminalRecord={records:[],total:0,totalPenalties:0,hasMore:false};}
+    const route={statistics:'statistics',friends:'friends',record:'criminal-record'}[tab];
+    if(!owner||!route||tabData.has(tab))return;
+    const state={pending:true};tabData.set(tab,state);
+    try{
+      const result=await accountApi(route);
+      if(visit!==accountVisit||owner!==account?.id||tabData.get(tab)!==state)return;
+      if(tab==='statistics')accountStatistics=result;else if(tab==='friends')accountFriends=result;else accountCriminalRecord=result;
+    }catch(error){if(visit===accountVisit&&owner===account?.id)state.error=error.message;}
+    finally{state.pending=false;if(visit===accountVisit&&owner===account?.id&&currentAccountPage==='/profile'&&selectedTab()===tab&&pageLoaded)render();}
+  }
   function render(){
+    const focused=document.activeElement?.dataset.profileTab;
     if(!account){accountContent.innerHTML=pageHeading(t('Profile','Profil'))+loginNotice('profile');return;}
     const tab=selectedTab();
-    const content=tab==='statistics'?statistics():tab==='record'?criminalRecordMarkup():tab==='friends'?`<section class="profile-friends"><div class="friends-heading"><div><h2>${t('Friends','Freunde')}</h2></div><button type="button" class="secondary-button" data-account="refresh">${t('Refresh','Aktualisieren')}</button></div>${friendsMarkup()}</section>`:overview();
+    const state=tabData.get(tab);
+    const content=state?.pending?accountLoading('/profile',new URLSearchParams()):state?.error?`<p role="alert">${esc(state.error)}</p><button type="button" class="secondary-button" data-profile-retry>${t('Try again','Erneut versuchen')}</button>`:tab==='statistics'?statistics():tab==='record'?criminalRecordMarkup():tab==='friends'?`<section class="profile-friends"><div class="friends-heading"><div><h2>${t('Friends','Freunde')}</h2></div><button type="button" class="secondary-button" data-account="refresh">${t('Refresh','Aktualisieren')}</button></div>${friendsMarkup()}</section>`:overview();
     accountContent.innerHTML=`<div class="profile-hub">${hero()}${tabs(tab)}<div id="profile-panel" role="tabpanel" aria-labelledby="profile-tab-${tab}">${content}</div><footer class="profile-account-controls"><button type="button" class="secondary-button" data-account="logout">${t('Log out','Abmelden')}</button></footer></div>`;
+    if(focused)accountContent.querySelector(`[data-profile-tab="${focused}"]`)?.focus({preventScroll:true});
   }
   function select(tab){
     if(currentAccountPage!=='/profile'||!account||!['overview','statistics','friends','record'].includes(tab))return;
     const query=new URLSearchParams(location.search);if(tab==='overview')query.delete('tab');else query.set('tab',tab);
-    history.replaceState({},'','/profile'+(query.size?'?'+query:''));render();accountContent.querySelector(`[data-profile-tab="${tab}"]`)?.focus({preventScroll:true});
+    history.replaceState({},'','/profile'+(query.size?'?'+query:''));void load(accountVisit,tab);render();accountContent.querySelector(`[data-profile-tab="${tab}"]`)?.focus({preventScroll:true});
   }
   document.addEventListener('click',event=>{const button=event.target.closest('[data-profile-tab]');if(button)select(button.dataset.profileTab);});
+  document.addEventListener('click',event=>{if(event.target.closest('[data-profile-retry]')&&currentAccountPage==='/profile'){tabData.delete(selectedTab());select(selectedTab());}});
   document.addEventListener('keydown',event=>{
     const button=event.target.closest('[data-profile-tab]');if(!button||currentAccountPage!=='/profile')return;
     const ids=['overview','statistics','friends','record'],index=ids.indexOf(button.dataset.profileTab);
     const next=event.key==='ArrowRight'?(index+1)%ids.length:event.key==='ArrowLeft'?(index+ids.length-1)%ids.length:event.key==='Home'?0:event.key==='End'?ids.length-1:null;
     if(next!==null){event.preventDefault();select(ids[next]);}
   });
-  return {render};
+  return {render,load};
 })();

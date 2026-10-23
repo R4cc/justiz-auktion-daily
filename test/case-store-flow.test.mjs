@@ -28,7 +28,7 @@ function fixture() {
     updateAccount(user){context.account=user;},renderAccountPage(){renders++;},updateCasePurchaseButtons(){},
     showToast(){},traderItemActions:()=>'<button>Keep</button>',
     document:{addEventListener(type,fn){handler=fn;}},
-    accountApi:async(route,payload)=>{calls.push({route,payload});if(route==='cases/buy')return {item,user:{id:'buyer',tokens:326},store};if(route==='inventory/case/open')return {item:find,user:{id:'buyer',tokens:326}};if(route==='case-store')return store;if(route==='businesses')return {shops:[{id:'store'}]};return {items:[find]};},
+    accountApi:async(route,payload)=>{calls.push({route,payload});if(route==='cases/buy')return {item,user:{id:'buyer',tokens:326},store};if(route==='inventory/case/open')return {item:find,user:{id:'buyer',tokens:326}};if(route==='case-store')return store;if(route.split('?')[0]==='businesses')return {shops:[{id:'store'}]};return {items:[find]};},
     spinCaseReel:async()=>{}
   });
   vm.runInContext(art+buySource+resultSource+handlerSource,context);

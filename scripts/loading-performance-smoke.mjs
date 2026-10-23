@@ -30,6 +30,7 @@ for (let n = 0; n < 12; n++) addItem(`toy-${n}`, 'collectibles', `Toy ${n % 3}`)
 stockBusiness(dir, owner, wine.id, Array.from({ length: 9 }, (_, n) => `wine-${n}`));
 for(let i=0;i<3;i++)accounts.db(db=>db.prepare('INSERT INTO inventory(id,user_id,item,created_at) VALUES(?,?,?,?)').run('tech-'+i,'mira',JSON.stringify({title:['Vintage camera','Portable music player','Wireless headphones'][i],price:80,marketCategory:'electronics',rarity:['common','uncommon','rare'][i],image:'/assets/makita.jpg'}),Date.now()));
 stockBusiness(dir,{id:'mira'},tech.id,['tech-0','tech-1','tech-2']);
+accounts.db(db=>{const insert=db.prepare('INSERT INTO inventory(id,user_id,item,created_at) VALUES(?,?,?,?)');for(let i=0;i<70;i++)insert.run('paged-'+i,owner.id,JSON.stringify({title:'Paged wine '+i,price:30,marketCategory:'wine',rarity:'common'}),Date.now());});
 accounts.db(db=>db.prepare('UPDATE businesses SET cash_balance=1540 WHERE id=?').run(wine.id));
 const economy = createEconomyApi({ dataDir: dir, json, flags, accounts });
 const server = createServer(async (req, res) => {
@@ -85,7 +86,7 @@ try {
   const before = counts(); requests.length = 0;
   visitGate = new Promise(resolve => releaseVisit = resolve);
   // This is real link navigation, with the destination API held on the network.
-  await page.locator(`.market-store-card a[href*="${tech.id}"]`).last().click();
+  await page.locator(`.market-store-card[href*="${tech.id}"]`).last().click();
   await page.waitForSelector('.page-loading.is-store-detail');
   for (const width of [1440,768,390,320]) { await page.setViewportSize({width,height:1000}); await overflow(); }
   releaseVisit(); visitGate = null;
@@ -104,9 +105,15 @@ try {
   const ownerRequests = requests.length;
   await page.locator('.shop-tabs a').filter({hasText:'Stock'}).click();
   await page.waitForSelector('[data-shop-stock]');
+  const selectedTitle=await page.locator('.shop-stock-row').filter({has:page.locator('[data-side="add"]')}).first().locator('strong').innerText();
+  await page.locator('[data-side="add"]').first().fill('1');await page.locator('[data-side="add"]').first().dispatchEvent('change');
+  await page.locator('[data-business="load-stock"][data-more="1"]').click();
+  await page.waitForFunction(()=>!document.querySelector('[data-business="load-stock"][data-more="1"]'));
+  assert.equal(await page.locator('.shop-stock-row').filter({hasText:selectedTitle}).first().locator('[data-side="add"]').inputValue(),'1','pagination preserves staged quantities');
   await page.locator('.shop-tabs a').filter({hasText:'Settings'}).click();
   assert.equal(await page.locator('[name="storeName"]').inputValue(), 'Loading check');
-  assert.equal(requests.length, ownerRequests, 'owner tabs remain local');
+  assert.equal(requests.length, ownerRequests+2, 'stock tab and load-more fetch bounded inventory pages');
+  const afterStock=requests.length;await page.locator('.shop-tabs a').filter({hasText:'Stock'}).click();await page.waitForSelector('[data-shop-stock]');assert.equal(requests.length,afterStock,'loaded stock tabs remain local');
   // A late store response cannot overwrite another page or restart polling.
   visitGate = new Promise(resolve => releaseVisit = resolve);
   await page.evaluate(id => { void navigateAccountPage('/stores?shop='+id); }, tech.id);

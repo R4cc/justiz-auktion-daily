@@ -38,6 +38,9 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Build browser assets
+        run: npm run build
+
       - name: Test
         run: npm test
 

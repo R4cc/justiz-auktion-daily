@@ -7,7 +7,7 @@ import path from 'node:path';
 import { Accounts } from '../src/accounts.mjs';
 import { closeDataStore, upsertAuctions } from '../src/database.mjs';
 import { SHOP_SIZES, SHOP_TYPES, businessDashboard, businessSaleChance, buyBusiness, ensureBusinessSchema, setBusinessMargin,
-  stockBusiness, supplyStockAuctions, tickBusinesses, unstockBusiness } from '../src/businesses.mjs';
+  stockBusiness, supplyStockAuctions, tickBusinesses, unstockBusiness, businessRestockInventory } from '../src/businesses.mjs';
 import { getResale, listItem, listResales, listingsBidOnByUser, placeBid, settleDueListings } from '../src/resale.mjs';
 import { setMarketIndex } from '../src/market.mjs';
 import { tickNpcBuyers } from '../src/npc-buyers.mjs';
@@ -45,6 +45,53 @@ async function fixture(t) {
     balance: id => accounts.db(db => db.prepare('SELECT tokens FROM users WHERE id = ?').get(id).tokens),
     count: (table, condition = '1 = 1') => accounts.db(db => db.prepare(`SELECT COUNT(*) AS count FROM ${table} WHERE ${condition}`).get().count) };
 }
+
+test('store summaries stay bounded and batched inventory pages preserve ownership and auction locks', async t=>{
+  const f=await fixture(t),shop=buyBusiness(f.dir,f.rival,'wine','popup',{now:start}).shop;
+  f.accounts.db(db=>{
+    const insert=db.prepare('INSERT INTO inventory(id,user_id,item,created_at) VALUES(?,?,?,?)');
+    for(let i=0;i<120;i++)insert.run('page-'+String(i).padStart(3,'0'),f.rival.id,JSON.stringify({title:'Wine '+i,price:100,marketCategory:'wine',rarity:'common'}),start);
+    insert.run('foreign',f.owner.id,JSON.stringify({title:'Private wine',price:100,marketCategory:'wine'}),start);
+  });
+  stockBusiness(f.dir,f.rival,shop.id,['page-000'],{now:start});
+  listItem(f.dir,f.rival,{inventoryId:'page-001',startPrice:100,endsAt:new Date(start+24*hour).toISOString()},{now:start});
+  const full=businessDashboard(f.dir,f.rival,{now:start});
+  const summary=businessDashboard(f.dir,f.rival,{now:start,view:'summary'});
+  assert.equal(summary.inventory,undefined);assert.equal(summary.availableStock.wine,118);
+  assert.ok(JSON.stringify(summary).length<10000);
+  assert.deepEqual(summary.shops,full.shops);
+  const pages=[];
+  for(let offset=0;offset<118;offset+=48){const page=businessRestockInventory(f.dir,f.rival,{shopId:shop.id,offset,limit:48,now:start});pages.push(...page.inventory);assert.ok(page.inventory.length<=48);assert.equal(page.total,118);}
+  assert.deepEqual(pages.map(item=>item.id),full.inventory.map(item=>item.id));
+  assert.equal(new Set(pages.map(item=>item.id)).size,118);
+  assert.throws(()=>businessRestockInventory(f.dir,f.owner,{shopId:shop.id,now:start}),/business_not_found/);
+  const quick=businessRestockInventory(f.dir,f.rival,{shopId:shop.id,quick:true,now:start});
+  assert.equal(quick.inventory.length,shop.capacity-1);assert.equal(new Set(quick.inventory.map(item=>item.title)).size,shop.capacity-1);
+});
+
+test('dashboard query and schema work stays constant as inventory grows',async t=>{
+  const f=await fixture(t);buyBusiness(f.dir,f.rival,'wine','popup',{now:start});
+  const db=f.accounts.db(db=>db),prepare=db.prepare.bind(db),exec=db.exec.bind(db);
+  let prepares=0,execs=0;db.prepare=(...args)=>{prepares++;return prepare(...args);};db.exec=(...args)=>{execs++;return exec(...args);};
+  t.after(()=>{db.prepare=prepare;db.exec=exec;});
+  businessDashboard(f.dir,f.rival,{now:start});prepares=0;execs=0;
+  businessDashboard(f.dir,f.rival,{now:start});const baseline={prepares,execs};
+  const insert=prepare('INSERT INTO inventory(id,user_id,item,created_at) VALUES(?,?,?,?)');
+  for(let i=0;i<1000;i++)insert.run('batch-'+i,f.rival.id,JSON.stringify({title:'Wine',price:100,marketCategory:'wine'}),start);
+  prepares=0;execs=0;
+  assert.equal(businessDashboard(f.dir,f.rival,{now:start}).inventory.length,1000);
+  assert.deepEqual({prepares,execs},baseline);
+});
+
+test('owner dashboard catch-up leaves unrelated stores to the scheduled economy tick',async t=>{
+  const f=await fixture(t),ownerShop=buyBusiness(f.dir,f.owner,'wine','popup',{now:start}).shop;
+  const rivalShop=buyBusiness(f.dir,f.rival,'wine','popup',{now:start}).shop;
+  const read=id=>f.accounts.db(db=>db.prepare('SELECT last_tick_at FROM businesses WHERE id=?').get(id).last_tick_at);
+  const before=read(rivalShop.id),later=start+2*hour;
+  businessDashboard(f.dir,f.owner,{now:later,view:'summary'});
+  assert.ok(read(ownerShop.id)>before);assert.equal(read(rivalShop.id),before);
+  tickBusinesses(f.dir,{now:later});assert.ok(read(rivalShop.id)>before);
+});
 
 test('all store types and sizes receive 25% more hourly visitors', async t => {
   const f = await fixture(t), shop = buyBusiness(f.dir, f.rival, 'wine', 'popup', { now: start }).shop;

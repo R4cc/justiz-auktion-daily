@@ -1,4 +1,5 @@
 import { sendStaticFile } from './src/static-files.mjs';
+import { existsSync } from 'node:fs';
 import { auctionGallery } from './src/auction-images.mjs';
 import { createAccountApi } from './src/account-api.mjs';
 import { createEconomyApi } from './src/economy-api.mjs';
@@ -56,7 +57,7 @@ const projectDir =
 const publicDir =
   path.join(
     projectDir,
-    'dist'
+    existsSync(path.join(projectDir,'web-build/index.html')) ? 'web-build' : 'dist'
   );
 
 const dataDir =
@@ -1059,7 +1060,7 @@ const server =
             url.pathname
           ).toLowerCase();
 
-        const versionedAsset = ['.css', '.js'].includes(extension) && url.searchParams.has('v');
+        const versionedAsset = ['.css', '.js'].includes(extension) && (url.searchParams.has('v') || /^\/loader-[\w-]+\.js$/.test(url.pathname));
         const cacheControl = versionedAsset || url.pathname.startsWith('/fonts/')
           ? 'public, max-age=31536000, immutable'
           :

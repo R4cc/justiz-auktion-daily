@@ -47,7 +47,7 @@ export function createEconomyApi({ dataDir, json, flags = featureFlags(), accoun
         const viewer = player;
         json(response, 200, url.pathname === '/api/stores'
           ? listStores(dataDir, viewer, { query: url.searchParams.get('query') || '', type: url.searchParams.get('type') || '', offset: url.searchParams.get('offset'), limit: url.searchParams.get('limit'), district: url.searchParams.get('district') || '', inStock: url.searchParams.get('inStock'), minRating: url.searchParams.get('minRating'), sort: url.searchParams.get('sort') || 'newest' })
-          : visitStore(dataDir, viewer, decoded(url.pathname.slice('/api/stores/'.length))));
+          : visitStore(dataDir, viewer, decoded(url.pathname.slice('/api/stores/'.length)), {summary:url.searchParams.get('view')==='summary'}));
         return true;
       }
       if (flags.news && url.pathname === '/api/news') {

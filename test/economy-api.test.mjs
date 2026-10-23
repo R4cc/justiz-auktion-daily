@@ -71,6 +71,14 @@ test('public storefronts and player interactions use feature flags, sessions, CS
   assert.equal((await (await fetch(`${base}/api/stores`)).json()).stores[0].owner, 'ad****');
   const view = async cookie => (await (await fetch(`${base}/api/stores/${shop.id}`, { headers: { cookie } })).json()).store;
   assert.equal((await view(buyerCookie)).owner, 'admin');
+  const summary=await (await fetch(base+'/api/account/businesses?view=summary',{headers:{cookie:ownerCookie}})).json();
+  assert.equal(summary.inventory,undefined);assert.equal(summary.shops[0].id,shop.id);
+  const activity=await (await fetch(base+'/api/account/businesses?view=summary&events=1',{headers:{cookie:ownerCookie}})).json();
+  assert.equal(activity.user.id,owner.id);assert.ok(Array.isArray(activity.events));assert.equal(activity.inventory,undefined);
+  const page=await fetch(base+'/api/account/businesses/inventory?shop='+shop.id+'&limit=1',{headers:{cookie:ownerCookie}});
+  assert.equal(page.status,200);assert.ok((await page.json()).inventory.length<=1);
+  assert.equal((await fetch(base+'/api/account/businesses/inventory?shop='+shop.id,{headers:{cookie:buyerCookie}})).status,404);
+  assert.equal((await fetch(base+'/api/account/businesses/inventory?shop='+shop.id)).status,401);
   const payload = { shopId: shop.id, inventoryId: 'http-wine-0', expectedPrice: 120, requestId: 'store-http-purchase-0001' };
   assert.equal((await post(base, 'stores/buy', payload)).status, 401);
   assert.equal((await fetch(`${base}/api/account/stores/buy`, { method: 'POST', headers: { cookie: buyerCookie, 'content-type': 'application/json' }, body: JSON.stringify(payload) })).status, 403);

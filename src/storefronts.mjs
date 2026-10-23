@@ -196,12 +196,13 @@ export function listStores(dataDir, viewer = null, { now = Date.now(), query = '
       districts: TOWN_DISTRICTS.map(district => ({ id:district.id, name:district.name, number:district.number, count:all.filter(shop => shop.location?.districtId === district.id).length })) };
   }));
 }
-export function visitStore(dataDir, viewer, shopId, { now = Date.now() } = {}) {
+export function visitStore(dataDir, viewer, shopId, { now = Date.now(), summary = false } = {}) {
   return withDatabase(dataDir, db => transaction(db, () => {
     ensureStoreSchema(db); marketIndexes(db, now); const shop = store(db, shopId); advanceShop(db, shop, now);
     const player = viewer ? actor(db, viewer, now) : null;
     const own = player?.id === shop.user_id;
-    const rows = storeReviewList(db,shop.id,player?.id || '');
+    const reviewsLoaded = !summary || !own;
+    const rows = reviewsLoaded ? storeReviewList(db,shop.id,player?.id || '') : [];
     const reactions = db.prepare('SELECT reaction, COUNT(*) AS count FROM store_reactions WHERE business_id = ? GROUP BY reaction').all(shop.id);
     const lastHeist = player ? db.prepare('SELECT * FROM store_heists WHERE user_id = ? AND retired=0 ORDER BY created_at DESC, id DESC LIMIT 1').get(player.id) : null;
     const heat = player ? playerHeat(db, player.id, now) : null;
@@ -210,7 +211,7 @@ export function visitStore(dataDir, viewer, shopId, { now = Date.now() } = {}) {
       stock: shopStock(db, shop.id, shop.type, shop.profit_margin, now).map(entry => ({ id: entry.id, price: entry.askingPrice,
         item: { title: entry.item.title, image: entry.item.image || null, rarity: entry.item.rarity || 'common' },
         theft: !own ? theftQuote(entry.referencePrice, shop.security_guard, plotLocation(db, shop.plot_id)?.theftMultiplier ?? 1, skillEffects(db,shop.user_id).securityPercent,prestigeEffects(db,player?.id).catchReductionPercent, heat?.value || 0) : null })),
-      reviews: rows.map(row => ({ ...row, username: player ? row.username : maskUsername(row.username) })), reactions,
+      reviews: rows.map(row => ({ ...row, username: player ? row.username : maskUsername(row.username) })), reviewsLoaded, reactions,
       canReview: Boolean(player && !own && db.prepare("SELECT 1 FROM store_receipts WHERE business_id = ? AND user_id = ? AND action = 'buy'").get(shop.id, player.id)),
       myReview: player ? db.prepare('SELECT stars, comment FROM store_reviews WHERE business_id = ? AND user_id = ?').get(shop.id, player.id) || null : null,
       myReactions: player ? db.prepare('SELECT reaction FROM store_reactions WHERE business_id = ? AND user_id = ? AND day = ?').all(shop.id, player.id, date(now)).map(r => r.reaction) : [],

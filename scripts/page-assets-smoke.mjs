@@ -45,7 +45,7 @@ try {
   page.on('pageerror',error=>errors.push(error.message));page.on('request',request=>{requested.push(new URL(request.url()).pathname);if(/https:\/\/fonts\.(?:googleapis|gstatic)\.com/.test(request.url()))externalFonts.push(request.url());});
   await context.addCookies([{name:'jg_session',value:token,url:base}]);
   await page.goto(base+'/');await page.waitForSelector('.daily-home');
-  for(const asset of ['/store-ui.js','/town-ui.js','/profile-ui.js','/changelog-ui.js','/town.css','/profile.css'])assert.ok(!requested.includes(asset),`${asset} loaded on Daily`);
+  for(const asset of ['/store-ui.js','/town-ui.js','/profile-ui.js','/economy-ui.js','/trader-ui.js','/market-trend.js','/store-reputation-ui.js','/town.css','/profile.css'])assert.ok(!requested.includes(asset),`${asset} loaded on Daily`);
   const routes=['/town','/businesses','/stores?shop='+shop.id,'/inventory','/auction-house','/market','/profile','/skills','/changelog','/leaderboard','/shop','/admin'];
   for(const route of routes){
     await page.evaluate(path=>navigateAccountPage(path),route);

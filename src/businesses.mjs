@@ -15,11 +15,12 @@ import { withDatabase, transaction, setState } from './database.mjs';
 import { AccountError } from './errors.mjs';
 import { marketCategoryForItem, marketIndexAt, marketIndexes, estimatedValueTokens } from './market.mjs';
 import { ensureResaleSchema, inventoryIsLocked } from './resale.mjs';
+import { RESALE_LOCK_SQL } from './inventory-locks.mjs';
 import { sealedPaletteInventoryIds } from './palette-auctions.mjs';
 import { ensureNotificationSchema, pushNotification } from './notifications.mjs';
 import { auctionSelectionCategory } from './auction-selection.mjs';
 import { auctionGallery } from './auction-images.mjs';
-import { recordSale, salePayout, tradingTotals, acquisition, milestone, ensureTraderSchema } from './trader.mjs';
+import { recordSale, salePayout, tradingTotals, milestone, ensureTraderSchema } from './trader.mjs';
 import { levelForXp } from './progression.mjs';
 import { creditStoreCash, ensureStoreCashSchema } from './store-cash.mjs';
 import { ensurePrestigeSchema } from './prestige-effects.mjs';
@@ -396,6 +397,10 @@ export function upgradeBusiness(dataDir,user,{shopId,targetSize,expectedPrice,re
 
 function publicShop(db, row, now = Date.now()) {
   const stock = shopStock(db, row.id, row.type, row.profit_margin, now);
+  ensureTraderSchema(db);
+  const acquisitions = new Map(db.prepare(`SELECT a.inventory_id,a.cost,a.source FROM item_acquisitions a
+    JOIN business_stock s ON s.inventory_id=a.inventory_id WHERE s.business_id=? AND a.user_id=? AND s.sold_at IS NULL`)
+    .all(row.id,row.user_id).map(entry=>[entry.inventory_id,entry]));
   const dayStart = Math.floor(now / (24 * HOUR)) * 24 * HOUR;
   const today = db.prepare(`SELECT COUNT(*) AS sales, COALESCE(SUM(price), 0) AS revenue
     FROM business_sales WHERE business_id = ? AND sold_at >= ? AND sold_at < ?`)
@@ -414,21 +419,53 @@ function publicShop(db, row, now = Date.now()) {
       : businessSaleChance(shopType(row.type).conversion, row.profit_margin)) * 1000) / 10,
     ...metrics, ...storeReputation(db, row, now),
     popularityBreakdown:storePopularityBreakdown(db,row,plotLocation(db,row.plot_id),now),
-    stock: stock.map(entry=>({...entry,...acquisition(db,entry.id,row.user_id)})) };
+    stock: stock.map(entry=>({...entry,acquisitionCost:acquisitions.get(entry.id)?.cost??null,acquisitionSource:acquisitions.get(entry.id)?.source??'unknown'})) };
 }
 
-export function businessDashboard(dataDir, user, { now = Date.now() } = {}) {
-  tickBusinesses(dataDir, { now });
+function restockInventory(db, userId, now, details = true) {
+  ensureTraderSchema(db);
+  const sealed = sealedPaletteInventoryIds(db), indexes=marketIndexes(db,now);
+  return db.prepare(`SELECT i.id,i.item,a.cost,a.source FROM inventory i
+    LEFT JOIN item_acquisitions a ON a.inventory_id=i.id AND a.user_id=i.user_id
+    WHERE i.user_id=? AND i.sold_at IS NULL
+    AND NOT EXISTS (SELECT 1 FROM business_stock s WHERE s.inventory_id=i.id AND s.sold_at IS NULL)
+    AND NOT EXISTS (SELECT 1 FROM resale_auction_items ai JOIN resale_auctions a ON a.id=ai.auction_id
+      WHERE ai.inventory_id=i.id AND ${RESALE_LOCK_SQL.replaceAll('status','a.status').replaceAll('winner_id','a.winner_id').replaceAll('settled_at','a.settled_at')})
+    ORDER BY i.created_at DESC,i.id`).all(userId).filter(row=>!sealed.has(row.id)).flatMap(row=>{
+      const item=JSON.parse(row.item),type=stockType(item);
+      return type?[details?{...item,id:row.id,type,estimatedValueTokens:estimatedValueTokens(item,indexes),acquisitionCost:row.cost??null,acquisitionSource:row.source??'unknown'}:{type}]:[];
+    });
+}
+function advanceOwner(db,user,now) {
+  ensureBusinessSchema(db,{now});activeUser(db,user);marketIndexes(db,now);
+  advanceShops(db,now,user.id);restockPrestigeStores(db,now,user.id);
+}
+export function businessDashboard(dataDir, user, { now = Date.now(), view = 'full' } = {}) {
   return withDatabase(dataDir, db => transaction(db, () => {
-    ensureBusinessSchema(db, { now }); activeUser(db, user); advanceShops(db, now, user.id);
-    const sealed = sealedPaletteInventoryIds(db), indexes=marketIndexes(db,now);
+    advanceOwner(db,user,now);
+    const inventory=restockInventory(db,user.id,now,view!=='summary');
     return { types: SHOP_TYPES, sizes: SHOP_SIZES, maxStores: MAX_STORES_PER_USER,
       shops: db.prepare('SELECT * FROM businesses WHERE user_id = ? ORDER BY bought_at, id').all(user.id).map(row => publicShop(db, row, now)),
-      inventory: db.prepare('SELECT id, item FROM inventory WHERE user_id = ? AND sold_at IS NULL ORDER BY created_at DESC').all(user.id)
-        .filter(row => !db.prepare('SELECT 1 FROM business_stock WHERE inventory_id = ? AND sold_at IS NULL').get(row.id)
-          && !inventoryIsLocked(db, row.id) && !sealed.has(row.id))
-        .map(row => { const item=JSON.parse(row.item);return { ...item, id:row.id, type:stockType(item), estimatedValueTokens:estimatedValueTokens(item,indexes), ...acquisition(db,row.id,user.id) }; })
-        .filter(item => item.type) };
+      availableStock: Object.fromEntries(SHOP_TYPES.map(type=>[type.id,inventory.filter(item=>item.type===type.id).length])),
+      ...(view==='summary'?{}:{inventory}) };
+  }));
+}
+export function businessRestockInventory(dataDir,user,{shopId,offset=0,limit=48,quick=false,space,now=Date.now()}={}) {
+  return withDatabase(dataDir,db=>transaction(db,()=>{
+    advanceOwner(db,user,now);
+    const row=db.prepare('SELECT * FROM businesses WHERE id=? AND user_id=?').get(String(shopId||''),user.id);
+    if(!row)fail('business_not_found',404);
+    const items=restockInventory(db,user.id,now).filter(item=>item.type===row.type);
+    const start=Number.isSafeInteger(Number(offset))?Math.max(0,Number(offset)):0,count=Math.max(1,Math.min(96,Math.floor(Number(limit))||48));
+    if(!quick)return {inventory:items.slice(start,start+count),total:items.length,offset:start,limit:count,nextOffset:start+count<items.length?start+count:null};
+    const stock=shopStock(db,row.id,row.type,row.profit_margin,now),capacity=shopCapacity(row.type,shopSize(row.size));
+    let left=Math.max(0,Math.min(capacity,Number.isSafeInteger(Number(space))?Number(space):capacity-stock.length));
+    const groups=new Map(),selected=[],seen=new Set(stock.map(entry=>entry.item.title));
+    for(const item of items){const key=JSON.stringify([item.title,item.price,item.image,item.rarity,item.estimatedValueTokens,item.acquisitionCost]);if(!groups.has(key))groups.set(key,[]);groups.get(key).push(item);}
+    const sorted=[...groups.values()].sort((a,b)=>a[0].title.localeCompare(b[0].title)||a[0].price-b[0].price);
+    for(const group of sorted)if(left&&!seen.has(group[0].title)){selected.push(group.shift());seen.add(selected.at(-1).title);left--;}
+    while(left){let added=false;for(const group of sorted)if(left&&group.length){selected.push(group.shift());left--;added=true;}if(!added)break;}
+    return {inventory:selected,total:items.length,offset:0,limit:selected.length,nextOffset:null};
   }));
 }
 

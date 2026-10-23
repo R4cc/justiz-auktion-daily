@@ -11,6 +11,12 @@
     "start": "node server.mjs",
     "collect": "node scripts/collect-now.mjs",
     "test": "node --test",
-    "typecheck": "node scripts/check.mjs"
+    "typecheck": "node scripts/check.mjs",
+    "build": "node scripts/build-web.mjs",
+    "perf:profile": "node scripts/performance-profile.mjs",
+    "perf:navigation": "node scripts/navigation-performance.mjs"
+  },
+  "devDependencies": {
+    "vite": "8.3.5"
   }
 }

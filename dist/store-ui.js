@@ -24,8 +24,9 @@ window.storeUi = (() => {
   }
   async function refresh(visit, repaint = true, recordVisit = false, events = null) {
     const current = ++generation, owner = account?.id, params = new URLSearchParams(location.search), id = params.get('shop');
-    const result = recordVisit && owner && id ? await accountApi('stores/visit', { shopId: id })
-      : await read(id ? `/api/stores/${encodeURIComponent(id)}` : `/api/stores?${params}`);
+    const summary=params.get('tab')!=='reviews';
+    const result = recordVisit && owner && id ? await accountApi('stores/visit', { shopId: id, summary })
+      : await read(id ? `/api/stores/${encodeURIComponent(id)}${summary?'?view=summary':''}` : `/api/stores?${params}`);
     if (current !== generation || visit !== accountVisit || account?.id !== owner) return;
     // Only the management view needs the owner's full stock and inventory.
     if (result.store?.own) {
@@ -51,8 +52,9 @@ window.storeUi = (() => {
     const owner = account?.id; if (!owner) return;
     const result = await accountApi('stores/events/check', {});
     if (visit !== accountVisit || account?.id !== owner) return;
-    updateAccount(result.user); eventQueue = result.events; eventOwner = owner;
+    applyEvents(result,visit);
   }
+  function applyEvents(result,visit){if(visit!==accountVisit||result.user?.id!==account?.id)return;updateAccount(result.user);eventQueue=result.events;eventOwner=result.user.id;}
   function showEvents(force = false) {
     if (!force) {
       const host=accountContent.querySelector('[data-shop-activity]');
@@ -170,6 +172,7 @@ window.storeUi = (() => {
         !window.businessUi.ownedShop(store.id)) return false;
     const tab = destination.searchParams.get('tab') || 'overview';
     if (!['overview','stock','reviews','settings'].includes(tab)) return false;
+    if (tab==='reviews'&&!store.reviewsLoaded) return false;
     const href = destination.pathname + destination.search;
     if (push && location.pathname + location.search !== href) history.pushState({}, '', href);
     render();
@@ -368,5 +371,5 @@ window.storeUi = (() => {
     finally { if (visit === accountVisit) { busy = false; if (button.isConnected) button.disabled = false; if(review&&saved){render();accountContent.querySelector('.store-review-form button[type="submit"]')?.focus({preventScroll:true});} } }
   });
   document.addEventListener('jg:language', () => { if(heistDialog.open&&!game?.spinning){if(game?.attempt)paintBlackjack();else if(game?.entry)heistIntro(game.entry);} if (currentAccountPage === '/stores') render(); if (eventDialog.open) showEvents(true); });
-  return { load, stop, render, navigateOwnerTab, loadEvents, showEvents, reviews:store=>`<section class="store-reviews">${window.storeReputationUi?.histogram(store)||''}${reviewList(store)}</section>` };
+  return { load, stop, render, navigateOwnerTab, loadEvents,applyEvents, showEvents, reviews:store=>`<section class="store-reviews">${window.storeReputationUi?.histogram(store)||''}${reviewList(store)}</section>` };
 })();

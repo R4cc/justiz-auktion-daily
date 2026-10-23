@@ -3,12 +3,14 @@ FROM node:22-alpine AS build
 WORKDIR /app
 
 COPY package.json package-lock.json ./
-RUN npm ci --omit=dev --ignore-scripts
+RUN npm ci --ignore-scripts
 
 COPY server.mjs ./
 COPY src ./src
 COPY seed ./seed
 COPY dist ./dist
+COPY scripts/build-web.mjs ./scripts/build-web.mjs
+RUN npm run build
 RUN mkdir /data-seed
 
 FROM gcr.io/distroless/nodejs22-debian13:nonroot
@@ -37,7 +39,7 @@ WORKDIR /app
 COPY --from=build --chown=65532:65532 /app/server.mjs /app/server.mjs
 COPY --from=build --chown=65532:65532 /app/src /app/src
 COPY --from=build --chown=65532:65532 /app/seed /app/seed
-COPY --from=build --chown=65532:65532 /app/dist /app/dist
+COPY --from=build --chown=65532:65532 /app/web-build /app/dist
 COPY --from=build --chown=65532:65532 /data-seed /data
 
 USER 65532:65532
