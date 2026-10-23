@@ -1,3 +1,4 @@
+import { caseOutcomeDistribution } from '../src/case-outcomes.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtemp, rm } from 'node:fs/promises';
@@ -58,7 +59,7 @@ test('all five named cases stay available with empty or thin archives, with priv
   }
 });
 
-test('all five store cases expose 50 distinct possible contents without changing rarity odds', async t => {
+test('all five store cases expose 50 distinct possible contents with odds matching value-aware draws', async t => {
   const abundant = Array.from({ length: 80 }, (_, i) => ({
     id: 10000 + i, title: `Laptop model ${10000 + i}`, category: 'Elektronik',
     currentBid: (i + 1) * 100, image: '/favicon.png'
@@ -67,7 +68,8 @@ test('all five store cases expose 50 distinct possible contents without changing
   for (const [index, offer] of f.quote().cases.entries()) {
     assert.equal(offer.items.length, 50, offer.id);
     assert.equal(new Set(offer.items.map(item => item.auctionId)).size, 50);
-    assert.deepEqual(offer.dropChances.map(chance => chance.percent), STORE_CASES[index].weights.map(weight => weight / 100));
+    const outcomes=caseOutcomeDistribution(offer.items,STORE_CASES[index].weights,{basis:offer.valueBasis});
+    for(const chance of offer.dropChances)assert.ok(Math.abs(chance.percent-100*outcomes.filter(outcome=>outcome.item.rarity===chance.rarity).reduce((sum,outcome)=>sum+outcome.probability,0))<1e-9);
   }
 });
 
@@ -174,7 +176,7 @@ test('receipt persistence failure rolls back the charge, case and private reward
   for (const table of ['inventory', 'sealed_cases', 'case_purchases']) assert.equal(f.count(table), 0);
 });
 
-test('higher-priced named cases improve every rarity threshold and can still pull common items', async t => {
+test('named cases publish exact value-aware rarity odds while retaining their base price ladder', async t => {
   const f = await fixture(t), catalog = f.catalog(), quote = f.quote();
   const items = catalog.cases.find(box => box.id === 'fundkiste').items;
   for (const [index, definition] of STORE_CASES.entries()) {
@@ -191,7 +193,8 @@ test('higher-priced named cases improve every rarity threshold and can still pul
     }
     RARITIES.forEach((rarity, n) => {
       assert.equal(counts[rarity.id], definition.weights[n]);
-      assert.equal(offer.dropChances[n].percent, counts[rarity.id] / 100);
+      const outcomes=caseOutcomeDistribution(offer.items,definition.weights,{basis:offer.valueBasis});
+      assert.ok(Math.abs(offer.dropChances[n].percent-100*outcomes.filter(outcome=>outcome.item.rarity===rarity.id).reduce((sum,outcome)=>sum+outcome.probability,0))<1e-9);
       // Exercise the actual sealed preparation at each bucket's first ticket.
       const ticket = definition.weights.slice(0, n).reduce((sum, weight) => sum + weight, 0);
       let calls = 0;

@@ -1,5 +1,5 @@
+import { caseValuePool, caseOutcomeDistribution } from './case-outcomes.mjs';
 import { discountedCaseCost } from './prestige-effects.mjs';
-import { luckWeights } from './skill-effects.mjs';
 import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { caseCatalog, loadCaseCatalog, RARITIES } from './cases.mjs';
@@ -42,16 +42,16 @@ export function quoteCaseStore(catalog, indexes = {}, {luckPercent=0,caseDiscoun
     // Even tiny or equal-valued pools retain a strictly increasing price ladder.
     const cost = Math.max(previousCost + 1, Math.ceil(Math.max(base, live) / ECONOMY_BALANCE.paidCaseReturn));
     previousCost = cost;
-    const weights=luckWeights(box.weights,luckPercent);
-    const total = weights.reduce((sum, weight) => sum + weight, 0);
+    const drawItems=caseValuePool(catalog,items,cost,indexes);
+    const outcomes=caseOutcomeDistribution(drawItems,box.weights,{basis:cost,indexes,luckPercent});
     const regularCost=discountedCaseCost(cost,caseDiscountPercent);
     const rebate=rebates.filter(rebate=>rebate.caseId==='all'||rebate.caseId===box.id)
       .sort((a,b)=>b.percent-a.percent || b.endsAt-a.endsAt || a.id.localeCompare(b.id))[0] || null;
     const finalCost=rebate?Math.ceil(regularCost*(100-rebate.percent)/100):regularCost;
-    return { id: box.id, name: box.name, nameDe: box.nameDe, badge: box.badge, cost:finalCost, regularCost, rebate, items,
-      dropChances: RARITIES.map((rarity, index) => ({ rarity: rarity.id, percent: weights[index] / (total / 100) })) };
+    return { id: box.id, name: box.name, nameDe: box.nameDe, badge: box.badge, cost:finalCost, regularCost, rebate, valueBasis:cost, items:drawItems,
+      dropChances: RARITIES.map(rarity => ({rarity:rarity.id,percent:100*outcomes.filter(outcome=>outcome.item.rarity===rarity.id).reduce((sum,outcome)=>sum+outcome.probability,0)})) };
   });
-  const revision = createHash('sha256').update(JSON.stringify({ version: 2, pool: catalog.revision,
+  const revision = createHash('sha256').update(JSON.stringify({ version: 3, balance:[ECONOMY_BALANCE.caseOpeningReturnTarget,ECONOMY_BALANCE.caseUsualMinimumReturnPercent,ECONOMY_BALANCE.caseLowValueTailPercent], pools:cases.map(box=>box.items), bases:cases.map(box=>box.valueBasis), values:cases.map(box=>box.items.map(item=>estimatedValueTokens(item,indexes))), pool: catalog.revision,
     definitions: STORE_CASES, ...(luckPercent?{luckPercent}:{}), costs: cases.map(box => box.cost), ...(rebates.length?{rebates:cases.map(box=>box.rebate)}:{}) })).digest('hex');
   return { revision, luckPercent, caseDiscountPercent, rotationDate: catalog.rotationDate, rotatesAt: catalog.rotatesAt, cases };
 }

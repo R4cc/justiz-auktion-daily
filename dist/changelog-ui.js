@@ -2,6 +2,13 @@ window.changelogUi = (() => {
   // Curated manually. Only update for a feature when the user explicitly asks.
   const entries = [
     {
+      date: '2026-10-23', title: 'More Rewarding Cases',
+      changes: [
+        {en:'Rebalanced case contents and winning values so ordinary pulls feel more rewarding and very low-value items are much rarer in expensive cases. Valuable wins remain possible, and displayed rarity odds reflect the improved draws.',de:'Kisteninhalte und Gewinnwerte neu ausbalanciert: Gewöhnliche Funde lohnen sich mehr und sehr geringwertige Artikel sind in teuren Kisten deutlich seltener. Wertvolle Gewinne bleiben möglich; die angezeigten Seltenheitschancen entsprechen den verbesserten Ziehungen.'},
+        {en:'Existing unopened paid cases can also receive a better-value find when opened. Valuable saved wins stay intact, and confirmed opening results remain saved.',de:'Auch bestehende ungeöffnete, bezahlte Kisten können beim Öffnen einen höherwertigen Fund erhalten. Wertvolle gespeicherte Gewinne bleiben erhalten und bestätigte Öffnungsergebnisse werden dauerhaft gespeichert.'}
+      ]
+    },
+    {
       date: '2026-10-23', title: 'Theft Heat',
       changes: [
         {en:'Removed player and store stealing cooldowns. Finish your active attempt before starting another.',de:'Wartezeiten für Diebstähle pro Spieler und Laden entfernt. Beende deinen laufenden Versuch, bevor du einen neuen startest.'},

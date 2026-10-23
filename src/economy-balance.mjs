@@ -8,6 +8,10 @@ export const ECONOMY_BALANCE = Object.freeze({
   higherLowerMax: 250,
   minimumStreak: 3,
   paidCaseReturn: .82,
+  // Pricing keeps its existing baseline; draws target a fairer, smoother return.
+  caseOpeningReturnTarget: .95,
+  caseUsualMinimumReturnPercent: 50,
+  caseLowValueTailPercent: 1,
   sealedCaseValueRate: .80,
   paletteReserveRate: .70,
   // Upper-quantity weight multipliers, calibrated for ~20% more profitable

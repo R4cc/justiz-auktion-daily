@@ -1,9 +1,10 @@
+import { improveUnopenedCase, caseOutcomeDistribution, drawCaseOutcome } from './case-outcomes.mjs';
 import { activeCaseRebates } from './case-rebates.mjs';
 import { playerHeat } from './theft-heat.mjs';
 import { collectOverdueLoan, loanDebt } from './loan-ledger.mjs';
 import { prestigeState } from './prestige.mjs';
 import { ensurePrestigeSchema, prestigeEffects } from './prestige-effects.mjs';
-import { ensureSkillsSchema, skillEffects, luckWeights } from './skill-effects.mjs';
+import { ensureSkillsSchema, skillEffects } from './skill-effects.mjs';
 import { skillSummary } from './skill-tree.mjs';
 import { ensureStockPaletteSchema } from './stock-palettes.mjs';
 import { settleExpiredPlayerHeists } from './storefronts.mjs';
@@ -11,9 +12,9 @@ import { ensureJusticeSchema, justiceStatus, collectFine } from './justice.mjs';
 import { randomBytes, randomInt, randomUUID, createHash, scrypt, timingSafeEqual } from 'node:crypto';
 import { promisify } from 'node:util';
 import { withDatabase, transaction } from './database.mjs';
-import { dailyCaseWeights, drawItem, tokenValue, priceCaseCatalog, dailyRewardCatalog } from './cases.mjs';
-import { chooseCaseTier, ensureSealedCaseSchema, insertSealedCase, prepareMysteryCase, prepareSealedCase } from './sealed-cases.mjs';
-import { ensureCaseStoreSchema, quoteCaseStore, STORE_CASES } from './case-store.mjs';
+import { dailyCaseWeights, tokenValue, priceCaseCatalog, dailyRewardCatalog } from './cases.mjs';
+import { CASE_TIERS, chooseCaseTier, ensureSealedCaseSchema, insertSealedCase, prepareMysteryCase, prepareSealedCase } from './sealed-cases.mjs';
+import { ensureCaseStoreSchema, quoteCaseStore, STORE_CASES, loadCaseStoreCatalog } from './case-store.mjs';
 import { consumeCaseStock } from './case-stock.mjs';
 import { ECONOMY_BALANCE, GAME_REWARDS } from './economy-balance.mjs';
 import { scoreGuess } from './core.mjs';
@@ -599,7 +600,7 @@ export class Accounts {
       return {kept:row.id};
     });
   }
-  openCase(user, catalog, caseId, requestId, revision = catalog.revision) {
+  openCase(user, catalog, caseId, requestId, revision = catalog.revision, {random=randomInt}={}) {
     if (typeof requestId !== 'string' || !/^[a-zA-Z0-9-]{16,80}$/.test(requestId)) fail('invalid_request');
     return this.atomic(db => {
       const previous = db.prepare('SELECT case_id, item FROM case_openings WHERE user_id = ? AND request_id = ?').get(user.id, requestId);
@@ -607,7 +608,8 @@ export class Accounts {
         if (previous.case_id !== caseId) fail('request_conflict', 409);
         return currentItemValue(JSON.parse(previous.item));
       }
-      const quoted = priceCaseCatalog(catalog, marketIndexes(db, this.now()),prestigeEffects(db,user.id).caseDiscountPercent);
+      const indexes=marketIndexes(db,this.now());
+      const quoted = priceCaseCatalog(catalog,indexes,prestigeEffects(db,user.id).caseDiscountPercent);
       const expectedRevision = catalog.poolRevision ? quoted.revision : catalog.revision;
       if (revision !== expectedRevision || quoted.cases.some((box, i) => box.cost !== catalog.cases[i].cost)) fail('catalog_changed', 409);
       const box = catalog.cases.find(box => box.id === caseId);
@@ -616,7 +618,9 @@ export class Accounts {
       consumeCaseStock(db, caseId, this.now());
       if (!db.prepare('UPDATE users SET tokens = tokens - ? WHERE id = ? AND tokens >= ?').run(box.cost, user.id, box.cost).changes) fail('insufficient_tokens', 409);
       // marketCategory is frozen with the item, like rarity and sellValue.
-      const drawn = drawItem(catalog, {...box,weights:luckWeights(box.weights,skillEffects(db,user.id).luckPercent)});
+      const valueBasis=priceCaseCatalog(catalog,indexes).cases.find(offer=>offer.id===caseId).cost;
+      const outcomes=caseOutcomeDistribution(box.items,box.weights,{basis:valueBasis,indexes,luckPercent:skillEffects(db,user.id).luckPercent});
+      const drawn=drawCaseOutcome(outcomes,random);
       const item = { ...drawn, id: randomUUID(), caseId, caseCost: box.cost,
         marketCategory: marketCategoryForItem(drawn),
         edition: catalog.rotationDate, createdAt: this.now() };
@@ -645,7 +649,7 @@ export class Accounts {
       }
       if (revision !== quote.revision) fail('catalog_changed', 409);
       consumeCaseStock(db, caseId, now);
-      const prepared = prepareMysteryCase(catalog, STORE_CASES.find(box => box.id === caseId), { now, luckPercent });
+      const prepared = prepareMysteryCase(catalog, STORE_CASES.find(box => box.id === caseId), { now, luckPercent, valueBasis:offer.valueBasis, indexes:marketIndexes(db,now), drawItems:offer.items });
       prepared.item.caseCost = offer.cost;
       prepared.item.edition = catalog.rotationDate;
       prepared.reward.caseCost = offer.cost;
@@ -690,7 +694,8 @@ export class Accounts {
       return currentItemValue(item);
     });
   }
-  openSealedCase(user, inventoryId) {
+  openSealedCase(user, inventoryId, {random=randomInt}={}) {
+    const upgradeCatalog=loadCaseStoreCatalog(this.dataDir,this.now());
     return this.atomic(db => {
       const row = db.prepare('SELECT item, sold_at FROM inventory WHERE id = ? AND user_id = ?')
         .get(String(inventoryId), user.id);
@@ -698,16 +703,25 @@ export class Accounts {
       if (inventoryIsLocked(db, inventoryId)) fail('item_listed', 409);
       const sealed = db.prepare('SELECT reward, opened_at FROM sealed_cases WHERE inventory_id = ?').get(inventoryId);
       if (!sealed) fail('case_not_found', 404);
-      const item = JSON.parse(sealed.reward);
+      let item = JSON.parse(sealed.reward);
       if (sealed.opened_at === null) {
         if (row.sold_at !== null) fail('item_sold', 409);
+        const caseItem=JSON.parse(row.item),basis=acquisition(db,inventoryId,user.id);
+        const paid=basis.acquisitionCost??caseItem.caseCost??0;
+        const definition=STORE_CASES.find(box=>box.id===caseItem.caseType)||CASE_TIERS.find(tier=>tier.id===caseItem.caseTier);
+        if(!caseItem.caseBalanceVersion&&paid>0&&definition){
+          const winner=improveUnopenedCase(item,upgradeCatalog,definition,
+            {basis:paid,indexes:marketIndexes(db,this.now()),luckPercent:caseItem.luckPercent||0,random});
+          if(winner!==item)item={...item,...winner,id:item.id,caseId:item.caseId,caseCost:item.caseCost,
+            marketCategory:marketCategoryForItem(winner),caseBalanceVersion:1};
+        }
+        const reward=JSON.stringify(item);
         db.prepare('UPDATE inventory SET sold_at = ? WHERE id = ?').run(this.now(), inventoryId);
         db.prepare('INSERT INTO inventory (id, user_id, item, created_at) VALUES (?, ?, ?, ?)')
-          .run(item.id, user.id, sealed.reward, this.now());
-        const basis = acquisition(db,inventoryId,user.id);
+          .run(item.id, user.id, reward, this.now());
         acquireItems(db,user.id,[item.id],basis.acquisitionCost,basis.acquisitionSource,this.now(),{reinvest:false});
         milestone(db,user.id,'find',this.now());
-        db.prepare('UPDATE sealed_cases SET opened_at = ? WHERE inventory_id = ?').run(this.now(), inventoryId);
+        db.prepare('UPDATE sealed_cases SET opened_at = ?,reward=? WHERE inventory_id = ?').run(this.now(),reward,inventoryId);
       }
       return currentItemValue(item);
     });
