@@ -1463,29 +1463,17 @@ button.store-review-like:hover, .store-review-like.is-liked { color: var(--ink);
 .market-card-change.is-down { color: #b23924; }
 .market-categories button[aria-pressed="true"] .market-card-change { color: var(--paper); }
 :root { --trader-accent: #b94c25; }
-.sidebar-progression { display:grid; flex:none; grid-template-columns:1fr auto; gap:9px; margin-bottom:18px; padding:16px 14px; border:1px solid var(--ink); border-radius:10px; color:var(--paper); background:var(--ink); text-decoration:none; }
 .xp-level { font-size:1.05rem; font-weight:800; }
 .xp-total { font:700 .8rem 'DM Mono',monospace; align-self:center; }
 .xp-meter { grid-column:1 / -1; display:block; height:9px; overflow:hidden; border-radius:20px; background:#ffffff36; }
 .xp-meter > span { display:block; width:var(--xp-progress); height:100%; border-radius:inherit; background:#e8bb63; transition:width .7s ease; }
 .xp-next { grid-column:1 / -1; font: .7rem 'DM Mono',monospace; }
 .xp-hint { grid-column:1 / -1; font-size:.68rem; line-height:1.5; color:#e3e8d7; }
-.sidebar-progression:focus-visible,.mobile-progression:focus-visible { outline:3px solid var(--trader-accent); outline-offset:3px; }
-.mobile-progression { display:none; }
 .xp-feedback { position:fixed; top:100px; left:50%; z-index:100; transform:translateX(-50%); width:max-content; max-width:calc(100vw - 32px); padding:13px 22px; border:2px solid #e8bb63; border-radius:30px; background:var(--ink); color:#ffe2a0; box-shadow:0 8px 24px #183e3630; font:800 1.1rem 'DM Mono',monospace; text-align:center; pointer-events:none; animation:xp-gain 4.2s ease both; }
 .xp-feedback.is-level-up { background:#e8bb63; color:var(--ink); }
 .sr-only { position:absolute; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden; clip:rect(0,0,0,0); white-space:nowrap; border:0; }
 @keyframes xp-gain { 0% { opacity:0; transform:translate(-50%,18px) scale(.85); } 10%,80% { opacity:1; transform:translate(-50%,0) scale(1); } 100% { opacity:0; transform:translate(-50%,-20px); } }
-@media(max-width:900px) {
-  body.has-progression { padding-top:124px; }
-  .mobile-progression { position:fixed; z-index:54; top:70px; left:0; right:0; display:grid; grid-template-columns:auto 1fr auto; align-items:center; gap:12px; height:54px; padding:10px 18px; border-bottom:1px solid var(--line); background:var(--paper); color:var(--ink); text-decoration:none; }
-  .mobile-progression .xp-meter { grid-column:2; grid-row:1; background:#183e3620; }
-  .mobile-progression .xp-meter > span { background:var(--trader-accent); }
-  .mobile-progression .xp-total { grid-column:3; grid-row:1; }
-  .mobile-progression .xp-level { font-size:.85rem; }
-  .xp-feedback { top:136px; font-size:.9rem; }
-  body.has-progression .notification-panel,body.has-progression .notification-toasts { top:132px; }
-}
+@media(max-width:900px) { .xp-feedback { top:180px; font-size:.9rem; } }
 @media(prefers-reduced-motion:reduce) { .xp-meter > span { transition:none; } .xp-feedback { animation:none; } }
 .trader-progress { display:flex; flex-wrap:wrap; align-items:center; gap:1rem; padding:1.25rem; margin:1.25rem 0; border:1px solid var(--line); border-radius:16px; background:var(--paper); }
 .trader-progress > div { flex:1 1 240px; min-width:0; }
@@ -1885,28 +1873,43 @@ button.store-review-like:hover, .store-review-like.is-liked { color: var(--ink);
 }
 
 /* One available balance in the persistent app chrome. */
-.persistent-wallet { display:flex;flex:none;align-self:stretch;width:100%;align-items:center;gap:11px;min-width:0;padding:12px;border:1px solid #cbb477;border-radius:10px;background:linear-gradient(110deg,#fff8df,#f0e8c9);color:var(--ink);box-shadow:0 3px 0 #183e360b; }
+.persistent-wallet { display:grid;flex:none;align-self:stretch;gap:10px;min-width:0;padding:14px;border:1px solid #cbb477;border-radius:12px;background:linear-gradient(110deg,#fff8df,#f0e8c9);color:var(--ink);box-shadow:0 3px 0 #183e360b;text-decoration:none; }
+.persistent-wallet:hover { border-color:var(--ink);box-shadow:0 4px 0 #183e3618; }
+.persistent-wallet:focus-visible { outline:3px solid var(--trader-accent);outline-offset:3px; }
+.persistent-wallet[aria-current] { border-color:var(--ink); }
+.user-card-name { overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:.9rem; }
+.wallet-balance { display:flex;align-items:center;gap:9px;min-width:0; }
 .wallet-coin { display:grid;place-items:center;flex:none;width:29px;height:29px;border:2px solid #b88933;border-radius:50%;background:#f6d67c;box-shadow:inset 0 0 0 2px #fff0b2;color:#73501c;font:700 18px 'DM Mono',monospace; }
 .wallet-copy { min-width:0; }
 .wallet-label { display:block;color:#59634a;font-size:.65rem;font-weight:700;line-height:1.2; }
 #wallet-amount { display:block;margin-top:4px;font:600 1rem/1.3 'DM Mono',monospace;white-space:nowrap;font-variant-numeric:tabular-nums; }
 .persistent-wallet.is-long #wallet-amount { font-size:.64rem; }
+.user-card-progression { display:grid;grid-template-columns:1fr auto;gap:6px;min-width:0; }
+.user-card-progression .xp-level { font-size:.8rem; }
+.user-card-progression .xp-total { font-size:.65rem; }
+.user-card-progression .xp-meter { height:5px;background:#183e3620; }
+.user-card-progression .xp-meter>span { background:var(--trader-accent); }
+.user-card-heat { display:flex;justify-content:space-between;align-items:center;gap:6px;border-top:1px solid #cbb47780;padding-top:8px;font-size:.7rem;font-weight:700; }
+.user-card-heat .heat-stars { font-size:1.2rem; }
 @media(max-width:900px) {
-  :root { --mobile-wallet-width:clamp(200px,60vw,280px); }
-  .persistent-wallet { position:fixed;z-index:54;top:70px;right:0;width:var(--mobile-wallet-width);height:54px;gap:8px;padding:8px 12px;border:0;border-left:1px solid var(--line);border-bottom:1px solid var(--line);border-radius:0;box-shadow:none; }
+  .persistent-wallet { position:fixed;z-index:54;top:70px;left:0;right:0;height:96px;grid-template-columns:minmax(0,1fr) minmax(0,1fr);grid-template-rows:18px 16px 22px;column-gap:18px;row-gap:5px;padding:10px 16px;border:0;border-bottom:1px solid var(--line);border-radius:0;box-shadow:none; }
+  .user-card-name { grid-column:1;grid-row:1;font-size:.8rem; }
+  .wallet-balance { grid-column:1;grid-row:2 / 4; }
   .wallet-coin { width:24px;height:24px;font-size:15px; }
   #wallet-amount { margin-top:3px;font-size:.85rem; }
-  .persistent-wallet.is-long #wallet-amount { font-size:.62rem; }
-  body.has-wallet { padding-top:124px; }
-  body.has-wallet .sidebar-panel { top:124px; }
-  body.has-wallet .sidebar-backdrop { top:124px; }
-  body.has-wallet .mobile-progression { right:var(--mobile-wallet-width);grid-template-columns:1fr auto;gap:5px;padding:9px 12px; }
-  body.has-wallet .mobile-progression .xp-level { grid-column:1;grid-row:1;font-size:.7rem; }
-  body.has-wallet .mobile-progression .xp-total { grid-column:2;grid-row:1;font-size:.62rem; }
-  body.has-wallet .mobile-progression .xp-meter { grid-column:1 / -1;grid-row:2;height:5px; }
-  body.has-wallet .notification-panel,body.has-wallet .notification-toasts { top:132px; }
+  .persistent-wallet.is-long #wallet-amount { font-size:.6rem; }
+  .user-card-progression { grid-column:2;grid-row:1 / 3;align-self:start; }
+  .user-card-progression .xp-level { font-size:.75rem; }
+  .user-card-heat { grid-column:2;grid-row:3;border:0;padding:0; }
+  .user-card-heat .heat-stars { font-size:1.05rem; }
+  body.has-wallet { padding-top:166px; }
+  body.has-wallet .sidebar-panel,body.has-wallet .sidebar-backdrop { top:166px; }
+  body.has-wallet .notification-panel,body.has-wallet .notification-toasts { top:174px; }
 }
-@media(max-width:599px) { body.has-wallet .mobile-progression .xp-total { display:none; } }
+@media(max-width:599px) {
+  .wallet-coin,.user-card-progression .xp-total { display:none; }
+  .persistent-wallet.is-long #wallet-amount { font-size:.54rem; }
+}
 .store-type-jeweler{--store-color:#795197}
 .store-type-hardware{--store-color:#906328}
 .stock-lot-art-jeweler{background:radial-gradient(circle at 50% 45%,#fff9ff 0 30%,#e4d7ed 72%)}

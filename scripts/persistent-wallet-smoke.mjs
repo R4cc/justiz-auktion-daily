@@ -4,6 +4,7 @@ import { createServer } from 'node:http';
 import { readFile,mkdtemp,rm } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
+import os from 'node:os';
 import { Accounts } from '../src/accounts.mjs';
 import { createAccountApi } from '../src/account-api.mjs';
 import { createEconomyApi } from '../src/economy-api.mjs';
@@ -11,8 +12,9 @@ import { closeDataStore,upsertAuctions } from '../src/database.mjs';
 import { buyBusiness,stockBusiness } from '../src/businesses.mjs';
 import { buyStoreItem,tipStore } from '../src/storefronts.mjs';
 import { featureFlags } from '../src/features.mjs';
+import { increasePlayerHeat } from '../src/theft-heat.mjs';
 const {chromium}=await import(process.env.PLAYWRIGHT_MODULE||'/home/lxadm/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules/playwright/index.mjs');
-const root=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..'),dir=await mkdtemp('/tmp/jg-store-cash-ui-');
+const root=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..'),dir=await mkdtemp(path.join(os.tmpdir(),'jg-user-card-'));
 const env={ADMIN_USERNAME:'admin',ADMIN_PASSWORD:'store-cash-browser-password',COOKIE_SECURE:'false'},flags=featureFlags(env);
 const json=(res,status,value)=>{res.writeHead(status,{'content-type':'application/json'});res.end(JSON.stringify(value));};
 const seed=JSON.parse(await readFile(path.join(root,'seed/auctions.json'),'utf8'));upsertAuctions(dir,seed.auctions);
@@ -44,6 +46,12 @@ try{
   const wallet=page.locator('#wallet-amount');
   const checkBalance=async expected=>{const formatted=await money(expected);await page.waitForFunction(expected=>document.querySelector('#wallet-amount').textContent===expected,formatted);};
   await page.goto(base+'/businesses');await page.waitForSelector('.business-shop');await checkBalance(before);
+  assert.equal(await page.locator('#persistent-wallet').getAttribute('href'),'/profile');
+  assert.equal(await page.locator('#user-card-name').innerText(),'admin');
+  assert.match(await page.locator('#sidebar-progression').innerText(),/Level 20/);
+  accounts.db(db=>increasePlayerHeat(db,owner.id,Date.now(),5));
+  await page.evaluate(()=>window.dispatchEvent(new Event('focus')));
+  await page.waitForFunction(()=>document.querySelector('#user-card-heat .heat-stars')?.getAttribute('aria-label')==='2.5 of 5 wanted stars');
   await page.evaluate(()=>{window.walletNode=document.querySelector('#persistent-wallet');});
   await page.locator(`[data-business="collect-cash"][data-shop="${shops[0].id}"]`).click();await checkBalance(before+61);
   assert.equal(balance(),before+61);assert.equal(till(0),0);
@@ -69,13 +77,14 @@ try{
   for(const route of ['/inventory','/businesses','/town','/stores','/auction-house','/market','/skills','/profile','/leaderboard','/changelog','/admin','/shop']){
     await page.evaluate(async route=>await navigateAccountPage(route),route);await checkBalance(balance());
     assert.ok(await page.evaluate(()=>window.walletNode===document.querySelector('#persistent-wallet')),route+' retains one wallet element');
+    assert.ok(await page.locator('#user-card-heat .heat-stars').isVisible(),route+' displays player heat');
     assert.equal(await page.locator('#account-content .economy-overview-primary,.case-wallet,.house-wallet,.business-hero-account>strong').count(),0,route+' has no duplicate standalone wallet');
   }
   await page.locator('.wordmark').click();await checkBalance(balance());assert.ok(await page.locator('#persistent-wallet').isVisible());
   await page.evaluate(async()=>await navigateAccountPage('/businesses'));
   const language=async lang=>{const toggle=page.locator('[data-action="sidebar"]'),mobile=await toggle.isVisible();if(mobile&&await toggle.getAttribute('aria-expanded')!=='true')await toggle.click();await page.locator('#language-select').selectOption(lang);if(mobile&&await toggle.getAttribute('aria-expanded')==='true')await toggle.click();};
   const fits=async label=>{
-    const geometry=await page.locator('#persistent-wallet').evaluate(el=>{const r=el.getBoundingClientRect(),amount=el.querySelector('#wallet-amount'),p=document.querySelector('#mobile-progression'),b=p.getBoundingClientRect();return {left:r.left,right:r.right,top:r.top,bottom:r.bottom,width:innerWidth,height:innerHeight,overflow:amount.scrollWidth>amount.clientWidth+1,overlap:innerWidth<=900&&Math.min(r.right,b.right)-Math.max(r.left,b.left)>1};});
+    const geometry=await page.locator('#persistent-wallet').evaluate(el=>{const r=el.getBoundingClientRect(),amount=el.querySelector('#wallet-amount'),a=amount.getBoundingClientRect(),p=el.querySelector('#sidebar-progression').getBoundingClientRect();return {left:r.left,right:r.right,top:r.top,bottom:r.bottom,width:innerWidth,height:innerHeight,overflow:a.right>r.right-8||amount.scrollWidth>amount.clientWidth+1,overlap:innerWidth<=900&&a.right>p.left};});
     assert.ok(geometry.left>=0&&geometry.right<=geometry.width+1&&geometry.top>=0&&geometry.bottom<=geometry.height,`${label}: wallet in viewport ${JSON.stringify(geometry)}`);
     assert.equal(geometry.overflow,false,`${label}: exact amount fits`);assert.equal(geometry.overlap,false,`${label}: money and XP do not overlap`);
     assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1),label+' page fits');
@@ -86,8 +95,8 @@ try{
       await page.evaluate(tokens=>updateAccount({...account,tokens}),amount);await checkBalance(amount);await fits(`${width} ${lang} ${amount}`);
       await page.evaluate(()=>window.scrollTo(0,document.body.scrollHeight));await fits(`${width} ${lang} ${amount} scrolled`);
     }
-    if([1440,390,320].includes(width)){await page.evaluate(()=>window.scrollTo(0,0));await page.screenshot({path:`/tmp/jg-persistent-wallet-${width}-${lang}.png`});
-      await page.evaluate(()=>updateAccount({...account,tokens:12450}));await page.screenshot({path:`/tmp/jg-persistent-wallet-normal-${width}-${lang}.png`});}
+    if([1440,390,320].includes(width)){await page.evaluate(()=>window.scrollTo(0,0));await page.screenshot({path:path.join(os.tmpdir(),`jg-persistent-wallet-${width}-${lang}.png`)});
+      await page.evaluate(()=>updateAccount({...account,tokens:12450}));await page.screenshot({path:path.join(os.tmpdir(),`jg-persistent-wallet-normal-${width}-${lang}.png`)});}
   }
   // Navigation and inbox must not cover the persistent balance on phones.
   await page.locator('[data-action="sidebar"]').click();

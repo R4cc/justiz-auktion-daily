@@ -4,6 +4,7 @@ import { createServer } from 'node:http';
 import { readFile, mkdtemp, rm } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
+import os from 'node:os';
 import { Accounts } from '../src/accounts.mjs';
 import { createAccountApi } from '../src/account-api.mjs';
 import { createEconomyApi } from '../src/economy-api.mjs';
@@ -16,7 +17,7 @@ import { townMap } from '../src/town-map.mjs';
 const runtime = process.env.PLAYWRIGHT_MODULE || '/home/lxadm/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules/playwright/index.mjs';
 const { chromium } = await import(runtime);
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const dir = await mkdtemp('/tmp/jg-business-owner-');
+const dir = await mkdtemp(path.join(os.tmpdir(), 'jg-marketplace-'));
 const env = { ADMIN_USERNAME: 'admin', ADMIN_PASSWORD: 'owner-browser-password', COOKIE_SECURE: 'false' }, flags = featureFlags(env);
 const json = (res, status, value) => { res.writeHead(status, { 'content-type': 'application/json' }); res.end(JSON.stringify(value)); };
 const seed = JSON.parse(await readFile(path.join(root, 'seed/auctions.json'), 'utf8')); upsertAuctions(dir, seed.auctions);
@@ -58,10 +59,13 @@ try {
  page.on('pageerror',error=>errors.push(error.message));
  await context.route('https://i.imgur.com/**',route=>route.fulfill({contentType:'image/png',body:Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/l9sAAAAASUVORK5CYII=','base64')}));
  await context.addCookies([{name:'jg_session',value:token,url:base}]);
- const shot=async name=>page.screenshot({path:'/tmp/store-marketplace-'+name+'.png',fullPage:true});
+ const shot=async name=>page.screenshot({path:path.join(os.tmpdir(),'store-marketplace-'+name+'.png'),fullPage:true});
  const ready=()=>page.waitForSelector('.market-store-card');
  await page.goto(base+'/town');await page.waitForURL('**/stores');await ready();
  assert.equal(await page.locator('.market-store-card').count(),6);
+ assert.equal(await page.locator('.market-store-motto').count(),0);
+ assert.equal(await page.locator('a.market-store-card[data-page]').count(),6);
+ assert.equal(await page.locator('.market-store-card a,.market-store-card button').count(),0);
  assert.equal(await page.locator('.marketplace-categories a').count(),7);
  assert.equal(await page.locator('a[href="/stores"][data-feature="businesses"]').innerText(),'Stores');
  await shot('desktop');
@@ -85,6 +89,8 @@ try {
  await page.locator('#market-search').fill('Analog');await page.locator('.marketplace-searchbar [type="submit"]').click();await ready();
  await page.waitForURL('**query=Analog**');assert.equal(await page.locator('.market-store-card').count(),1);
  await page.locator('.market-store-card .market-visit').click();await page.waitForSelector('.visitor-stock-card');
+ assert.equal(await page.locator('#account-content .theft-heat').count(),0);
+ assert.ok(await page.locator('#user-card-heat .heat-stars').isVisible());
  assert.equal(await page.locator('.visitor-stock-card').count(),3);await shot('storefront');
  const quantity=businessDashboard(dir,{id:'mira'}).shops.find(shop=>shop.id===tech.id).stock.length;
  await page.locator('[data-store="buy"]').first().click();
@@ -103,16 +109,36 @@ try {
  await page.goto(base+'/town?view=open');await page.waitForSelector('.town-page');assert.equal(await page.locator('.town-page h1').innerText(),'Store locations');
  await page.locator('.town-place-row').first().click();await page.waitForSelector('[data-town-open]');await page.locator('[data-town-open]').click();await page.waitForSelector('.town-purchase-dialog[open]');
  assert.ok(await page.locator('.town-purchase [name="type"]').count());await page.keyboard.press('Escape');
- for(const width of [390,768]){
-  await page.setViewportSize({width,height:900});await page.goto(base+'/stores');await ready();
-  assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),`Overflow at ${width}px`);
+ const widths=new Map();
+ for(const width of [3840,1920,1440,1024,900,768,600,390,320])for(const lang of ['en','de']){
+  await page.setViewportSize({width,height:1080});await page.goto(base+'/stores');await ready();
+  await page.evaluate(lang=>{document.querySelector('#language-select').value=lang;document.querySelector('#language-select').dispatchEvent(new Event('change',{bubbles:true}));},lang);await ready();
+  assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1),`Overflow at ${width}px ${lang}`);
   assert.ok(await page.locator('#market-search').evaluate(input=>input.getBoundingClientRect().width>120),'Search input must remain usable on phones');
-  await shot('mobile-'+width);
+  const rect=await page.locator('.market-store-card').first().boundingBox();
+  assert.ok(rect.height<310,`${width}px card should be compact: ${rect.height}`);
+  if(width>=1440)assert.ok(rect.width>=340,`${width}px cards remain wide: ${rect.width}`);
+  widths.set(width,(await page.locator('.marketplace-page').boundingBox()).width);
+  for(const tokens of [12345,Number.MAX_SAFE_INTEGER]){
+   await page.evaluate(tokens=>updateAccount({...account,tokens}),tokens);
+   assert.ok(await page.locator('#wallet-amount').evaluate(el=>el.scrollWidth<=el.clientWidth+1),`${width}px ${lang} balance fits`);
+   assert.ok(await page.locator('#user-card-heat').evaluate(el=>el.scrollWidth<=el.clientWidth+1),`${width}px ${lang} heat fits`);
+  }
+  if(lang==='en'&&[3840,1920,390,320].includes(width)){await page.evaluate(()=>updateAccount({...account,tokens:12345}));await shot(String(width));}
  }
+ assert.ok(widths.get(3840)>widths.get(1920)*1.7,'Directory expands on 4K screens');
+ await page.locator('.market-store-card').first().focus();await page.keyboard.press('Enter');await page.waitForSelector('.shop-header');
+ await page.locator('#persistent-wallet').click();await page.waitForURL('**/profile');await page.waitForSelector('.profile-hub');
+ assert.equal(await page.locator('#persistent-wallet').getAttribute('aria-current'),'page');
+ await page.goto(base+'/stores');await ready();
+ await page.locator('.market-store-card').first().locator('.store-brand-banner').click();await page.waitForSelector('.shop-header');
+ await page.goto(base+'/stores');await ready();await page.emulateMedia({reducedMotion:'reduce'});
+ assert.equal(await page.locator('.market-store-card').first().evaluate(el=>getComputedStyle(el).transitionDuration),'0s');
  await page.setViewportSize({width:1536,height:1100});
  await page.locator('#language-select').selectOption('de');await page.waitForFunction(()=>document.querySelector('.marketplace-heading h1')?.textContent==='Läden');
  assert.match(await page.locator('.marketplace-filters').innerText(),/Bezirk/);
  await context.clearCookies();await page.goto(base+'/stores');await ready();assert.match(await page.locator('.market-store-owner').first().innerText(),/\*\*/);
+ assert.ok(await page.locator('#persistent-wallet').isHidden());assert.ok(await page.locator('#header-auth').isVisible());
  assert.deepEqual(errors,[]);
  console.log('Marketplace browser checks passed: directory, URL filters, sorting, shared purchases, branding, location picker, responsive layouts, German and guests.');
 } finally {await browser.close();server.closeIdleConnections();await new Promise(resolve=>server.close(resolve));closeDataStore(dir);await rm(dir,{recursive:true,force:true});}

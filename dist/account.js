@@ -226,9 +226,13 @@ function renderPersistentWallet(user) {
   for (const node of [amount, ...document.querySelectorAll('[data-available-balance]')]) {
     if (node.textContent !== value) node.textContent = value;
   }
-  if (!user) { wallet.removeAttribute('title'); wallet.removeAttribute('aria-label'); return; }
+  wallet.querySelector('#user-card-name').textContent = user?.username || '';
+  const heat = wallet.querySelector('#user-card-heat');
+  heat.hidden = !user?.heat;
+  heat.innerHTML = window.theftHeatUi.markup(user?.heat, true);
+  if (location.pathname === '/profile') wallet.setAttribute('aria-current', 'page'); else wallet.removeAttribute('aria-current');
+  if (!user) { wallet.removeAttribute('title'); return; }
   wallet.querySelector('.wallet-label').textContent = t('Available', 'Verfügbar');
-  wallet.setAttribute('aria-label', t('Available balance', 'Verfügbares Guthaben'));
   wallet.title = t(`${value} available to spend. Held bids and store registers are separate.`, `${value} zum Ausgeben verfügbar. Hinterlegte Gebote und Ladenkassen sind separat.`);
   wallet.classList.toggle('is-long', value.length > 17);
 }
@@ -256,6 +260,7 @@ function updateNavigation() {
   }
   const auth = document.querySelector('#header-auth');
   auth.href = account ? '/profile' : '/login';
+  auth.hidden = Boolean(account);
   auth.innerHTML = sidebarLinkMarkup(auth.getAttribute('href'), account ? account.username : t('Log in / Register', 'Anmelden / Registrieren'));
   if (auth.pathname === location.pathname) auth.setAttribute('aria-current', 'page'); else auth.removeAttribute('aria-current');
   document.querySelector('[data-nav-label="play"]').textContent = t('Play', 'Spielen');

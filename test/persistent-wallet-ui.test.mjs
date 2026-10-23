@@ -3,30 +3,36 @@ import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
 import vm from 'node:vm';
 const source=await readFile(new URL('../dist/account.js',import.meta.url),'utf8');
+const heatSource=await readFile(new URL('../dist/theft-heat-ui.js',import.meta.url),'utf8');
 const renderer=source.slice(source.indexOf('function renderPersistentWallet('),source.indexOf('function updateNavigation('));
 function fixture() {
-  const classes=new Map(),attributes=new Map(),label={textContent:''},contextual={textContent:''};let value='',writes=0;
+  const classes=new Map(),attributes=new Map(),label={textContent:''},name={textContent:''},heat={hidden:true,innerHTML:''},contextual={textContent:''};let value='',writes=0;
   const amount={get textContent(){return value;},set textContent(next){value=next;writes++;}};
-  const wallet={hidden:true,querySelector:selector=>selector==='#wallet-amount'?amount:label,
+  const nodes={'#wallet-amount':amount,'.wallet-label':label,'#user-card-name':name,'#user-card-heat':heat};
+  const wallet={hidden:true,querySelector:selector=>nodes[selector],
     classList:{toggle:(key,on)=>classes.set(key,on)},setAttribute:(key,value)=>attributes.set(key,value),removeAttribute:key=>attributes.delete(key)};
   const context=vm.createContext({document:{getElementById:()=>wallet,querySelectorAll:()=>[contextual],body:{classList:{toggle:(key,on)=>classes.set(key,on)}}},
+    window:{},location:{pathname:'/stores'},accountEscape:String,number:String,
     t:en=>en,justizEuro:value=>'J€ '+new Intl.NumberFormat('en-GB').format(value)});
+  vm.runInContext(heatSource,context);
   vm.runInContext(renderer,context);
-  return {context,wallet,amount,label,contextual,classes,attributes,writes:()=>writes,render:user=>{context.user=user;vm.runInContext('renderPersistentWallet(user)',context);}};
+  return {context,wallet,amount,label,name,heat,contextual,classes,attributes,writes:()=>writes,render:user=>{context.user=user;vm.runInContext('renderPersistentWallet(user)',context);}};
 }
 
 test('persistent wallet shows only available money, including zero, and clears private amounts on logout',()=>{
-  const f=fixture();f.render({tokens:1250,heldInBids:800,inventoryMarketValue:5000});
+  const f=fixture();f.render({username:'Trader',tokens:1250,heldInBids:800,inventoryMarketValue:5000,heat:{stars:1.5}});
   assert.equal(f.wallet.hidden,false);assert.equal(f.amount.textContent,'J€ 1,250');assert.equal(f.contextual.textContent,'J€ 1,250');assert.equal(f.classes.get('has-wallet'),true);
+  assert.equal(f.name.textContent,'Trader');assert.equal(f.heat.hidden,false);assert.match(f.heat.innerHTML,/1.5 of 5 wanted stars/);assert.match(f.heat.innerHTML,/width:50%/);
   f.render({tokens:0});assert.equal(f.amount.textContent,'J€ 0');assert.equal(f.wallet.hidden,false);
   f.render(null);assert.equal(f.wallet.hidden,true);assert.equal(f.amount.textContent,'');assert.equal(f.contextual.textContent,'');assert.equal(f.classes.get('has-wallet'),false);
+  assert.equal(f.name.textContent,'');assert.equal(f.heat.innerHTML,'');assert.equal(f.heat.hidden,true);
 });
 
 test('wallet accepts gains and spending, keeps large amounts exact and avoids repeated announcements',()=>{
   const f=fixture();f.render({tokens:1250});const before=f.writes();f.render({tokens:1250});assert.equal(f.writes(),before);
   f.render({tokens:1000});assert.equal(f.amount.textContent,'J€ 1,000');
   f.render({tokens:Number.MAX_SAFE_INTEGER});assert.equal(f.amount.textContent,'J€ 9,007,199,254,740,991');assert.equal(f.classes.get('is-long'),true);
-  f.context.t=(_,de)=>de;f.render({tokens:1000});assert.equal(f.label.textContent,'Verfügbar');assert.equal(f.attributes.get('aria-label'),'Verfügbares Guthaben');
+  f.context.t=(_,de)=>de;f.context.location.pathname='/profile';f.render({tokens:1000});assert.equal(f.label.textContent,'Verfügbar');assert.equal(f.attributes.get('aria-current'),'page');
 });
 
 test('a delayed background profile cannot overwrite a newer confirmed wallet update',async()=>{

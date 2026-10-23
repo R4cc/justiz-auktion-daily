@@ -14,15 +14,10 @@ function persistentProgressionMarkup(p, compact = false) {
 }
 
 function renderPersistentProgression(user) {
-  for (const [id, compact] of [['sidebar-progression', false], ['mobile-progression', true]]) {
-    const node = document.getElementById(id);
-    if (!node) continue;
-    node.hidden = !user?.progression;
-    node.innerHTML = persistentProgressionMarkup(user?.progression, compact);
-    const p = user?.progression;
-    node.setAttribute('aria-label', p ? t(`Level ${p.level}, ${number(p.xp)} XP. Open profile.`, `Level ${p.level}, ${number(p.xp)} XP. Profil öffnen.`) : t('Open profile', 'Profil öffnen'));
-  }
-  document.body.classList.toggle('has-progression', Boolean(user?.progression));
+  const node = document.getElementById('sidebar-progression');
+  if (!node) return;
+  node.hidden = !user?.progression;
+  node.innerHTML = persistentProgressionMarkup(user?.progression, true);
 }
 
 function updatePersistentProgression(user, { reset = false } = {}) {

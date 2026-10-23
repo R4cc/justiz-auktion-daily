@@ -9,14 +9,14 @@ function fixture() {
   const nodes = new Map(), timers = new Map();
   const createNode = () => ({ hidden: true, innerHTML: '', textContent: '', attributes: {},
     setAttribute(key, value) { this.attributes[key] = value; }, remove() { nodes.delete(this.id); } });
-  for (const id of ['sidebar-progression', 'mobile-progression', 'xp-announcement']) nodes.set(id, createNode());
-  let timerId = 0, hasProgression = false;
-  const body = { append(node) { nodes.set(node.id, node); }, classList: { toggle(_, value) { hasProgression = value; } } };
+  for (const id of ['sidebar-progression', 'xp-announcement']) nodes.set(id, createNode());
+  let timerId = 0;
+  const body = { append(node) { nodes.set(node.id, node); } };
   const context = vm.createContext({ document: { getElementById: id => nodes.get(id), body,
     createElement: createNode, querySelector: () => null }, t: en => en, number: String,
     setTimeout(callback) { timers.set(++timerId, callback); return timerId; }, clearTimeout(id) { timers.delete(id); } });
   vm.runInContext(source, context);
-  return { context, nodes, timers, hasProgression: () => hasProgression,
+  return { context, nodes, timers,
     update(xp, id = 'player', reset = false) { context.user = id ? { id, progression: progressionForXp(xp) } : null;
       vm.runInContext(`updatePersistentProgression(user, {reset:${reset}})`, context); } };
 }
@@ -25,12 +25,12 @@ test('persistent XP displays current level and level-relative progress, translat
   const f = fixture(); f.update(150);
   assert.match(f.nodes.get('sidebar-progression').innerHTML, /Level 2/);
   assert.match(f.nodes.get('sidebar-progression').innerHTML, /50 \/ 300 XP/);
-  assert.match(f.nodes.get('mobile-progression').innerHTML, /150 XP/);
+  assert.match(f.nodes.get('sidebar-progression').innerHTML, /150 XP/);
   assert.equal(f.nodes.get('sidebar-progression').hidden, false);
   assert.equal(f.nodes.has('xp-feedback'), false, 'Signing in must not celebrate historical XP');
   f.context.t = (_, de) => de;
   vm.runInContext('renderPersistentProgression(user)', f.context);
-  assert.match(f.nodes.get('sidebar-progression').innerHTML, /Verkäufe/);
+  assert.match(f.nodes.get('sidebar-progression').innerHTML, /250 XP bis Level 3/);
   f.update(36100);
   assert.match(f.nodes.get('sidebar-progression').innerHTML, /Höchstes Level/);
   assert.match(f.nodes.get('sidebar-progression').innerHTML, /aria-valuenow="100"/);
@@ -57,8 +57,6 @@ test('case opening with unchanged XP never celebrates; logout and account change
   f.update(170); f.update(0, null);
   assert.equal(f.nodes.has('xp-feedback'), false);
   assert.equal(f.nodes.get('sidebar-progression').hidden, true);
-  assert.equal(f.nodes.get('mobile-progression').hidden, true);
-  assert.equal(f.hasProgression(), false);
   f.update(500, 'other');
   assert.equal(f.nodes.has('xp-feedback'), false);
   f.update(0, 'other', true); f.update(150, 'other');
