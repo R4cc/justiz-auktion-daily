@@ -102,7 +102,7 @@ test('game rewards have a fixed cash payout, independent of rotating case prices
   const catalog = caseCatalog(stock, day);
   assert.deepEqual(caseRewards(catalog), {
     daily: DAILY_REWARD_FLOOR, dailyScoreBonus: 0,
-    higherLowerPerCorrect: 25, higherLowerMax: 250, minimumStreak: 3
+    higherLowerPerCorrect: 30, higherLowerMax: 300, minimumStreak: 3
   });
   assert.deepEqual(caseRewards(caseCatalog(stock.map(item => ({ ...item, currentBid: item.currentBid * 1000 })), day)), caseRewards(catalog));
   assert.deepEqual(publicCaseCatalog(catalog).rewards, caseRewards(catalog));

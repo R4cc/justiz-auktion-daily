@@ -4,8 +4,8 @@ export const ECONOMY_BALANCE = Object.freeze({
   daily: 1000,
   dailyScoreBonus: 0,
   dailyCaseMaxItemValue: 1000,
-  higherLowerPerCorrect: 25,
-  higherLowerMax: 250,
+  higherLowerPerCorrect: 30,
+  higherLowerMax: 300,
   minimumStreak: 3,
   paidCaseReturn: .82,
   // Pricing keeps its existing baseline; draws target a fairer, smoother return.

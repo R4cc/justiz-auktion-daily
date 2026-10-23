@@ -11,7 +11,7 @@ export const LOAN_OFFERS=Object.freeze([
   {id:'trader',name:'Trader loan',nameDe:'Händlerkredit',principal:2500,requiredLevel:4,requiredNetWorth:10000,dailyInterestPercent:4},
   {id:'business',name:'Business loan',nameDe:'Geschäftskredit',principal:10000,requiredLevel:7,requiredNetWorth:25000,dailyInterestPercent:5},
   {id:'enterprise',name:'Enterprise loan',nameDe:'Unternehmenskredit',principal:50000,requiredLevel:10,requiredNetWorth:125000,dailyInterestPercent:6}
-].map(offer=>Object.freeze({...offer,feePercent:0,overdueInterestPercent:36,termDays:5})));
+].map(offer=>Object.freeze({...offer,feePercent:0,overdueInterestPercent:30,termDays:5})));
 export const LOAN_COOLDOWN_MS=LOAN_DAY_MS;
 export const LOAN_TERMS_VERSION=createHash('sha256').update(JSON.stringify([LOAN_OFFERS,LOAN_COOLDOWN_MS])).digest('hex');
 const fail=(code,status=409)=>{throw new AccountError(code,status);};

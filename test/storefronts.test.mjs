@@ -485,7 +485,11 @@ test('Heat catch odds include guards and Prestige, allow safer decayed quotes, a
   });
   assert.throws(()=>startStoreHeist(f.dir,f.buyer,f.payload(),{now,draw:success}),/start_failed/);
   assert.equal(f.view().heat.value,2);
-  f.accounts.db(db=>db.exec('DROP TRIGGER fail_heat_start'));
+  f.accounts.db(db=>{
+    db.exec('DROP TRIGGER fail_heat_start');
+    // Isolate Heat decay from an hourly customer buying the target first.
+    db.prepare('UPDATE businesses SET last_tick_at=? WHERE id=?').run(now+HEAT_DECAY_INTERVAL,f.shop.id);
+  });
   const next=startStoreHeist(f.dir,f.buyer,{...f.payload(),expectedPoliceCatchPercent:40},{now:now+HEAT_DECAY_INTERVAL,draw:success});
   assert.equal(next.heist.policeCatchPercent,35);
   assert.equal(f.view(f.buyer,now+HEAT_DECAY_INTERVAL).heat.value,2);

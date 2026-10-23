@@ -663,7 +663,7 @@ function renderLeaderboard() {
 }
 function rewardNote() {
   if (!account) return t('Log in before playing to earn J€.', 'Melde dich vor dem Spielen an, um J€ zu verdienen.');
-  const rewards = accountCatalog?.rewards || { daily: 1000, dailyScoreBonus: 0, higherLowerMax: 250 };
+  const rewards = accountCatalog?.rewards || { daily: 1000, dailyScoreBonus: 0, higherLowerMax: 300 };
   const daily = account.rewardsByMode?.daily?.earned || 0;
   const higherLower = account.rewardsByMode?.['higher-lower']?.earned || 0;
   return t(`Daily pays ${justizEuro(rewards.daily)} plus one case. Higher or Lower pays up to ${justizEuro(rewards.higherLowerMax)} separately; better streaks pay the difference. Earned today: ${justizEuro(daily + higherLower)}. Resets at 00:00 UTC.`,

@@ -43,17 +43,64 @@ test('Higher or Lower pays only improvements; a failed attempt never blocks Dail
   assert.equal(complete(f, 'higher-lower', 5, false).earned, 0);
   assert.equal(complete(f, 'daily', 5).earned, 1000);
   const first = complete(f, 'higher-lower', 5); // 3 correct, then miss
-  assert.equal(first.earned, 75);
+  assert.equal(first.earned, 90);
   assert.equal(complete(f, 'higher-lower', 5).earned, 0);
-  assert.equal(complete(f, 'higher-lower', 7).earned, 50); // best rises to 125
-  assert.equal(complete(f, 'higher-lower', 16).earned, 125); // cap 250
+  assert.equal(complete(f, 'higher-lower', 7).earned, 60); // best rises to 150
+  assert.equal(complete(f, 'higher-lower', 16).earned, 150); // cap 300
   assert.equal(complete(f, 'higher-lower', 16).earned, 0);
-  assert.equal(f.balance('seller'), 101250);
-  assert.equal(f.accounts.profile(f.user('seller')).rewardsByMode['higher-lower'].earned, 250);
+  assert.equal(f.balance('seller'), 101300);
+  assert.equal(f.accounts.profile(f.user('seller')).rewardsByMode['higher-lower'].earned, 300);
   closeDataStore(f.dir);
   const reopened = new Accounts(f.dir, { now: () => now });
-  assert.equal(playAnswer(reopened, f.user('seller'), first.id, 3, 'lower').earned, 75);
-  assert.equal(f.balance('seller'), 101250);
+  assert.equal(playAnswer(reopened, f.user('seller'), first.id, 3, 'lower').earned, 90);
+  assert.equal(f.balance('seller'), 101300);
+});
+
+test('Higher or Lower threshold and cap keep every new streak payout within a 20% increase', async t => {
+  const previous = { higherLowerPerCorrect: 25, higherLowerMax: 250, minimumStreak: 3 };
+  for (const streak of [0, 1, 2, 3, 9, 10, 11, 15]) {
+    const f = await fixture(t);
+    const finish = (user, rates) => {
+      let run = f.accounts.startGame(user, 'higher-lower', () => deck, rates);
+      for (let n = 0; !run.complete; n++) run = playAnswer(f.accounts, user, run.id, n, n < streak ? 'higher' : 'lower');
+      assert.equal(run.streak, streak);
+      return run;
+    };
+    const oldRun = finish(f.user('buyer'), previous), current = finish(f.user('seller'));
+    assert.equal(oldRun.earned, streak < 3 ? 0 : Math.min(streak * 25, 250));
+    assert.equal(current.earned, streak < 3 ? 0 : Math.min(streak * 30, 300));
+    assert.equal(current.earned * 5, oldRun.earned * 6);
+    assert.equal(f.balance('seller') - 100000, current.earned);
+  }
+});
+
+test('saved 25/250 Higher or Lower runs retain their rates and later top-ups respect the new daily cap', async t => {
+  const f = await fixture(t), user = f.user('seller');
+  let run = f.accounts.startGame(user, 'higher-lower', () => deck);
+  // Simulate a pre-deployment game snapshot already partly answered.
+  f.accounts.db(db => {
+    const saved = JSON.parse(db.prepare('SELECT payload FROM account_games WHERE id=?').get(run.id).payload);
+    saved.rewards = { ...saved.rewards, higherLowerPerCorrect: 25, higherLowerMax: 250 };
+    db.prepare('UPDATE account_games SET payload=? WHERE id=?').run(JSON.stringify(saved), run.id);
+  });
+  for (let n = 0; n < 2; n++) run = playAnswer(f.accounts, user, run.id, n, 'higher');
+  closeDataStore(f.dir);
+  const restarted = new Accounts(f.dir, { now: () => now });
+  run = restarted.startGame(user, 'higher-lower', () => { throw new Error('must not reroll'); });
+  assert.equal(run.rewards.higherLowerPerCorrect, 25);
+  assert.equal(run.rewards.higherLowerMax, 250);
+  for (let n = 2; n < 10; n++) run = playAnswer(restarted, user, run.id, n, 'higher');
+  run = playAnswer(restarted, user, run.id, 10, 'lower');
+  assert.equal(run.earned, 250);
+  assert.equal(playAnswer(restarted, user, run.id, 10, 'lower').earned, 250);
+  assert.equal(f.balance('seller'), 100250);
+  assert.equal(complete(f, 'higher-lower', 7).earned, 0);
+  assert.equal(complete(f, 'higher-lower', 16).earned, 50);
+  assert.equal(complete(f, 'higher-lower', 16).earned, 0);
+  closeDataStore(f.dir);
+  assert.equal(playAnswer(restarted, user, run.id, 10, 'lower').earned, 250);
+  assert.equal(f.balance('seller'), 100300);
+  assert.equal(f.accounts.profile(user).rewardsByMode['higher-lower'].earned, 300);
 });
 
 test('legacy reward receipts migrate once and keep paid currency and frozen run rates', async t => {

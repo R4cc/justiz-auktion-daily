@@ -80,7 +80,7 @@ function listingLabel(value = '') {
   return language === 'de' ? value : labels[value] || value;
 }
 function renderStaticUi() {
-  const rewards = window.justizRewards || { daily: 1000, higherLowerPerCorrect: 25, higherLowerMax: 250, minimumStreak: 3 };
+  const rewards = window.justizRewards || { daily: 1000, higherLowerPerCorrect: 30, higherLowerMax: 300, minimumStreak: 3 };
   document.documentElement.lang = language;
   document.title = t('JUSTIZGUESSR — The daily auction game', 'JUSTIZGUESSR — Das tägliche Auktionsspiel');
   document.querySelector('meta[name="description"]').content = t('Guess the prices of five public auctions each day.', 'Schätze täglich die Preise von fünf öffentlichen Auktionen.');

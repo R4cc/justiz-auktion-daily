@@ -289,7 +289,7 @@ function renderStart() {
   const localComplete=saved?.view==='results';
   const daily=account?.daily || {status:localComplete?'completed':saved?.answers?.length?'in_progress':'not_started',completedRounds:saved?.answers?.length||0,score:localComplete?(saved.answers||[]).reduce((sum,answer)=>sum+(answer.score||0),0):null};
   app.innerHTML=dailyMenuMarkup({status:daily.status,completedRounds:Math.max(0,Math.min(5,daily.completedRounds||0)),score:daily.score,playerStats,
-    rewards:window.justizRewards||{daily:1000,dailyScoreBonus:0,higherLowerPerCorrect:25,higherLowerMax:250,minimumStreak:3},edition:gameNumber(),date:utcDateKey()});
+    rewards:window.justizRewards||{daily:1000,dailyScoreBonus:0,higherLowerPerCorrect:30,higherLowerMax:300,minimumStreak:3},edition:gameNumber(),date:utcDateKey()});
   updateDailyReset();
 }
 

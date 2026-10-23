@@ -53,7 +53,7 @@ test('borrowing checks frozen terms, isolates actors and is receipt-protected ac
  assert.deepEqual(f.borrow('starter',requestId).receipt,result.receipt);assert.equal(f.view().active,null);
  assert.equal(f.balance(),300000);
 });
-test('interest accrues offline at 3 percent daily for five days, then jumps to 36 percent without compounding',async t=>{
+test('interest accrues offline at 3 percent daily for five days, then jumps to 30 percent without compounding',async t=>{
  const f=await fixture(t);f.borrow();
  assert.equal(f.view().active.total,500);
  assert.equal(f.view(now+DAY/24).active.total,501);
@@ -62,8 +62,8 @@ test('interest accrues offline at 3 percent daily for five days, then jumps to 3
  const row=f.accounts.db(db=>db.prepare('SELECT * FROM player_loans').get());
  assert.equal(row.due_at,now+5*DAY);
  assert.equal(loanBalance(row,now+5*DAY).total,575);
- assert.equal(loanBalance(row,now+5.5*DAY).total,665);
- assert.equal(loanBalance(row,now+6*DAY).total,755);
+ assert.equal(loanBalance(row,now+5.5*DAY).total,650);
+ assert.equal(loanBalance(row,now+6*DAY).total,725);
  assert.equal(loanBalance(row,now+3*DAY).total,545);
  assert.equal(loanBalance(row,now+4*DAY).total,560);
  closeDataStore(f.dir);
@@ -178,12 +178,12 @@ test('runtime with trading flags off and the next profile read both enforce over
 
 test('larger new loans start at higher daily interest and every tier jumps after five days', async t => {
  const f=await fixture(t);
- const expected=[['starter',3,15,575,755],['trader',4,100,3000,3900],['business',5,500,12500,16100],['enterprise',6,3000,65000,83000]];
+ const expected=[['starter',3,15,575,725],['trader',4,100,3000,3750],['business',5,500,12500,15500],['enterprise',6,3000,65000,80000]];
  for(const [index,[id,rate,daily,day5,day6]] of expected.entries()){
   const at=now+index*DAY;
   const offer=f.view(at).offers.find(offer=>offer.id===id);
   assert.equal(offer.dailyInterestPercent,rate);assert.equal(offer.fee,0);assert.equal(offer.termDays,5);
-  assert.equal(offer.interestPerDay,daily);assert.equal(offer.overdueInterestPercent,36);
+  assert.equal(offer.interestPerDay,daily);assert.equal(offer.overdueInterestPercent,30);
   const result=f.borrow(id,randomUUID(),at);
   assert.equal(result.loans.active.total,offer.principal);
   const row=f.accounts.db(db=>db.prepare('SELECT * FROM player_loans WHERE paid_at IS NULL').get());
@@ -203,4 +203,23 @@ test('existing contracts retain saved fees, interest and deadlines after cheaper
  assert.equal(state.active.dueAt,now+3*DAY);assert.equal(state.active.total,840);
  f.set(0);
  assert.equal(f.view(now+4*DAY).active.total,1140);
+});
+
+test('saved five-day loans and old borrowing receipts retain their 36 percent overdue terms across restart', async t => {
+ const f=await fixture(t),requestId=randomUUID(),result=f.borrow('starter',requestId);
+ const oldTerms='previous-five-day-terms';
+ f.accounts.db(db=>{
+  db.prepare('UPDATE player_loans SET overdue_bps=3600 WHERE id=?').run(result.receipt.loanId);
+  db.prepare('UPDATE loan_receipts SET payload=? WHERE user_id=? AND request_id=?')
+   .run(JSON.stringify({offerId:'starter',termsVersion:oldTerms}),f.user.id,requestId);
+ });
+ f.set(0);closeDataStore(f.dir);
+ const state=f.view(now+6*DAY);
+ assert.equal(state.active.dailyInterestPercent,3);assert.equal(state.active.overdueInterestPercent,36);
+ assert.equal(state.active.dueAt,now+5*DAY);assert.equal(state.active.total,755);
+ assert.equal(state.offers[0].overdueInterestPercent,30);
+ const payload={offerId:'starter',termsVersion:oldTerms,requestId};
+ assert.deepEqual(borrowLoan(f.dir,f.user,payload,{now:now+6*DAY}).receipt,result.receipt);
+ assert.equal(f.balance(),0);assert.equal(f.view(now+6*DAY).active.total,755);
+ assert.throws(()=>borrowLoan(f.dir,f.user,{...payload,requestId:randomUUID()},{now:now+6*DAY}),/loan_terms_changed/);
 });

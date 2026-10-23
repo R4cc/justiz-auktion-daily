@@ -244,16 +244,16 @@ test('daily rewards are separate per mode per UTC day, survive replay and resume
   assert.ok(hl.auctions.slice(1).every(item => !('actualBid' in item)));
   let result;
   for (let i = 0; i < 7; i++) result = playAnswer(service, admin, hl.id, i, 'higher');
-  assert.equal(result.earned, 175);
-  assert.equal(service.profile(admin).tokens, STARTING_TOKENS + 1175);
+  assert.equal(result.earned, 210);
+  assert.equal(service.profile(admin).tokens, STARTING_TOKENS + 1210);
   nextDay();
   assert.equal(service.profile(admin).reward, null);
   assert.throws(() => playAnswer(service, admin, run.id, 0, 10), /daily_reset/);
   const fresh = service.startGame(admin, 'higher-lower', () => lots);
   assert.notEqual(fresh.id, hl.id);
   for (let i = 0; i < 7; i++) result = playAnswer(service, admin, fresh.id, i, 'higher');
-  assert.equal(result.earned, 175);
-  assert.equal(service.profile(admin).tokens, STARTING_TOKENS + 1350);
+  assert.equal(result.earned, 210);
+  assert.equal(service.profile(admin).tokens, STARTING_TOKENS + 1420);
 });
 
 test('a timed-out guess is recorded as null, scores zero and still completes the daily run', async t => {
@@ -361,7 +361,7 @@ test('failed Higher or Lower does not consume Daily income and ties reach the se
   let result;
   for (let i = 0; i < 14; i++) result = playAnswer(service, admin, tie.id, i, i % 2 ? 'higher' : 'lower');
   assert.equal(result.streak, 14);
-  assert.equal(result.earned, 250);
+  assert.equal(result.earned, 300);
 });
 
 test('case debits, item ownership, idempotent openings and sales remain atomic across restart', async t => {

@@ -43,12 +43,12 @@ try{
   for(const [index,rate] of [3,4,5,6].entries()){
    const rows=page.locator('.loan-offer').nth(index).locator('dl > div');
    assert.match(await rows.nth(1).locator('dd').innerText(),new RegExp(`^${rate}%`));
-   assert.match(await rows.nth(2).innerText(),/5/);assert.match(await rows.nth(2).locator('dd').innerText(),/^36%/);
+   assert.match(await rows.nth(2).innerText(),/5/);assert.match(await rows.nth(2).locator('dd').innerText(),/^30%/);
   }
   assert.equal(await page.locator('[data-loan="review"]:enabled').count(),4);await overflow();
   await page.locator('[data-loan="review"][data-offer="starter"]').click();await page.waitForSelector('.loan-confirm[open]');
   assert.match(await page.locator('.loan-confirm').innerText(),/515/);assert.match(await page.locator('.loan-confirm').innerText(),/575/);
-  assert.match(await page.locator('.loan-confirm').innerText(),/3%/);assert.match(await page.locator('.loan-confirm').innerText(),/36%/);
+  assert.match(await page.locator('.loan-confirm').innerText(),/3%/);assert.match(await page.locator('.loan-confirm').innerText(),/30%/);
   const box=await page.locator('.loan-confirm').boundingBox();assert.ok(box.x>=0&&box.x+box.width<=width);
   await page.keyboard.press('Escape');assert.equal(await page.locator('.loan-confirm[open]').count(),0);
   assert.ok(await page.locator('[data-loan="review"][data-offer="starter"]').evaluate(el=>el===document.activeElement));
