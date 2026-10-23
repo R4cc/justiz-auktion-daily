@@ -2,17 +2,137 @@ window.changelogUi = (() => {
   // Curated manually. Only update for a feature when the user explicitly asks.
   const entries = [
     {
-      date: '2026-10-23', title: 'More Rewarding Cases',
-      changes: [
-        {en:'Rebalanced case contents and winning values so ordinary pulls feel more rewarding and very low-value items are much rarer in expensive cases. Valuable wins remain possible, and displayed rarity odds reflect the improved draws.',de:'Kisteninhalte und Gewinnwerte neu ausbalanciert: Gewöhnliche Funde lohnen sich mehr und sehr geringwertige Artikel sind in teuren Kisten deutlich seltener. Wertvolle Gewinne bleiben möglich; die angezeigten Seltenheitschancen entsprechen den verbesserten Ziehungen.'},
-        {en:'Existing unopened paid cases can also receive a better-value find when opened. Valuable saved wins stay intact, and confirmed opening results remain saved.',de:'Auch bestehende ungeöffnete, bezahlte Kisten können beim Öffnen einen höherwertigen Fund erhalten. Wertvolle gespeicherte Gewinne bleiben erhalten und bestätigte Öffnungsergebnisse werden dauerhaft gespeichert.'}
+      "date": "2026-10-23",
+      "title": "Theft Security",
+      "changes": [
+        {
+          "en": "Expensive items now require clearing more Blackjack security stages before they can be stolen. Each stage uses fair cards, and only the final win awards the item.",
+          "de": "Teure Artikel erfordern jetzt mehr gewonnene Blackjack-Sicherheitsstufen, bevor sie gestohlen werden können. Jede Stufe verwendet faire Karten; erst der letzte Sieg bringt den Artikel."
+        },
+        {
+          "en": "Theft dialogs show the required stages and saved progress. A loss leads to the police wheel, while a tie ends the attempt without loot or a fine. Existing attempts retain their saved terms.",
+          "de": "Diebstahldialoge zeigen die erforderlichen Stufen und den gespeicherten Fortschritt. Eine Niederlage führt zum Polizeirad; ein Gleichstand beendet den Versuch ohne Beute oder Bußgeld. Laufende Versuche behalten ihre gespeicherten Bedingungen."
+        }
       ]
     },
     {
-      date: '2026-10-23', title: 'Theft Heat',
-      changes: [
-        {en:'Removed player and store stealing cooldowns. Finish your active attempt before starting another.',de:'Wartezeiten für Diebstähle pro Spieler und Laden entfernt. Beende deinen laufenden Versuch, bevor du einen neuen startest.'},
-        {en:'Heat now uses five wanted stars with half-stars. Each attempt adds half a star; each stolen item adds more based on its value. More stolen items build Heat faster. Each full star adds 10 percentage points to later police catch odds, capped at 95%. Half a star fades every 30 minutes, including offline. View Heat in stores and your profile; existing attempts retain saved odds.',de:'Heat zeigt fünf Fahndungssterne mit halben Sternen. Jeder Versuch bringt einen halben Stern; jeder gestohlene Artikel erhöht Heat zusätzlich nach seinem Wert. Mehr gestohlene Artikel bauen Heat schneller auf. Jeder volle Stern erhöht die spätere Fangchance um 10 Prozentpunkte, bis maximal 95%. Alle 30 Minuten verschwindet ein halber Stern, auch offline. Heat ist in Läden und deinem Profil sichtbar; laufende Versuche behalten ihre gespeicherten Chancen.'}
+      "date": "2026-10-23",
+      "title": "Category Cases",
+      "changes": [
+        {
+          "en": "Replaced mixed Case Store offers with category-specific cases. Choose a category, then select a tier with its own price and reward odds.",
+          "de": "Gemischte Angebote im Kisten-Shop durch kategoriespezifische Kisten ersetzt. Wähle eine Kategorie und anschließend eine Stufe mit eigenem Preis und eigenen Gewinnchancen."
+        },
+        {
+          "en": "Possible case contents stay hidden before opening. More expensive tiers offer better legendary odds, with improved value balance across the selection.",
+          "de": "Mögliche Kisteninhalte bleiben vor dem Öffnen verborgen. Teurere Stufen bieten bessere Chancen auf legendäre Funde; die Werte sind über das Angebot hinweg besser ausbalanciert."
+        }
+      ]
+    },
+    {
+      "date": "2026-10-23",
+      "title": "Quality of Life",
+      "changes": [
+        {
+          "en": "Game loading and page navigation recover more reliably when switching pages or cancelling a request.",
+          "de": "Das Laden von Spielen und die Seitennavigation reagieren zuverlässiger auf Seitenwechsel und abgebrochene Anfragen."
+        },
+        {
+          "en": "Improved keyboard controls, image galleries and focus handling in inventory and auction winnings. Item details remain expanded while browsing.",
+          "de": "Tastatursteuerung, Bildergalerien und Fokusführung im Inventar und bei Auktionsgewinnen verbessert. Artikeldetails bleiben beim Durchsehen aufgeklappt."
+        },
+        {
+          "en": "Restocking controls respect available shelf space, tip buttons match accepted amounts, and loan repayment drafts survive errors and language changes.",
+          "de": "Beim Auffüllen berücksichtigen die Mengenregler den verfügbaren Regalplatz. Trinkgeld-Schaltflächen verwenden gültige Beträge; Eingaben zur Kreditrückzahlung bleiben bei Fehlern und Sprachwechseln erhalten."
+        },
+        {
+          "en": "Notification updates preserve scroll position and keyboard focus.",
+          "de": "Aktualisierte Benachrichtigungen behalten Scrollposition und Tastaturfokus bei."
+        }
+      ]
+    },
+    {
+      "date": "2026-10-23",
+      "title": "Economy Balance",
+      "changes": [
+        {
+          "en": "Improved Higher or Lower rewards and eased overdue penalties for new loans after reviewing the connected game economy. Existing loan contracts retain their saved terms.",
+          "de": "Nach einer Prüfung der zusammenhängenden Spielwirtschaft wurden die Belohnungen bei Höher oder Niedriger verbessert und Verzugszinsen für neue Kredite gesenkt. Bestehende Kreditverträge behalten ihre gespeicherten Bedingungen."
+        }
+      ]
+    },
+    {
+      "date": "2026-10-23",
+      "title": "Simpler Modals",
+      "changes": [
+        {
+          "en": "Streamlined result dialogs across cases, palettes, games and store activities with clear continuation actions.",
+          "de": "Ergebnisdialoge für Kisten, Paletten, Spiele und Ladenaktionen mit klaren Weiter-Aktionen vereinfacht."
+        },
+        {
+          "en": "Removed unrelated navigation from completion dialogs. Case results offer buying another case where appropriate, and confirmations stay focused on the current task.",
+          "de": "Sachfremde Navigation aus Abschlussdialogen entfernt. Kistenergebnisse bieten bei Bedarf einen weiteren Kauf an; Bestätigungen bleiben auf die aktuelle Aktion ausgerichtet."
+        }
+      ]
+    },
+    {
+      "date": "2026-10-23",
+      "title": "Police & Fine Clarity",
+      "changes": [
+        {
+          "en": "High wanted levels can now trigger police recognition during everyday activities. Choose to pay a fine or serve a timed jail sentence.",
+          "de": "Ein hoher Fahndungslevel kann jetzt auch bei alltäglichen Aktionen zur Erkennung durch die Polizei führen. Wähle zwischen der Zahlung eines Bußgelds und einer zeitlich begrenzten Haftstrafe."
+        },
+        {
+          "en": "Fines rise sharply with Heat, and repeat offences can bring longer jail sentences. Police encounters and penalties remain saved when returning to the game.",
+          "de": "Bußgelder steigen mit Heat stark an; wiederholte Vergehen können längere Haftstrafen nach sich ziehen. Polizeibegegnungen und Strafen bleiben bei der Rückkehr ins Spiel gespeichert."
+        },
+        {
+          "en": "Potential theft fines use a visual severity scale with unused levels dimmed. Higher Heat is reflected in the fine display without separate multiplier labels.",
+          "de": "Mögliche Diebstahlbußgelder werden als visuelle Schweregradskala mit ausgegrauten inaktiven Stufen angezeigt. Höheres Heat fließt in diese Anzeige ein, ohne separate Multiplikator-Angaben."
+        }
+      ]
+    },
+    {
+      "date": "2026-10-23",
+      "title": "More Rewarding Cases",
+      "changes": [
+        {
+          "en": "Rebalanced case rewards so ordinary pulls offer better value and very low-value finds are much rarer in expensive cases. Legendary odds improve with more expensive tiers.",
+          "de": "Kistengewinne neu ausbalanciert: Gewöhnliche Funde bieten mehr Wert und sehr geringwertige Artikel sind in teuren Kisten deutlich seltener. Teurere Stufen bieten bessere Chancen auf legendäre Funde."
+        },
+        {
+          "en": "Existing unopened paid cases can also receive a better-value find when opened. Valuable saved wins stay intact, and confirmed opening results remain saved.",
+          "de": "Auch bestehende ungeöffnete, bezahlte Kisten können beim Öffnen einen höherwertigen Fund erhalten. Wertvolle gespeicherte Gewinne bleiben erhalten und bestätigte Öffnungsergebnisse werden dauerhaft gespeichert."
+        }
+      ]
+    },
+    {
+      "date": "2026-10-23",
+      "title": "Timed Case Rebates",
+      "changes": [
+        {
+          "en": "Admins can schedule percentage rebates for a selected case or the entire Case Store. Active offers apply automatically during the chosen period.",
+          "de": "Admins können prozentuale Rabatte für eine ausgewählte Kiste oder den gesamten Kisten-Shop planen. Aktive Angebote gelten automatisch im gewählten Zeitraum."
+        }
+      ]
+    },
+    {
+      "date": "2026-10-23",
+      "title": "Theft Heat",
+      "changes": [
+        {
+          "en": "Removed player and store stealing cooldowns. Finish your active attempt before starting another.",
+          "de": "Wartezeiten für Diebstähle pro Spieler und Laden entfernt. Beende deinen laufenden Versuch, bevor du einen neuen startest."
+        },
+        {
+          "en": "Stealing builds a star-based wanted level. Attempts add Heat, while the value and quantity of stolen items increase it further.",
+          "de": "Diebstähle bauen einen Fahndungslevel mit Sternen auf. Versuche erhöhen Heat; Wert und Anzahl gestohlener Artikel steigern es zusätzlich."
+        },
+        {
+          "en": "Heat fades over time, including offline, and raises the chance of being caught. Track your wanted level in stores and your profile.",
+          "de": "Heat sinkt mit der Zeit, auch offline, und erhöht die Chance, erwischt zu werden. Dein Fahndungslevel ist in Läden und deinem Profil sichtbar."
+        }
       ]
     },
     {
