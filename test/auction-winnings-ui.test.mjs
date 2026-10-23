@@ -7,7 +7,10 @@ const source=await readFile(new URL('../dist/auction-winnings-ui.js',import.meta
 const house=await readFile(new URL('../dist/economy-ui.js',import.meta.url),'utf8');
 const escape=value=>String(value).replace(/[&<>"']/g,char=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]));
 function setup(language='en'){
+  const nodes=new Map(),body={closest:()=>null};
+  const document={body,activeElement:body,querySelector:selector=>nodes.get(selector)||null};
   const context=vm.createContext({window:{paletteUi:{art:()=>'<svg></svg>'}},accountEscape:escape,
+    document,nodes,queueMicrotask,CSS:{escape:String},currentAccountPage:'/auction-house',
     t:(en,de)=>language==='en'?en:de,number:String,caseArtwork:()=>'<svg></svg>',URLSearchParams,
     account:{id:'me'},data:{unopenedOwner:'me'},tab:'browse',economyFlags:{market:false},location:{search:'?type=items&seller=players'},
     accountContent:{innerHTML:''},esc:escape,caseArt:()=>'',categoryName:String,economyOverviewMarkup:()=>'',loginNotice:()=>'',justizEuro:String,name:lot=>lot.name});
@@ -23,7 +26,7 @@ for(const language of ['en','de'])test(`unopened rewards stay above the live lis
     assert.ok(html.indexOf('<nav class="auction-house-shortcuts')<html.indexOf('class="house-winnings"'));
     assert.ok(html.indexOf('class="house-winnings"')<html.indexOf('class="house-filters"'));
     assert.match(html,/data-unopened-reward="palette:won"/);assert.doesNotMatch(html,/<sealed>|<versiegelte>/);
-    assert.match(html,language==='en'?/<h2 id="house-winnings-title">Unopened rewards<\/h2>/:/<h2 id="house-winnings-title">Ungeöffnete Gewinne<\/h2>/);
+    assert.match(html,language==='en'?/<h2 id="house-winnings-title"[^>]*>Unopened rewards<\/h2>/:/<h2 id="house-winnings-title"[^>]*>Ungeöffnete Gewinne<\/h2>/);
     assert.match(html,language==='en'?/<span class="house-winnings-action">Open /:/<span class="house-winnings-action">Öffnen /);
     assert.doesNotMatch(html,/data-history="won"/);
   }
@@ -52,4 +55,23 @@ test('large queues keep six prominent rewards and disclose every remaining box w
   assert.equal((html.match(/data-unopened-reward/g)||[]).length,10);assert.match(html,/<details class="house-winnings-more">/);
   assert.equal((html.split('<details')[0].match(/data-unopened-reward/g)||[]).length,6);
   assert.match(html,/10 unopened rewards/);
+});
+
+test('expanded reward queues survive repaint and reset for a different account',()=>{
+  const context=setup(),rewards=Array.from({length:8},(_,i)=>({...reward,id:'reward-'+i}));
+  context.window.auctionWinningsUi.markup(rewards);
+  context.nodes.set('.house-winnings-more',{open:true,querySelector:()=>null});
+  assert.match(context.window.auctionWinningsUi.markup(rewards),/<details class="house-winnings-more" open>/);
+  context.account={id:'next-player'};
+  assert.doesNotMatch(context.window.auctionWinningsUi.markup(rewards),/<details class="house-winnings-more" open>/);
+});
+
+test('a focused reward disappearing during repaint returns focus to the reward heading',async()=>{
+  const context=setup();context.window.auctionWinningsUi.markup([reward]);
+  context.document.activeElement={closest:()=>({dataset:{unopenedReward:'palette:gone'}})};
+  const heading={focus:()=>{context.document.activeElement=heading;}};
+  context.nodes.set('#house-winnings-title',heading);
+  context.window.auctionWinningsUi.markup([reward]);context.document.activeElement=context.document.body;
+  await Promise.resolve();
+  assert.equal(context.document.activeElement,heading);
 });

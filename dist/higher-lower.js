@@ -11,9 +11,8 @@ function hlStorageKey() { return typeof account !== 'undefined' && account ? `ju
 async function startHigherLower() {
   showGamePage();
   const request = ++higherLowerRequest;
-  clearInterval(countdownTimer);
   state.view = 'higher-lower-loading';
-  app.innerHTML = `<section class="hl-screen"><p class="eyebrow">HIGHER OR LOWER</p><h1>${t('Loading…', 'Wird geladen …')}</h1><button class="secondary-button" data-action="home">${t('Back to home', 'Zur Startseite')}</button></section>`;
+  renderGameLoading();
   try {
     const serverRun = await accountGameStart('higher-lower');
     const payload = serverRun;
@@ -25,14 +24,15 @@ async function startHigherLower() {
     gameMode = 'higher-lower';
     state.view = 'higher-lower';
     window.scrollTo({ top: 0, behavior: 'instant' });
-    renderHigherLower();
+    renderHigherLower(true);
   } catch (error) {
     if (request !== higherLowerRequest || state.view !== 'higher-lower-loading') return;
     renderStart();
+    app.querySelector('[data-action="higher-lower"]')?.focus({ preventScroll: true });
     showToast(error.code === 'insufficient_variety' || error.message === 'variety' ? t('Not enough different auctions with confirmed final bids yet. Try again later.', 'Noch nicht genug unterschiedliche Auktionen mit bestätigtem Endgebot. Versuche es später erneut.') : t('The lots could not be loaded. Please try again.', 'Die Lose konnten nicht geladen werden. Bitte versuche es erneut.'));
   }
 }
-function renderHigherLower(focus = false) {
+function renderHigherLower(focus = false, choice = 'higher') {
   const run = higherLowerRun;
   const finished = run.revealed && (!run.correct || run.index === run.auctions.length - 1);
   const tied = run.auctions[run.index].actualBid === run.auctions[run.index - 1].actualBid;
@@ -58,7 +58,7 @@ function renderHigherLower(focus = false) {
     <button class="hl-home" data-action="home">${t('Back to home', 'Zur Startseite')}</button>
     </div><div class="data-note"><span>${run.index} / ${run.auctions.length - 1}</span> ${infoTip(t('Ties accept either choice. One miss ends the run. Prices are confirmed final bids from different lots.', 'Bei Gleichstand zählen beide Tipps. Ein Fehler beendet den Lauf. Die Preise sind bestätigte Endgebote verschiedener Lose.'), t('Game rules', 'Spielregeln'))}</div>
   </section>`;
-  if (focus) app.querySelector('.hl-controls button')?.focus({ preventScroll: true });
+  if (focus) (app.querySelector(`[data-action="hl-${choice}"]`) || app.querySelector('.hl-controls button'))?.focus({ preventScroll: true });
 }
 async function guessHigherLower(direction) {
   const run = higherLowerRun;
@@ -76,7 +76,7 @@ async function guessHigherLower(direction) {
     } catch (error) {
       run.pending = false;
       showToast(error.message);
-      if (higherLowerRun === run && state.view === 'higher-lower') renderHigherLower();
+      if (higherLowerRun === run && state.view === 'higher-lower') renderHigherLower(true, direction);
       return;
     } finally { run.pending = false; }
   } else {

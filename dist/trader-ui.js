@@ -47,25 +47,36 @@ const traderStockDialog = document.createElement('dialog');
 traderStockDialog.className = 'economy-dialog';
 traderStockDialog.setAttribute('aria-labelledby','trader-stock-title');
 document.body.append(traderStockDialog);
-let traderReturnFocus = null, traderBusy = false;
+let traderReturnFocus = null, traderBusy = false, traderStockItemId = null;
+function paintTraderStockChoices() {
+  const item=accountItems.find(entry=>entry.id===traderStockItemId);if(!item)return;
+  const selected=document.activeElement?.dataset.shop,hadFocus=traderStockDialog.contains(document.activeElement);
+  const error=traderStockDialog.querySelector('.account-error')?.textContent||'';
+  const shops=traderStores.filter(shop=>shop.type===item.businessType);
+  traderStockDialog.setAttribute('aria-busy',String(traderBusy));
+  traderStockDialog.innerHTML=`<div class="economy-dialog-content"><button class="dialog-close" data-trader="close" aria-label="${t('Close','Schließen')}">×</button><h2 id="trader-stock-title" tabindex="-1">${t('Choose a store','Laden auswählen')}</h2><p>${accountEscape(t(item.title,item.titleDe||item.title))}</p><div class="trader-store-choices">${shops.map(shop=>`<button class="secondary-button" data-trader="stock-confirm" data-id="${accountEscape(item.id)}" data-shop="${accountEscape(shop.id)}" ${traderBusy||shop.stock.length>=shop.capacity?'disabled':''}>${accountEscape(shop.name||traderStoreLabel(shop.type))} · ${shop.stock.length}/${shop.capacity}</button>`).join('')}</div><p class="account-error" role="alert">${accountEscape(error)}</p></div>`;
+  if(hadFocus)(selected&&traderStockDialog.querySelector(`[data-shop="${CSS.escape(selected)}"]:not(:disabled)`)||traderStockDialog.querySelector('[data-trader="close"]'))?.focus({preventScroll:true});
+}
 traderStockDialog.addEventListener('close',()=>{
+  traderStockItemId=null;traderStockDialog.removeAttribute('aria-busy');
   const replacement = accountContent.querySelector(`[data-trader="stock"][data-id="${CSS.escape(traderReturnFocus?.dataset.id||'')}"]`);
   (replacement || (traderReturnFocus?.isConnected?traderReturnFocus:null) || accountContent.querySelector('h1'))?.focus({preventScroll:true});
 });
 document.addEventListener('click',async event=>{
-  const button = event.target.closest('[data-trader]'); if(!button||traderBusy||!account)return;
+  const button = event.target.closest('[data-trader]'); if(!button||!account)return;
   const action=button.dataset.trader, visit=accountVisit, owner=account.id;
   if(action==='close'){traderStockDialog.close();return;}
+  if(traderBusy)return;
   const item = accountItems.find(entry=>entry.id===button.dataset.id);
   if(action==='stock'){
     if(!item||item.listed||item.storeId)return;
     caseReveal.close();
     traderReturnFocus=button;
-    const shops=traderStores.filter(shop=>shop.type===item.businessType);
-    traderStockDialog.innerHTML=`<div class="economy-dialog-content"><button class="dialog-close" data-trader="close" aria-label="${t('Close','Schließen')}">×</button><h2 id="trader-stock-title">${t('Choose a store','Laden auswählen')}</h2><p>${accountEscape(item.title)}</p><div class="trader-store-choices">${shops.map(shop=>`<button class="secondary-button" data-trader="stock-confirm" data-id="${accountEscape(item.id)}" data-shop="${accountEscape(shop.id)}" ${shop.stock.length>=shop.capacity?'disabled':''}>${accountEscape(shop.name||traderStoreLabel(shop.type))} · ${shop.stock.length}/${shop.capacity}</button>`).join('')}</div><p class="account-error" role="alert"></p></div>`;
+    traderStockItemId=item.id;traderStockDialog.innerHTML='';paintTraderStockChoices();
     traderStockDialog.showModal(); (traderStockDialog.querySelector('[data-trader="stock-confirm"]:not(:disabled)') || traderStockDialog.querySelector('.dialog-close'))?.focus(); return;
   }
   traderBusy=true;button.disabled=true;
+  if(traderStockDialog.open){traderStockDialog.setAttribute('aria-busy','true');traderStockDialog.querySelectorAll('[data-trader="stock-confirm"]').forEach(choice=>{choice.disabled=true;});}
   try{
     const result=action==='keep'?await accountApi('inventory/keep',{id:button.dataset.id}):await accountApi(action==='unstock'?'businesses/unstock':'businesses/stock',action==='unstock'?{shopId:button.dataset.shop,inventoryId:button.dataset.id}:{shopId:button.dataset.shop,inventoryIds:[button.dataset.id]});
     if(visit!==accountVisit||account?.id!==owner)return;
@@ -74,8 +85,9 @@ document.addEventListener('click',async event=>{
     await navigateAccountPage('/inventory'+location.search,false);
     showToast(action==='keep'?t('Kept in your inventory.','Im Inventar behalten.'):action==='unstock'?t('Returned to inventory.','Zurück im Inventar.'):t('Stocked. Customers can now buy this find.','Eingeräumt. Kund:innen können den Fund jetzt kaufen.'));
   }catch(error){if(visit===accountVisit&&account?.id===owner){if(traderStockDialog.open)traderStockDialog.querySelector('.account-error').textContent=error.message;else showToast(error.message);}}
-  finally{traderBusy=false;if(button.isConnected)button.disabled=false;}
+  finally{traderBusy=false;if(traderStockDialog.open)paintTraderStockChoices();if(button.isConnected)button.disabled=false;}
 });
+document.addEventListener('jg:language',()=>{if(traderStockDialog.open)paintTraderStockChoices();});
 function applyInventoryFilter(key, value, categoryCard = false) {
   if (currentAccountPage !== '/inventory' || !['state', 'category', 'rarity'].includes(key)) return;
   const query = new URLSearchParams(location.search);

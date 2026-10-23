@@ -277,13 +277,21 @@ function updateNotificationBadge() {
     : t('Notifications', 'Benachrichtigungen'));
 }
 function renderNotificationPanel() {
+  const focused = document.activeElement?.closest('[data-notification-id]');
+  const focusedId = notificationList.contains(focused) ? focused.dataset.notificationId : null;
+  const scrollTop = notificationList.scrollTop;
   notificationPanel.querySelector('h2').textContent = t('Notifications', 'Benachrichtigungen');
   notificationPanel.querySelector('[data-notification="close"]').setAttribute('aria-label', t('Close', 'Schließen'));
   notificationList.innerHTML = accountNotifications.length ? accountNotifications.map(entry => {
     const copy = notificationCopy(entry), tag = entry.href ? 'a' : 'article';
     const link = entry.href ? ` href="${accountEscape(entry.href)}" data-page` : '';
-    return `<${tag} class="notification-entry${entry.readAt ? '' : ' is-unread'}"${link}><span class="notification-entry-dot" aria-hidden="true"></span><span><strong>${accountEscape(copy.title)}</strong>${copy.body ? `<p>${accountEscape(copy.body)}</p>` : ''}<time datetime="${new Date(entry.createdAt).toISOString()}">${new Date(entry.createdAt).toLocaleString(uiLocale())}</time></span></${tag}>`;
+    return `<${tag} data-notification-id="${accountEscape(entry.id)}" class="notification-entry${entry.readAt ? '' : ' is-unread'}"${link}><span class="notification-entry-dot" aria-hidden="true"></span><span><strong>${accountEscape(copy.title)}</strong>${copy.body ? `<p>${accountEscape(copy.body)}</p>` : ''}<time datetime="${new Date(entry.createdAt).toISOString()}">${new Date(entry.createdAt).toLocaleString(uiLocale())}</time></span></${tag}>`;
   }).join('') : `<p class="notification-empty">${t('Nothing new yet.', 'Noch nichts Neues.')}</p>`;
+  if (focusedId && !notificationPanel.hidden) {
+    (notificationList.querySelector(`[data-notification-id="${CSS.escape(focusedId)}"]`)
+      || notificationPanel.querySelector('[data-notification="close"]')).focus({ preventScroll: true });
+  }
+  notificationList.scrollTop = scrollTop;
   updateNotificationBadge();
 }
 function dismissNotificationToast(node) {

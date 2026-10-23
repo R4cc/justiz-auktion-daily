@@ -1,7 +1,8 @@
 window.inventoryItemUi = (() => {
   const esc=accountEscape,dialog=document.createElement('dialog');
   dialog.className='inventory-item-dialog';dialog.setAttribute('aria-labelledby','inventory-item-title');document.body.append(dialog);
-  let selectedId=null,owner=null,returnId=null,imageIndex=0;
+  let selectedId=null,owner=null,returnId=null,imageIndex=0,lastFocus=null;
+  dialog.addEventListener('focusin',event=>{if(event.target!==dialog)lastFocus=event.target;});
   const title=item=>t(item.title,item.titleDe||item.title),estimate=item=>item.estimatedValueTokens??item.sellValue??item.price??0;
   const startingPrice=item=>Math.max(1,Math.round(estimate(item)*.7));
   const stateLabel=item=>item.storeId?t('In a store','Im Laden'):item.listed?t('Listed','Angeboten'):t('Available','Verfügbar');
@@ -19,15 +20,18 @@ window.inventoryItemUi = (() => {
   function paint(){
     const snapshotData=snapshot();if(!snapshotData){stop();return;}
     const {item,copies}=snapshotData,isCase=item.kind==='case',available=!item.listed&&!item.storeId,images=photos(item);imageIndex=Math.min(imageIndex,Math.max(0,images.length-1));
-    const hadFocus=dialog.contains(document.activeElement);
-    const expanded=[...dialog.querySelectorAll('details[open]')].map(entry=>entry.dataset.itemSection),focused=document.activeElement?.closest('button')?.dataset.inventoryImage;
+    const active=(document.activeElement===document.body||document.activeElement===dialog)&&dialog.contains(lastFocus)?lastFocus:document.activeElement,hadFocus=dialog.contains(active),scrollTop=dialog.scrollTop;
+    const expanded=[...dialog.querySelectorAll('details[open]')].map(entry=>entry.dataset.itemSection);
+    const focusAttribute=hadFocus?['data-inventory-image','data-inventory-close','data-economy','data-account','data-trader'].find(name=>active.hasAttribute(name)):null;
+    const focusSection=hadFocus?active.closest('[data-item-section]')?.dataset.itemSection:null;
+    const focusSelector=focusAttribute?`${focusSection?`[data-item-section="${CSS.escape(focusSection)}"] `:''}[${focusAttribute}="${CSS.escape(active.getAttribute(focusAttribute))}"]`:hadFocus&&active.matches('summary')?`[data-item-section="${CSS.escape(active.parentElement.dataset.itemSection)}"] > summary`:null;
     const acquired=item.acquisitionCost==null?t('Unknown','Unbekannt'):justizEuro(item.acquisitionCost);
     const source=({reward:t('Daily reward','Daily-Belohnung'),purchase:t('Purchased','Gekauft'),mischief:t('Stolen item','Gestohlener Artikel'),unknown:t('Not recorded','Nicht erfasst')})[item.acquisitionSource]||t('Not recorded','Nicht erfasst');
     const facts=[[t('Acquisition cost','Anschaffungskosten'),acquired],[t('Acquisition source','Herkunft'),source],...(!isCase?[[t('Historical auction value','Historischer Auktionswert'),euro(item.price)]]:[]),...(item.marketIndex!=null?[[t('Market vs. normal','Markt gegenüber normal'),`${item.marketIndex>=100?'+':''}${number(item.marketIndex-100,1)}%`]]:[])];
     dialog.innerHTML=`<header class="inventory-detail-heading"><p class="eyebrow">${t('YOUR INVENTORY','DEIN INVENTAR')}</p><button type="button" class="dialog-close" data-inventory-close aria-label="${t('Close','Schließen')}">×</button></header><div class="inventory-detail-layout"><section class="inventory-detail-media rarity-${esc(item.rarity||item.caseTier||'common')}" aria-label="${t('Item pictures','Artikelbilder')}"><div class="inventory-detail-image">${art(item,true)}</div>${!isCase&&images.length>1?`<div class="inventory-image-picker" role="group" aria-label="${t('Choose an image','Bild auswählen')}">${images.map((image,n)=>`<button type="button" data-inventory-image="${n}" aria-label="${t('Image','Bild')} ${n+1}" aria-pressed="${n===imageIndex}"><img src="${esc(image)}" alt="" loading="lazy" referrerpolicy="no-referrer"></button>`).join('')}</div>`:''}<p>${isCase?t('One mystery item','Ein geheimer Gegenstand'):`${rarity(item)} · ${inventoryCategoryLabel(inventoryCategory(item))}`}</p></section><section class="inventory-detail-main"><div class="inventory-detail-tags"><span class="inventory-state ${item.listed?'is-listed':item.storeId?'is-stocked':'is-available'}">${stateLabel(item)}</span>${copies.length>1?`<span>${number(copies.length)} ${t('copies','Exemplare')}</span>`:''}</div><h2 id="inventory-item-title" tabindex="-1">${esc(title(item))}</h2><div class="inventory-detail-value"><span>${t('Estimated market value','Geschätzter Marktwert')}</span><strong>${justizEuro(estimate(item))}</strong>${!isCase?window.marketTrendUi?.markup(item.marketCategory)||'':''}<small>${t('Per item · the final selling price can differ.','Pro Artikel · der endgültige Verkaufspreis kann abweichen.')}</small></div><div class="inventory-detail-actions">${available?`${isCase?`<button type="button" class="primary-button" data-account="open-inventory-case" data-id="${esc(item.id)}">${icon('case')}${t('Open case','Kiste öffnen')}</button>`:''}${economyFlags.resales?`${quickButton(item,!isCase)}<p class="inventory-quick-note">${t('Lists one copy for 15 minutes.','Bietet ein Exemplar für 15 Minuten an.')}</p><button type="button" class="secondary-button" data-economy="list" data-id="${esc(item.id)}">${t('Set price, quantity & duration','Preis, Anzahl & Dauer festlegen')}</button>`:!isCase?`<button type="button" class="primary-button" data-account="sell" data-id="${esc(item.id)}">${t('Sell','Verkaufen')} · ${justizEuro(item.sellValue)}</button>`:''}`:traderItemActions(item,copies)}</div><div class="inventory-detail-sections"><details data-item-section="valuation"><summary>${t('Value & acquisition','Wert & Anschaffung')}</summary><dl>${facts.map(([label,value])=>`<div><dt>${label}</dt><dd>${value}</dd></div>`).join('')}</dl>${economyFlags.market&&item.marketCategory?`<a href="/market?category=${encodeURIComponent(item.marketCategory)}" data-page>${t('Market Trends','Markttrends')} ↗</a>`:''}</details>${!isCase&&(item.description||item.condition||item.fulfillment)?`<details data-item-section="about"><summary>${t('About this item','Über diesen Artikel')}</summary>${item.description?`<p>${esc(item.description)}</p>`:''}${item.condition?`<p>${t('Condition','Zustand')}: ${esc(listingLabel(item.condition))}</p>`:''}${item.fulfillment?`<p>${t('Original delivery method','Ursprüngliche Lieferung')}: ${esc(listingLabel(item.fulfillment))}</p>`:''}</details>`:''}${available?`<details data-item-section="manage"><summary>${t('Keep or stock a store','Behalten oder einen Laden beliefern')}</summary>${traderItemActions(item,copies).replace(/<button class="primary-button" data-economy="list"[\s\S]*?<\/button>/,'')}</details>`:''}</div></section></div>`;
     expanded.forEach(id=>{const node=dialog.querySelector(`[data-item-section="${id}"]`);if(node)node.open=true;});
-    if(focused!==undefined)dialog.querySelector(`[data-inventory-image="${focused}"]`)?.focus({preventScroll:true});
-    else if(hadFocus)dialog.querySelector('h2')?.focus({preventScroll:true});
+    if(hadFocus)(focusSelector&&dialog.querySelector(focusSelector)||dialog.querySelector('.inventory-detail-actions button:not(:disabled),.inventory-detail-actions a')||dialog.querySelector('h2'))?.focus({preventScroll:true});
+    dialog.scrollTop=scrollTop;
   }
   function open(id){if(currentAccountPage!=='/inventory'||!account||!accountItems.some(item=>item.id===id))return;selectedId=id;returnId=id;owner=account.id;imageIndex=0;dialog.innerHTML='';paint();if(!dialog.open)dialog.showModal();dialog.querySelector('h2')?.focus({preventScroll:true});}
   function focus(id){const node=accountContent.querySelector(`[data-inventory-detail="${CSS.escape(id||'')}"]`)||accountContent.querySelector('h1');node?.focus({preventScroll:true});}
@@ -41,6 +45,13 @@ window.inventoryItemUi = (() => {
     if(dialog.open&&dialog.contains(event.target)&&event.target.closest('[data-economy="list"],[data-trader],[data-account="open-inventory-case"],[data-account="sell"]'))dialog.close();
   });
   document.addEventListener('jg:language',()=>refresh());
+  dialog.addEventListener('keydown',event=>{
+    const button=event.target.closest('[data-inventory-image]');
+    if(!button||!['ArrowLeft','ArrowRight','Home','End'].includes(event.key))return;
+    const images=photos(snapshot()?.item||{});if(!images.length)return;
+    event.preventDefault();imageIndex=event.key==='Home'?0:event.key==='End'?images.length-1:(imageIndex+(event.key==='ArrowRight'?1:-1)+images.length)%images.length;
+    button.dataset.inventoryImage=String(imageIndex);paint();
+  });
   function accountChanged(user){if(dialog.open&&(user?.id!==owner||user?.justice?.jailed))stop();}
   return {card,open,stop,refresh,focus,accountChanged};
 })();

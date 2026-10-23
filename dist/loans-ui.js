@@ -1,13 +1,13 @@
 window.loansUi = (() => {
   const esc=accountEscape;
-  let data=null,sequence=0,timer=null,busy=false,error='',success='',selected=null;
+  let data=null,sequence=0,timer=null,busy=false,error='',success='',selected=null,repaymentDraft=null;
   const dialog=document.createElement('dialog');dialog.className='loan-confirm';dialog.setAttribute('aria-labelledby','loan-confirm-title');document.body.append(dialog);
   const date=value=>new Date(value).toLocaleString(uiLocale(),{dateStyle:'medium',timeStyle:'short'});
   const key=()=>`jg:loan-request:${account?.id}`;
   let memoryPending=null;
   function pending(){try{return JSON.parse(localStorage.getItem(key())||'null')||memoryPending;}catch{return memoryPending;}}
   function savePending(value){memoryPending=value;try{if(value)localStorage.setItem(key(),JSON.stringify(value));else localStorage.removeItem(key());}catch{}}
-  function stop(){sequence++;clearInterval(timer);timer=null;data=null;busy=false;error='';success='';selected=null;memoryPending=null;dialog.close();}
+  function stop(){sequence++;clearInterval(timer);timer=null;data=null;busy=false;error='';success='';selected=null;memoryPending=null;repaymentDraft=null;dialog.close();}
   async function refresh(visit){
     const request=++sequence,owner=account?.id;
     const result=await accountApi('loans');
@@ -25,7 +25,9 @@ window.loansUi = (() => {
     return `<article class="loan-offer ${offer.unlocked?'is-unlocked':'is-locked'}"><header><span class="loan-tier">${esc(t(offer.name,offer.nameDe))}</span><span aria-hidden="true">${offer.unlocked?'✦':'🔒'}</span></header><h2>${justizEuro(offer.principal)}</h2><dl><div><dt>${t('Borrowing fee','Kreditgebühr')}</dt><dd>${justizEuro(offer.fee)} · ${offer.feePercent}%</dd></div><div><dt>${t('Starting interest / real day','Anfangszinsen / echtem Tag')}</dt><dd>${offer.dailyInterestPercent}% · ${justizEuro(offer.interestPerDay)}</dd></div><div><dt>${t('After','Nach')} ${offer.termDays} ${t('real days','echten Tagen')}</dt><dd>${offer.overdueInterestPercent}% ${t('/ day','/ Tag')}</dd></div></dl><p class="loan-requirements"><span class="${data.level>=offer.requiredLevel?'is-met':''}">${t('Level','Level')} ${offer.requiredLevel}</span><span class="${data.netWorth>=offer.requiredNetWorth?'is-met':''}">${t('Net worth','Gesamtvermögen')} ${justizEuro(offer.requiredNetWorth)}</span></p><button class="primary-button" type="button" data-loan="review" data-offer="${esc(offer.id)}" ${disabled?'disabled':''}>${offer.unlocked?t('Review loan','Kredit prüfen'):t('Locked','Gesperrt')}</button></article>`;
   }
   function activeMarkup(loan){
-    return `<section class="loan-active ${loan.status==='overdue'?'is-overdue':''}" aria-labelledby="loan-active-title"><header><div><span class="loan-tier">${loan.status==='overdue'?t('OVERDUE','ÜBERFÄLLIG'):t('ACTIVE LOAN','LAUFENDER KREDIT')}</span><h2 id="loan-active-title">${esc(t(loan.name,loan.nameDe))}</h2></div><strong>${justizEuro(loan.total)}</strong></header><dl><div><dt>${t('Remaining principal','Offener Kreditbetrag')}</dt><dd>${justizEuro(loan.principal)}</dd></div><div><dt>${t('Fees & interest due','Offene Gebühren & Zinsen')}</dt><dd>${justizEuro(loan.interest)}</dd></div><div><dt>${t('Due','Fällig')}</dt><dd>${esc(date(loan.dueAt))}</dd></div><div><dt>${t('Current interest / real day','Aktuelle Zinsen / echtem Tag')}</dt><dd>${loan.status==='overdue'?loan.overdueInterestPercent:loan.dailyInterestPercent}%</dd></div><div><dt>${t('Interest after deadline','Zinsen nach Fälligkeit')}</dt><dd>${loan.overdueInterestPercent}% ${t('/ day','/ Tag')}</dd></div></dl><p>${t('Interest accrues continuously, including offline. Payments cover fees and interest first, then reduce principal. After the deadline, available wallet cash is collected automatically until the debt is cleared.','Zinsen laufen fortlaufend weiter, auch offline. Zahlungen decken zuerst Gebühren und Zinsen, danach den Kreditbetrag. Nach Fälligkeit wird verfügbares Guthaben automatisch eingezogen, bis die Schuld beglichen ist.')}</p><form data-loan-repay><label>${t('Repayment amount','Rückzahlungsbetrag')}<input name="amount" type="number" min="1" max="${Math.min(data.tokens,loan.total)}" step="1" inputmode="numeric" value="${Math.min(data.tokens,loan.total)||''}" required ${busy||pending()||!data.tokens?'disabled':''}></label><button class="primary-button" type="submit" ${busy||pending()||!data.tokens?'disabled':''}>${t('Repay','Zurückzahlen')}</button></form></section>`;
+    if(repaymentDraft?.loanId!==loan.id)repaymentDraft={loanId:loan.id,value:null};
+    const amount=repaymentDraft.value??(Math.min(data.tokens,loan.total)||'');
+    return `<section class="loan-active ${loan.status==='overdue'?'is-overdue':''}" aria-labelledby="loan-active-title"><header><div><span class="loan-tier">${loan.status==='overdue'?t('OVERDUE','ÜBERFÄLLIG'):t('ACTIVE LOAN','LAUFENDER KREDIT')}</span><h2 id="loan-active-title">${esc(t(loan.name,loan.nameDe))}</h2></div><strong>${justizEuro(loan.total)}</strong></header><dl><div><dt>${t('Remaining principal','Offener Kreditbetrag')}</dt><dd>${justizEuro(loan.principal)}</dd></div><div><dt>${t('Fees & interest due','Offene Gebühren & Zinsen')}</dt><dd>${justizEuro(loan.interest)}</dd></div><div><dt>${t('Due','Fällig')}</dt><dd>${esc(date(loan.dueAt))}</dd></div><div><dt>${t('Current interest / real day','Aktuelle Zinsen / echtem Tag')}</dt><dd>${loan.status==='overdue'?loan.overdueInterestPercent:loan.dailyInterestPercent}%</dd></div><div><dt>${t('Interest after deadline','Zinsen nach Fälligkeit')}</dt><dd>${loan.overdueInterestPercent}% ${t('/ day','/ Tag')}</dd></div></dl><p>${t('Interest accrues continuously, including offline. Payments cover fees and interest first, then reduce principal. After the deadline, available wallet cash is collected automatically until the debt is cleared.','Zinsen laufen fortlaufend weiter, auch offline. Zahlungen decken zuerst Gebühren und Zinsen, danach den Kreditbetrag. Nach Fälligkeit wird verfügbares Guthaben automatisch eingezogen, bis die Schuld beglichen ist.')}</p><form data-loan-repay><label>${t('Repayment amount','Rückzahlungsbetrag')}<input name="amount" type="number" min="1" max="${Math.min(data.tokens,loan.total)}" step="1" inputmode="numeric" value="${esc(amount)}" required ${busy||pending()||!data.tokens?'disabled':''}></label><button class="primary-button" type="submit" ${busy||pending()||!data.tokens?'disabled':''}>${t('Repay','Zurückzahlen')}</button></form></section>`;
   }
   function render(){
     if(currentAccountPage!=='/loans')return;
@@ -43,7 +45,7 @@ window.loansUi = (() => {
     try{
       const result=await accountApi(`loans/${operation}`,payload);
       if(request!==sequence||visit!==accountVisit||owner!==account?.id)return;
-      savePending(null);data=result.loans;updateAccount(result.user);
+      savePending(null);repaymentDraft=null;data=result.loans;updateAccount(result.user);
       success=operation==='borrow'?t('Loan paid into your wallet.','Kredit wurde deinem Guthaben gutgeschrieben.'):t('Repayment received.','Rückzahlung eingegangen.');
     }catch(failure){
       if(request!==sequence||visit!==accountVisit||owner!==account?.id)return;
@@ -62,6 +64,7 @@ window.loansUi = (() => {
     if(action==='borrow'&&selected&&!pending())void mutate('borrow',{offerId:selected.id,termsVersion:data.termsVersion,requestId:crypto.randomUUID()});
     if(action==='retry'){const item=pending();if(item&&['borrow','repay'].includes(item.operation))void mutate(item.operation,item.payload);}
   });
+  document.addEventListener('input',event=>{if(currentAccountPage==='/loans'&&event.target.matches('[data-loan-repay] [name="amount"]')&&data?.active)repaymentDraft={loanId:data.active.id,value:event.target.value};});
   document.addEventListener('submit',event=>{
     if(!event.target.matches('[data-loan-repay]'))return;
     event.preventDefault();if(busy||pending()||!data?.active)return;

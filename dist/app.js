@@ -25,7 +25,6 @@ const SCORE_VERSION = 2;
 const initialUtcDate = new Date().toISOString().slice(0, 10);
 let countdownTimer;
 let state = { view: 'start', round: 0, answers: [], scoreVersion: SCORE_VERSION };
-let dailyLoadPromise = Promise.resolve();
 let galleryAuction = null;
 let galleryIndex = 0;
 const GUESS_TIME_LIMIT = 25_000;
@@ -116,11 +115,7 @@ async function startRandomGame() {
   showGamePage();
   const request = ++higherLowerRequest;
   state.view = 'random-loading';
-  const button = document.querySelector('[data-action="random"]');
-  if (button) {
-    button.disabled = true;
-    button.textContent = t("Loading a random round…", "Zufallsrunde wird geladen …");
-  }
+  renderGameLoading();
   try {
     const payload = await guestGameRequest('start', { mode: 'random' });
     if (request !== higherLowerRequest) return;
@@ -137,13 +132,10 @@ async function startRandomGame() {
   } catch (error) {
     if (request !== higherLowerRequest) return;
     renderStart();
+    app.querySelector('[data-action="random"]')?.focus({ preventScroll: true });
     showToast(error.code === 'insufficient_variety' || error.message === 'insufficient_variety'
       ? t("Not enough different auctions yet. Please try again later.", "Noch nicht genug unterschiedliche Auktionen. Bitte versuche es später erneut.")
       : t("The random round could not be loaded.", "Die Zufallsrunde konnte gerade nicht geladen werden."));
-    if (button) {
-      button.disabled = false;
-      button.textContent = t("Start a free game", "Freies Spiel starten");
-    }
   }
 }
 
@@ -249,13 +241,22 @@ function stats() {
   };
 }
 
-let dailyStarting = false;
+function renderGameLoading() {
+  clearInterval(countdownTimer);
+  stopGuessTimer();
+  const mode = state.view === 'daily-loading' ? 'DAILY' : state.view === 'random-loading' ? t('FREE PLAY', 'FREIES SPIEL') : 'HIGHER OR LOWER';
+  app.innerHTML = `<section class="hl-screen" aria-busy="true"><p class="eyebrow">${mode}</p><h1 tabindex="-1" role="status">${t('Loading…', 'Wird geladen …')}</h1><button class="secondary-button" data-action="home">${t('Back to home', 'Zur Startseite')}</button></section>`;
+  app.querySelector('h1')?.focus({ preventScroll: true });
+}
+
+let dailyStarting = null;
 async function startGame() {
-  if (dailyStarting) return;
+  if (dailyStarting === higherLowerRequest && state.view === 'daily-loading') return;
   showGamePage();
-  dailyStarting = true;
   const request = ++higherLowerRequest;
+  dailyStarting = request;
   state.view = 'daily-loading';
+  renderGameLoading();
   try {
   const run = await accountGameStart('daily');
   if (request !== higherLowerRequest) return;
@@ -273,8 +274,8 @@ async function startGame() {
     return;
   }
   throw new Error(t('The Daily could not be loaded. Please try again.', 'Das Daily konnte nicht geladen werden. Bitte versuche es erneut.'));
-  } catch (error) { if (request === higherLowerRequest) { renderStart(); showToast(error.message); } }
-  finally { dailyStarting = false; }
+  } catch (error) { if (request === higherLowerRequest) { renderStart(); app.querySelector('[data-action="play"]')?.focus({ preventScroll: true }); showToast(error.message); } }
+  finally { if (dailyStarting === request) dailyStarting = null; }
 }
 
 function renderStart() {
@@ -694,7 +695,7 @@ document.addEventListener('click', event => {
   const action = event.target.closest('[data-action]')?.dataset.action;
   if (action === 'previous-image') changeAuctionImage(-1);
   if (action === 'next-image') changeAuctionImage(1);
-  if (action === 'play') dailyLoadPromise.finally(startGame);
+  if (action === 'play') startGame();
   if (action === 'random') startRandomGame();
   if (action === 'higher-lower') startHigherLower();
   if (action === 'hl-higher') guessHigherLower('higher');
@@ -794,7 +795,7 @@ document.addEventListener('dragstart', event => {
 });
 
 if (accountPaths.includes(location.pathname)) navigateAccountPage(location.pathname, false); else renderStart();
-dailyLoadPromise = loadDailyGame();
+loadDailyGame();
 updateDailyReset();
 setInterval(updateDailyReset, 1000);
 
@@ -828,7 +829,6 @@ function registerWebMcpTools() {
     inputSchema: { type: 'object', properties: {}, additionalProperties: false },
     annotations: { readOnlyHint: false, untrustedContentHint: false },
     async execute() {
-      await dailyLoadPromise;
       await startGame();
       return { gameNumber: gameNumber(), view: state.view, currentRound: state.round + 1 };
     }
@@ -856,5 +856,6 @@ document.addEventListener('jg:language', () => {
   else if (state.view === 'game') { renderRound(); if (guess !== undefined) document.querySelector('#price-input').value = guess; }
   else if (state.view === 'results') renderResults();
   else if (state.view === 'higher-lower') renderHigherLower();
+  else if (['daily-loading', 'random-loading', 'higher-lower-loading'].includes(state.view)) renderGameLoading();
   if (dailyCaseDialog.open && !dailyCaseBusy) renderDailyCaseDialog();
 });
