@@ -90,11 +90,11 @@ window.storeUi = (() => {
   function fineClass(fine) {
     const level=1+[500,2500,10000,50000].filter(limit=>fine>=limit).length;
     const labels=[['Low potential fine','Niedriges mögliches Bußgeld'],['Moderate potential fine','Mittleres mögliches Bußgeld'],['High potential fine','Hohes mögliches Bußgeld'],['Very high potential fine','Sehr hohes mögliches Bußgeld'],['Extreme potential fine','Extremes mögliches Bußgeld']];
-    return {level,symbol:['€','€€','€€€','€€€€','€€€€+'][level-1],label:`${t(...labels[level-1])} (${t('class','Klasse')} ${level} ${t('of','von')} 5)`};
+    return {level,label:`${t(...labels[level-1])} (${t('class','Klasse')} ${level} ${t('of','von')} 5)`};
   }
   function fineIndicator(fine) {
     const rating=fineClass(fine);
-    return `<span class="theft-fine-class is-level-${rating.level}" role="img" aria-label="${esc(rating.label)}" title="${esc(rating.label)}">${rating.symbol}</span>`;
+    return `<span class="theft-fine-class is-level-${rating.level}" role="img" aria-label="${esc(rating.label)}" title="${esc(rating.label)}">${Array.from({length:5},(_,index)=>`<span class="theft-fine-unit ${index<rating.level?'is-active':'is-inactive'}" aria-hidden="true">€</span>`).join('')}</span>`;
   }
   function estimatedFine(fine) {
     return `<div class="blackjack-risk"><span>${t('Potential fine if caught','Mögliches Bußgeld bei Erwischtwerden')}</span><strong>${fineIndicator(fine)}</strong></div>`;

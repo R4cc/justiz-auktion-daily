@@ -27,7 +27,8 @@
 .visitor-steal-button { color:#fff9e9;border:1px solid #363634;background:linear-gradient(120deg,#292b28,#492824);border-radius:8px;cursor:pointer;font:700 .75rem 'Manrope',sans-serif; }
 .visitor-steal-button:hover:not(:disabled) { background:#542a26; }
 .visitor-steal-label { flex:1;min-width:0;text-align:left; }
-.theft-fine-class { display:inline-flex;align-items:center;justify-content:center;flex-shrink:0;padding:4px 8px;border:1px solid currentColor;border-radius:6px;font:700 .85rem 'DM Mono',monospace;line-height:1.3;white-space:nowrap; }
+.theft-fine-class { display:inline-flex;align-items:center;justify-content:center;gap:1px;flex-shrink:0;padding:4px 8px;border:1px solid currentColor;border-radius:6px;font:700 .85rem 'DM Mono',monospace;line-height:1.3;white-space:nowrap; }
+.theft-fine-unit.is-inactive { color:#969b96;opacity:.65;font-weight:400; }
 .theft-fine-class.is-level-1 { color:#235236;background:#e2eedf; }
 .theft-fine-class.is-level-2 { color:#635020;background:#f3edd5; }
 .theft-fine-class.is-level-3 { color:#82460f;background:#ffead1; }

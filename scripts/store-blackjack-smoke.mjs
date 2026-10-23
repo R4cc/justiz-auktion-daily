@@ -74,7 +74,9 @@ try {
   const language=async lang=>{await page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))));const toggle=page.locator('[data-action="sidebar"]'),mobile=await toggle.isVisible();if(mobile&&await toggle.getAttribute('aria-expanded')!=='true')await toggle.click();await page.locator('#language-select').selectOption(lang);if(mobile&&await toggle.getAttribute('aria-expanded')==='true')await toggle.click();};
   const estimate=async()=>{
     const risk=page.locator('.blackjack-risk .theft-fine-class');
-    assert.equal(await risk.innerText(),'€');
+    assert.equal(await risk.textContent(),'€€€€€');
+    assert.equal(await risk.locator('.theft-fine-unit.is-active').count(),1);
+    assert.equal(await risk.locator('.theft-fine-unit.is-inactive').count(),4);
     assert.match(await risk.getAttribute('aria-label'),/\b1\b.*\b5\b/);
     assert.equal(await risk.getAttribute('role'),'img');
     assert.ok(!/\d/.test(await page.locator('.blackjack-risk strong').innerText()),'potential fines use symbols rather than numbers');
@@ -87,15 +89,24 @@ try {
   await page.evaluate(()=>{document.querySelector('#language-select').value='en';document.querySelector('#language-select').dispatchEvent(new Event('change',{bubbles:true}));});
   assert.equal(await page.locator('[data-store="start-heist"]').isDisabled(),false);assert.equal(await page.locator('[data-store="choose-color"]').count(),0);await page.locator('[data-store="close-heist"]').click();
   for(const width of [1440,768,390,320]){await page.setViewportSize({width,height:900});for(const lang of ['en','de']){await language(lang);await page.locator('[data-store="heist"]').first().click();await estimate();assert.equal(await page.locator('.blackjack-details').evaluate(el=>el.open),false);assert.ok(await page.locator('.store-heist-dialog').evaluate(el=>{const r=el.getBoundingClientRect();return r.left>=0&&r.right<=innerWidth&&el.scrollWidth<=el.clientWidth+1;}));await page.screenshot({path:`/tmp/jg-blackjack-rules-${width}-${lang}.png`});await page.locator('[data-store="close-heist"]').click();}}
-  const fineBands=[[20,'€',1],[499,'€',1],[500,'€€',2],[2499,'€€',2],[2500,'€€€',3],[9999,'€€€',3],[10000,'€€€€',4],[49999,'€€€€',4],[50000,'€€€€+',5],[500000,'€€€€+',5]];
-  for(const lang of ['en','de'])for(const [fine,symbol,level] of fineBands){
+  const fineBands=[[20,1],[499,1],[500,2],[2499,2],[2500,3],[9999,3],[10000,4],[49999,4],[50000,5],[500000,5]];
+  for(const lang of ['en','de'])for(const [fine,level] of fineBands){
     quotedFine=fine;await language(lang);await open();
     const badge=page.locator('.blackjack-risk .theft-fine-class'),button=page.locator('[data-store="heist"]').first();
-    assert.equal(await badge.innerText(),symbol);assert.equal(await button.locator('.theft-fine-class').innerText(),symbol);
+    for(const scale of [badge,button.locator('.theft-fine-class')]){
+      assert.equal(await scale.textContent(),'€€€€€');
+      assert.equal(await scale.locator('.theft-fine-unit.is-active').count(),level);
+      assert.equal(await scale.locator('.theft-fine-unit.is-inactive').count(),5-level);
+      if(level<5)assert.ok(await scale.evaluate(el=>{
+        const active=getComputedStyle(el.querySelector('.is-active')),inactive=getComputedStyle(el.querySelector('.is-inactive'));
+        return active.color!==inactive.color&&Number(inactive.opacity)<Number(active.opacity);
+      }),'unused levels must look greyed out');
+    }
     assert.equal(await badge.getAttribute('aria-label'),await button.getAttribute('title'));
     assert.match(await badge.getAttribute('aria-label'),new RegExp(`${lang==='en'?'class':'Klasse'} ${level} ${lang==='en'?'of':'von'} 5`));
     assert.ok(await badge.evaluate(el=>{const r=el.getBoundingClientRect();return r.left>=0&&r.right<=innerWidth;}));
     assert.ok(await page.locator('.store-heist-dialog').evaluate(el=>el.scrollWidth<=el.clientWidth+1));
+    if(fine===500)await page.locator('.store-heist-dialog').screenshot({path:`/tmp/jg-theft-fine-scale-2-320-${lang}.png`});
     await page.locator('[data-store="close-heist"]').click();
     assert.ok(await button.evaluate(el=>el.scrollWidth<=el.clientWidth+1),'theft button must fit even the longest symbol and German label');
     if(fine===50000)await page.screenshot({path:`/tmp/jg-theft-fine-class-5-320-${lang}.png`});
