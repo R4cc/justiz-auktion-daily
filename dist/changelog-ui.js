@@ -3,6 +3,28 @@ window.changelogUi = (() => {
   const entries = [
     {
       "date": "2026-10-23",
+      "title": "Navigation Performance",
+      "changes": [
+        {
+          "en": "Backend dashboard processing: 205.38 → 48.22 ms (157.16 ms faster). Account profile: 29.97 → 12.49 ms (17.48 ms faster).",
+          "de": "Backend-Verarbeitung der Ladenübersicht: 205,38 → 48,22 ms (157,16 ms schneller). Kontoprofil: 29,97 → 12,49 ms (17,48 ms schneller)."
+        },
+        {
+          "en": "Your Stores navigation: 729.0 → 342.5 ms (386.5 ms faster). Opening your own store: 730.3 → 460.3 ms (270.0 ms faster). Visiting another store: 350.8 → 300.4 ms (50.4 ms faster).",
+          "de": "Navigation zu deinen Läden: 729,0 → 342,5 ms (386,5 ms schneller). Eigenen Laden öffnen: 730,3 → 460,3 ms (270,0 ms schneller). Anderen Laden besuchen: 350,8 → 300,4 ms (50,4 ms schneller)."
+        },
+        {
+          "en": "Local benchmark medians with 5,000 inventory items on Node 22.23.4: five backend samples, three navigation samples. Navigation used a 390 px viewport, 4× CPU slowdown and 100 ms added per API request; these are not production timings.",
+          "de": "Lokale Benchmark-Mediane mit 5.000 Inventarartikeln unter Node 22.23.4: fünf Backend-Messungen, drei Navigationsmessungen. Navigation mit 390 px Ansichtsbreite, 4× CPU-Verlangsamung und zusätzlich 100 ms je API-Anfrage; keine Produktionszeiten."
+        },
+        {
+          "en": "Cold Stores directory loading showed no speedup: 578.1 → 595.0 ms in one sample each.",
+          "de": "Das erstmalige Laden des Ladenverzeichnisses wurde nicht schneller: 578,1 → 595,0 ms bei jeweils einer Messung."
+        }
+      ]
+    },
+    {
+      "date": "2026-10-23",
       "title": "Faster Loading",
       "changes": [
         {
