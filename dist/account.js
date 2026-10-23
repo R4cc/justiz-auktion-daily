@@ -143,6 +143,9 @@ function accountError(code) {
     item_sold: t('This item has already been sold.', 'Dieser Gegenstand wurde bereits verkauft.'),
     invalid_blackjack_action:t('Choose Hit or Stand.','Wähle Ziehen oder Halten.'),
     blackjack_turn_changed:t('Your hand changed in another tab. Reloading it.','Dein Blatt wurde in einem anderen Tab geändert. Es wird neu geladen.'),
+    police_recognized:t('Police recognized you. Your completed activity is saved; choose a fine or a sentence.','Die Polizei hat dich erkannt. Deine abgeschlossene Aktion ist gespeichert; wähle Bußgeld oder Haft.'),
+    invalid_police_choice:t('Choose Pay fine or Serve sentence.','Wähle Bußgeld zahlen oder Haftstrafe verbüßen.'),
+    police_encounter_not_found:t('This police encounter is no longer available.','Diese Polizeikontrolle ist nicht mehr verfügbar.'),
     player_jailed:t('Your account is locked until your jail sentence ends.','Dein Konto ist bis zum Ende der Haftstrafe gesperrt.'),
     unpaid_fine:t('Pay your outstanding fine before attempting another theft.','Begleiche dein offenes Bußgeld vor einem weiteren Diebstahl.'),
     heist_active:t('Finish your current theft attempt first.','Beende zuerst deinen laufenden Diebstahlversuch.'),
@@ -167,6 +170,10 @@ async function accountApi(route, payload) {
     ...(payload === undefined ? {} : { body: JSON.stringify(payload) }) });
   const result = await response.json();
   if (!response.ok) { const error = new Error(accountError(result.error)); error.code = result.error; if(result.justice&&account){account.justice=result.justice;window.justiceUi?.sync(account);} throw error; }
+  if(result.user?.justice?.policeEncounter && !['me','login','register','police/resolve','loans/repay'].includes(route)){
+    updateAccount(result.user);
+    const error=new Error(accountError('police_recognized'));error.code='police_recognized';throw error;
+  }
   return result;
 }
 const seenSidebarEntries = new Set();
@@ -369,7 +376,7 @@ const accountReady = Promise.all([accountApi('me'), catalogReady, economyReady])
 }).catch(() => null);
 function showGamePage() {
   window.storeReputationUi?.stop();
-  if(account?.justice?.jailed){window.justiceUi?.sync(account);return;}
+  if((account?.justice?.jailed||account?.justice?.policeEncounter)){window.justiceUi?.sync(account);return;}
   clearTimeout(auctionSearchTimer); auctionBrowserRequest++;
   caseReveal.close(); auctionReveal.close();
   if (typeof traderStockDialog !== 'undefined') traderStockDialog.close();
@@ -441,7 +448,7 @@ async function navigateAccountPage(path, push = true) {
     if (visit !== accountVisit) return;
     updateAccount(session.user);
     // Skip every page loader while a temporary password still needs replacing.
-    if (account?.justice?.jailed) {pageLoaded=true;window.justiceUi?.sync(account);return;}
+    if ((account?.justice?.jailed||account?.justice?.policeEncounter)) {pageLoaded=true;window.justiceUi?.sync(account);return;}
     if (account?.mustChangePassword) {
       pageLoaded = true; renderAccountPage();
       accountContent.querySelector('h1')?.focus({ preventScroll: true });
@@ -522,7 +529,7 @@ function accountValueMarkup() {
   return `<div class="account-value"><span>${t('TOTAL ACCOUNT VALUE', 'GESAMTER KONTOWERT')}<strong>${euro(account.accountValueEur)}</strong></span>${infoTip(t(`Auction values of your collection (${account.itemCount} item${account.itemCount === 1 ? "" : "s"}). Justiz€ is not included in the euro value.`, `Auktionswerte deiner Sammlung (${account.itemCount} Lose). Justiz€ zählt nicht zum Eurowert.`), t('How account value is calculated', 'Berechnung des Kontowerts'))}</div>`;
 }
 function renderAccountPage() {
-  if (account?.justice?.jailed){window.justiceUi?.sync(account);return;}
+  if ((account?.justice?.jailed||account?.justice?.policeEncounter)){window.justiceUi?.sync(account);return;}
   if (!pageLoaded || !currentAccountPage) return;
   if (caseOpening === accountVisit && currentAccountPage === '/shop') return;
   // A temporary password from an admin reset allows exactly one thing next.
@@ -666,7 +673,7 @@ function criminalRecordMarkup() {
   const record = accountCriminalRecord;
   const rows = record.records.map(entry => {
     const at = entry.recordedAt ?? entry.attemptedAt, date = new Date(at);
-    return `<li class="criminal-record-entry" tabindex="-1" data-offense="${accountEscape(entry.id)}"><div><strong>${t('Attempted theft', 'Versuchter Diebstahl')}</strong><p><time datetime="${date.toISOString()}">${date.toLocaleString(uiLocale(),{dateStyle:'medium',timeStyle:'short'})}</time>${entry.recordedAt === null ? ` · ${t('Attempt date; recording time unavailable', 'Versuchsdatum; Erfassungszeit unbekannt')}` : ''}${entry.abandoned ? ` · ${t('Abandoned attempt', 'Abgebrochener Versuch')}` : ''}</p></div><div class="criminal-record-fine"><span>${entry.legacyFee ? t('Mischief fee', 'Unfuggebühr') : t('Fine', 'Bußgeld')}</span><strong>${justizEuro(entry.fine)}</strong></div></li>`;
+    return `<li class="criminal-record-entry" tabindex="-1" data-offense="${accountEscape(entry.id)}"><div><strong>${entry.crime==='police_recognition'?t('Recognized by police','Von der Polizei erkannt'):t('Attempted theft', 'Versuchter Diebstahl')}</strong><p><time datetime="${date.toISOString()}">${date.toLocaleString(uiLocale(),{dateStyle:'medium',timeStyle:'short'})}</time>${entry.recordedAt === null ? ` · ${t('Attempt date; recording time unavailable', 'Versuchsdatum; Erfassungszeit unbekannt')}` : ''}${entry.abandoned ? ` · ${t('Abandoned attempt', 'Abgebrochener Versuch')}` : ''}</p></div><div class="criminal-record-fine"><span>${entry.legacyFee ? t('Mischief fee', 'Unfuggebühr') : t('Fine', 'Bußgeld')}</span><strong>${justizEuro(entry.fine)}</strong></div></li>`;
   }).join('');
   return `<section class="profile-criminal-record" aria-labelledby="criminal-record-title"><header><h2 id="criminal-record-title">${t('Criminal record', 'Strafregister')}</h2>${record.total ? `<p>${number(record.total)} ${t('recorded offenses', 'erfasste Vergehen')} · ${t('Total penalties', 'Strafen gesamt')}: ${justizEuro(record.totalPenalties)}</p>` : ''}</header>${rows ? `<ol class="criminal-record-list">${rows}</ol>${record.hasMore ? `<button type="button" class="secondary-button" data-account="criminal-record-more">${t('Show older offenses', 'Ältere Vergehen anzeigen')}</button>` : ''}` : `<p class="criminal-record-clear">${t('No recorded offenses.', 'Keine erfassten Vergehen.')}</p>`}</section>`;
 }

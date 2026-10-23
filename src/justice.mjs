@@ -1,3 +1,4 @@
+import { ensurePoliceSchema, pendingPoliceEncounter } from './police-state.mjs';
 import { randomUUID } from 'node:crypto';
 import { statisticEvent } from './statistics-ledger.mjs';
 import { AccountError } from './errors.mjs';
@@ -9,6 +10,7 @@ import { seizeStoreCash } from './store-cash.mjs';
 
 const hasTable = (db, name) => Boolean(db.prepare("SELECT 1 FROM sqlite_schema WHERE type='table' AND name=?").get(name));
 export function ensureJusticeSchema(db) {
+  ensurePoliceSchema(db);
   db.exec(`CREATE TABLE IF NOT EXISTS player_justice (
     user_id TEXT PRIMARY KEY REFERENCES users(id), fine_due INTEGER NOT NULL DEFAULT 0,
     offences INTEGER NOT NULL DEFAULT 0, jailed_until INTEGER NOT NULL DEFAULT 0,
@@ -24,10 +26,11 @@ export function justiceStatus(db, userId, now) {
   const row = db.prepare('SELECT * FROM player_justice WHERE user_id=?').get(userId);
   return { fineDue: row?.fine_due || 0, offences: row?.offences || 0,
     jailedUntil: row?.jailed_until || 0, jailed: Boolean(row && row.jailed_until > now),
-    lastConsequence: row?.last_result ? JSON.parse(row.last_result) : null };
+    policeEncounter:pendingPoliceEncounter(db,userId),lastConsequence: row?.last_result ? JSON.parse(row.last_result) : null };
 }
 export function assertPlayerFree(db, userId, now = Date.now()) {
   const status = justiceStatus(db, userId, now);
+  if (status.policeEncounter) { const error=new AccountError('police_recognized',423);error.justice=status;throw error; }
   if (status.jailed) { const error = new AccountError('player_jailed', 423); error.justice = status; throw error; }
   return status;
 }
@@ -105,6 +108,8 @@ export function collectFine(db, userId, now) {
 }
 export function imposeFine(db, userId, fine, now) {
   ensureJusticeSchema(db);
+  const previous=db.prepare('SELECT fine_due FROM player_justice WHERE user_id=?').get(userId)?.fine_due||0;
+  if(!Number.isSafeInteger(fine)||fine<0||!Number.isSafeInteger(previous+fine))throw new AccountError('token_balance_limit',409);
   db.prepare(`INSERT INTO player_justice(user_id,fine_due,offences) VALUES (?,?,1)
     ON CONFLICT(user_id) DO UPDATE SET fine_due=fine_due+excluded.fine_due,offences=offences+1`).run(userId,fine);
   const collected=collectFine(db,userId,now);

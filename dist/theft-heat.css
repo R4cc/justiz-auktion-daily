@@ -4,3 +4,5 @@
 .heat-star-fill{position:absolute;inset:0 auto 0 0;overflow:hidden;color:#ffd76a;filter:drop-shadow(0 0 2px #a56a20)}
 .theft-heat .info-tooltip{margin-left:auto;color:#f5f2e9;flex-shrink:0}
 @media(max-width:360px){.theft-heat{gap:.45rem;padding:.65rem}.heat-stars{font-size:1.4rem}}
+
+.theft-heat.is-wanted{border-color:#e59b50;background:#442b29}.heat-risk{font-size:.78rem;font-weight:700;color:#ffdc97;overflow-wrap:anywhere}

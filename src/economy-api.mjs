@@ -35,7 +35,7 @@ export function createEconomyApi({ dataDir, json, flags = featureFlags(), accoun
     if (request.method !== 'GET' || !url.pathname.startsWith('/api/') || url.pathname.startsWith('/api/account/')) return false;
     try {
       const player=request.headers?.cookie?.includes('jg_session=') ? sessionUser(request) : null;
-      if (player?.justice?.jailed && url.pathname!=='/api/features') { const error=new AccountError('player_jailed',423); error.justice=player.justice; throw error; }
+      if ((player?.justice?.jailed||player?.justice?.policeEncounter) && url.pathname!=='/api/features') { const error=new AccountError(player.justice.policeEncounter?'police_recognized':'player_jailed',423); error.justice=player.justice; throw error; }
       if (url.pathname === '/api/features') {
         json(response, 200, { features: Object.fromEntries(Object.keys(featureFlags({})).map(key => [key, Boolean(flags[key])])) });
         return true;

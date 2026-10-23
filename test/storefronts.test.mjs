@@ -1,4 +1,4 @@
-import { playerHeat, HEAT_DECAY_INTERVAL } from '../src/theft-heat.mjs';
+import { playerHeat, heatScaledFine, HEAT_DECAY_INTERVAL } from '../src/theft-heat.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtemp, rm } from 'node:fs/promises';
@@ -28,7 +28,7 @@ async function fixture(t) {
   accounts.db(db=>db.prepare('UPDATE businesses SET mischief_enabled=1 WHERE id=?').run(shop.id));
   t.after(async () => { closeDataStore(dir); await rm(dir, { recursive: true, force: true }); });
   let next = 0;
-  const payload = (inventoryId = 'wine-0') => ({ shopId: shop.id, inventoryId, expectedPrice: 120, expectedFine:200, requestId: `store-request-${++next}-0001` });
+  const payload = (inventoryId = 'wine-0') => ({ shopId: shop.id, inventoryId, expectedPrice: 120, expectedFine:accounts.db(db=>heatScaledFine(200,playerHeat(db,buyer.id,now).value)), requestId: `store-request-${++next}-0001` });
   const balance = user => accounts.db(db => db.prepare('SELECT tokens FROM users WHERE id = ?').get(user.id).tokens);
   const itemOwner = id => accounts.db(db => db.prepare('SELECT user_id FROM inventory WHERE id = ?').get(id).user_id);
   const view = (user = buyer, at = now) => visitStore(dir, user, shop.id, { now: at }).store;

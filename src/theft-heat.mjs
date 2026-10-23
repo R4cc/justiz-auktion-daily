@@ -2,6 +2,13 @@ export const HEAT_MAX = 10;
 export const HEAT_PER_ATTEMPT = 1;
 export const HEAT_DECAY_INTERVAL = 30 * 60000;
 export const HEAT_CATCH_BONUS = 5;
+export const HEAT_FINE_MULTIPLIERS=Object.freeze([1,1.25,1.5,2,3,4,6,8,12,18,30]);
+export const POLICE_RECOGNITION_CHANCES=Object.freeze([0,0,0,0,0,0,0,0,2,6,15]);
+export const POLICE_CHECK_INTERVAL=2*60000;
+const heatIndex=value=>Math.max(0,Math.min(HEAT_MAX,Math.floor(value||0)));
+export const heatFineMultiplier=value=>HEAT_FINE_MULTIPLIERS[heatIndex(value)];
+export const recognitionChance=value=>POLICE_RECOGNITION_CHANCES[heatIndex(value)];
+export const heatScaledFine=(base,value)=>Math.min(Number.MAX_SAFE_INTEGER,Math.ceil(base*heatFineMultiplier(value)));
 
 export function ensureHeatSchema(db) {
   db.exec(`CREATE TABLE IF NOT EXISTS player_heat (
@@ -20,6 +27,8 @@ export function playerHeat(db, userId, now = Date.now()) {
   const value = Math.max(0, (row?.value || 0) - elapsed);
   return { value, stars: value / 2, maxStars: 5, perAttemptStars: .5, decayMinutes: 30,
     catchBonusPercent: value * HEAT_CATCH_BONUS,
+    fineMultiplier:heatFineMultiplier(value),recognitionChancePercent:recognitionChance(value),
+    rules:{fineMultipliers:HEAT_FINE_MULTIPLIERS,recognitionChances:POLICE_RECOGNITION_CHANCES,checkIntervalMinutes:2},
     nextDecayAt: value ? row.updated_at + (elapsed + 1) * HEAT_DECAY_INTERVAL : null };
 }
 

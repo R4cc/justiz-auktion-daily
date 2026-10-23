@@ -1,3 +1,4 @@
+import { checkPoliceRecognition, policeActivityKey, resolvePoliceEncounter } from './police-recognition.mjs';
 import { activeCaseRebates, caseRebateDashboard, createCaseRebate, cancelCaseRebate } from './case-rebates.mjs';
 import { loanDashboard, borrowLoan, repayLoan } from './loans.mjs';
 import { userStatistics } from './user-statistics.mjs';
@@ -34,8 +35,8 @@ import { jsonBody as body } from './json-body.mjs';
 const AUCTION_PAGE_SIZE = 25;
 
 function checkJail(user, route) {
-  if (user?.justice?.jailed && !['me','logout','login','password/change','loans','loans/repay'].includes(route)) {
-    const error = new AccountError('player_jailed', 423);
+  if ((user?.justice?.jailed||user?.justice?.policeEncounter) && !['me','logout','login','password/change','loans','loans/repay','police/resolve'].includes(route)) {
+    const error = new AccountError(user.justice.policeEncounter?'police_recognized':'player_jailed', 423);
     error.justice = user.justice;
     throw error;
   }
@@ -64,7 +65,7 @@ function searchAuctions(auctions, query) {
     .some(value => String(value ?? '').toLowerCase().includes(needle)));
 }
 
-export async function createAccountApi({ dataDir, dailyPayload, json, env = process.env, flags = featureFlags(env) }) {
+export async function createAccountApi({ dataDir, dailyPayload, json, env = process.env, flags = featureFlags(env), policeRandom }) {
   const accounts = new Accounts(dataDir, { flags });
   await accounts.bootstrap(env.ADMIN_USERNAME, env.ADMIN_PASSWORD);
   const secure = env.COOKIE_SECURE !== 'false' && (env.COOKIE_SECURE === 'true' || env.NODE_ENV === 'production');
@@ -192,6 +193,7 @@ export async function createAccountApi({ dataDir, dailyPayload, json, env = proc
         response.setHeader('set-cookie', cookie(nextToken));
         result = { user: accounts.profile(user) };
       }
+      else if(route==='police/resolve') result={consequence:resolvePoliceEncounter(dataDir,user,payload),user:accounts.profile(user)};
       else if(route==='admin/case-rebates') result={rebate:createCaseRebate(dataDir,user,payload),...caseRebateDashboard(dataDir,user)};
       else if(route==='admin/case-rebates/cancel') result={rebate:cancelCaseRebate(dataDir,user,payload.id),...caseRebateDashboard(dataDir,user)};
       else if(route==='loans/borrow') result={...borrowLoan(dataDir,user,payload),user:accounts.profile(user)};
@@ -293,6 +295,11 @@ export async function createAccountApi({ dataDir, dailyPayload, json, env = proc
       else if (route === 'games/daily-case/claim') result = { item: accounts.claimDailyCase(user, payload.id), user: accounts.profile(user) };
       else if (route === 'inventory/case/open') result = { item: accounts.openSealedCase(user, payload.id), user: accounts.profile(user) };
       else throw new AccountError('not_found', 404);
+      const activityKey=policeActivityKey(route,payload,result);
+      if(activityKey){
+        const encounter=checkPoliceRecognition(dataDir,user,activityKey,{...(policeRandom?{random:policeRandom}:{})});
+        if(encounter)result={...result,user:accounts.profile(user)};
+      }
       json(response, 200, result);
     } catch (error) {
       if (error instanceof AccountError) json(response, error.status, { error: error.message, ...(error.justice ? {justice:error.justice} : {}) });

@@ -104,6 +104,7 @@ export function syncUserStatistics(db,userId,now=Date.now()) {
    if(!tracked)add(`fine:${consequence.offences}:legacy:${row.id}`,'out:fine',{amount:(consequence.paidCash||0)+(consequence.paidStoreCash||0),at:row.settled_at||row.created_at});
   }
  }
+ for(const row of rows(db,'police_encounters','SELECT * FROM police_encounters WHERE user_id=?',userId))add(`police:${row.id}`,'police:recognized',{quantity:1,value:row.fine,at:row.created_at});
  for(const row of rows(db,'store_heists',"SELECT * FROM store_heists WHERE owner_id=? AND status='caught' AND blackjack IS NOT NULL",userId)){if(row.chance_basis_points!=null)add(`fine-in:${row.id}`,'in:fine',{amount:row.fee,at:row.settled_at||row.created_at});}
  for(const row of rows(db,'store_events','SELECT * FROM store_events WHERE owner_id=?',userId)){
   const result=payload(row.result);
@@ -143,7 +144,7 @@ export function statisticsView(db,userId,now=Date.now()) {
   cases:{opened:sum(cases,'quantity'),value:sum(cases,'value'),cost:stat('out:case_shop')+stat('out:case_auction'),bought:stat('out:case_shop','quantity')+stat('out:case_auction','quantity'),openedCost:sum(cases,'cost'),unknownCosts:cases.filter(event=>event.cost===null).length,bestValue:cases.reduce((best,event)=>Math.max(best,event.value),0),rarities:rarityIds.map(id=>({id,count:sum(cases.filter(event=>event.rarity===id),'quantity')}))},
   trading:{itemsSold:sum(sales,'quantity'),auctionWins:stat('auction_win','quantity'),auctionsListed:stat('auction_list','quantity'),bids:stat('auction_bid','quantity'),profit:sum(tracked)-sum(tracked,'cost')-trackedGuards,unknownCosts:sum(sales.filter(event=>event.cost===null),'quantity'),palettesOpened:stat('palette_open','quantity'),paletteItems:stat('palette_open','value')},
   stores:{opened:stat('store_open','quantity'),visitors:stat('store_visitors','quantity')+stat('store_player_visit','quantity'),playerVisits:stat('store_player_visit','quantity'),sales:stat('in:sale_store','quantity'),revenue:stat('in:sale_store'),collected:stat('collected'),collections:stat('collected','quantity'),unknownCosts:events.filter(event=>event.kind==='store_open'&&event.cost===null).length},
-  theft:{attempts:sum(kinds('heist:'),'quantity'),stolen:stat('heist:stolen','quantity'),caught:stat('heist:caught','quantity'),escaped:stat('heist:escaped','quantity'),tied:stat('heist:push','quantity')},
+  theft:{attempts:sum(kinds('heist:'),'quantity'),stolen:stat('heist:stolen','quantity'),caught:stat('heist:caught','quantity')+stat('police:recognized','quantity'),escaped:stat('heist:escaped','quantity'),tied:stat('heist:push','quantity')},
   community:{prestiges:stat('prestige','quantity'),reviews:stat('review','quantity')},
   games:{xpEarned:stat('xp_earned'),dailyCompleted:stat('game:daily','quantity'),bestDailyScore:events.filter(event=>event.kind==='game:daily').reduce((best,event)=>Math.max(best,event.value),0),higherLowerCompleted:stat('game:higher-lower','quantity'),bestStreak:events.filter(event=>event.kind==='game:higher-lower').reduce((best,event)=>Math.max(best,event.value),0)}};
 }

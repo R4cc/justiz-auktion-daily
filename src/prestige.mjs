@@ -14,7 +14,7 @@ export function prestigeState(db, userId, xp, now = Date.now()) {
   const effects = prestigeEffects(db, userId);
   let blocked = null;
   const justice = justiceStatus(db, userId, now);
-  if (justice.jailed || justice.fineDue) blocked = 'prestige_justice_pending';
+  if (justice.jailed || justice.fineDue || justice.policeEncounter) blocked = 'prestige_justice_pending';
   if (has(db, 'store_heists') && db.prepare("SELECT 1 FROM store_heists WHERE (user_id=? OR owner_id=?) AND status IN ('active','police') LIMIT 1").get(userId, userId)) blocked = 'prestige_heist_pending';
   if (has(db, 'resale_auctions') && db.prepare(`SELECT 1 FROM resale_auctions WHERE settled_at IS NULL AND status!='cancelled'
     AND current_bidder_id IS NOT NULL AND (current_bidder_id=? OR seller_id=?) LIMIT 1`).get(userId, userId)) blocked = 'prestige_auction_pending';
@@ -59,6 +59,7 @@ export function prestigeAccount(dataDir, user, { buffId, expectedCount, requestI
       if (has(db, table)) db.prepare(`DELETE FROM ${table} WHERE user_id=?`).run(row.id);
     }
     db.prepare('UPDATE store_heists SET retired=1 WHERE user_id=?').run(row.id);
+    if(has(db,'police_encounters'))db.prepare('UPDATE police_encounters SET retired=1 WHERE user_id=?').run(row.id);
     db.prepare('UPDATE daily_case_rewards SET opened_at=? WHERE user_id=? AND opened_at IS NULL').run(now,row.id);
     db.prepare(`DELETE FROM daily_rewards WHERE user_id=? AND earned=0 AND run_id IN
       (SELECT id FROM account_games WHERE user_id=? AND complete=0)`).run(row.id,row.id);

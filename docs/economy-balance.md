@@ -114,3 +114,20 @@ Direct Case Store prices keep their existing expected-value baseline. Each offer
 Quotes publish the actual resulting rarity probabilities, and sealed draws use that same distribution. New winners remain private and frozen at purchase. Existing unopened paid cases get one first-opening upgrade opportunity when the saved find is worth less than half the recorded acquisition cost. Valuable saved wins, new balanced winners and free Daily grants are preserved. Only real better-valued items qualify; a rare low-result branch remains. The existing reward identity, paid cost, ownership locks and acquisition history remain intact. The upgrade, consumption and saved opening result commit together, and replays cannot reroll or add another item.
 
 Run `node scripts/case-value-report.mjs <archive.json>` or `--stress` for exact before/after value probabilities over multiple rotations and market regimes. The checked-in [case value audit](case-value-balance-report.md) uses an archived snapshot and a synthetic stress pool. These are reference-value models; later market changes and realized auction or store proceeds can differ. Free Daily draw odds retain their separate rules. Legacy paid direct-open cases use the same value-aware probability model within their own themed item pools.
+
+
+## High-Heat recognition and fines — 23 October 2026
+
+Completed case purchases/openings, palette reveals, inventory sales, player-store purchases, register collections with cash, and auction listings/bids can expose a wanted player to police. Read-only pages, refreshes, authentication, administrative tools, Daily answers and penalty payments do not create checks. Below four stars there is no recognition roll. At four, four-and-a-half and five stars the chance is 2%, 6% and 15% respectively, with at most one random check per two real minutes across all eligible activities. Completed-item/receipt keys are persisted even for skipped checks, so retries cannot reroll them later. Pending theft blackjack/police-wheel attempts keep their existing resolution rather than receiving another recognition check.
+
+| Wanted stars | Recognition per eligible check | Fine multiplier | First recognition sentence |
+|---:|---:|---:|---:|
+| 4 | 2% | 12× | 15 minutes |
+| 4½ | 6% | 18× | 30 minutes |
+| 5 | 15% | 30× | 60 minutes |
+
+For comparison, ten independent checks at a constant star level give an 18.3%, 46.1% or 80.3% chance of recognition. Ordinary decay still removes half a star every thirty minutes. Fines scale from the existing theft fine using multipliers for every half-star: 1 / 1.25 / 1.5 / 2 / 3 / 4 / 6 / 8 / 12 / 18 / 30. The accepted theft attempt saves its fine; later Heat changes cannot increase that saved amount. Safer cooled quotes are accepted without exceeding the player's preview.
+
+Recognition fines use a base of the larger of J€250 and 2% of current net worth, multiplied by Heat. Both fine and sentence are fixed when recognized. Recognition occurs after a successful activity: its purchase, item or trade is already saved. A persistent, non-dismissible police encounter then blocks gameplay until the player pays from available cash or chooses the saved jail sentence. Insufficient cash cannot overdraw the account; jail is always available. Serving a recognition sentence retains cash and items. Repeat recorded offenses double the recognition sentence, capped at twenty-four hours. Both choices reduce Heat to at most three stars, and penalty resolution is atomic and idempotent. Reloads, session changes, concurrent tabs and later Heat decay cannot dismiss an unresolved encounter. Timed jail remains enforced by both account and public economy APIs.
+
+Recognition incidents appear in the criminal record and lifetime catch totals. Paid recognition fines are a currency sink and count once in spending statistics. Prestige cannot bypass a pending encounter; completed records retire with the existing criminal-record reset policy while lifetime statistics remain. Administrative economy resets clear recognition checks and encounters.

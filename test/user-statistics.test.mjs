@@ -5,7 +5,7 @@ import { Accounts } from '../src/accounts.mjs';
 import { closeDataStore,upsertAuctions } from '../src/database.mjs';
 import { userStatistics } from '../src/user-statistics.mjs';
 import { buyBusiness,stockBusiness } from '../src/businesses.mjs';
-import { buyStoreItem,collectStoreCash,tipStore,recordStoreVisit,startStoreHeist,actStoreHeist,spinStoreHeist,HEIST_COOLDOWN } from '../src/storefronts.mjs';
+import { buyStoreItem,collectStoreCash,tipStore,recordStoreVisit,startStoreHeist,actStoreHeist,spinStoreHeist,HEIST_COOLDOWN,visitStore } from '../src/storefronts.mjs';
 import { listItem,placeBid,settleAuction } from '../src/resale.mjs';
 import { loadCaseStoreCatalog,quoteCaseStore } from '../src/case-store.mjs';
 import { marketIndexes } from '../src/market.mjs';
@@ -72,15 +72,15 @@ test('theft outcomes and cash fines are counted once and kept separate from the 
  const f=await fixture(t),shop=buyBusiness(f.dir,f.other,'wine','popup',{now}).shop;
  for(const id of ['stolen','caught']){f.item(id);stockBusiness(f.dir,f.other,shop.id,[id],{now});}
  f.accounts.db(db=>db.prepare('UPDATE businesses SET traffic_popularity=0 WHERE id=?').run(shop.id));
- const start=(id,at)=>startStoreHeist(f.dir,f.user,{shopId:shop.id,inventoryId:id,expectedPrice:120,expectedFine:200,requestId:'stats-theft-start-'+id},{now:at,draw:max=>max-1}).id;
+ const start=(id,at)=>startStoreHeist(f.dir,f.user,{shopId:shop.id,inventoryId:id,expectedPrice:120,expectedFine:visitStore(f.dir,f.user,shop.id,{now:at}).store.stock.find(item=>item.id===id).theft.fine,requestId:'stats-theft-start-'+id},{now:at,draw:max=>max-1}).id;
  const win=start('stolen',now);assert.equal(f.stats().theft.attempts,1);assert.equal(f.stats().theft.stolen,0);
  f.accounts.db(db=>db.prepare('UPDATE store_heists SET blackjack=? WHERE id=?').run(JSON.stringify({player:[9,8],dealer:[6,10],deck:[],turn:0,outcome:'active'}),win));
  const action={heistId:win,action:'stand',turn:0,requestId:'stats-winning-theft-001'};assert.equal(actStoreHeist(f.dir,f.user,action,{now}).outcome,'stolen');actStoreHeist(f.dir,f.user,action,{now});
  assert.equal(f.stats().theft.stolen,1);assert.equal(f.stats().money.earned,0);
  const at=now+HEIST_COOLDOWN+1,loss=start('caught',at);f.accounts.db(db=>db.prepare('UPDATE store_heists SET blackjack=? WHERE id=?').run(JSON.stringify({player:[2,3],dealer:[9,8],deck:[],turn:0,outcome:'active'}),loss));
  actStoreHeist(f.dir,f.user,{heistId:loss,action:'stand',turn:0,requestId:'stats-losing-theft-001'},{now:at,policeDraw:()=>0});spinStoreHeist(f.dir,f.user,{heistId:loss,requestId:'stats-caught-wheel-001'},{now:at});
- const s=f.stats();assert.equal(s.theft.attempts,2);assert.equal(s.theft.caught,1);assert.equal(s.theft.stolen,1);assert.equal(s.money.finesPaid,200);assert.equal(s.money.spent,200);
- assert.equal(userStatistics(f.dir,f.other,{now:at}).money.finesReceived,200);assert.equal(f.stats().money.finesPaid,200);
+ const s=f.stats();assert.equal(s.theft.attempts,2);assert.equal(s.theft.caught,1);assert.equal(s.theft.stolen,1);assert.equal(s.money.finesPaid,300);assert.equal(s.money.spent,300);
+ assert.equal(userStatistics(f.dir,f.other,{now:at}).money.finesReceived,300);assert.equal(f.stats().money.finesPaid,300);
 });
 
 test('lifetime statistics survive Prestige, include discounted case payments, and reset with an administrative economy reset',async t=>{
