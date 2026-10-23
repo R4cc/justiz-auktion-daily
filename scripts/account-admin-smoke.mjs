@@ -56,7 +56,7 @@ try {
   for(const width of [1440,390,320])for(const language of ['en','de']){
     await page.setViewportSize({width,height:1000});
     await page.locator('#language-select').evaluate((select,value)=>{select.value=value;select.dispatchEvent(new Event('change',{bubbles:true}));},language);
-    for(const name of ['market','players','auctions','access','maintenance']){
+    for(const name of ['market','players','auctions','access','rebates','maintenance']){
       await tab(name);assert.ok(await page.locator(`[data-admin-panel="${name}"]`).isVisible());
       assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1),`admin ${name} ${language} ${width} overflow`);
     }

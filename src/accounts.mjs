@@ -1,3 +1,4 @@
+import { activeCaseRebates } from './case-rebates.mjs';
 import { playerHeat } from './theft-heat.mjs';
 import { collectOverdueLoan, loanDebt } from './loan-ledger.mjs';
 import { prestigeState } from './prestige.mjs';
@@ -367,7 +368,7 @@ export class Accounts {
       // Auction state goes first so escrow and inventory locks disappear in the
       // same transaction that restores balances. Authentication/social tables,
       // registration codes, passwords, bans and account_sessions are untouched.
-      for (const table of ['loan_receipts', 'player_loans', 'user_statistics_events', 'user_statistics_state', 'trader_sales', 'item_acquisitions', 'trader_milestones', 'resale_npc_interest', 'resale_bids', 'resale_auctions',
+      for (const table of ['case_rebates', 'loan_receipts', 'player_loans', 'user_statistics_events', 'user_statistics_state', 'trader_sales', 'item_acquisitions', 'trader_milestones', 'resale_npc_interest', 'resale_bids', 'resale_auctions',
         'store_review_packs', 'store_events', 'store_event_checks', 'npc_store_theft_checks', 'store_heists', 'player_heat', 'store_review_likes', 'store_npc_feedback', 'store_reviews', 'store_visits', 'store_reactions', 'store_receipts',
         'business_upgrade_requests', 'business_stock_history', 'business_takeovers', 'business_sales', 'business_stock', 'businesses', 'town_plots', 'wholesale_bids', 'wholesale_auctions',
         'primary_palette_mystery_stock', 'primary_palette_stock_units', 'primary_palette_stock_draws', 'primary_palette_bids', 'primary_palette_rewards', 'primary_palette_auctions', 'stock_palette_purchases', 'stock_palette_editions', 'skill_purchases', 'user_skills',
@@ -634,15 +635,15 @@ export class Accounts {
         if (previous.tier !== caseId) fail('request_conflict', 409);
         return currentItemValue(JSON.parse(previous.item));
       }
+      const now = this.now();
       const luckPercent=skillEffects(db,user.id).luckPercent;
-      const quote = quoteCaseStore(catalog, marketIndexes(db, this.now()),{luckPercent,caseDiscountPercent:prestigeEffects(db,user.id).caseDiscountPercent});
+      const quote = quoteCaseStore(catalog, marketIndexes(db, now),{luckPercent,caseDiscountPercent:prestigeEffects(db,user.id).caseDiscountPercent,rebates:activeCaseRebates(db,now)});
       const offer = quote.cases.find(box => box.id === caseId);
       if (!offer) {
         if (['common', 'uncommon', 'rare', 'epic', 'legendary'].includes(caseId)) fail('catalog_changed', 409);
         fail('invalid_case');
       }
       if (revision !== quote.revision) fail('catalog_changed', 409);
-      const now = this.now();
       consumeCaseStock(db, caseId, now);
       const prepared = prepareMysteryCase(catalog, STORE_CASES.find(box => box.id === caseId), { now, luckPercent });
       prepared.item.caseCost = offer.cost;

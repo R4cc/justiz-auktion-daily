@@ -1,3 +1,4 @@
+let accountAdminRebates = {cases:[],rebates:[]};
 let accountAdminMarket = { categories: [], presets: [], history: [] };
 let accountRevision = 0;
 let accountStore = null;
@@ -121,6 +122,8 @@ function accountError(code) {
     insufficient_variety: t('Not enough different auctions are available.', 'Noch nicht genug unterschiedliche Auktionen verfügbar.'),
     answer_conflict: t('This guess was already made in another tab. Reopen the game.', 'Dieser Tipp wurde in einem anderen Tab abgegeben. Öffne das Spiel erneut.'),
     empty_catalog: t('No case contents are available yet.', 'Aktuell sind keine Kisteninhalte verfügbar.'),
+    invalid_case_rebate:t('Choose a rebate from 1–100% and an end time after the start and current time.','Wähle 1–100% Rabatt und ein Ende nach Beginn und aktueller Zeit.'),
+    case_rebate_not_found:t('This rebate no longer exists.','Dieser Rabatt existiert nicht mehr.'),
     catalog_changed: t('Case price or contents changed. Review the refreshed offer and try again.', 'Preis oder Inhalt der Kiste wurde aktualisiert. Prüfe das neue Angebot und versuche es erneut.'),
     user_not_found: t('That username was not found.', 'Dieser Benutzername wurde nicht gefunden.'),
     friend_self: t('You cannot add yourself.', 'Du kannst dich nicht selbst hinzufügen.'),
@@ -480,9 +483,9 @@ async function navigateAccountPage(path, push = true) {
     }
     if (path === '/admin' && account?.admin) {
       const auctionQuery = `admin/auctions?query=${encodeURIComponent(accountAuctions.query || '')}&page=${accountAuctions.page}`;
-      const [codes, admin, auctionPage, market] = await Promise.all([accountApi('codes'), accountApi('admin'), accountApi(auctionQuery), accountApi('admin/market')]);
+      const [codes, admin, auctionPage, market, rebates] = await Promise.all([accountApi('codes'), accountApi('admin'), accountApi(auctionQuery), accountApi('admin/market'),accountApi('admin/case-rebates')]);
       if (visit !== accountVisit || account?.id !== owner) return;
-      accountCodes = codes.codes; accountAdmin = admin; accountAdminMarket = market; accountAuctions = { query: accountAuctions.query || '', ...auctionPage };
+      accountCodes = codes.codes; accountAdmin = admin; accountAdminMarket = market; accountAdminRebates=rebates; accountAuctions = { query: accountAuctions.query || '', ...auctionPage };
     }
     if (visit !== accountVisit) return;
     pageLoaded = true; renderAccountPage(); accountContent.querySelector('h1')?.focus({ preventScroll: true });
@@ -686,6 +689,7 @@ function adminIcon(name) {
     players: '<circle cx="9" cy="8" r="3"/><path d="M3 20v-2a6 6 0 0 1 12 0v2M16 5a3 3 0 0 1 0 6M21 20v-2a6 6 0 0 0-3-5"/>',
     auctions: '<rect x="3" y="4" width="18" height="4" rx="1"/><path d="M5 8v12h14V8M10 12h4"/>',
     access: '<rect x="5" y="10" width="14" height="11" rx="2"/><path d="M8 10V6a4 4 0 0 1 8 0v4M12 14v3"/>',
+    rebates: '<circle cx="12" cy="12" r="9"/><path d="m8 16 8-8"/><circle cx="8" cy="8" r="1"/><circle cx="16" cy="16" r="1"/>',
     maintenance: '<path d="m14 6 4 4M3 21l7-7M14 3a6 6 0 0 0-7 7l-4 4a3 3 0 0 0 7 7l4-4a6 6 0 0 0 7-7l-4 4-4-4 4-4Z"/>',
     refresh: '<path d="M20 7v5h-5M4 17v-5h5M6 6a8 8 0 0 1 13 2M18 18A8 8 0 0 1 5 16"/>',
     search: '<circle cx="10" cy="10" r="6"/><path d="m15 15 6 6"/>',
@@ -773,6 +777,21 @@ function adminMarketMarkup() {
     }).join('')}</div>
     <p class="admin-empty" id="admin-market-empty" role="status" ${accountAdminMarket.categories.some(category => `${category.name} ${category.nameDe}`.toLowerCase().includes(adminMarketFilter.trim().toLowerCase())) ? 'hidden' : ''}>${t('No categories match this search.', 'Keine Kategorien gefunden.')}</p></div>`;
 }
+function adminCaseRebatesMarkup() {
+  const localTime=value=>{const date=new Date(value);return new Date(value-date.getTimezoneOffset()*60000).toISOString().slice(0,16);};
+  const now=Date.now(), state=rebate=>rebate.cancelledAt!==null?t('Stopped','Beendet'):now>=rebate.endsAt?t('Expired','Abgelaufen'):now<rebate.startsAt?t('Scheduled','Geplant'):t('Active','Aktiv');
+  return `<div class="admin-section"><div class="admin-panel-heading"><h2>${t('Rebate on Cases','Kistenrabatt')}</h2>${infoTip(t('Applies to direct Case Store purchases. The largest active rebate applies after Prestige discounts. Contents and drop chances stay the same.','Gilt für direkte Käufe im Kisten-Shop. Der höchste aktive Rabatt gilt nach Prestige-Rabatten. Inhalte und Fundchancen bleiben gleich.'))}</div>
+    <form id="case-rebate-form" class="admin-rebate-form" data-request-id="${crypto.randomUUID()}">
+      <label>${t('Case','Kiste')}<select name="caseId" required><option value="all">${t('All cases','Alle Kisten')}</option>${accountAdminRebates.cases.map(box=>`<option value="${accountEscape(box.id)}">${accountEscape(t(box.name,box.nameDe))}</option>`).join('')}</select></label>
+      <label>${t('Rebate (%)','Rabatt (%)')}<input name="percent" type="number" min="1" max="100" step="1" value="20" required></label>
+      <label>${t('Starts (local time)','Beginn (Ortszeit)')}<input name="startsAt" type="datetime-local" value="${localTime(now)}" required></label>
+      <label>${t('Ends (local time)','Ende (Ortszeit)')}<input name="endsAt" type="datetime-local" value="${localTime(now+3600000)}" required></label>
+      <button type="submit" class="primary-button" ${accountBusy?'disabled':''}>${t('Save rebate','Rabatt speichern')}</button><p class="account-error" role="alert"></p>
+    </form><div class="admin-rebate-list">${accountAdminRebates.rebates.map(rebate=>{
+      const box=accountAdminRebates.cases.find(box=>box.id===rebate.caseId),canStop=rebate.cancelledAt===null&&now<rebate.endsAt;
+      return `<article class="admin-rebate-row"><div><strong>${rebate.percent}% · ${accountEscape(box?t(box.name,box.nameDe):t('All cases','Alle Kisten'))}</strong><small>${new Date(rebate.startsAt).toLocaleString(uiLocale())} → ${new Date(rebate.endsAt).toLocaleString(uiLocale())}</small></div><span class="admin-status">${state(rebate)}</span>${canStop?`<button type="button" class="secondary-button" data-account="stop-case-rebate" data-id="${accountEscape(rebate.id)}" ${accountBusy?'disabled':''}>${t('Stop rebate','Rabatt beenden')}</button>`:''}</article>`;
+    }).join('')||`<p class="admin-empty">${t('No rebates yet.','Noch keine Rabatte.')}</p>`}</div></div>`;
+}
 function selectAdminTab(tab, focus = false) {
   const button = accountContent.querySelector(`[data-admin-tab="${tab}"]`);
   if (!button) return;
@@ -788,7 +807,7 @@ function selectAdminTab(tab, focus = false) {
 function renderAdmin() {
   accountContent.innerHTML = pageHeading(t('Admin', 'Adminbereich'));
   if (!account?.admin) { accountContent.innerHTML += `<p class="collection-empty">${t('Log in with an admin account to access this page.', 'Melde dich mit einem Adminkonto an, um diese Seite zu nutzen.')}</p>`; return; }
-  const tabs = [['market', t('Markets', 'Märkte')], ['players', t('Players', 'Spieler')], ['auctions', t('Archive', 'Archiv')], ['access', t('Access', 'Zugang')], ['maintenance', t('Maintenance', 'Wartung')]];
+  const tabs = [['market', t('Markets', 'Märkte')], ['players', t('Players', 'Spieler')], ['auctions', t('Archive', 'Archiv')], ['access', t('Access', 'Zugang')], ['rebates',t('Rebate on Cases','Kistenrabatt')], ['maintenance', t('Maintenance', 'Wartung')]];
   const availableCodes = accountCodes.filter(code => code.used_at === null && !code.revoked).length;
   const banned = accountAdmin.users.filter(user => user.banned).length;
   const panel = (tab, content) => `<section id="admin-panel-${tab}" class="admin-panel" role="tabpanel" aria-labelledby="admin-tab-${tab}" data-admin-panel="${tab}" tabindex="0" ${adminActiveTab === tab ? '' : 'hidden'}>${content}</section>`;
@@ -801,6 +820,7 @@ function renderAdmin() {
     </div>
     <div class="admin-tabs" role="tablist" aria-label="${t('Admin tools', 'Adminwerkzeuge')}">${tabs.map(([id, label]) => `<button type="button" role="tab" id="admin-tab-${id}" aria-controls="admin-panel-${id}" aria-selected="${adminActiveTab === id}" tabindex="${adminActiveTab === id ? 0 : -1}" data-admin-tab="${id}">${adminIcon(id)}<span>${label}</span></button>`).join('')}</div>
     ${panel('market', adminMarketMarkup())}
+    ${panel('rebates',adminCaseRebatesMarkup())}
     ${panel('players', `<div class="admin-section"><div class="admin-panel-heading"><div><h2>${t('Player management', 'Spielerverwaltung')}</h2></div>${infoTip(t('Banned players are signed out immediately. The grant amount below applies to each Give J€ button.', 'Gesperrte Spieler werden sofort abgemeldet. Der folgende Betrag gilt für jede Schaltfläche J€ geben.'))}</div>
       <div class="admin-toolbar"><label class="admin-search">${t('Find a player', 'Spieler finden')}<span>${adminIcon('search')}<input id="user-search" name="user-search" type="search" autocomplete="off" placeholder="${t('Search usernames…', 'Benutzernamen durchsuchen …')}" value="${accountEscape(adminUserFilter)}"></span></label><label>${t('J€ per grant', 'J€ pro Gutschrift')}<input id="grant-amount" name="grant-amount" type="number" min="1" max="1000000" step="1" value="100"></label></div>
       ${freshPasswordReset ? `<label class="fresh-codes admin-notice">${t(`Temporary password for ${freshPasswordReset.username} — copy it now, it is shown only once and works for exactly one login`, `Temporäres Passwort für ${freshPasswordReset.username} — jetzt kopieren, es wird nur einmal angezeigt und gilt für genau eine Anmeldung`)}<textarea readonly rows="2">${accountEscape(freshPasswordReset.temporaryPassword)}</textarea></label>` : ''}
@@ -830,7 +850,7 @@ async function refreshCaseStock(visit) {
   const request = ++caseStockRequest;
   const quotes = await Promise.all([accountApi('case-store'), ...(!economyFlags.paletteAuctions ? [accountApi('cases')] : [])]);
   if (request !== caseStockRequest || accountBusy || visit !== accountVisit || currentAccountPage !== '/shop') return;
-  if(quotes[0]?.luckPercent!==accountStore?.luckPercent){accountStore=quotes[0];renderShop();return;}
+  if(quotes[0]?.revision!==accountStore?.revision){accountStore=quotes[0];renderShop();return;}
   for (const [index, quote] of quotes.entries()) {
     const catalog = index ? accountCatalog : accountStore;
     for (const box of catalog?.cases || []) box.stock = quote.cases.find(offer => offer.id === box.id)?.stock;
@@ -881,14 +901,15 @@ function renderShop() {
       <div class="case-showroom"><span class="case-stage-seal">JG / ${accountEscape(box.badge)}</span><div class="case-orbit" aria-hidden="true"></div><div class="case-showroom-rays" aria-hidden="true"></div>${caseArtwork(box)}<div class="case-pedestal" aria-hidden="true"></div><span class="case-stage-caption">${t('SEALED', 'VERSIEGELT')} · ${t('ONE ITEM', 'EIN GEGENSTAND')}</span></div>
       <div class="case-showcase-info"><span class="case-edition-label">${t('CONTENTS', 'INHALTE')} / ${accountEscape(accountStore.rotationDate)}</span><h2>${accountEscape(t(box.name, box.nameDe))}</h2>
         <div class="case-stock-summary"><span data-case-stock="${accountEscape(box.id)}">${accountEscape(caseStockLabel(box))}</span><meter data-case-stock-meter="${accountEscape(box.id)}" min="0" max="${box.stock?.limit || 1}" value="${box.stock?.remaining || 0}" aria-label="${t('Global stock', 'Globaler Bestand')}"></meter></div>
-        <div class="case-price-row"><strong>${justizEuro(box.cost)}</strong><span>${t('per case', 'pro Kiste')}</span></div>
+        <div class="case-price-row">${box.rebate?`<del>${justizEuro(box.regularCost)}</del>`:''}<strong>${justizEuro(box.cost)}</strong><span>${t('per case', 'pro Kiste')}</span></div>
+        ${box.rebate?`<p class="case-rebate-notice"><strong>−${box.rebate.percent}% ${t('rebate','Rabatt')}</strong> · ${t('Until','Bis')} ${new Date(box.rebate.endsAt).toLocaleString(uiLocale())}</p>`:''}
         ${account ? `<button class="primary-button case-buy-button" data-account="buy-case" data-id="${accountEscape(box.id)}" ${accountBusy || account.tokens < box.cost || soldOut ? 'disabled' : ''}>${soldOut ? t('Sold out', 'Ausverkauft') : t('Buy case', 'Kiste kaufen')}</button>${account.tokens < box.cost ? `<p class="case-store-shortfall">${t(`You need ${justizEuro(box.cost - account.tokens)} more`, `Dir fehlen ${justizEuro(box.cost - account.tokens)}`)} · <a href="/" data-page>Daily →</a></p>` : ''}` : `<a class="primary-button case-buy-button" href="/login" data-page>${t('Log in to buy', 'Zum Kaufen anmelden')}</a>`}
         <div class="case-odds-heading"><h3>${t('Drop chances', 'Fundchancen')}</h3>${infoTip(t('Higher prices improve the odds of rarer finds. Any case can contain a common item, worth less than its price.', 'Höhere Preise verbessern die Chancen auf seltenere Funde. Jede Kiste kann einen gewöhnlichen Gegenstand enthalten, der weniger als ihr Preis wert ist.'), t('About drop chances', 'Über Fundchancen'))}</div>
         <div class="case-odds-track" aria-hidden="true">${box.dropChances.map(chance => `<i class="rarity-${accountEscape(chance.rarity)}" style="flex-grow:${Math.max(0, Number(chance.percent) || 0)}"></i>`).join('')}</div>
         <dl class="case-odds-list">${box.dropChances.map(chance => `<div><dt class="rarity-${accountEscape(chance.rarity)}">${rarityLabel(chance.rarity)}</dt><dd>${number(chance.percent, 2)}%</dd></div>`).join('')}</dl>
       </div>
     </section>
-    <section class="case-selection" aria-label="${t('Case selection', 'Kistenauswahl')}"><div class="case-selection-heading"><h2>${t('Choose a case', 'Kiste auswählen')}</h2><span>${t('Global stock · refills every 4 hours', 'Globaler Bestand · alle 4 Stunden aufgefüllt')}</span></div><div class="case-selector-grid">${accountStore.cases.map((entry, index) => `<button class="case-selector case-design-${accountEscape(entry.id)} ${entry.id === box.id ? 'is-selected' : ''} ${entry.stock?.remaining === 0 ? 'is-sold-out' : ''}" type="button" data-account="select-store-case" data-id="${accountEscape(entry.id)}" aria-pressed="${entry.id === box.id}"><span class="case-selector-number" aria-hidden="true">0${index + 1}</span>${caseArtwork(entry)}<strong>${accountEscape(t(entry.name, entry.nameDe))}</strong><span class="case-selector-price">${justizEuro(entry.cost)}</span><span class="case-selector-stock" data-case-stock="${accountEscape(entry.id)}">${accountEscape(caseStockLabel(entry))}</span><span class="case-selector-check" aria-hidden="true">${entry.id === box.id ? '✓' : '+'}</span></button>`).join('')}</div></section>
+    <section class="case-selection" aria-label="${t('Case selection', 'Kistenauswahl')}"><div class="case-selection-heading"><h2>${t('Choose a case', 'Kiste auswählen')}</h2><span>${t('Global stock · refills every 4 hours', 'Globaler Bestand · alle 4 Stunden aufgefüllt')}</span></div><div class="case-selector-grid">${accountStore.cases.map((entry, index) => `<button class="case-selector case-design-${accountEscape(entry.id)} ${entry.id === box.id ? 'is-selected' : ''} ${entry.stock?.remaining === 0 ? 'is-sold-out' : ''}" type="button" data-account="select-store-case" data-id="${accountEscape(entry.id)}" aria-pressed="${entry.id === box.id}"><span class="case-selector-number" aria-hidden="true">0${index + 1}</span>${caseArtwork(entry)}<strong>${accountEscape(t(entry.name, entry.nameDe))}</strong><span class="case-selector-price">${justizEuro(entry.cost)}${entry.rebate?` · −${entry.rebate.percent}%`: ''}</span><span class="case-selector-stock" data-case-stock="${accountEscape(entry.id)}">${accountEscape(caseStockLabel(entry))}</span><span class="case-selector-check" aria-hidden="true">${entry.id === box.id ? '✓' : '+'}</span></button>`).join('')}</div></section>
     <details class="case-store-contents"><summary>${t('Possible contents', 'Mögliche Inhalte')} · ${accountEscape(t(box.name, box.nameDe))} · ${number(box.items.length)}</summary><ul>${box.items.map(item => `<li><span>${accountEscape(item.title)}</span><small class="rarity-${accountEscape(item.rarity)}">${rarityLabel(item.rarity)}</small></li>`).join('')}</ul></details>
 
   </div>`;
@@ -1159,6 +1180,10 @@ document.addEventListener('click', async event => {
       updateAccount(result.user);
       if (visit === accountVisit) { await navigateAccountPage('/admin', false); showToast(t(`Gave ${justizEuro(result.grant.amount)} to ${result.grant.username}.`, `${result.grant.username} hat ${justizEuro(result.grant.amount)} erhalten.`)); }
     }
+    if (action === 'stop-case-rebate') {
+      const result=await accountApi('admin/case-rebates/cancel',{id:button.dataset.id});
+      if(visit===accountVisit){accountAdminRebates=result;renderAdmin();showToast(t('Rebate stopped.','Rabatt beendet.'));}
+    }
     if (action === 'export-archive') await exportAuctionArchive();
     if (action === 'auction-detail') {
       const result = await accountApi(`admin/auctions/${button.dataset.id}`);
@@ -1191,10 +1216,11 @@ document.addEventListener('click', async event => {
   } finally {
     accountBusy = false; if (button.isConnected) button.disabled = false;
     updateCasePurchaseButtons();
+    if(visit===accountVisit)for(const node of accountContent.querySelectorAll('#case-rebate-form button, [data-account="stop-case-rebate"]'))node.disabled=false;
   }
 });
 document.addEventListener('submit', async event => {
-  if (!event.target.matches('#account-form, #code-form, #friend-form, #grant-form, #reset-economy-form, #password-change-form')) return;
+  if (!event.target.matches('#account-form, #code-form, #friend-form, #grant-form, #reset-economy-form, #password-change-form, #case-rebate-form')) return;
   event.preventDefault(); if (accountBusy) return; accountBusy = true;
   const visit = accountVisit, form = event.target, page = currentAccountPage, button = form.querySelector('button[type="submit"]'); button.disabled = true;
   try {
@@ -1221,6 +1247,9 @@ document.addEventListener('submit', async event => {
       try { localStorage.removeItem(key); } catch {}
       updateAccount(result.user);
       if (visit === accountVisit) { await navigateAccountPage('/admin', false); showToast(t(`Gave ${justizEuro(result.grant.amount)} each to ${result.grant.recipients} existing players.`, `${result.grant.recipients} bestehende Spieler haben je ${justizEuro(result.grant.amount)} erhalten.`)); }
+    } else if(form.id==='case-rebate-form') {
+      const result=await accountApi('admin/case-rebates',{caseId:data.caseId,percent:Number(data.percent),startsAt:new Date(data.startsAt).getTime(),endsAt:new Date(data.endsAt).getTime(),requestId:form.dataset.requestId});
+      if(visit===accountVisit){accountAdminRebates=result;renderAdmin();showToast(t('Rebate saved.','Rabatt gespeichert.'));}
     } else if (form.id === 'reset-economy-form') {
       const result = await accountApi('admin/reset-economy', { confirmation: data.confirmation });
       updateAccount(result.user, { reset: true }); accountDailyRun = null; higherLowerRequest++; higherLowerRun = null;
@@ -1235,7 +1264,9 @@ document.addEventListener('submit', async event => {
     }
   } catch (error) {
     if (visit === accountVisit) { const node = form.querySelector('.account-error'); if (node) node.textContent = error.message; else showToast(error.message); }
-  } finally { accountBusy = false; if (button.isConnected) button.disabled = false; }
+  } finally { accountBusy = false; if (button.isConnected) button.disabled = false;
+    if(visit===accountVisit)for(const node of accountContent.querySelectorAll('#case-rebate-form button, [data-account="stop-case-rebate"]'))node.disabled=false;
+  }
 });
 document.addEventListener('change', event => { if (event.target.id === 'rarity-filter') { accountFilter = event.target.value; accountInventoryPage = 0; renderAccountPage(); } });
 document.addEventListener('input', event => {
@@ -1263,9 +1294,9 @@ document.addEventListener('jg:language', () => {
   updateNavigation();
   renderNotificationPanel();
   if (currentAccountPage && pageLoaded) {
-    const inputs = [...accountContent.querySelectorAll('input')].map(input => ({ name: input.name, value: input.value }));
+    const inputs = [...accountContent.querySelectorAll('input, select')].map(input => ({ name: input.name, value: input.value }));
     renderAccountPage();
-    for (const { name, value } of inputs) { const input = [...accountContent.querySelectorAll('input')].find(input => input.name === name); if (input) input.value = value; }
+    for (const { name, value } of inputs) { const input = [...accountContent.querySelectorAll('input, select')].find(input => input.name === name); if (input) input.value = value; }
   }
 });
 updateNavigation();

@@ -153,3 +153,13 @@
 }
 .admin-panel-heading .info-tip [role='tooltip'] { left: auto; right: 0; transform: translateY(-4px); }
 .admin-panel-heading .info-tip:hover [role='tooltip'], .admin-panel-heading .info-tip:focus-within [role='tooltip'] { transform: translateY(0); }
+
+.admin-rebate-form{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px;margin:20px 0}
+.admin-rebate-form label{display:grid;gap:8px;min-width:0;font-size:12px;font-weight:700}
+.admin-rebate-form input,.admin-rebate-form select{width:100%;min-width:0;max-width:100%;box-sizing:border-box;min-height:44px;padding:10px 12px;border:1px solid var(--admin-line);border-radius:8px;background:var(--admin-surface);color:var(--ink);font:inherit}
+.admin-rebate-form .account-error{grid-column:1/-1}
+.admin-rebate-list{display:grid;gap:12px}
+.admin-rebate-row{display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding:16px;border:1px solid var(--admin-line);border-radius:12px}
+.admin-rebate-row>div{flex:1;min-width:0}
+.admin-rebate-row small{display:block;overflow-wrap:anywhere;margin-top:6px}
+@media(max-width:700px){.admin-rebate-form{grid-template-columns:minmax(0,1fr)}.admin-rebate-row>div{flex-basis:100%}}

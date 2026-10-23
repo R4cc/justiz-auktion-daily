@@ -1,3 +1,4 @@
+import { activeCaseRebates, caseRebateDashboard, createCaseRebate, cancelCaseRebate } from './case-rebates.mjs';
 import { loanDashboard, borrowLoan, repayLoan } from './loans.mjs';
 import { userStatistics } from './user-statistics.mjs';
 import { prestigeAccount } from './prestige.mjs';
@@ -76,7 +77,7 @@ export async function createAccountApi({ dataDir, dailyPayload, json, env = proc
   }
   function getStore(user=null) {
     const now = Date.now();
-    return accounts.db(db => withCaseStock(db, quoteCaseStore(loadCaseStoreCatalog(dataDir, now), marketIndexes(db, now),{luckPercent:skillEffects(db,user?.id).luckPercent,caseDiscountPercent:prestigeEffects(db,user?.id).caseDiscountPercent}), now));
+    return accounts.db(db => withCaseStock(db, quoteCaseStore(loadCaseStoreCatalog(dataDir, now), marketIndexes(db, now),{luckPercent:skillEffects(db,user?.id).luckPercent,caseDiscountPercent:prestigeEffects(db,user?.id).caseDiscountPercent,rebates:activeCaseRebates(db,now)}), now));
   }
   function mutationUser(token, route) {
     const user = accounts.user(token);
@@ -124,6 +125,7 @@ export async function createAccountApi({ dataDir, dailyPayload, json, env = proc
           else if (route === 'businesses' && flags.businesses) json(response, 200, businessDashboard(dataDir, user));
           else if (route === 'friends') json(response, 200, accounts.friends(user));
           else if (route === 'codes') json(response, 200, { codes: accounts.listCodes(user) });
+          else if (route === 'admin/case-rebates') json(response,200,caseRebateDashboard(dataDir,user));
           else if (route === 'admin/market') json(response, 200, adminMarketDashboard(dataDir, user));
           else if (route === 'admin') json(response, 200, accounts.adminOverview(user));
           else if (route === 'admin/auctions') {
@@ -190,6 +192,8 @@ export async function createAccountApi({ dataDir, dailyPayload, json, env = proc
         response.setHeader('set-cookie', cookie(nextToken));
         result = { user: accounts.profile(user) };
       }
+      else if(route==='admin/case-rebates') result={rebate:createCaseRebate(dataDir,user,payload),...caseRebateDashboard(dataDir,user)};
+      else if(route==='admin/case-rebates/cancel') result={rebate:cancelCaseRebate(dataDir,user,payload.id),...caseRebateDashboard(dataDir,user)};
       else if(route==='loans/borrow') result={...borrowLoan(dataDir,user,payload),user:accounts.profile(user)};
       else if(route==='loans/repay') {result=repayLoan(dataDir,user,payload);result.user=accounts.profile(user);result.loans=loanDashboard(dataDir,user);}
       else if(route==='prestige') result={prestige:prestigeAccount(dataDir,user,payload),user:accounts.profile(user)};

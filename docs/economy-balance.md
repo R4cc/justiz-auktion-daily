@@ -98,3 +98,10 @@ Each player starts with zero wanted stars and can reach five, in half-star steps
 One half-star fades every 30 real minutes, including offline. Reads do not reset the clock; partial elapsed intervals carry across subsequent attempts. Heat survives restarts and Prestige, while an administrative economy reset clears it. No existing theft history is converted into retroactive Heat.
 
 Every full star adds 10 percentage points to police catch odds after the guard baseline and Prestige reduction, capped at 95%. The preview uses the player's current Heat; starting the hand adds Heat for later attempts. The accepted hand freezes both its catch chance and its potential stolen-item increment, so time, later price changes and replays cannot change its saved terms. The police wheel's colored area and stopping angle reflect the exact saved odds, including half-stars and fractional Prestige odds. Stars and the value-based increments are shown in stores and the player's profile in English and German.
+
+
+## Case Store rebates — 23 October 2026
+
+Administrators can schedule a percentage rebate for any named Case Store case or all five cases, with explicit start/end times, and stop it early. Rebates range from 1% to 100%, apply to all buyers, and persist across restarts. Intervals include the start and exclude the end. Overlapping offers use the highest percentage, then the latest expiry; they never compound with one another. Apply the rebate to the buyer's normal price after Prestige, rounding up to whole J€. A 100% rebate is free but still consumes global stock. Contents and rarity odds keep their existing rules.
+
+The Case Store shows the original buyer price, sale price, percentage and expiry. Starting, expiring or stopping a rebate updates the quote revision; purchases revalidate the current revision atomically before charging or consuming stock. Saved purchases retain their paid cost and can be replayed or opened after expiry without another charge. Rebates apply to direct Case Store purchases, not auction winning bids or already owned cases. An economy reset clears rebate schedules.

@@ -33,7 +33,7 @@ export function loadCaseStoreCatalog(dataDir, now = Date.now()) {
     ? catalog : caseCatalog(starterArchive, now);
 }
 
-export function quoteCaseStore(catalog, indexes = {}, {luckPercent=0,caseDiscountPercent=0} = {}) {
+export function quoteCaseStore(catalog, indexes = {}, {luckPercent=0,caseDiscountPercent=0,rebates=[]} = {}) {
   const items = catalog.cases.find(box => box.id === 'fundkiste').items;
   let previousCost = 0;
   const cases = STORE_CASES.map(box => {
@@ -44,11 +44,15 @@ export function quoteCaseStore(catalog, indexes = {}, {luckPercent=0,caseDiscoun
     previousCost = cost;
     const weights=luckWeights(box.weights,luckPercent);
     const total = weights.reduce((sum, weight) => sum + weight, 0);
-    return { id: box.id, name: box.name, nameDe: box.nameDe, badge: box.badge, cost:discountedCaseCost(cost,caseDiscountPercent), items,
+    const regularCost=discountedCaseCost(cost,caseDiscountPercent);
+    const rebate=rebates.filter(rebate=>rebate.caseId==='all'||rebate.caseId===box.id)
+      .sort((a,b)=>b.percent-a.percent || b.endsAt-a.endsAt || a.id.localeCompare(b.id))[0] || null;
+    const finalCost=rebate?Math.ceil(regularCost*(100-rebate.percent)/100):regularCost;
+    return { id: box.id, name: box.name, nameDe: box.nameDe, badge: box.badge, cost:finalCost, regularCost, rebate, items,
       dropChances: RARITIES.map((rarity, index) => ({ rarity: rarity.id, percent: weights[index] / (total / 100) })) };
   });
   const revision = createHash('sha256').update(JSON.stringify({ version: 2, pool: catalog.revision,
-    definitions: STORE_CASES, ...(luckPercent?{luckPercent}:{}), costs: cases.map(box => box.cost) })).digest('hex');
+    definitions: STORE_CASES, ...(luckPercent?{luckPercent}:{}), costs: cases.map(box => box.cost), ...(rebates.length?{rebates:cases.map(box=>box.rebate)}:{}) })).digest('hex');
   return { revision, luckPercent, caseDiscountPercent, rotationDate: catalog.rotationDate, rotatesAt: catalog.rotatesAt, cases };
 }
 
