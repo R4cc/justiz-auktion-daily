@@ -55,7 +55,7 @@ export function prepareMysteryCase(catalog, definition, { fallback = [], now = D
   const price = Math.max(1, Math.round(expected * ECONOMY_BALANCE.sealedCaseValueRate));
   return {
     item: { id: randomUUID(), kind: 'case', caseType: definition.id, caseBadge: definition.badge,
-      title: definition.name, titleDe: definition.nameDe, ...(luckPercent?{luckPercent}:{}),
+      title: definition.name, titleDe: definition.nameDe, ...(definition.category?{caseCategory:definition.category,caseStoreTier:definition.tier,caseDesign:definition.design}:{}), ...(luckPercent?{luckPercent}:{}),
       price, sellValue: price, ...(valueBasis>0?{caseBalanceVersion:1,valueBasis}:{}), image: null, createdAt: now },
     reward: { ...winner, ...(luckPercent?{luckPercent}:{}), id: randomUUID(), caseId: 'sealed', caseCost: 0,
       marketCategory: marketCategoryForItem(winner), edition: catalog?.rotationDate || new Date(now).toISOString().slice(0, 10),

@@ -12,10 +12,11 @@ test('case shop displays global availability and refill time and disables exhaus
   const meter = { dataset: { caseStockMeter: 'lost-property' } };
   const selector = { dataset: { id: 'lost-property' }, classList: { toggle(name, value) { this.soldOut = value; } } };
   const stock = { remaining: 0, limit: 10, restocksAt: Date.parse('2026-10-08T16:00:00Z') };
-  const box = { id: 'lost-property', stock, cost: 50, name: 'Lost Property', nameDe: 'Fundbüro', badge: 'LP', dropChances: [], items: [] };
+  const box = { category:'electronics',tier:'standard',design:'lost-property',id: 'lost-property', stock, cost: 50, name: 'Lost Property', nameDe: 'Fundbüro', badge: 'LP', dropChances: [], items: [] };
   let remoteStock = stock;
   const context = vm.createContext({ account: { tokens: 1000 }, accountSelectedStoreCase: 'lost-property', accountBusy: false, accountVisit: 1, caseStockRequest: 0, currentAccountPage: '/shop', pageLoaded: true,
-    accountStore: { cases: [box], rotationDate: '2026-10-08' }, accountCatalog: { cases: [] }, economyFlags: { paletteAuctions: true },
+    location:{search:'?category=electronics'},URLSearchParams,
+    accountStore: { categories:[{id:'electronics',name:'Electronics',nameDe:'Elektronik'}],cases: [box], rotationDate: '2026-10-08' }, accountCatalog: { cases: [] }, economyFlags: { paletteAuctions: true },
     accountContent: { innerHTML: '', querySelectorAll: query => ({'[data-case-stock]':[label], '[data-case-stock-meter]':[meter], '[data-account="select-store-case"]':[selector], '[data-account="buy-case"]':[button]})[query] || [], querySelector: () => null },
     t: en => en, uiLocale: () => 'en-GB', justizEuro: String, number: String, accountEscape: String, infoTip: String,
     pageHeading: String, rarityLabel: String, setInterval: () => {},

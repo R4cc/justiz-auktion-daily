@@ -82,6 +82,7 @@ test('legendary odds increase along the price ladder across rotations, markets a
     for(const luckPercent of [0,7,32]){
       const quote=quoteCaseStore(catalog,indexes,{luckPercent});let previousChance=0;
       for(const [i,box]of quote.cases.entries()){
+        if(i%3===0)previousChance=0;
         const options={basis:box.valueBasis,indexes,luckPercent,legendaryProbability:box.legendaryProbability};
         const outcomes=caseOutcomeDistribution(box.items,STORE_CASES[i].weights,options);
         const chance=probability(outcomes,outcome=>outcome.item.rarity==='legendary');

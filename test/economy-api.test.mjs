@@ -337,9 +337,9 @@ test('case store stays public with auction features on or off and purchases seal
   for (const enabled of ['true', 'false']) {
     const { base } = await fixture(t, { ...env, FEATURE_PALETTE_AUCTIONS: enabled, FEATURE_RESALES: enabled });
     const quote = await (await fetch(`${base}/api/account/case-store`)).json();
-    assert.deepEqual(quote.cases.map(box => box.id), ['lost-property', 'evidence-locker', 'seizure', 'vault', 'collectors-cache']);
+    assert.equal(quote.cases.length,18);assert.equal(quote.categories.length,6);assert.ok(quote.cases.every(box=>!('items' in box)));
     assert.doesNotMatch(JSON.stringify(quote), /"(?:reward|weights|odds|chance)":/);
-    const payload = { caseId: 'lost-property', requestId: 'http-case-purchase-0001', revision: quote.revision };
+    const payload = { caseId: 'electronics-standard', requestId: 'http-case-purchase-0001', revision: quote.revision };
     assert.equal((await post(base, 'cases/buy', payload)).status, 401);
     const login = await post(base, 'login', { username: 'admin', password });
     const cookie = login.headers.get('set-cookie');
@@ -350,10 +350,10 @@ test('case store stays public with auction features on or off and purchases seal
     const [first, retry] = await Promise.all(results.map(response => response.json()));
     assert.deepEqual(retry.item, first.item);
     assert.equal(first.user.tokens, before - quote.cases[0].cost);
-    assert.equal(first.item.kind, 'case'); assert.equal(first.item.caseType, 'lost-property');
-    assert.equal(first.store.cases[0].stock.remaining, 99);
+    assert.equal(first.item.kind, 'case'); assert.equal(first.item.caseType, 'electronics-standard');
+    assert.equal(first.store.cases[0].stock.remaining, 19);
     const publicStock = await (await fetch(`${base}/api/account/case-store`)).json();
-    assert.equal(publicStock.cases[0].stock.remaining, 99);
+    assert.equal(publicStock.cases[0].stock.remaining, 19);
     assert.equal(publicStock.revision, quote.revision);
     assert.ok(!('reward' in first.item) && !('auctionId' in first.item));
     const inventory = await (await fetch(`${base}/api/account/inventory`, { headers: { cookie } })).json();
@@ -361,7 +361,7 @@ test('case store stays public with auction features on or off and purchases seal
     const opened = await post(base, 'inventory/case/open', { id: first.item.id }, cookie);
     assert.equal(opened.status, 200);
     assert.ok((await opened.json()).item.auctionId);
-    assert.equal((await post(base, 'cases/buy', { ...payload, caseId: 'seizure' }, cookie)).status, 409);
+    assert.equal((await post(base, 'cases/buy', { ...payload, caseId: 'cars-standard' }, cookie)).status, 409);
   }
 });
 
@@ -375,9 +375,9 @@ test('concurrent direct case purchases cannot exceed global stock over HTTP', as
   const quote = await (await fetch(`${base}/api/account/case-store`)).json();
   const before = (await (await fetch(`${base}/api/account/me`, { headers: { cookie } })).json()).user.tokens;
   const limit = quote.cases[0].stock.limit;
-  assert.equal(limit, 100);
+  assert.equal(limit, 20);
   const results = await Promise.all(Array.from({ length: limit + 2 }, (_, i) => post(base, 'cases/buy', {
-    caseId: 'lost-property', revision: quote.revision, requestId: `concurrent-case-stock-${i}-0001`
+    caseId: 'electronics-standard', revision: quote.revision, requestId: `concurrent-case-stock-${i}-0001`
   }, cookie)));
   assert.equal(results.filter(response => response.status === 200).length, limit);
   const rejected = results.filter(response => response.status !== 200);
@@ -388,7 +388,7 @@ test('concurrent direct case purchases cannot exceed global stock over HTTP', as
   }
   const stock = await (await fetch(`${base}/api/account/case-store`)).json();
   assert.equal(stock.cases[0].stock.remaining, 0);
-  assert.deepEqual(stock.cases.slice(1).map(box => box.stock.remaining), [60, 35, 20, 10]);
+  assert.deepEqual(stock.cases.slice(1).map(box => box.stock.remaining), [12,6,...Array(5).fill([20,12,6]).flat()]);
   const inventory = await (await fetch(`${base}/api/account/inventory`, { headers: { cookie } })).json();
   assert.equal(inventory.items.length, limit);
   const after = (await (await fetch(`${base}/api/account/me`, { headers: { cookie } })).json()).user.tokens;

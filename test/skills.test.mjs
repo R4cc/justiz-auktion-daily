@@ -88,12 +88,12 @@ test('luck is exact integer relative weighting with expected return bounded belo
 });
 test('paid case quotes show boosted odds at unchanged prices, real draws improve, and sealed rewards never reroll',async t=>{
  const f=await fixture(t),catalog=loadCaseStoreCatalog(f.dir,now),indexes=f.accounts.db(db=>marketIndexes(db,now)),base=quoteCaseStore(catalog,indexes);
- const old=f.accounts.buyCase(f.user,catalog,'lost-property','before-skill-case-0001',base.revision),stored=f.accounts.db(db=>db.prepare('SELECT reward FROM sealed_cases WHERE inventory_id=?').get(old.id).reward);
+ const old=f.accounts.buyCase(f.user,catalog,'electronics-standard','before-skill-case-0001',base.revision),stored=f.accounts.db(db=>db.prepare('SELECT reward FROM sealed_cases WHERE inventory_id=?').get(old.id).reward);
  for(let rank=1;rank<=3;rank++)f.upgrade('luck',rank);
  const lucky=quoteCaseStore(catalog,indexes,{luckPercent:7});assert.deepEqual(lucky.cases.map(c=>c.cost),base.cases.map(c=>c.cost));assert.notEqual(lucky.revision,base.revision);assert.equal(lucky.luckPercent,7);
  assert.ok(lucky.cases[0].dropChances[4].percent>base.cases[0].dropChances[4].percent);
- assert.throws(()=>f.accounts.buyCase(f.user,catalog,'lost-property','stale-skill-case-0001',base.revision),/catalog_changed/);
- const item=f.accounts.buyCase(f.user,catalog,'lost-property','after-skill-case-0001',lucky.revision);assert.equal(item.luckPercent,7);
+ assert.throws(()=>f.accounts.buyCase(f.user,catalog,'electronics-standard','stale-skill-case-0001',base.revision),/catalog_changed/);
+ const item=f.accounts.buyCase(f.user,catalog,'electronics-standard','after-skill-case-0001',lucky.revision);assert.equal(item.luckPercent,7);
  assert.equal(f.accounts.db(db=>db.prepare('SELECT reward FROM sealed_cases WHERE inventory_id=?').get(old.id).reward),stored);
  const first=prepareMysteryCase(catalog,STORE_CASES[0],{random:max=>Math.floor(max*.745)}),second=prepareMysteryCase(catalog,STORE_CASES[0],{luckPercent:7,random:max=>Math.floor(max*.745)});
  assert.equal(first.reward.rarity,'common');assert.equal(second.reward.rarity,'uncommon');

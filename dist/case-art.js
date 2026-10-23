@@ -3,7 +3,8 @@ function caseArtwork(item = {}) {
   const designs = ['lost-property', 'evidence-locker', 'seizure', 'vault', 'collectors-cache'];
   const tiers = ['common', 'uncommon', 'rare', 'epic', 'legendary'];
   const requested = item.caseType || item.id;
-  const design = designs.includes(requested) ? requested : designs[Math.max(0, tiers.indexOf(item.caseTier))];
+  const themedDesign=item.caseDesign||item.design;
+  const design = designs.includes(themedDesign)?themedDesign:designs.includes(requested) ? requested : designs[Math.max(0, tiers.indexOf(item.caseTier))];
   const badge = accountEscape(item.caseBadge || item.badge || (item.caseTier ? rarityLabel(item.caseTier) : ['LP','EL','ST','VT','CC'][designs.indexOf(design)]));
   const box = (top, front, side, detail) => `<path d="${top}" class="case-surface-top"/><path d="${side}" class="case-surface-side"/><path d="${front}" class="case-surface-front"/>${detail}`;
   const pictures = {

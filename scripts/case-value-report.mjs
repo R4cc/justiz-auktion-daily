@@ -15,10 +15,10 @@ for(const index of [50,100,150])for(let day=0;day<days;day++){
  const catalog=caseCatalog(source,start+day*86400000),indexes=Object.fromEntries(MARKET_CATEGORIES.map(category=>[category.id,index]));
  if(!catalog.cases[0].available)throw new Error('insufficient_audit_archive');
  const offers=quoteCaseStore(catalog,indexes).cases;
- for(let i=1;i<offers.length;i++)if(!(offers[i].legendaryProbability>offers[i-1].legendaryProbability))throw new Error('inverted_legendary_odds');
+ for(let i=1;i<offers.length;i++)if(i%3&&!(offers[i].legendaryProbability>offers[i-1].legendaryProbability))throw new Error('inverted_legendary_odds');
  for(const box of offers){
   const definition=STORE_CASES.find(d=>d.id===box.id),outcomes=caseOutcomeDistribution(box.items,definition.weights,{basis:box.valueBasis,indexes,legendaryProbability:box.legendaryProbability});
-  const original=catalog.cases[0].items,baseline=[];
+  const original=box.items,baseline=[];
   for(const [n,rarity] of RARITIES.entries()){
    const pool=original.filter(item=>item.rarity===rarity.id);
    for(const item of pool)baseline.push({value:estimatedValueTokens(item,indexes),probability:definition.weights[n]/10000/pool.length});
@@ -31,8 +31,8 @@ for(const index of [50,100,150])for(let day=0;day<days;day++){
 }
 const avg=(list,key)=>list.reduce((sum,row)=>sum+row[key],0)/list.length;
 const pct=value=>`${(value*100).toFixed(2)}%`;
-console.log(`# Case value audit\n\nSource: ${input}; ${archive.length} archived lots; ${days} rotations. Exact reference-value probabilities, not production telemetry or guaranteed resale proceeds.\n`);
-console.log('| Market | Case | Old mean return | New mean return | Legendary | Old below tenth of cost | New below tenth | At least half cost | Median return | Break-even or better |\n|---:|---|---:|---:|---:|---:|---:|---:|---:|---:|');
+console.log(`# Case value audit\n\nSource: ${input}; ${archive.length} archived lots; ${days} rotations. Six closed categories, three tiers each. Legendary progression is checked within each category. Exact reference-value probabilities, not production telemetry or guaranteed resale proceeds.\n`);
+console.log('| Market | Case | Rarity-only mean return | Balanced mean return | Legendary | Rarity-only below tenth of cost | Balanced below tenth | At least half cost | Median return | Break-even or better |\n|---:|---|---:|---:|---:|---:|---:|---:|---:|---:|');
 for(const index of [50,100,150])for(const definition of STORE_CASES){
  const group=rows.filter(row=>row.index===index&&row.id===definition.id);
  console.log(`| ${index} | ${definition.name} | ${pct(avg(group,'beforeMean'))} | ${pct(avg(group,'mean'))} | ${(avg(group,'legendary')*100).toFixed(6)}% | ${pct(avg(group,'beforeLow'))} | ${pct(avg(group,'low'))} | ${pct(avg(group,'usual'))} | ${pct(avg(group,'median'))} | ${pct(avg(group,'profit'))} |`);

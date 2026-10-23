@@ -73,7 +73,7 @@ try {
   await click('influence');await page.waitForFunction(()=>document.querySelector('[data-skill-points]')?.textContent==='9');assert.doesNotMatch(await page.locator('.skill-influence').innerText(),/%/);
   await click('security');await page.waitForFunction(()=>document.querySelector('[data-skill-points]')?.textContent==='8');await click('security');await page.waitForFunction(()=>document.querySelector('[data-skill-points]')?.textContent==='5');assert.equal(await page.locator('[data-skill-id="security"]').isDisabled(),true);
   await page.reload();await page.waitForSelector('.skill-active-branches');assert.equal(await page.locator('[data-skill-points]').innerText(),'5');assert.equal(await page.locator('.site-nav a[href="/skills"] .skill-nav-points').innerText(),'5');
-  await page.goto(base+'/shop');await page.waitForSelector('.case-boutique');assert.match(await page.locator('.skill-luck-notice').innerText(),/7%/);
+  await page.goto(base+'/shop?category=electronics');await page.waitForSelector('.case-boutique');assert.match(await page.locator('.skill-luck-notice').innerText(),/7%/);
   await page.goto(base+'/auction-house?stock=wine');await page.waitForSelector('.stock-palette-art');await page.locator('[data-economy="primary"]').first().click();await page.waitForSelector('.economy-dialog[open]');await page.locator('.auction-room-contents summary').click();assert.match(await page.locator('.auction-room-contents .skill-luck-notice').innerText(),/7%/);await page.locator('[data-economy="close"]').click();
   const card=id=>page.locator(`.house-lot[data-id="${id}"]`);
   await page.goto(base+'/auction-house');await card(low.id).waitFor();

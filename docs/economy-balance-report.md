@@ -18,23 +18,62 @@ The three-correct threshold, daily top-ups and completed receipts remain intact.
 
 | Market | Case | Mean cost | Mean return | Max Luck return | At least half cost | Legendary |
 | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| 50 | Lost Property Case | 46 | 95.00% | 100.29% | 100.00% | 0.000268% |
-| 50 | Evidence Locker Case | 154 | 95.00% | 99.69% | 100.00% | 0.005366% |
-| 50 | Seized Treasure Case | 454 | 95.00% | 97.34% | 99.81% | 0.026829% |
-| 50 | Vault Case | 1133 | 95.00% | 97.15% | 99.87% | 0.080486% |
-| 50 | Collector's Cache | 3156 | 95.00% | 96.74% | 99.93% | 0.975050% |
-| 100 | Lost Property Case | 46 | 95.00% | 99.27% | 100.00% | 0.000165% |
-| 100 | Evidence Locker Case | 154 | 95.00% | 99.54% | 100.00% | 0.003296% |
-| 100 | Seized Treasure Case | 454 | 95.00% | 98.35% | 99.96% | 0.016479% |
-| 100 | Vault Case | 1133 | 95.00% | 96.65% | 99.88% | 0.049438% |
-| 100 | Collector's Cache | 3156 | 95.00% | 97.41% | 99.94% | 0.169965% |
-| 150 | Lost Property Case | 69 | 95.00% | 99.18% | 100.00% | 0.000165% |
-| 150 | Evidence Locker Case | 231 | 95.00% | 99.54% | 100.00% | 0.003295% |
-| 150 | Seized Treasure Case | 681 | 95.00% | 98.35% | 99.96% | 0.016476% |
-| 150 | Vault Case | 1699 | 95.00% | 96.65% | 99.88% | 0.049429% |
-| 150 | Collector's Cache | 4734 | 95.00% | 97.41% | 99.94% | 0.169936% |
+| 50 | Electronics Case · Standard | 33 | 95.00% | 100.88% | 99.47% | 0.002292% |
+| 50 | Electronics Case · Premium | 103 | 95.00% | 95.07% | 99.50% | 0.250757% |
+| 50 | Electronics Case · Elite | 281 | 95.00% | 95.02% | 99.52% | 6.314974% |
+| 50 | Car Case · Standard | 1399 | 95.00% | 99.19% | 99.41% | 0.000212% |
+| 50 | Car Case · Premium | 4227 | 95.00% | 95.07% | 99.49% | 0.137404% |
+| 50 | Car Case · Elite | 11221 | 95.00% | 95.02% | 99.57% | 7.733938% |
+| 50 | Wine Case · Standard | 6 | 95.00% | 99.66% | 99.44% | 0.004350% |
+| 50 | Wine Case · Premium | 16 | 95.00% | 95.06% | 99.37% | 0.137854% |
+| 50 | Wine Case · Elite | 54 | 95.00% | 95.01% | 99.42% | 2.495642% |
+| 50 | Tool Case · Standard | 20 | 95.00% | 100.30% | 99.69% | 0.010537% |
+| 50 | Tool Case · Premium | 86 | 95.00% | 95.06% | 99.24% | 0.412333% |
+| 50 | Tool Case · Elite | 519 | 95.00% | 95.02% | 99.23% | 38.987915% |
+| 50 | Jewellery Case · Standard | 177 | 95.00% | 96.35% | 99.26% | 0.000253% |
+| 50 | Jewellery Case · Premium | 944 | 95.00% | 95.07% | 99.31% | 0.042748% |
+| 50 | Jewellery Case · Elite | 3247 | 95.00% | 95.02% | 99.49% | 5.357552% |
+| 50 | Collector Case · Standard | 29 | 95.00% | 98.36% | 99.68% | 0.006609% |
+| 50 | Collector Case · Premium | 68 | 95.00% | 95.05% | 99.36% | 0.411609% |
+| 50 | Collector Case · Elite | 199 | 95.00% | 95.01% | 99.49% | 7.211300% |
+| 100 | Electronics Case · Standard | 64 | 95.00% | 101.12% | 99.47% | 0.002216% |
+| 100 | Electronics Case · Premium | 205 | 95.00% | 95.07% | 99.50% | 0.243012% |
+| 100 | Electronics Case · Elite | 561 | 95.00% | 95.02% | 99.52% | 6.290217% |
+| 100 | Car Case · Standard | 2798 | 95.00% | 99.19% | 99.41% | 0.000211% |
+| 100 | Car Case · Premium | 8452 | 95.00% | 95.07% | 99.49% | 0.139034% |
+| 100 | Car Case · Elite | 22442 | 95.00% | 95.02% | 99.57% | 7.732950% |
+| 100 | Wine Case · Standard | 10 | 95.00% | 99.15% | 99.40% | 0.001743% |
+| 100 | Wine Case · Premium | 31 | 95.00% | 95.06% | 99.36% | 0.125078% |
+| 100 | Wine Case · Elite | 106 | 95.00% | 95.01% | 99.42% | 2.421525% |
+| 100 | Tool Case · Standard | 40 | 95.00% | 100.15% | 99.68% | 0.008563% |
+| 100 | Tool Case · Premium | 170 | 95.00% | 95.06% | 99.24% | 0.396415% |
+| 100 | Tool Case · Elite | 1036 | 95.00% | 95.02% | 99.23% | 38.961743% |
+| 100 | Jewellery Case · Standard | 353 | 95.00% | 96.35% | 99.26% | 0.000250% |
+| 100 | Jewellery Case · Premium | 1886 | 95.00% | 95.07% | 99.31% | 0.042582% |
+| 100 | Jewellery Case · Elite | 6493 | 95.00% | 95.02% | 99.49% | 5.356001% |
+| 100 | Collector Case · Standard | 56 | 95.00% | 98.09% | 99.66% | 0.004738% |
+| 100 | Collector Case · Premium | 134 | 95.00% | 95.05% | 99.36% | 0.409584% |
+| 100 | Collector Case · Elite | 398 | 95.00% | 95.01% | 99.49% | 7.198744% |
+| 150 | Electronics Case · Standard | 96 | 95.00% | 101.10% | 99.47% | 0.002171% |
+| 150 | Electronics Case · Premium | 307 | 95.00% | 95.07% | 99.50% | 0.242816% |
+| 150 | Electronics Case · Elite | 841 | 95.00% | 95.02% | 99.52% | 6.281198% |
+| 150 | Car Case · Standard | 4196 | 95.00% | 99.19% | 99.41% | 0.000211% |
+| 150 | Car Case · Premium | 12678 | 95.00% | 95.07% | 99.49% | 0.137293% |
+| 150 | Car Case · Elite | 33663 | 95.00% | 95.02% | 99.57% | 7.732814% |
+| 150 | Wine Case · Standard | 15 | 95.00% | 99.64% | 99.43% | 0.002390% |
+| 150 | Wine Case · Premium | 47 | 95.00% | 95.06% | 99.37% | 0.120385% |
+| 150 | Wine Case · Elite | 160 | 95.00% | 95.01% | 99.42% | 2.409152% |
+| 150 | Tool Case · Standard | 59 | 95.00% | 100.15% | 99.69% | 0.008508% |
+| 150 | Tool Case · Premium | 255 | 95.00% | 95.06% | 99.24% | 0.395291% |
+| 150 | Tool Case · Elite | 1554 | 95.00% | 95.02% | 99.23% | 38.960403% |
+| 150 | Jewellery Case · Standard | 529 | 95.00% | 96.35% | 99.26% | 0.000249% |
+| 150 | Jewellery Case · Premium | 2830 | 95.00% | 95.07% | 99.31% | 0.042570% |
+| 150 | Jewellery Case · Elite | 9740 | 95.00% | 95.02% | 99.49% | 5.355556% |
+| 150 | Collector Case · Standard | 84 | 95.00% | 98.04% | 99.66% | 0.004501% |
+| 150 | Collector Case · Premium | 201 | 95.00% | 95.05% | 99.36% | 0.405542% |
+| 150 | Collector Case · Elite | 596 | 95.00% | 95.01% | 99.49% | 7.181819% |
 
-Legendary odds ascend at every examined rotation, market and Luck setting. Lowest examined probability of receiving at least half the undiscounted cost: 99.67%. Sparse pools may prevent the return fit; this report measures actual available items. Existing poor unopened paid cases retain their first-opening upgrade rule. Discounts and rebates lower payment without lowering the draw basis.
+Within each category, legendary odds ascend at every examined rotation, market and Luck setting. Lowest examined probability of receiving at least half the undiscounted cost: 99.10%. Sparse pools may prevent the return fit; this report measures actual available items. Existing poor unopened paid cases retain their first-opening upgrade rule. Discounts and rebates lower payment without lowering the draw basis.
 
 At a 95% reference return, illustrative liquidation at 60% / 80% / 96% of value recovers 57% / 76% / 91.2% of full purchase cost. A sale at 120% of value would return 114% before waiting time, acquisition availability, store setup, guards, theft or price movement. Thus paid cases are not an unconditional currency sink through every selling route. The permanent half-price Prestige perk can produce about 190% reference return on payment; finite stock and the Prestige reset remain its intended constraints.
 

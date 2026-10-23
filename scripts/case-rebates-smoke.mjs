@@ -41,11 +41,11 @@ try {
   await page.goto(base+'/admin');await page.waitForSelector('[data-admin-tab="rebates"]');
   await page.locator('[data-admin-tab="rebates"]').click();
   const language=async(target,lang)=>target.locator('#language-select').evaluate((select,value)=>{select.value=value;select.dispatchEvent(new Event('change',{bubbles:true}));},lang);
-  await page.locator('#case-rebate-form [name="caseId"]').selectOption('vault');
+  await page.locator('#case-rebate-form [name="caseId"]').selectOption('electronics-elite');
   await page.locator('#case-rebate-form [name="percent"]').fill('35');
   for(const width of [1440,768,390,320])for(const lang of ['en','de']){
     await page.setViewportSize({width,height:1000});await language(page,lang);
-    assert.equal(await page.locator('#case-rebate-form [name="caseId"]').inputValue(),'vault');
+    assert.equal(await page.locator('#case-rebate-form [name="caseId"]').inputValue(),'electronics-elite');
     assert.equal(await page.locator('#case-rebate-form [name="percent"]').inputValue(),'35');
     assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1),`admin rebate form overflow at ${width} ${lang}`);
     await page.screenshot({path:`/tmp/jg-case-rebate-admin-${width}-${lang}.png`});
@@ -56,9 +56,9 @@ try {
   accounts.db(db=>db.prepare('UPDATE users SET tokens=1000000 WHERE id=?').run(buyer.id));
   const shopper=await browser.newContext({viewport:{width:1440,height:1000},reducedMotion:'reduce'}),shop=await shopper.newPage();
   shop.on('pageerror',error=>errors.push(error.message));await shopper.addCookies([{name:'jg_session',value:buyerToken,url:base}]);
-  await shop.goto(base+'/shop');await shop.waitForSelector('[data-account="select-store-case"][data-id="vault"]');
-  await shop.locator('[data-account="select-store-case"][data-id="vault"]').click();
-  const offer=await shop.evaluate(()=>accountStore.cases.find(box=>box.id==='vault'));
+  await shop.goto(base+'/shop?category=electronics');await shop.waitForSelector('[data-account="select-store-case"][data-id="electronics-elite"]');
+  await shop.locator('[data-account="select-store-case"][data-id="electronics-elite"]').click();
+  const offer=await shop.evaluate(()=>accountStore.cases.find(box=>box.id==='electronics-elite'));
   assert.equal(offer.rebate.percent,35);assert.equal(offer.cost,Math.ceil(offer.regularCost*.65));
   assert.equal(await shop.locator('.case-price-row del').count(),1);
   for(const width of [1440,768,390,320])for(const lang of ['en','de']){
@@ -75,7 +75,7 @@ try {
   await page.locator('[data-account="stop-case-rebate"]').click();await page.waitForFunction(()=>!accountBusy);
   assert.ok(await page.locator('#case-rebate-form button[type="submit"]').isEnabled());
   await shop.evaluate(()=>refreshCaseStock(accountVisit));assert.equal(await shop.locator('.case-rebate-notice').count(),0);
-  assert.equal(await shop.evaluate(()=>accountStore.cases.find(box=>box.id==='vault').cost),offer.regularCost);
+  assert.equal(await shop.evaluate(()=>accountStore.cases.find(box=>box.id==='electronics-elite').cost),offer.regularCost);
   await page.locator('#case-rebate-form [name="caseId"]').selectOption('all');
   await page.locator('#case-rebate-form [name="percent"]').fill('25');await submit();
   await shop.evaluate(()=>refreshCaseStock(accountVisit));

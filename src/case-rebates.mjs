@@ -39,14 +39,14 @@ export function createCaseRebate(dataDir,user,payload,{now=Date.now()}={}) {
     admin(db,user);ensureCaseRebateSchema(db);
     const {caseId,percent,startsAt,endsAt,requestId}=payload || {};
     if (typeof requestId!=='string' || !/^[a-zA-Z0-9-]{16,80}$/.test(requestId)) fail('invalid_request');
-    if (caseId!=='all' && !STORE_CASES.some(box=>box.id===caseId)) fail('invalid_case');
-    if (!Number.isInteger(percent) || percent<1 || percent>100 || !Number.isSafeInteger(startsAt) || startsAt<0
-      || !Number.isSafeInteger(endsAt) || endsAt>8640000000000000 || endsAt<=startsAt) fail('invalid_case_rebate');
     const prior=db.prepare('SELECT * FROM case_rebates WHERE admin_id=? AND request_id=?').get(user.id,requestId);
     if (prior) {
       if (prior.case_id!==caseId || prior.percent!==percent || prior.starts_at!==startsAt || prior.ends_at!==endsAt) fail('request_conflict',409);
       return publicRow(prior);
     }
+    if (caseId!=='all' && !STORE_CASES.some(box=>box.id===caseId)) fail('invalid_case');
+    if (!Number.isInteger(percent) || percent<1 || percent>100 || !Number.isSafeInteger(startsAt) || startsAt<0
+      || !Number.isSafeInteger(endsAt) || endsAt>8640000000000000 || endsAt<=startsAt) fail('invalid_case_rebate');
     if (endsAt<=now) fail('invalid_case_rebate');
     const id=randomUUID();
     db.prepare('INSERT INTO case_rebates VALUES(?,?,?,?,?,?,?,?,NULL)').run(id,user.id,requestId,caseId,percent,startsAt,endsAt,now);

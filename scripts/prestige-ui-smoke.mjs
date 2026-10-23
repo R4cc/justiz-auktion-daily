@@ -73,7 +73,7 @@ try {
  await page.locator('input[value="luck"]').check();await page.locator('input[name="confirmation"]').check();await page.locator('.prestige-dialog button[type="submit"]').click();await page.waitForSelector('.prestige-dialog',{state:'detached'});await page.waitForFunction(()=>document.querySelector('.profile-prestige h2')?.textContent.includes('2 / 5'));
  assert.equal(accounts.profile(owner).skills.luckPercent,25);assert.equal(accounts.profile(owner).prestige.caseDiscountPercent,50);
  await page.setViewportSize({width:320,height:1000});await language('de');await page.locator('.profile-prestige').screenshot({path:'/tmp/jg-prestige-profile-320-de.png'});
- await page.goto(base+'/shop');await page.waitForSelector('.case-boutique');assert.match(await page.locator('.skill-luck-notice').innerText(),/25%/);
+ await page.goto(base+'/shop?category=electronics');await page.waitForSelector('.case-boutique');assert.match(await page.locator('.skill-luck-notice').innerText(),/25%/);
  await page.goto(base+'/changelog');await page.waitForSelector('.changelog-list');assert.match(await page.locator('.changelog-list').innerText(),/Prestige/);
  const anonymous=await browser.newPage();await anonymous.goto(base+'/profile');await anonymous.waitForSelector('a[href="/login"]');assert.equal(await anonymous.locator('.profile-prestige').count(),0);
  assert.deepEqual(errors,[]);console.log('Prestige UI passed: level gate, EN/DE 3840–320px, keyboard close, explicit reset review, one-buff selection, accepted-response retry, persisted reset, repeated Prestige, non-stacking perks, personal half-price quotes, luck preview and guest gating.');

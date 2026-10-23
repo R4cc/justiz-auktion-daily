@@ -14,7 +14,7 @@ import { promisify } from 'node:util';
 import { withDatabase, transaction } from './database.mjs';
 import { dailyCaseWeights, tokenValue, priceCaseCatalog, dailyRewardCatalog } from './cases.mjs';
 import { CASE_TIERS, chooseCaseTier, ensureSealedCaseSchema, insertSealedCase, prepareMysteryCase, prepareSealedCase } from './sealed-cases.mjs';
-import { ensureCaseStoreSchema, quoteCaseStore, STORE_CASES, loadCaseStoreCatalog } from './case-store.mjs';
+import { ensureCaseStoreSchema, quoteCaseStore, STORE_CASES, LEGACY_STORE_CASES, loadCaseStoreCatalog } from './case-store.mjs';
 import { consumeCaseStock } from './case-stock.mjs';
 import { ECONOMY_BALANCE, GAME_REWARDS } from './economy-balance.mjs';
 import { scoreGuess } from './core.mjs';
@@ -644,7 +644,7 @@ export class Accounts {
       const quote = quoteCaseStore(catalog, marketIndexes(db, now),{luckPercent,caseDiscountPercent:prestigeEffects(db,user.id).caseDiscountPercent,rebates:activeCaseRebates(db,now)});
       const offer = quote.cases.find(box => box.id === caseId);
       if (!offer) {
-        if (['common', 'uncommon', 'rare', 'epic', 'legendary'].includes(caseId)) fail('catalog_changed', 409);
+        if ([...LEGACY_STORE_CASES.map(box=>box.id),'common', 'uncommon', 'rare', 'epic', 'legendary'].includes(caseId)) fail('catalog_changed', 409);
         fail('invalid_case');
       }
       if (revision !== quote.revision) fail('catalog_changed', 409);
@@ -708,7 +708,7 @@ export class Accounts {
         if (row.sold_at !== null) fail('item_sold', 409);
         const caseItem=JSON.parse(row.item),basis=acquisition(db,inventoryId,user.id);
         const paid=basis.acquisitionCost??caseItem.caseCost??0;
-        const definition=STORE_CASES.find(box=>box.id===caseItem.caseType)||CASE_TIERS.find(tier=>tier.id===caseItem.caseTier);
+        const definition=[...STORE_CASES,...LEGACY_STORE_CASES].find(box=>box.id===caseItem.caseType)||CASE_TIERS.find(tier=>tier.id===caseItem.caseTier);
         if(!caseItem.caseBalanceVersion&&paid>0&&definition){
           const winner=improveUnopenedCase(item,upgradeCatalog,definition,
             {basis:paid,indexes:marketIndexes(db,this.now()),luckPercent:caseItem.luckPercent||0,random});

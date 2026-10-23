@@ -44,7 +44,7 @@ for(const index of [50,100,150])for(let day=0;day<30;day++){
  if(!catalog.cases.find(box=>box.id==='fundkiste')?.available)throw new Error('insufficient_audit_archive');
  for(const luckPercent of [0,32]){
   const offers=quoteCaseStore(catalog,indexes,{luckPercent}).cases;
-  for(let i=1;i<offers.length;i++)if(!(offers[i].legendaryProbability>offers[i-1].legendaryProbability))throw new Error('inverted_legendary_odds');
+  for(let i=1;i<offers.length;i++)if(i%3&&!(offers[i].legendaryProbability>offers[i-1].legendaryProbability))throw new Error('inverted_legendary_odds');
   for(const [i,offer] of offers.entries()){
    const outcomes=caseOutcomeDistribution(offer.items,STORE_CASES[i].weights,{basis:offer.valueBasis,indexes,luckPercent,legendaryProbability:offer.legendaryProbability});
    results.push({index,luckPercent,id:offer.id,cost:offer.cost,
@@ -60,7 +60,7 @@ table('Current Case Store outcomes',['Market','Case','Mean cost','Mean return','
   const lucky=results.filter(row=>row.index===index&&row.id===box.id&&row.luckPercent===32);
   return [index,box.name,average(base.map(row=>row.cost)).toFixed(0),pct(average(base.map(row=>row.mean))),pct(average(lucky.map(row=>row.mean))),pct(average(base.map(row=>row.usual))),`${(100*average(base.map(row=>row.legendary))).toFixed(6)}%`];
  })));
-console.log(`\nLegendary odds ascend at every examined rotation, market and Luck setting. Lowest examined probability of receiving at least half the undiscounted cost: ${pct(Math.min(...results.map(row=>row.usual)))}. Sparse pools may prevent the return fit; this report measures actual available items. Existing poor unopened paid cases retain their first-opening upgrade rule. Discounts and rebates lower payment without lowering the draw basis.\n\nAt a 95% reference return, illustrative liquidation at 60% / 80% / 96% of value recovers 57% / 76% / 91.2% of full purchase cost. A sale at 120% of value would return 114% before waiting time, acquisition availability, store setup, guards, theft or price movement. Thus paid cases are not an unconditional currency sink through every selling route. The permanent half-price Prestige perk can produce about 190% reference return on payment; finite stock and the Prestige reset remain its intended constraints.`);
+console.log(`\nWithin each category, legendary odds ascend at every examined rotation, market and Luck setting. Lowest examined probability of receiving at least half the undiscounted cost: ${pct(Math.min(...results.map(row=>row.usual)))}. Sparse pools may prevent the return fit; this report measures actual available items. Existing poor unopened paid cases retain their first-opening upgrade rule. Discounts and rebates lower payment without lowering the draw basis.\n\nAt a 95% reference return, illustrative liquidation at 60% / 80% / 96% of value recovers 57% / 76% / 91.2% of full purchase cost. A sale at 120% of value would return 114% before waiting time, acquisition availability, store setup, guards, theft or price movement. Thus paid cases are not an unconditional currency sink through every selling route. The permanent half-price Prestige perk can produce about 190% reference return on payment; finite stock and the Prestige reset remain its intended constraints.`);
 
 const pool=dailyRewardCatalog(caseCatalog(source,start),[],start).cases.find(box=>box.id==='fundkiste');
 if(!pool?.available)throw new Error('insufficient_daily_pool');

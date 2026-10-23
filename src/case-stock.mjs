@@ -1,10 +1,10 @@
+import { STORE_CASES } from './store-case-definitions.mjs';
 import { AccountError } from './errors.mjs';
 
 export const CASE_STOCK_LIMIT = 10;
-export const CASE_STOCK_LIMITS = Object.freeze({
-  'lost-property': 100, 'evidence-locker': 60, seizure: 35, vault: 20, 'collectors-cache': 10
-});
-export const caseStockLimit = caseId => CASE_STOCK_LIMITS[caseId] ?? CASE_STOCK_LIMIT;
+export const CASE_STOCK_LIMITS = Object.freeze(Object.fromEntries(STORE_CASES.map(box=>[box.id,box.stock])));
+const legacyLimits={'lost-property':100,'evidence-locker':60,seizure:35,vault:20,'collectors-cache':10};
+export const caseStockLimit = caseId => CASE_STOCK_LIMITS[caseId] ?? legacyLimits[caseId] ?? CASE_STOCK_LIMIT;
 export const CASE_STOCK_WINDOW_MS = 4 * 60 * 60 * 1000;
 
 export function ensureCaseStockSchema(db) {

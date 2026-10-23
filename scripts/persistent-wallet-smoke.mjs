@@ -62,7 +62,7 @@ try{
   assert.equal(await page.locator('[data-bid-budget]').innerText(),await money(before+61));
   await page.locator('[data-economy="close"]').click();
   // A confirmed case purchase updates the shared balance before its popup closes.
-  await page.evaluate(async()=>await navigateAccountPage('/shop'));await page.waitForSelector('.case-buy-button');
+  await page.evaluate(async()=>await navigateAccountPage('/shop?category=electronics'));await page.waitForSelector('.case-buy-button');
   const caseCost=await page.evaluate(()=>accountStore.cases.find(box=>box.id===accountSelectedStoreCase).cost);
   await page.locator('.case-buy-button').click();await page.waitForSelector('.case-purchase-content');await checkBalance(before+61-caseCost);
   await page.locator('[data-account="close-reveal"]').first().click();

@@ -42,7 +42,7 @@ try {
   heat();await page.goto(base+'/profile');await page.waitForSelector('.theft-heat');
   assert.doesNotMatch(await page.locator('.theft-heat').innerText(),/×|multiplier|Multiplikator/);
   assert.match(await page.locator('.heat-risk').innerText(),/15%/);
-  await page.goto(base+'/shop');await page.waitForSelector('[data-account="buy-case"]');
+  await page.goto(base+'/shop?category=electronics');await page.waitForSelector('[data-account="buy-case"]');
   const before=accounts.profile(owner).tokens;
   await page.locator('[data-account="buy-case"]').click();await page.waitForSelector('.police-recognition-content');
   const first=accounts.profile(owner).justice.policeEncounter;assert.ok(first);assert.equal(first.fineMultiplier,30);

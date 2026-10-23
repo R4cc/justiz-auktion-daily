@@ -15,7 +15,7 @@ import { Accounts, AccountError } from './accounts.mjs';
 import { adminMarketDashboard } from './admin-economy.mjs';
 import { clientIp } from './client-ip.mjs';
 import { caseRewards, loadCaseCatalog, publicCaseCatalog, quoteCaseCatalog, rotationDate } from './cases.mjs';
-import { loadCaseStoreCatalog, quoteCaseStore } from './case-store.mjs';
+import { loadCaseStoreCatalog, quoteCaseStore, publicCaseStore } from './case-store.mjs';
 import { withCaseStock } from './case-stock.mjs';
 import { marketIndexes } from './market.mjs';
 import { paletteMarketValue } from './palette-valuation.mjs';
@@ -78,7 +78,7 @@ export async function createAccountApi({ dataDir, dailyPayload, json, env = proc
   }
   function getStore(user=null) {
     const now = Date.now();
-    return accounts.db(db => withCaseStock(db, quoteCaseStore(loadCaseStoreCatalog(dataDir, now), marketIndexes(db, now),{luckPercent:skillEffects(db,user?.id).luckPercent,caseDiscountPercent:prestigeEffects(db,user?.id).caseDiscountPercent,rebates:activeCaseRebates(db,now)}), now));
+    return accounts.db(db => publicCaseStore(withCaseStock(db, quoteCaseStore(loadCaseStoreCatalog(dataDir, now), marketIndexes(db, now),{luckPercent:skillEffects(db,user?.id).luckPercent,caseDiscountPercent:prestigeEffects(db,user?.id).caseDiscountPercent,rebates:activeCaseRebates(db,now)}), now)));
   }
   function mutationUser(token, route) {
     const user = accounts.user(token);

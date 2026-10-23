@@ -1,4 +1,4 @@
-import {loadCaseStoreCatalog,STORE_CASES} from '../src/case-store.mjs';
+import {loadCaseStoreCatalog,STORE_CASES,STORE_CATEGORIES,LEGACY_STORE_CASES} from '../src/case-store.mjs';
 import {prepareMysteryCase,insertSealedCase} from '../src/sealed-cases.mjs';
 import {acquireItems} from '../src/trader.mjs';
 // Account/admin browser smoke uses an isolated database and synthetic players.
@@ -42,28 +42,39 @@ const browser = await chromium.launch({ executablePath: process.env.CHROMIUM_PAT
 const realOpen=Accounts.prototype.openSealedCase;
 Accounts.prototype.openSealedCase=function(user,id){return realOpen.call(this,user,id,{random:max=>Math.floor(max*.75)});};
 upsertAuctions(dir,Array.from({length:150},(_,n)=>({id:90000+n,title:`Laptop model ${90000+n}`,category:'Elektronik',finalPrice:n?50*n:11,image:'/favicon.png'})));
-const catalog=loadCaseStoreCatalog(dir),old=prepareMysteryCase(catalog,STORE_CASES[4],{random:()=>0});
+const catalog=loadCaseStoreCatalog(dir),old=prepareMysteryCase(catalog,LEGACY_STORE_CASES[4],{random:()=>0});
 old.item.title='Existing unopened case';old.item.titleDe='Bestehende ungeöffnete Kiste';old.item.caseCost=2000;
 old.reward={...old.reward,title:'Old cheap wine',price:11,sellValue:11,rarity:'common',marketCategory:'wine',caseCost:2000};
 accounts.atomic(db=>{insertSealedCase(db,owner.id,old);acquireItems(db,owner.id,[old.item.id],2000,'purchase',Date.now());});
 try {
   const context=await browser.newContext({viewport:{width:1440,height:1000},reducedMotion:'reduce'}),page=await context.newPage(),errors=[];
   page.on('pageerror',error=>errors.push(error.message));await context.addCookies([{name:'jg_session',value:token,url:base}]);
-  await page.goto(base+'/shop');await page.waitForSelector('.case-selector');
+  await page.goto(base+'/shop');await page.waitForSelector('.case-category-card');
+  assert.equal(await page.locator('.case-category-card').count(),6);assert.equal(await page.locator('.case-showcase,.case-store-contents').count(),0);
+  assert.ok(await page.evaluate(()=>accountStore.cases.every(box=>!('items' in box))));
   for(const width of [1440,768,390,320])for(const lang of ['en','de']){
     await page.setViewportSize({width,height:1000});
     await page.locator('#language-select').evaluate((select,value)=>{select.value=value;select.dispatchEvent(new Event('change',{bubbles:true}));},lang);
-    for(const definition of STORE_CASES){
+    await page.evaluate(()=>navigateAccountPage('/shop'));
+    if([1440,320].includes(width))await page.screenshot({path:`/tmp/jg-category-store-${width}-${lang}.png`,fullPage:true});
+    for(const category of STORE_CATEGORIES){
+      await page.locator(`[data-case-category="${category.id}"]`).click();await page.waitForSelector('.case-selector');assert.equal(await page.locator('.case-selector').count(),3);
+    for(const definition of STORE_CASES.filter(box=>box.category===category.id)){
       await page.locator(`[data-account="select-store-case"][data-id="${definition.id}"]`).click();
       const correct=await page.evaluate(()=>{
         const box=accountStore.cases.find(box=>box.id===accountSelectedStoreCase),labels=[...document.querySelectorAll('.case-odds-list dd')].map(node=>node.textContent);
         return labels.every((label,index)=>label===caseChanceLabel(box.dropChances[index].percent)&&Number(label.replace(',','.').replace('%',''))>0)
-          &&accountStore.cases.every((offer,index,list)=>!index||offer.dropChances.at(-1).percent>list[index-1].dropChances.at(-1).percent);
+          &&accountStore.cases.every((offer,index,list)=>index%3===0||offer.dropChances.at(-1).percent>list[index-1].dropChances.at(-1).percent);
       });assert.equal(correct,true);
       assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1));
     }
+      if(category.id==='cars'&&[1440,320].includes(width))await page.screenshot({path:`/tmp/jg-category-car-tiers-${width}-${lang}.png`,fullPage:true});
+      if(category.id!=='collectibles')await page.locator('.case-category-back').click();
+    }
+    assert.equal(await page.locator('.case-store-contents').count(),0);
     if(width===320)await page.locator('.case-showcase-info').screenshot({path:`/tmp/jg-case-value-odds-${lang}.png`});
   }
+  await page.reload();await page.waitForSelector('.case-selector');assert.equal(await page.locator('.case-selector.is-selected').getAttribute('data-id'),'collectibles-elite');
   const before=accounts.profile(owner).tokens;
   await page.locator('[data-account="buy-case"]').click();await page.waitForSelector('.case-purchase-content');
   const bought=accounts.inventory(owner).find(item=>item.caseBalanceVersion===1);
@@ -92,6 +103,10 @@ try {
   const replay=await page.evaluate(async id=>(await accountApi('inventory/case/open',{id})).item,old.item.id);
   assert.equal(replay.id,upgraded.id);assert.equal(replay.price,upgraded.price);
   await page.locator('.case-reveal[open]').screenshot({path:'/tmp/jg-case-value-existing-upgrade.png'});
+  const guest=await browser.newContext({viewport:{width:320,height:900}}),guestPage=await guest.newPage();guestPage.on('pageerror',error=>errors.push(error.message));
+  await guestPage.goto(base+'/shop');await guestPage.waitForSelector('.case-category-card');assert.equal(await guestPage.locator('.case-category-card').count(),6);
+  await guestPage.locator('[data-case-category="cars"]').click();await guestPage.waitForSelector('.case-selector');assert.equal(await guestPage.locator('.case-selector').count(),3);
+  assert.equal(await guestPage.locator('[data-account="buy-case"],.case-store-contents').count(),0);assert.equal(await guestPage.locator('.case-buy-button[href="/login"]').count(),1);await guest.close();
   assert.deepEqual(errors,[]);await context.close();
-  console.log('Case value UI passed: all five actual rarity odds, EN/DE at 1440/768/390/320px; private paid draw matches confirmed opening; actual cost; existing cheap unopened case upgrades through the normal inventory flow; persistent retry; no overflow or JS errors.');
+  console.log('Case value UI passed: six categories and three tiers each, hidden contents and actual rarity odds, EN/DE at 1440/768/390/320px; private paid draw matches confirmed opening; actual cost; existing cheap unopened case upgrades through the normal inventory flow; persistent retry; no overflow or JS errors.');
 }finally{Accounts.prototype.openSealedCase=realOpen;await browser.close();await new Promise(resolve=>server.close(resolve));closeDataStore(dir);await rm(dir,{recursive:true,force:true});}

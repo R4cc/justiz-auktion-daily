@@ -82,12 +82,12 @@ test('legacy overrides and their automatic retirement stay consistent across inv
   const catalog=loadCaseStoreCatalog(f.dir,day),quote=()=>f.accounts.db(db=>quoteCaseStore(catalog,marketIndexes(db,day)));
   const neutral=quote();f.legacy('electronics',1.5);
   const inflated=quote();
-  assert.ok(inflated.cases.every((box,index)=>box.cost>neutral.cases[index].cost));
+  assert.ok(inflated.cases.every((box,index)=>box.category==='electronics'?box.cost>neutral.cases[index].cost:box.cost===neutral.cases[index].cost));
   tickMarketDrift(f.dir,{now:day});
   const indexes=f.accounts.db(db=>marketIndexes(db,day)),value=Math.round(indexes.wine);
   assert.equal(f.accounts.inventory(f.player).find(item=>item.id==='wine-inventory').estimatedValueTokens,value);
   assert.equal(getResale(f.dir,listing.id,{now:day}).estimatedValueTokens,value);
   assert.equal(businessDashboard(f.dir,f.player,{now:day}).shops[0].stock[0].askingPrice,Math.round(value*1.2));
   assert.equal(f.accounts.db(db=>marketMultiplierAt(db,'electronics',day)),1);
-  assert.ok(quote().cases.every((box,index)=>box.cost<inflated.cases[index].cost));
+  assert.ok(quote().cases.every((box,index)=>box.category==='electronics'?box.cost<inflated.cases[index].cost:true));
 });

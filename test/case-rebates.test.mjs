@@ -26,10 +26,10 @@ async function fixture(t) {
 
 test('rebates target one or all cases, keep contents/odds, and use only the largest active percentage',async t=>{
   const f=await fixture(t),base=f.quote();
-  const global=f.rebate(),single=f.rebate({caseId:'vault',percent:40});
+  const global=f.rebate(),single=f.rebate({caseId:'electronics-elite',percent:40});
   const sale=f.quote();
   for(const box of sale.cases){
-    const normal=base.cases.find(entry=>entry.id===box.id),percent=box.id==='vault'?40:20;
+    const normal=base.cases.find(entry=>entry.id===box.id),percent=box.id==='electronics-elite'?40:20;
     assert.equal(box.cost,Math.ceil(normal.cost*(100-percent)/100));
     assert.equal(box.regularCost,normal.cost);assert.equal(box.rebate.percent,percent);
     assert.deepEqual(box.items,normal.items);assert.deepEqual(box.dropChances,normal.dropChances);
@@ -38,7 +38,7 @@ test('rebates target one or all cases, keep contents/odds, and use only the larg
   cancelCaseRebate(f.dir,f.admin,global.id,{now:start});
   const targeted=f.quote();
   assert.equal(targeted.cases[0].cost,base.cases[0].cost);
-  assert.equal(targeted.cases.find(box=>box.id==='vault').rebate.id,single.id);
+  assert.equal(targeted.cases.find(box=>box.id==='electronics-elite').rebate.id,single.id);
   cancelCaseRebate(f.dir,f.admin,single.id,{now:start});
   assert.equal(f.quote().revision,base.revision);
 });
