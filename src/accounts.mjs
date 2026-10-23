@@ -31,7 +31,7 @@ import { progressionForXp } from './progression.mjs';
 import { ensureNotificationSchema, pushNotification } from './notifications.mjs';
 import { ensureBusinessSchema, businessTypeForItem, restockPrestigeStores } from './businesses.mjs';
 import { acquisition, acquireItems, recordSale, tradingTotals, traderProgress, milestone } from './trader.mjs';
-import { dailyAnswer, publicRunAuctions, startDailyRound } from './game-rounds.mjs';
+import { dailyAnswer, publicRunAuctions, startDailyRound, saveDailyDraft } from './game-rounds.mjs';
 
 export { AccountError };
 
@@ -837,6 +837,17 @@ export class Accounts {
       return this.publicGame(run, db);
     });
   }
+  saveRoundDraft(user, id, position, answer, revision) {
+    return this.atomic(db => {
+      const row = db.prepare('SELECT payload FROM account_games WHERE id=? AND user_id=?').get(String(id), user.id);
+      if (!row) fail('game_not_found', 404);
+      const run = JSON.parse(row.payload);
+      if (run.date !== day(this.now())) fail('daily_reset', 409);
+      const result = saveDailyDraft(run, position, answer, revision, this.now());
+      if (result.saved) db.prepare('UPDATE account_games SET payload=? WHERE id=?').run(JSON.stringify(run), run.id);
+      return result;
+    });
+  }
   answer(user, id, position, answer, catalog = null) {
     return this.atomic(db => {
       const row = db.prepare('SELECT payload FROM account_games WHERE id = ? AND user_id = ?').get(String(id), user.id);
@@ -851,12 +862,12 @@ export class Accounts {
       }
       if (run.complete) fail('game_complete', 409);
       if (run.mode === 'daily') {
-        // Expired guesses are stored as null: the round completes with zero
-        // points even when a caller submits a numeric answer after its clock.
+        // Late requests can only use the draft already saved before expiry.
         const accepted = dailyAnswer(run, answer, this.now());
         run.submittedAnswers ||= [...run.answers];
         run.submittedAnswers.push(answer);
         run.answers.push(accepted);
+        delete run.roundDraft;
         run.roundDeadlineAt = null;
         run.complete = run.answers.length === 5;
       } else {

@@ -30,16 +30,36 @@ export function publicRunAuctions(run) {
 export function startDailyRound(run, position, now) {
   if (!Number.isInteger(position) || position !== run.answers.length || run.complete)
     throw new AccountError('invalid_position', 409);
-  if (!run.roundDeadlineAt) run.roundDeadlineAt = now + GUESS_TIME_LIMIT_MS;
+  if (!run.roundDeadlineAt) {
+    run.roundDeadlineAt = now + GUESS_TIME_LIMIT_MS;
+    delete run.roundDraft;
+  }
+}
+
+function validateGuess(answer) {
+  if (answer !== null && (typeof answer !== 'number' || !Number.isFinite(answer) || answer < 0 || answer > 1e12))
+    throw new AccountError('invalid_guess');
+}
+
+export function saveDailyDraft(run, position, answer, revision, now) {
+  if (run.mode === 'higher-lower') throw new AccountError('invalid_mode');
+  if (!Number.isInteger(position) || position !== run.answers.length || run.complete)
+    throw new AccountError('invalid_position', 409);
+  if (!run.roundDeadlineAt) throw new AccountError('round_not_started', 409);
+  validateGuess(answer);
+  if (!Number.isSafeInteger(revision) || revision < 1) throw new AccountError('invalid_request');
+  if (now >= run.roundDeadlineAt || revision <= (run.roundDraft?.revision || 0)) return { saved: false };
+  run.roundDraft = { answer, revision };
+  return { saved: true };
 }
 
 export function dailyAnswer(run, answer, now) {
   if (!run.roundDeadlineAt) throw new AccountError('round_not_started', 409);
-  if (answer !== null && (typeof answer !== 'number' || !Number.isFinite(answer) || answer < 0 || answer > 1e12))
-    throw new AccountError('invalid_guess');
-  // Expired submissions complete the round with zero points. Persisting the
-  // submitted value separately makes a retry of a late request idempotent.
-  return now >= run.roundDeadlineAt ? null : answer;
+  validateGuess(answer);
+  // Only a draft received before the deadline can score after expiry. A blank
+  // or invalid current field still counts as a missed guess, never an old bid.
+  if (now < run.roundDeadlineAt) return answer;
+  return answer === null ? null : run.roundDraft?.answer ?? null;
 }
 
 export function publicDailySummary(game) {

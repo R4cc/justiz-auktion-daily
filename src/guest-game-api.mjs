@@ -2,7 +2,7 @@ import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { transaction, withDatabase } from './database.mjs';
 import { AccountError } from './errors.mjs';
 import { clientIp } from './client-ip.mjs';
-import { dailyAnswer, publicRunAuctions, startDailyRound } from './game-rounds.mjs';
+import { dailyAnswer, publicRunAuctions, startDailyRound, saveDailyDraft } from './game-rounds.mjs';
 import { jsonBody } from './json-body.mjs';
 
 const digest = value => createHash('sha256').update(value).digest('hex');
@@ -45,7 +45,7 @@ export function createGuestGameApi({ dataDir, dailyPayload, randomPayload, highe
       if (request.method !== 'POST') fail('method_not_allowed', 405);
       if (request.headers['x-requested-with'] !== 'JUSTIZGUESSR' || request.headers['sec-fetch-site'] === 'cross-site') fail('forbidden', 403);
       const route = url.pathname.slice('/api/games/'.length);
-      if (!['start','round/start','answer'].includes(route)) fail('not_found', 404);
+      if (!['start','round/start','round/draft','answer'].includes(route)) fail('not_found', 404);
       throttle(request, 'mutate', 500);
       const payload = await jsonBody(request);
       let token = request.headers.cookie?.split(';').map(part => part.trim()).find(part => part.startsWith('jg_guest='))?.slice(9);
@@ -94,6 +94,9 @@ export function createGuestGameApi({ dataDir, dailyPayload, randomPayload, highe
             if (next.mode === 'higher-lower') fail('invalid_mode');
             startDailyRound(next, position, at);
           }
+          else if (route === 'round/draft') {
+            saveDailyDraft(next, position, payload.answer, payload.revision, at);
+          }
           else {
             if (!Number.isInteger(position) || position < 0 || position > next.answers.length) fail('invalid_position', 409);
             if (position < next.answers.length) {
@@ -113,6 +116,7 @@ export function createGuestGameApi({ dataDir, dailyPayload, randomPayload, highe
               next.submittedAnswers ||= [];
               next.submittedAnswers.push(payload.answer);
               next.answers.push(accepted);
+              delete next.roundDraft;
               next.roundDeadlineAt = null;
               next.complete = next.answers.length === next.auctions.length;
             }

@@ -1056,6 +1056,10 @@ async function accountGameRoundStart(run, position) {
   updateAccount(result.user);
   return timedGameRun(result.run);
 }
+async function accountGameDraft(run, position, answer, revision) {
+  if (run.guest) return guestGameRequest('round/draft', { id: run.id, position, answer, revision });
+  return accountApi('games/round/draft', { id: run.id, position, answer, revision });
+}
 async function accountGameAnswer(run, position, answer) {
   if (run.guest) return guestGameRequest('answer', { id: run.id, position, answer });
   const owner = account?.id, result = await accountApi('games/answer', { id: run.id, position, answer });

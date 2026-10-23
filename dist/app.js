@@ -299,7 +299,8 @@ function renderRound() {
   stopGuessTimer();
   const auction = AUCTIONS[state.round];
   const images = auctionImages(auction);
-  const draft = galleryAuction?.id === auction.id ? app.querySelector('#price-input')?.value || '' : '';
+  const run = gameMode === 'daily' ? accountDailyRun : randomGameRun;
+  const draft = galleryAuction?.id === auction.id && app.querySelector('#price-input') ? app.querySelector('#price-input').value : run?.roundDraft?.answer == null ? '' : String(run.roundDraft.answer);
   if (galleryAuction !== auction) {
     galleryAuction = auction;
     galleryIndex = 0;
@@ -348,9 +349,8 @@ function renderRound() {
     }
   }, 30000);
   window.scrollTo({ top: 0, behavior: 'instant' });
-  if (!answer) startGuessTimer();
   const shell = app.querySelector('.game-shell');
-  if (!answer) shell.querySelector('#price-input').value = draft;
+  if (!answer) { shell.querySelector('#price-input').value = draft; startGuessTimer(); }
   setTimeout(() => {
     if (!shell.isConnected || state.view !== 'game') return;
     // Touch players inspect the lot before opening their keyboard. Desktop
@@ -445,6 +445,39 @@ function revealMarkup(auction, answer) {
     </div>`;
 }
 
+function guessValue(value) {
+  const raw = String(value ?? '').trim().replace(/\s/g, '').replace(',', '.');
+  const guess = Number(raw);
+  return raw && Number.isFinite(guess) && guess >= 0 && guess <= 1e12 ? guess : null;
+}
+
+// Serialize writes and coalesce input while a request is in flight. Revisions
+// prevent older requests from overwriting the most recently saved field.
+const guessDraftWrites = new Map();
+function saveGuessDraft() {
+  if (state.view !== 'game' || state.answers[state.round] || dailySubmitting) return;
+  const run = gameMode === 'daily' ? accountDailyRun : randomGameRun;
+  if (!run || Date.now() >= run.clientDeadlineAt) return;
+  const key = `${run.id}:${state.round}`, answer = guessValue(app.querySelector('#price-input')?.value);
+  if (run.roundDraft?.answer === answer) return;
+  const existing = guessDraftWrites.get(key);
+  const revision = Math.max(run.roundDraft?.revision || 0, existing?.revision || 0) + 1;
+  run.roundDraft = { answer, revision };
+  if (existing) { existing.answer = answer; existing.revision = revision; return; }
+  const job = { answer, revision, position: state.round };
+  guessDraftWrites.set(key, job);
+  void (async () => {
+    try {
+      while (true) {
+        const sent = job.revision;
+        try { await accountGameDraft(run, job.position, job.answer, sent); } catch { /* Normal submission remains available. */ }
+        if (sent === job.revision) break;
+      }
+    } finally { guessDraftWrites.delete(key); }
+  })();
+}
+document.addEventListener('input', event => { if (event.target.id === 'price-input') saveGuessDraft(); });
+
 function stopGuessTimer() {
   if (guessTimer) { clearInterval(guessTimer); guessTimer = null; }
 }
@@ -472,7 +505,7 @@ function startGuessTimer() {
 
 function expireGuess() {
   if (dailySubmitting || state.answers[state.round] || state.view !== 'game') return;
-  applyGuess(null);
+  applyGuess(guessValue(document.querySelector('#price-input')?.value));
 }
 
 let dailySubmitting = false;
@@ -508,9 +541,8 @@ async function applyGuess(guess) {
 
 async function submitGuess(form) {
   if (dailySubmitting || state.answers[state.round]) return;
-  const raw = form.querySelector('#price-input').value.trim().replace(/\s/g, '').replace(',', '.');
-  const guess = Number(raw);
-  if (!raw || !Number.isFinite(guess) || guess < 0) {
+  const guess = guessValue(form.querySelector('#price-input').value);
+  if (guess === null) {
     showToast(t("Please enter a valid euro amount.", "Bitte gib einen gültigen Eurobetrag ein."));
     return;
   }

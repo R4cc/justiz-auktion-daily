@@ -83,6 +83,54 @@ test('Daily deadlines survive resume/restart and late guesses score zero with st
   assert.equal(run.earned, 1000);
 });
 
+test('saved Daily guesses survive restart, freeze at expiry and never reveal future answers', async t => {
+  const f=await fixture(t);
+  let run=f.accounts.startGame(f.alice,'daily',()=>lots);
+  const deadline=run.roundDeadlineAt;
+  assert.throws(()=>f.accounts.saveRoundDraft(f.bob,run.id,0,100,1),/game_not_found/);
+  assert.throws(()=>f.accounts.saveRoundDraft(f.alice,run.id,1,100,1),/invalid_position/);
+  assert.throws(()=>f.accounts.saveRoundDraft(f.alice,run.id,0,'100',1),/invalid_guess/);
+  assert.throws(()=>f.accounts.saveRoundDraft(f.alice,run.id,0,100,0),/invalid_request/);
+  assert.equal(f.accounts.saveRoundDraft(f.alice,run.id,0,50,1).saved,true);
+  assert.equal(f.accounts.saveRoundDraft(f.alice,run.id,0,100,2).saved,true);
+  assert.equal(f.accounts.saveRoundDraft(f.alice,run.id,0,999,1).saved,false);
+  assert.equal(f.accounts.profile(f.alice).tokens,1000);
+  closeDataStore(f.dir);
+  const reopened=new Accounts(f.dir,{now:f.now});
+  run=reopened.startGame(f.alice,'daily',()=>[]);
+  assert.equal(run.roundDraft.answer,100);assert.equal(run.roundDeadlineAt,deadline);
+  assert.ok(!('actualBid' in run.auctions[0]));assert.deepEqual(run.auctions[1],{});
+  f.advance(GUESS_TIME_LIMIT_MS);
+  assert.equal(reopened.saveRoundDraft(f.alice,run.id,0,999,3).saved,false);
+  run=reopened.answer(f.alice,run.id,0,999);
+  assert.equal(run.answers[0],100);assert.equal(run.roundDraft,undefined);
+  assert.equal(reopened.answer(f.alice,run.id,0,999).answers[0],100);
+  assert.throws(()=>reopened.answer(f.alice,run.id,0,998),/answer_conflict/);
+  for(let position=1;position<5;position++){
+    run=reopened.startRound(f.alice,run.id,position);
+    assert.equal(run.roundDraft,undefined);
+    reopened.saveRoundDraft(f.alice,run.id,position,lots[position].actualBid,1);
+    f.advance(GUESS_TIME_LIMIT_MS);
+    run=reopened.answer(f.alice,run.id,position,lots[position].actualBid);
+  }
+  assert.equal(reopened.profile(f.alice).daily.score,5000);
+  assert.equal(run.earned,1000);
+  assert.equal(reopened.answer(f.alice,run.id,4,104).earned,1000);
+  assert.equal(reopened.profile(f.alice).tokens,2000);
+});
+
+test('cleared or invalid current guesses do not revive a saved number at expiry', async t => {
+  const f=await fixture(t),run=f.accounts.startGame(f.alice,'daily',()=>lots);
+  f.accounts.saveRoundDraft(f.alice,run.id,0,100,1);
+  f.accounts.saveRoundDraft(f.alice,run.id,0,null,2);
+  f.advance(GUESS_TIME_LIMIT_MS);
+  assert.equal(f.accounts.answer(f.alice,run.id,0,100).answers[0],null);
+  f.accounts.startRound(f.alice,run.id,1);
+  f.accounts.saveRoundDraft(f.alice,run.id,1,101,1);
+  f.advance(GUESS_TIME_LIMIT_MS);
+  assert.equal(f.accounts.answer(f.alice,run.id,1,null).answers[1],null);
+});
+
 test('concurrent temporary logins consume the password once and a password change revokes old sessions', async t => {
   const f = await fixture(t);
   await f.accounts.bootstrap('admin', password);
@@ -177,6 +225,12 @@ test('guest Daily HTTP sessions seal prices, enforce ownership/deadlines and res
   assert.equal((await post('answer', { id: run.id, position: 1, answer: 101 }, cookie)).status, 409);
   run = (await (await post('round/start', { id: run.id, position: 1 }, cookie)).json()).run;
   assert.equal(run.roundDeadlineAt, f.now() + GUESS_TIME_LIMIT_MS);
+  const draft={id:run.id,position:1,answer:101,revision:1};
+  assert.equal((await post('round/draft',draft)).status,404);
+  assert.equal((await post('round/draft',draft,cookie,{'sec-fetch-site':'cross-site'})).status,403);
+  assert.equal((await post('round/draft',draft,cookie)).status,200);
+  f.advance(GUESS_TIME_LIMIT_MS);
+  await post('round/draft',{...draft,answer:999,revision:2},cookie);
   run = (await (await post('answer', { id: run.id, position: 1, answer: 101 }, cookie)).json()).run;
   assert.equal(run.answers[1], 101);
   assert.equal(run.earned, 0);

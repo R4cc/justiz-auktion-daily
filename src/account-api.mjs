@@ -299,6 +299,7 @@ export async function createAccountApi({ dataDir, dailyPayload, json, env = proc
           () => auctions || higherLowerDeck(readArchive(dataDir).auctions, Math.random, Date.now(), dailyIds).auctions,
           caseRewards(getCatalog(user)), getCatalog(user)), user: accounts.profile(user) };
       } else if (route === 'games/round/start') result = { run: accounts.startRound(user, payload.id, payload.position), user: accounts.profile(user) };
+      else if (route === 'games/round/draft') result = accounts.saveRoundDraft(user, payload.id, payload.position, payload.answer, payload.revision);
       else if (route === 'games/answer') result = { run: accounts.answer(user, payload.id, payload.position, payload.answer, getCatalog(user)), user: accounts.profile(user) };
       else if (route === 'games/daily-case/claim') result = { item: accounts.claimDailyCase(user, payload.id), user: accounts.profile(user) };
       else if (route === 'inventory/case/open') result = { item: accounts.openSealedCase(user, payload.id), user: accounts.profile(user) };
