@@ -106,6 +106,11 @@ for(let n=0;n<hands;n++){
  counts[game.outcome]++;
 }
 console.log(`\n## Theft and Heat\n\n${hands.toLocaleString('en-US')} seeded fair single-deck hit/stand hands: ${pct(counts.win/hands)} win, ${pct(counts.lose/hands)} loss, ${pct(counts.push/hands)} push. Dealer stands on soft 17. No deck or cooldown adjustments are made.`);
+table('Value-based theft security',['Reference value','Required wins','Acquire item / attempt','Reach police wheel / attempt'],[100,2500,15000,50000].map(value=>{
+ const quote=theftQuote(value,false),p=counts.win/hands,l=counts.lose/hands;
+ return [value,quote.requiredWins,pct(p**quote.requiredWins),pct(l*(1-p**quote.requiredWins)/(1-p))];
+}));
+console.log('\nEvery stage uses a new fair deck. Loot requires every hand to win; a tie ends without loot or a fine, and the first loss ends through one police wheel. Value-based stages are a later requested difficulty change; they do not alter per-hand card odds, saved catch odds/fines or the original ten-minute deadline. Stage-count estimates use the simulated strategy above.');
 table('J€100 theft reference scenarios',['Starting stars','Catch after loss','Saved fine','Fully paid expected net','Recognition / eligible check'],[0,1,2,4,6,8,9,10].map(heat=>{
  const quote=theftQuote(100,false,1,0,0,heat);
  return [heat/2,`${quote.policeCatchPercent}%`,quote.fine,(counts.win/hands*100-counts.lose/hands*quote.policeCatchPercent/100*quote.fine).toFixed(2),`${recognitionChance(heat)}%`];

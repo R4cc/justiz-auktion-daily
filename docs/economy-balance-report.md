@@ -124,6 +124,17 @@ Both store tables use an illustrative 85% acquisition basis, not an active whole
 
 600,000 seeded fair single-deck hit/stand hands: 43.66% win, 47.91% loss, 8.43% push. Dealer stands on soft 17. No deck or cooldown adjustments are made.
 
+## Value-based theft security
+
+| Reference value | Required wins | Acquire item / attempt | Reach police wheel / attempt |
+| ---: | ---: | ---: | ---: |
+| 100 | 1 | 43.66% | 47.91% |
+| 2500 | 2 | 19.06% | 68.83% |
+| 15000 | 3 | 8.32% | 77.96% |
+| 50000 | 4 | 3.63% | 81.95% |
+
+Every stage uses a new fair deck. Loot requires every hand to win; a tie ends without loot or a fine, and the first loss ends through one police wheel. Value-based stages are a later requested difficulty change; they do not alter per-hand card odds, saved catch odds/fines or the original ten-minute deadline. Stage-count estimates use the simulated strategy above.
+
 ## J€100 theft reference scenarios
 
 | Starting stars | Catch after loss | Saved fine | Fully paid expected net | Recognition / eligible check |

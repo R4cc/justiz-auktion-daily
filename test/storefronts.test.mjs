@@ -167,7 +167,8 @@ test('security guard is owner-only, freely toggleable, changes catch odds and le
 
 function setHand(f,id,{player=[9,8],dealer=[6,10],deck}={}) {
   const used=new Set([...player,...dealer]);
-  const game={player,dealer,deck:deck||Array.from({length:52},(_,n)=>n).filter(n=>!used.has(n)),turn:0,outcome:'active'};
+  const previous=f.accounts.db(db=>JSON.parse(db.prepare('SELECT blackjack FROM store_heists WHERE id=?').get(id).blackjack));
+  const game={player,dealer,deck:deck||Array.from({length:52},(_,n)=>n).filter(n=>!used.has(n)),turn:previous.turn,outcome:'active',...(previous.security?{security:previous.security}:{})};
   f.accounts.db(db=>db.prepare('UPDATE store_heists SET blackjack=? WHERE id=?').run(JSON.stringify(game),id));
 }
 // Existing bailiff tests deliberately land on the caught sector after a loss.
@@ -509,11 +510,146 @@ test('stolen item value determines additional wanted stars from server-side valu
     assert.equal(f.view().heat.stars,.5);
     // Later value changes cannot reduce the accepted attempt's Heat gain.
     f.accounts.db(db=>db.prepare("UPDATE inventory SET item=json_set(item,'$.price',1) WHERE id='wine-0'").run());
-    setHand(f,started.id);
-    action(f,started.id);
+    for(let n=0;n<entry.theft.requiredWins;n++) {
+      setHand(f,started.id);
+      const turn=f.view().heist.blackjack.turn;
+      action(f,started.id,'stand',turn);
+      if(n+1<entry.theft.requiredWins) action(f,started.id,'continue',turn+1);
+    }
     assert.equal(f.view().heat.stars,(1+extra)/2);
-    action(f,started.id);
+    action(f,started.id,'stand',f.view().heist.blackjack.turn);
     assert.equal(f.view().heat.stars,(1+extra)/2);
     assert.equal(f.view(f.buyer,now+HEAT_DECAY_INTERVAL).heat.stars,extra/2);
   }
+});
+
+
+function expensiveTarget(f,value=15000) {
+  f.accounts.db(db=>db.prepare("UPDATE inventory SET item=json_set(item,'$.price',?) WHERE id='wine-0'").run(value));
+  const entry=f.view().stock.find(item=>item.id==='wine-0');
+  return {...f.payload(),expectedPrice:entry.price,expectedFine:entry.theft.fine,expectedRequiredWins:entry.theft.requiredWins};
+}
+function stageMove(f,id,move,options={}) {
+  return stageReplay(f,id,move,f.view().heist.blackjack.turn,options);
+}
+function stageReplay(f,id,move,turn,options={}) {
+  return actStoreHeist(f.dir,f.buyer,{heistId:id,action:move,turn,requestId:`security-${id}-${turn}-${move}`},{now,draw:success,policeDraw:()=>999999,...options});
+}
+const naturalDraw=prefix=>{
+  const target=[...prefix,...Array.from({length:52},(_,n)=>n).filter(n=>!prefix.includes(n))],deck=Array.from({length:52},(_,n)=>n);
+  return max=>{const i=max-1,j=deck.indexOf(target[i]);[deck[i],deck[j]]=[deck[j],deck[i]];return j;};
+};
+
+test('expensive theft difficulty scales at value boundaries independently of catch odds, guards and markup',async t=>{
+  for(const [value,wins] of [[0,1],[2499,1],[2500,2],[9999,2],[10000,3],[15000,3],[49999,3],[50000,4],[1000000,4]]) {
+    for(const guard of [false,true])for(const heat of [0,10]) {
+      const quote=theftQuote(value,guard,1,0,0,heat);
+      assert.equal(quote.requiredWins,wins);
+      assert.equal(quote.policeCatchPercent,Math.min(95,(guard?50:30)+heat*5));
+    }
+  }
+  const f=await fixture(t),payload=expensiveTarget(f);
+  assert.throws(()=>startStoreHeist(f.dir,f.buyer,{...payload,expectedRequiredWins:1},{now,draw:success}),/store_risk_changed/);
+  assert.equal(f.view().heat.value,0);
+  f.accounts.db(db=>db.prepare('UPDATE businesses SET profit_margin=100 WHERE id=?').run(f.shop.id));
+  const quote=f.view().stock.find(item=>item.id==='wine-0');
+  assert.equal(quote.price,30000);assert.equal(quote.theft.requiredWins,3);
+});
+
+test('a 15k theft requires all three saved wins; stages, Heat and receipts persist without early loot or stale turns',async t=>{
+  const f=await fixture(t),payload=expensiveTarget(f),started=startStoreHeist(f.dir,f.buyer,payload,{now,draw:success}),id=started.id;
+  assert.deepEqual(startStoreHeist(f.dir,f.buyer,payload,{now,draw:()=>{throw Error('redraw');}}),started);
+  assert.deepEqual(started.heist.security,{requiredWins:3,completedWins:0,awaitingNextHand:false});
+  let first;
+  for(let n=0;n<3;n++) {
+    setHand(f,id);
+    const turn=f.view().heist.blackjack.turn,result=stageMove(f,id,'stand');
+    assert.equal(result.security.completedWins,n+1);
+    if(n===2) {
+      assert.equal(result.outcome,'stolen');assert.equal(result.inventoryId,'wine-0');
+      assert.equal(f.itemOwner('wine-0'),f.buyer.id);assert.equal(f.view().heat.value,5);
+      assert.deepEqual(stageMove(f,id,'stand'),result);
+      break;
+    }
+    assert.equal(result.outcome,'active');assert.equal(result.security.awaitingNextHand,true);
+    assert.equal(result.blackjack.outcome,'win');assert.equal(f.itemOwner('wine-0'),f.owner.id);
+    assert.equal(f.view().heat.value,1);assert.equal(f.view().heistInProgress,true);
+    assert.deepEqual(stageReplay(f,id,'stand',turn),result); // Same request cannot count another win.
+    closeDataStore(f.dir);assert.equal(f.view().heist.security.completedWins,n+1);
+    assert.throws(()=>actStoreHeist(f.dir,f.buyer,{heistId:id,action:'hit',turn:turn+1,requestId:`bad-stage-hit-${n}-0001`},{now}),/invalid_blackjack_action/);
+    assert.throws(()=>startStoreHeist(f.dir,f.buyer,f.payload('wine-1'),{now,draw:success}),/heist_active/);
+    const next=stageMove(f,id,'continue');
+    assert.equal(next.expiresAt,started.heist.expiresAt);assert.equal(next.fine,started.heist.fine);
+    assert.equal(next.blackjack.turn,turn+2);assert.equal(next.blackjack.dealer[1],null);
+    assert.ok(!JSON.stringify(next).includes('deck'));assert.equal(next.security.completedWins,n+1);
+    assert.deepEqual(stageReplay(f,id,'continue',turn+1,{draw:()=>{throw Error('redraw');}}),next);
+    assert.throws(()=>actStoreHeist(f.dir,f.buyer,{heistId:id,action:'stand',turn,requestId:`stale-stage-${n}-0001`},{now}),/blackjack_turn_changed/);
+    if(n===0)first=next;
+  }
+  assert.equal(first.fine,30000);assert.equal(f.balance(f.buyer),100000);
+  assert.equal(f.accounts.db(db=>db.prepare("SELECT COUNT(*) AS n FROM account_notifications WHERE user_id=? AND source_key LIKE ?").get(f.owner.id,`store:${id}:end`).n),1);
+});
+
+test('a later-stage loss or tie ends the whole heist, without awarding the earlier stage',async t=>{
+  for(const tie of [false,true]) {
+    const f=await fixture(t),id=startStoreHeist(f.dir,f.buyer,expensiveTarget(f),{now,draw:success}).id;
+    setHand(f,id);stageMove(f,id,'stand');stageMove(f,id,'continue');
+    setHand(f,id,tie?{player:[9,7],dealer:[22,20]}:{player:[2,3],dealer:[9,8]});
+    const result=stageMove(f,id,'stand');
+    assert.equal(result.outcome,tie?'push':'police');assert.equal(result.security.completedWins,1);
+    assert.equal(f.itemOwner('wine-0'),f.owner.id);assert.equal(f.view().heat.value,1);
+    if(!tie) {
+      assert.equal(result.policeWheel.catchPercent,30);
+      assert.equal(spinStoreHeist(f.dir,f.buyer,{heistId:id,requestId:'security-escape-spin-001'},{now}).outcome,'escaped');
+    }
+    assert.equal(f.balance(f.buyer),100000);assert.equal(f.view().heistInProgress,false);
+  }
+});
+
+test('naturals clear one security stage each and cannot skip a stage on replay',async t=>{
+  const f=await fixture(t),payload=expensiveTarget(f),draw=()=>naturalDraw([0,2,9,3]);
+  const started=startStoreHeist(f.dir,f.buyer,payload,{now,draw:draw()});
+  assert.equal(started.heist.outcome,'active');assert.equal(started.heist.security.completedWins,1);
+  assert.equal(f.itemOwner('wine-0'),f.owner.id);
+  const second=stageMove(f,started.id,'continue',{draw:draw()});
+  assert.equal(second.outcome,'active');assert.equal(second.security.completedWins,2);
+  assert.equal(second.blackjack.turn,1);
+  const final=stageMove(f,started.id,'continue',{draw:draw()});
+  assert.equal(final.outcome,'stolen');assert.equal(final.security.completedWins,3);
+  assert.equal(f.view().heat.value,5);assert.equal(f.itemOwner('wine-0'),f.buyer.id);
+});
+
+test('security terms stay frozen if market value falls and vanished targets cannot be awarded',async t=>{
+  const f=await fixture(t),id=startStoreHeist(f.dir,f.buyer,expensiveTarget(f),{now,draw:success}).id;
+  f.accounts.db(db=>db.prepare("UPDATE inventory SET item=json_set(item,'$.price',1) WHERE id='wine-0'").run());
+  for(let n=0;n<3;n++) {
+    setHand(f,id);const result=stageMove(f,id,'stand');
+    assert.equal(result.security.requiredWins,3);assert.equal(result.fine,30000);
+    if(n<2)stageMove(f,id,'continue');
+    if(n===1)unstockBusiness(f.dir,f.owner,f.shop.id,'wine-0',{now});
+    if(n===2)assert.equal(result.outcome,'gone');
+  }
+  assert.equal(f.itemOwner('wine-0'),f.owner.id);assert.equal(f.view().heat.value,1);
+});
+
+test('waiting between security stages shares the original deadline and abandons through one saved police wheel',async t=>{
+  const f=await fixture(t),id=startStoreHeist(f.dir,f.buyer,expensiveTarget(f),{now,draw:success}).id;
+  setHand(f,id);stageMove(f,id,'stand');
+  tickStoreJustice(f.dir,{now:now+HEIST_DURATION,policeDraw:()=>999999});
+  const pending=f.view().heist;
+  assert.equal(pending.outcome,'police');assert.equal(pending.abandoned,true);
+  assert.equal(pending.expiresAt,now+HEIST_DURATION+POLICE_WHEEL_DURATION);
+  tickStoreJustice(f.dir,{now:pending.expiresAt});
+  assert.equal(f.view().heist.outcome,'escaped');assert.equal(f.itemOwner('wine-0'),f.owner.id);
+  assert.equal(f.view().heat.value,1);assert.equal(f.view().heistInProgress,false);
+});
+
+test('legacy active hands keep their single-win contract even for a valuable item',async t=>{
+  const f=await fixture(t),id=startStoreHeist(f.dir,f.buyer,expensiveTarget(f),{now,draw:success}).id;
+  f.accounts.db(db=>{
+    const game=JSON.parse(db.prepare('SELECT blackjack FROM store_heists WHERE id=?').get(id).blackjack);
+    delete game.security;db.prepare('UPDATE store_heists SET blackjack=? WHERE id=?').run(JSON.stringify(game),id);
+  });
+  setHand(f,id);assert.equal(stageMove(f,id,'stand').outcome,'stolen');
+  assert.equal(f.itemOwner('wine-0'),f.buyer.id);
 });
