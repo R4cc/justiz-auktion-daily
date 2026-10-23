@@ -2,6 +2,7 @@ import { checkPoliceRecognition, policeActivityKey, resolvePoliceEncounter } fro
 import { activeCaseRebates, caseRebateDashboard, createCaseRebate, cancelCaseRebate } from './case-rebates.mjs';
 import { loanDashboard, borrowLoan, repayLoan } from './loans.mjs';
 import { userStatistics } from './user-statistics.mjs';
+import { adminStatistics } from './admin-statistics.mjs';
 import { prestigeAccount } from './prestige.mjs';
 import { prestigeEffects } from './prestige-effects.mjs';
 import { unopenedAuctionWinnings } from './auction-winnings.mjs';
@@ -65,7 +66,7 @@ function searchAuctions(auctions, query) {
     .some(value => String(value ?? '').toLowerCase().includes(needle)));
 }
 
-export async function createAccountApi({ dataDir, dailyPayload, json, env = process.env, flags = featureFlags(env), policeRandom }) {
+export async function createAccountApi({ dataDir, dailyPayload, json, env = process.env, flags = featureFlags(env), policeRandom, siteUsage }) {
   const accounts = new Accounts(dataDir, { flags });
   await accounts.bootstrap(env.ADMIN_USERNAME, env.ADMIN_PASSWORD);
   const secure = env.COOKIE_SECURE !== 'false' && (env.COOKIE_SECURE === 'true' || env.NODE_ENV === 'production');
@@ -134,6 +135,7 @@ export async function createAccountApi({ dataDir, dailyPayload, json, env = proc
           else if (route === 'admin/case-rebates') json(response,200,caseRebateDashboard(dataDir,user));
           else if (route === 'admin/market') json(response, 200, adminMarketDashboard(dataDir, user));
           else if (route === 'admin') json(response, 200, accounts.adminOverview(user));
+          else if (route === 'admin/statistics') json(response,200,adminStatistics(dataDir,user,{days:url.searchParams.get('days')??30,siteUsage}));
           else if (route === 'admin/auctions') {
             if (!user.admin) throw new AccountError('forbidden', 403);
             const matches = searchAuctions(readArchive(dataDir).auctions, url.searchParams.get('query') || '');

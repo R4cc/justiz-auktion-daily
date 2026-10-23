@@ -4,6 +4,7 @@ import { createServer } from 'node:http';
 import { readFile, mkdtemp, rm } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
+import os from 'node:os';
 import { Accounts } from '../src/accounts.mjs';
 import { createAccountApi } from '../src/account-api.mjs';
 import { createEconomyApi } from '../src/economy-api.mjs';
@@ -13,7 +14,7 @@ import { featureFlags } from '../src/features.mjs';
 const runtime = process.env.PLAYWRIGHT_MODULE || '/home/lxadm/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules/playwright/index.mjs';
 const { chromium } = await import(runtime);
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const dir = await mkdtemp('/tmp/jg-account-admin-ui-');
+const dir = await mkdtemp(path.join(os.tmpdir(),'jg-account-admin-ui-'));
 const env = { ADMIN_USERNAME: 'admin', ADMIN_PASSWORD: 'owner-browser-password', COOKIE_SECURE: 'false' }, flags = featureFlags(env);
 const json = (res, status, value) => { res.writeHead(status, { 'content-type': 'application/json' }); res.end(JSON.stringify(value)); };
 const seed = JSON.parse(await readFile(path.join(root, 'seed/auctions.json'), 'utf8')); upsertAuctions(dir, seed.auctions);
@@ -56,13 +57,13 @@ try {
   for(const width of [1440,390,320])for(const language of ['en','de']){
     await page.setViewportSize({width,height:1000});
     await page.locator('#language-select').evaluate((select,value)=>{select.value=value;select.dispatchEvent(new Event('change',{bubbles:true}));},language);
-    for(const name of ['market','players','auctions','access','rebates','maintenance']){
+    for(const name of ['statistics','market','players','auctions','access','rebates','maintenance']){
       await tab(name);assert.ok(await page.locator(`[data-admin-panel="${name}"]`).isVisible());
       assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1),`admin ${name} ${language} ${width} overflow`);
     }
     await page.locator('[data-admin-tab="maintenance"]').focus();await page.keyboard.press('Home');
-    assert.equal(await page.locator('[data-admin-tab="market"]').getAttribute('aria-selected'),'true');
-    await page.keyboard.press('ArrowRight');assert.equal(await page.locator('[data-admin-tab="players"]').getAttribute('aria-selected'),'true');
+    assert.equal(await page.locator('[data-admin-tab="statistics"]').getAttribute('aria-selected'),'true');
+    await page.keyboard.press('ArrowRight');assert.equal(await page.locator('[data-admin-tab="market"]').getAttribute('aria-selected'),'true');
   }
   await page.setViewportSize({width:1440,height:1000});
   await tab('players');await page.locator('#user-search').fill('does-not-exist');assert.equal(await page.locator('.user-row').count(),0);

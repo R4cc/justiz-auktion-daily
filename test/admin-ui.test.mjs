@@ -9,6 +9,7 @@ const escape = value => String(value ?? '').replace(/[&<>"']/g, char => ({ '&': 
 function fixture(overrides = {}) {
   const content = { innerHTML: '' };
   const context = vm.createContext({
+    window:{adminStatisticsUi:{markup:()=>'<div data-admin-statistics></div>',load:()=>{}}},accountVisit:1,URLSearchParams,location:{search:''},history:{replaceState(){}},
     crypto:{randomUUID:()=> 'rebate-request-fixture-0001'}, accountAdminRebates:{cases:[],rebates:[]},
     accountContent: content, account: { id: 'admin', admin: true }, adminActiveTab: 'market', adminMarketFilter: '', adminUserFilter: '', accountBusy: false,
     accountAdmin: { playerCount: 2, users: [{ id: 'admin', username: 'Admin', tokens: 1000, admin: true }, { id: 'player', username: 'Player', tokens: 2000, banned: true }], grants: [], lastReset: null },
@@ -24,7 +25,7 @@ function fixture(overrides = {}) {
 test('admin workspace gates private content and retains its selected tool after a data refresh', () => {
   const f = fixture();
   let markup = f.render();
-  assert.equal((markup.match(/role="tab"/g) || []).length, 6);
+  assert.equal((markup.match(/role="tab"/g) || []).length, 7);
   assert.equal((markup.match(/aria-selected="true"/g) || []).length, 1);
   assert.match(markup, /id="admin-panel-market"[^>]*tabindex="0" >/);
   assert.match(markup, /id="admin-panel-players"[^>]*hidden/);

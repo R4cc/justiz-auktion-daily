@@ -370,6 +370,7 @@ function updateAccount(user, progressionOptions) {
   if(user?.id===account?.id && (user?.prestige?.count||0)<(account?.prestige?.count||0)) return;
   if (account?.id !== user?.id || progressionOptions?.reset) accountStatistics=null;
   if (account?.id !== user?.id || progressionOptions?.reset) accountCriminalRecord = {records:[],total:0,totalPenalties:0,hasMore:false};
+  if(account?.id!==user?.id||!user?.admin)window.adminStatisticsUi?.stop();
   account = user; accountRevision++;
   window.inventoryItemUi?.accountChanged(user);
   window.justiceUi?.sync(user);
@@ -420,6 +421,7 @@ function accountLoading(path, params) {
   return `<section class="page-loading${stores ? ' is-stores' : ''}${detail ? ' is-store-detail' : ''}" aria-busy="true"><span class="sr-only" role="status" tabindex="-1">${t('Loading…', 'Wird geladen …')}</span><div aria-hidden="true"><div class="loading-heading">${line}<span class="loading-button"></span></div>${stores ? '<div class="loading-hero"></div><div class="loading-toolbar"></div>' : ''}${grid ? `<div class="loading-grid">${cards}</div>` : `<div class="loading-panel">${line}${line}${line}</div>`}</div></section>`;
 }
 async function navigateAccountPage(path, push = true) {
+  window.adminStatisticsUi?.stop();
   window.storeReputationUi?.stop();
   const destination = new URL(path, location.origin);
   if(!push&&!path.includes('?')&&destination.pathname===location.pathname)destination.search=location.search;
@@ -524,6 +526,10 @@ async function navigateAccountPage(path, push = true) {
       const [codes, admin, auctionPage, market, rebates] = await Promise.all([accountApi('codes'), accountApi('admin'), accountApi(auctionQuery), accountApi('admin/market'),accountApi('admin/case-rebates')]);
       if (visit !== accountVisit || account?.id !== owner) return;
       accountCodes = codes.codes; accountAdmin = admin; accountAdminMarket = market; accountAdminRebates=rebates; accountAuctions = { query: accountAuctions.query || '', ...auctionPage };
+      const tab=destination.searchParams.get('tab');
+      if(['statistics','market','players','auctions','access','rebates','maintenance'].includes(tab))adminActiveTab=tab;
+      if(adminActiveTab==='statistics')await window.adminStatisticsUi.load(visit,{repaint:false});
+      if(visit!==accountVisit||account?.id!==owner)return;
     }
     if (visit !== accountVisit) return;
     pageLoaded = true; renderAccountPage(); accountContent.querySelector('h1')?.focus({ preventScroll: true });
@@ -723,6 +729,7 @@ function friendsMarkup() {
 }
 function adminIcon(name) {
   const paths = {
+    statistics: '<path d="M3 3v18h18M7 17v-5m5 5V7m5 10V3"/>',
     market: '<path d="m3 17 6-6 4 4 8-10M15 5h6v6"/>',
     players: '<circle cx="9" cy="8" r="3"/><path d="M3 20v-2a6 6 0 0 1 12 0v2M16 5a3 3 0 0 1 0 6M21 20v-2a6 6 0 0 0-3-5"/>',
     auctions: '<rect x="3" y="4" width="18" height="4" rx="1"/><path d="M5 8v12h14V8M10 12h4"/>',
@@ -840,12 +847,14 @@ function selectAdminTab(tab, focus = false) {
     control.tabIndex = selected ? 0 : -1;
   }
   for (const panel of accountContent.querySelectorAll('[data-admin-panel]')) panel.hidden = panel.dataset.adminPanel !== tab;
+  const query=new URLSearchParams(location.search);query.set('tab',tab);history.replaceState({},'','/admin?'+query);
+  if(tab==='statistics')void window.adminStatisticsUi.load(accountVisit);
   if (focus) button.focus({ preventScroll: true });
 }
 function renderAdmin() {
   accountContent.innerHTML = pageHeading(t('Admin', 'Adminbereich'));
   if (!account?.admin) { accountContent.innerHTML += `<p class="collection-empty">${t('Log in with an admin account to access this page.', 'Melde dich mit einem Adminkonto an, um diese Seite zu nutzen.')}</p>`; return; }
-  const tabs = [['market', t('Markets', 'Märkte')], ['players', t('Players', 'Spieler')], ['auctions', t('Archive', 'Archiv')], ['access', t('Access', 'Zugang')], ['rebates',t('Rebate on Cases','Kistenrabatt')], ['maintenance', t('Maintenance', 'Wartung')]];
+  const tabs = [['statistics',t('Statistics','Statistiken')],['market', t('Markets', 'Märkte')], ['players', t('Players', 'Spieler')], ['auctions', t('Archive', 'Archiv')], ['access', t('Access', 'Zugang')], ['rebates',t('Rebate on Cases','Kistenrabatt')], ['maintenance', t('Maintenance', 'Wartung')]];
   const availableCodes = accountCodes.filter(code => code.used_at === null && !code.revoked).length;
   const banned = accountAdmin.users.filter(user => user.banned).length;
   const panel = (tab, content) => `<section id="admin-panel-${tab}" class="admin-panel" role="tabpanel" aria-labelledby="admin-tab-${tab}" data-admin-panel="${tab}" tabindex="0" ${adminActiveTab === tab ? '' : 'hidden'}>${content}</section>`;
@@ -858,6 +867,7 @@ function renderAdmin() {
     </div>
     <div class="admin-tabs" role="tablist" aria-label="${t('Admin tools', 'Adminwerkzeuge')}">${tabs.map(([id, label]) => `<button type="button" role="tab" id="admin-tab-${id}" aria-controls="admin-panel-${id}" aria-selected="${adminActiveTab === id}" tabindex="${adminActiveTab === id ? 0 : -1}" data-admin-tab="${id}">${adminIcon(id)}<span>${label}</span></button>`).join('')}</div>
     ${panel('market', adminMarketMarkup())}
+    ${panel('statistics',window.adminStatisticsUi.markup())}
     ${panel('rebates',adminCaseRebatesMarkup())}
     ${panel('players', `<div class="admin-section"><div class="admin-panel-heading"><div><h2>${t('Player management', 'Spielerverwaltung')}</h2></div>${infoTip(t('Banned players are signed out immediately. The grant amount below applies to each Give J€ button.', 'Gesperrte Spieler werden sofort abgemeldet. Der folgende Betrag gilt für jede Schaltfläche J€ geben.'))}</div>
       <div class="admin-toolbar"><label class="admin-search">${t('Find a player', 'Spieler finden')}<span>${adminIcon('search')}<input id="user-search" name="user-search" type="search" autocomplete="off" placeholder="${t('Search usernames…', 'Benutzernamen durchsuchen …')}" value="${accountEscape(adminUserFilter)}"></span></label><label>${t('J€ per grant', 'J€ pro Gutschrift')}<input id="grant-amount" name="grant-amount" type="number" min="1" max="1000000" step="1" value="100"></label></div>
@@ -936,8 +946,7 @@ function renderShop() {
   const header=`<header class="case-boutique-header">${pageHeading(t('Case Store','Kisten-Shop'))}<a class="secondary-button" href="/inventory" data-page>${t('Inventory','Inventar')} ↗</a></header>`;
   if(!category){
     accountContent.innerHTML=`<div class="case-boutique">${header}<section class="case-category-grid" aria-label="${t('Case categories','Kistenkategorien')}">${accountStore.categories.map(category=>{
-      const offers=accountStore.cases.filter(box=>box.category===category.id),cheapest=Math.min(...offers.map(box=>box.cost));
-      return `<a class="case-category-card case-design-${accountEscape(offers[0].design)}" href="/shop?category=${encodeURIComponent(category.id)}" data-page data-case-category="${accountEscape(category.id)}">${caseArtwork({...offers[0],badge:category.badge})}<h2>${accountEscape(t(category.name,category.nameDe))}</h2><span>${t('From','Ab')} ${justizEuro(cheapest)}</span><strong>${t('Choose tier','Stufe wählen')} →</strong></a>`;
+      return caseCategoryCard(category,accountStore.cases.filter(box=>box.category===category.id));
     }).join('')}</section></div>`;return;
   }
   const offers=accountStore.cases.filter(box=>box.category===category.id);

@@ -1,4 +1,5 @@
 import { sendStaticFile } from './src/static-files.mjs';
+import { createSiteUsageTracker } from './src/site-usage.mjs';
 import { existsSync } from 'node:fs';
 import { auctionGallery } from './src/auction-images.mjs';
 import { createAccountApi } from './src/account-api.mjs';
@@ -833,7 +834,8 @@ await maybeScheduleDiscovery({
     false
 });
 
-const accountApi = await createAccountApi({ dataDir, dailyPayload, json });
+const siteUsage = createSiteUsageTracker({dataDir,onError:()=>console.warn('Usage counters could not be saved.')});
+const accountApi = await createAccountApi({ dataDir, dailyPayload, json, siteUsage });
 
 const economyApi = createEconomyApi({ dataDir, json });
 const guestGameApi = createGuestGameApi({ dataDir, json,
@@ -857,6 +859,7 @@ const server =
             `http://${request.headers.host || 'localhost'}`
           );
 
+        siteUsage.observe(request,response,url);
         if (await economyApi(request, response, url)) return;
 
         if (await accountApi(request, response, url)) return;
@@ -1117,6 +1120,7 @@ const server =
     }
   );
 
+server.once('close',()=>siteUsage.close());
 server.requestTimeout =
   15_000;
 
