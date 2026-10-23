@@ -172,8 +172,9 @@ function setHand(f,id,{player=[9,8],dealer=[6,10],deck}={}) {
   f.accounts.db(db=>db.prepare('UPDATE store_heists SET blackjack=? WHERE id=?').run(JSON.stringify(game),id));
 }
 // Existing bailiff tests deliberately land on the caught sector after a loss.
+// Continuations also deal fresh hands, so pin their draw for deterministic fixtures.
 const action=(f,id,move='stand',turn=0,at=now)=>{
- const result=actStoreHeist(f.dir,f.buyer,{heistId:id,action:move,turn,requestId:`blackjack-${id}-${turn}-${move}`},{now:at,policeDraw:()=>0});
+ const result=actStoreHeist(f.dir,f.buyer,{heistId:id,action:move,turn,requestId:`blackjack-${id}-${turn}-${move}`},{now:at,policeDraw:()=>0,draw:success});
  return result.outcome==='police'?spinStoreHeist(f.dir,f.buyer,{heistId:id,requestId:`police-${id}-${turn}-${move}`},{now:at}):result;
 };
 test('free blackjack persists; deck and hole card remain private; replay cannot redraw or transfer twice',async t=>{
@@ -513,8 +514,13 @@ test('stolen item value determines additional wanted stars from server-side valu
     for(let n=0;n<entry.theft.requiredWins;n++) {
       setHand(f,started.id);
       const turn=f.view().heist.blackjack.turn;
-      action(f,started.id,'stand',turn);
-      if(n+1<entry.theft.requiredWins) action(f,started.id,'continue',turn+1);
+      const result=action(f,started.id,'stand',turn);
+      assert.equal(result.outcome,n+1===entry.theft.requiredWins?'stolen':'active');
+      if(n+1<entry.theft.requiredWins) {
+        const next=action(f,started.id,'continue',turn+1);
+        assert.equal(next.blackjack.outcome,'active');
+        assert.equal(next.security.completedWins,n+1);
+      }
     }
     assert.equal(f.view().heat.stars,(1+extra)/2);
     action(f,started.id,'stand',f.view().heist.blackjack.turn);

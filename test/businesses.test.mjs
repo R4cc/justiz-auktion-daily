@@ -48,6 +48,10 @@ async function fixture(t) {
 
 test('all store types and sizes receive 25% more hourly visitors', async t => {
   const f = await fixture(t), shop = buyBusiness(f.dir, f.rival, 'wine', 'popup', { now: start }).shop;
+  // Fractional visitor counts are seeded by business id; a random UUID makes
+  // this aggregate-rate check occasionally fail despite unchanged rates.
+  f.accounts.db(db=>db.prepare('UPDATE businesses SET id=? WHERE id=?').run('visitor-rate-fixture',shop.id));
+  shop.id='visitor-rate-fixture';
   assert.deepEqual(SHOP_SIZES.map(size => size.visitorsPerHour), [1.25, 2.5, 6.25, 13.75]);
   const hours = 720, oldRates = [1, 2, 5, 11];
   for (const type of SHOP_TYPES) for (const [n, size] of SHOP_SIZES.entries()) {

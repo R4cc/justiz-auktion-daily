@@ -216,18 +216,39 @@ test('partial recovery avoids existing deadlines and preserves advertised bidder
  for(const lot of existing){const after=getPaletteAuction(f.dir,lot.id,{now});assert.equal(after.endsAt,oldEnd);assert.equal(after.currentBid,lot.reserve);}
 });
 
-test('independent simultaneous schedulers allocate different deadlines under the creation lock',async t=>{
- const f=await fixture(t);stockPaletteAuctionCatalog(f.dir,{now});
- const moduleUrl=new URL('../src/stock-palette-auctions.mjs',import.meta.url).href;
- const run=promisify(execFile);
- const results=await Promise.all(['wine-budget','wine-standard','wine-premium'].map((offerId,index)=>run(process.execPath,['--input-type=module','-e',
-  `import {createStockPaletteAuction} from ${JSON.stringify(moduleUrl)}; console.log(JSON.stringify(createStockPaletteAuction(${JSON.stringify(f.dir)},${JSON.stringify({offerId,requestId:`parallel-palette-deadline-${index}`})},{now:${now},automaticSupply:true})));`
- ])));
- const lots=results.map(result=>JSON.parse(result.stdout.trim()));assert.equal(new Set(lots.map(lot=>lot.id)).size,3);
- const ends=lots.map(lot=>lot.endsAt).sort((a,b)=>a-b);
- for(let i=1;i<ends.length;i++)assert.ok(ends[i]-ends[i-1]>=STOCK_PALETTE_END_GAP_MS);
- const retry=createStockPaletteAuction(f.dir,{offerId:'wine-budget',requestId:'parallel-palette-deadline-0'},{now:now+1000,automaticSupply:true});
- assert.deepEqual(retry,lots[0]);
+test('independent simultaneous schedulers migrate safely and allocate different deadlines under the creation lock',async t=>{
+ for(const legacy of [false,true])await t.test(legacy?'legacy schema with a paid bid':'fresh schema',async t=>{
+  const f=await fixture(t);
+  let legacyLot;
+  if(legacy) {
+   legacyLot=create(f,'wine-budget','legacy-palette-schema-001');
+   bidOnPaletteAuction(f.dir,f.buyer,legacyLot.id,legacyLot.reserve,{now});
+   // Simulate a pre-reveal/pre-proxy database with a live paid bid. Every
+   // scheduler must discover and migrate it under the same creation lock.
+   f.accounts.db(db=>db.exec(`ALTER TABLE primary_palette_auctions DROP COLUMN revealed_at;
+     ALTER TABLE primary_palette_auctions DROP COLUMN max_bid;
+     ALTER TABLE primary_palette_bids DROP COLUMN visible_amount`));
+  }
+  stockPaletteAuctionCatalog(f.dir,{now});
+  const moduleUrl=new URL('../src/stock-palette-auctions.mjs',import.meta.url).href;
+  const run=promisify(execFile);
+  const results=await Promise.all(['wine-budget','wine-standard','wine-premium'].map((offerId,index)=>run(process.execPath,['--input-type=module','-e',
+   `import {createStockPaletteAuction} from ${JSON.stringify(moduleUrl)}; console.log(JSON.stringify(createStockPaletteAuction(${JSON.stringify(f.dir)},${JSON.stringify({offerId,requestId:`parallel-palette-deadline-${index}`})},{now:${now},automaticSupply:true})));`
+  ])));
+  const lots=results.map(result=>JSON.parse(result.stdout.trim()));assert.equal(new Set(lots.map(lot=>lot.id)).size,3);
+  const ends=lots.map(lot=>lot.endsAt).sort((a,b)=>a-b);
+  for(let i=1;i<ends.length;i++)assert.ok(ends[i]-ends[i-1]>=STOCK_PALETTE_END_GAP_MS);
+  const retry=createStockPaletteAuction(f.dir,{offerId:'wine-budget',requestId:'parallel-palette-deadline-0'},{now:now+1000,automaticSupply:true});
+  assert.deepEqual(retry,lots[0]);
+  if(legacyLot) {
+   const migrated=f.accounts.db(db=>db.prepare('SELECT * FROM primary_palette_auctions WHERE id=?').get(legacyLot.id));
+   assert.equal(migrated.current_bid,legacyLot.reserve);assert.equal(migrated.max_bid,legacyLot.reserve);
+   assert.equal(migrated.current_bidder_id,f.buyer.id);assert.equal(migrated.revealed_at,null);
+   assert.equal(f.balance('buyer'),1000000-legacyLot.reserve);
+   const bid=f.accounts.db(db=>db.prepare('SELECT * FROM primary_palette_bids WHERE auction_id=?').get(legacyLot.id));
+   assert.equal(bid.amount,legacyLot.reserve);assert.equal(bid.visible_amount,null);
+  }
+ });
 });
 
 test('a crowded schedule defers supply instead of creating a duplicate deadline',async t=>{

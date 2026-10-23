@@ -46,9 +46,8 @@ export function stockPaletteAuctionCatalog(dataDir,{now=Date.now(),userId=null}=
 
 export function createStockPaletteAuction(dataDir,{offerId,requestId,endsAt},{now=Date.now(),automaticSupply=false}={}) {
   if(typeof requestId!=='string'||!/^[a-zA-Z0-9-]{16,80}$/.test(requestId))fail('invalid_request',400);
-  const previous=withDatabase(dataDir,db=>{ensurePaletteAuctionSchema(db,now);const row=db.prepare('SELECT * FROM primary_palette_auctions WHERE creation_request_id=?').get(requestId);
-    if(row){if(JSON.parse(row.public_snapshot_json).stockOffer?.id!==offerId)fail('request_conflict');return serializePublicAuction(db,row);}return null;});
-  if(previous)return previous;
+  // Initialization and replay lookup share the creation write lock. An
+  // unlocked preflight can race another process's check-and-ALTER migration.
   return withDatabase(dataDir,db=>transaction(db,()=>{
     ensurePaletteAuctionSchema(db,now);
     const existing=db.prepare('SELECT * FROM primary_palette_auctions WHERE creation_request_id=?').get(requestId);
