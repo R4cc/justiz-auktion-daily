@@ -46,7 +46,7 @@ export function createEconomyApi({ dataDir, json, flags = featureFlags(), accoun
       if (flags.businesses && (url.pathname === '/api/stores' || url.pathname.startsWith('/api/stores/'))) {
         const viewer = sessionUser(request);
         json(response, 200, url.pathname === '/api/stores'
-          ? listStores(dataDir, viewer, { query: url.searchParams.get('query') || '', type: url.searchParams.get('type') || '', offset: url.searchParams.get('offset'), limit: url.searchParams.get('limit') })
+          ? listStores(dataDir, viewer, { query: url.searchParams.get('query') || '', type: url.searchParams.get('type') || '', offset: url.searchParams.get('offset'), limit: url.searchParams.get('limit'), district: url.searchParams.get('district') || '', inStock: url.searchParams.get('inStock'), minRating: url.searchParams.get('minRating'), sort: url.searchParams.get('sort') || 'newest' })
           : visitStore(dataDir, viewer, decoded(url.pathname.slice('/api/stores/'.length))));
         return true;
       }

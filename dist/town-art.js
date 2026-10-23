@@ -7,6 +7,8 @@ window.townArtwork = (() => {
     cars:'<path d="m4 10 2-6h12l2 6M3 11l1-1h16l1 1v8H3v-8Zm2 8v2m14-2v2M4 10h16M6 14h2m8 0h2"/>',
     jeweler:'<path d="m3 8 4-5h10l4 5-9 13L3 8Zm0 0h18M7 3l5 18 5-18M8 8l4-5 4 5"/>',
     hardware:'<path d="m3 21 11-11a6 6 0 0 0 7-7l-4 4-3-3 4-4a6 6 0 0 0-7 7L0 18l3 3Z"/><path d="m15 14 6 6m-3-9 4 4m-6-2 3-3"/>',
+    pin:'<path d="M20 10c0 6-8 12-8 12S4 16 4 10a8 8 0 1 1 16 0Z"/><circle cx="12" cy="10" r="3"/>',
+    bag:'<path d="M4 7h16l1 14H3L4 7Z"/><path d="M8 7V5a4 4 0 0 1 8 0v2"/>',
     plus:'<path d="M12 5v14M5 12h14"/>',
     lock:'<rect x="5" y="10" width="14" height="11" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3m-4 5v2"/>',
     person:'<circle cx="12" cy="7" r="4"/><path d="M4 21v-3a8 8 0 0 1 16 0v3"/>'

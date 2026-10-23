@@ -1,3 +1,4 @@
+import { storeBranding, brandingUpdate } from './store-branding.mjs';
 import { playerHeat, increasePlayerHeat, HEAT_CATCH_BONUS, stolenItemHeat, heatScaledFine, heatFineMultiplier } from './theft-heat.mjs';
 import { checkDueStoreEvent } from './store-events.mjs';
 import { businessAbandonment } from './business-abandonment.mjs';
@@ -5,7 +6,7 @@ import { prestigeEffects } from './prestige-effects.mjs';
 import { storeReputation } from './store-reputation.mjs';
 import { storeReviewList } from './store-reviews.mjs';
 import { skillEffects } from './skill-effects.mjs';
-import { plotLocation } from './town-plots.mjs';
+import { plotLocation, TOWN_DISTRICTS } from './town-plots.mjs';
 import { randomInt, randomUUID } from 'node:crypto';
 import { withDatabase, transaction } from './database.mjs';
 import { AccountError } from './errors.mjs';
@@ -147,7 +148,7 @@ export function theftQuote(referencePrice, securityGuard, locationMultiplier = 1
 }
 function publicCard(db, shop, viewer, now) {
   return { ...businessAbandonment(shop,now), takeoverPrice: Math.round(SHOP_SIZES.find(size=>size.id===shop.size).cost * SHOP_TYPES.find(type=>type.id===shop.type).costFactor * (plotLocation(db,shop.plot_id)?.priceMultiplier ?? 1)), id: shop.id, ownerId: shop.user_id, owner: viewer ? shop.username : maskUsername(shop.username),
-    location: plotLocation(db, shop.plot_id), name: shop.store_name, motto: shop.store_motto, type: shop.type, size: shop.size, upgrade:businessUpgrade(shop), securityGuard: Boolean(shop.security_guard), mischiefEnabled: Boolean(shop.mischief_enabled),
+    ...storeBranding(shop), location: plotLocation(db, shop.plot_id), name: shop.store_name, motto: shop.store_motto, type: shop.type, size: shop.size, upgrade:businessUpgrade(shop), securityGuard: Boolean(shop.security_guard), mischiefEnabled: Boolean(shop.mischief_enabled),
     stockCount: db.prepare('SELECT COUNT(*) AS n FROM business_stock WHERE business_id = ? AND sold_at IS NULL').get(shop.id).n,
     playerVisits: db.prepare('SELECT COUNT(*) AS n FROM store_visits WHERE business_id = ?').get(shop.id).n,
     ...storeReputation(db, shop, now) };
@@ -162,22 +163,37 @@ function serializeHeist(row, now) {
     readyAt: row.ready_at, expiresAt: row.expires_at };
 }
 
-export function listStores(dataDir, viewer = null, { now = Date.now(), query = '', type = '', offset = 0, limit = 24, ownerId = '', excludeOwnerId = '' } = {}) {
+export function listStores(dataDir, viewer = null, { now = Date.now(), query = '', type = '', district = '', inStock = false, minRating = 0, sort = 'newest', offset = 0, limit = 24, ownerId = '', excludeOwnerId = '' } = {}) {
   return withDatabase(dataDir, db => transaction(db, () => {
     ensureStoreSchema(db); marketIndexes(db, now);
+    const rows = db.prepare(`SELECT b.*, u.username FROM businesses b JOIN users u ON u.id=b.user_id
+      WHERE u.npc=0 AND u.banned=0 ORDER BY b.bought_at DESC,b.id`).all();
+    for (const shop of rows) advanceShop(db, shop, now);
+    // The physical plot catalogue bounds the directory. Advance and filter the
+    // same stores before pagination so stock and ratings reflect current trade.
+    const all = rows.map(shop => ({ ...publicCard(db, shop, viewer, now), openedAt: shop.bought_at }));
     const needle = String(query).slice(0, 80).trim().toLowerCase();
-    const filter = `u.npc = 0 AND u.banned = 0 AND (? = '' OR b.user_id = ?) AND (? = '' OR b.user_id != ?) AND (? = '' OR b.type = ?) AND
-      (? = '' OR instr(lower(b.store_name || ' ' || b.store_motto || ' ' || u.username), ?) > 0)`;
     const selectedType = SHOP_TYPES.some(entry => entry.id === type) ? type : '';
-    const args = [ownerId, ownerId, excludeOwnerId, excludeOwnerId, selectedType, selectedType, needle, needle];
-    const total = db.prepare(`SELECT COUNT(*) AS n FROM businesses b JOIN users u ON u.id = b.user_id WHERE ${filter}`).get(...args).n;
+    const rating = Math.min(5, Math.max(0, Number(minRating) || 0));
+    const stores = all.filter(shop => (!ownerId || shop.ownerId === ownerId) && (!excludeOwnerId || shop.ownerId !== excludeOwnerId)
+      && (!selectedType || shop.type === selectedType) && (!district || shop.location?.districtId === district)
+      && (!(inStock === true || inStock === '1') || shop.stockCount > 0) && (!rating || shop.rating !== null && shop.rating >= rating)
+      && (!needle || [shop.name, shop.motto, shop.owner, shop.type, SHOP_TYPES.find(type => type.id === shop.type)?.name, SHOP_TYPES.find(type => type.id === shop.type)?.nameDe, shop.location?.districtName, shop.location?.streetName].join(' ').toLowerCase().includes(needle)));
+    const sorts = {
+      newest: (a,b) => b.openedAt-a.openedAt,
+      rating: (a,b) => (b.rating ?? -1)-(a.rating ?? -1) || b.reviewCount-a.reviewCount,
+      stock: (a,b) => b.stockCount-a.stockCount,
+      name: (a,b) => (a.name || a.type).localeCompare(b.name || b.type),
+      popular: (a,b) => b.popularity-a.popularity
+    };
+    stores.sort((a,b) => (Object.hasOwn(sorts,sort) ? sorts[sort] : sorts.newest)(a,b) || a.id.localeCompare(b.id));
     const requestedOffset = Math.floor(Number(offset));
     const start = Number.isSafeInteger(requestedOffset) ? Math.max(0, requestedOffset) : 0;
     const count = Math.max(1, Math.min(48, Math.floor(Number(limit)) || 24));
-    const rows = db.prepare(`SELECT b.*, u.username FROM businesses b JOIN users u ON u.id = b.user_id
-      WHERE ${filter} ORDER BY b.bought_at DESC, b.id LIMIT ? OFFSET ?`).all(...args, count, start);
-    for (const shop of rows) advanceShop(db, shop, now);
-    return { stores: rows.map(shop => publicCard(db, shop, viewer, now)), total, offset: start, limit: count };
+    return { stores: stores.slice(start, start+count), total: stores.length, offset: start, limit: count,
+      summary: { stores: all.length, stocked: all.filter(shop => shop.stockCount > 0).length, items: all.reduce((sum,shop) => sum+shop.stockCount,0) },
+      categories: SHOP_TYPES.map(type => ({ id:type.id, count:all.filter(shop => shop.type === type.id).length })),
+      districts: TOWN_DISTRICTS.map(district => ({ id:district.id, name:district.name, number:district.number, count:all.filter(shop => shop.location?.districtId === district.id).length })) };
   }));
 }
 export function visitStore(dataDir, viewer, shopId, { now = Date.now() } = {}) {
@@ -303,8 +319,9 @@ export function customizeStore(dataDir, user, payload, { now = Date.now() } = {}
   if (typeof payload?.name !== 'string' || payload.name.trim().length > 60 || typeof payload.motto !== 'string' || payload.motto.trim().length > 140 || typeof payload.securityGuard !== 'boolean' || (payload.mischiefEnabled !== undefined && typeof payload.mischiefEnabled !== 'boolean')) fail('invalid_store_profile');
   return atomic(dataDir, user, (db, player) => receipt(db, player, payload, 'profile', now, id => {
     const shop = store(db, payload.shopId); if (shop.user_id !== player.id) fail('forbidden', 403);
+    const branding = brandingUpdate(payload, shop);
     advanceShop(db, shop, now);
-    db.prepare('UPDATE businesses SET store_name = ?, store_motto = ?, security_guard = ?, mischief_enabled = ? WHERE id = ?').run(payload.name.trim(), payload.motto.trim(), Number(payload.securityGuard), payload.mischiefEnabled === undefined ? shop.mischief_enabled : Number(payload.mischiefEnabled), shop.id);
+    db.prepare('UPDATE businesses SET store_name=?,store_motto=?,security_guard=?,mischief_enabled=?,store_color=?,store_banner_url=?,store_icon_url=? WHERE id=?').run(payload.name.trim(),payload.motto.trim(),Number(payload.securityGuard),payload.mischiefEnabled === undefined ? shop.mischief_enabled : Number(payload.mischiefEnabled),branding.color,branding.bannerUrl,branding.iconUrl,shop.id);
     return { id, amount: 0 };
   }), now);
 }
@@ -313,10 +330,11 @@ export function saveStoreSettings(dataDir,user,payload,{now=Date.now()}={}) {
   return atomic(dataDir,user,(db,player)=>receipt(db,player,payload,'settings',now,id=>{
     const shop=store(db,payload.shopId);if(shop.user_id!==player.id)fail('business_not_found',404);
     const saved={name:shop.store_name,motto:shop.store_motto,securityGuard:Boolean(shop.security_guard),profitMargin:shop.profit_margin};
-    if(payload.expected&&Object.keys(saved).some(key=>payload.expected[key]!==saved[key]))fail('store_settings_changed',409);
+    const branding=brandingUpdate(payload,shop);
+    if(payload.expected&&(Object.keys(saved).some(key=>payload.expected[key]!==saved[key]) || Object.entries(storeBranding(shop)).some(([key,value])=>Object.hasOwn(payload.expected,key)&&payload.expected[key]!==value)))fail('store_settings_changed',409);
     advanceShop(db,shop,now);
     checkDueStoreEvent(db,shop,now,{advance:false});
-    db.prepare('UPDATE businesses SET store_name=?,store_motto=?,security_guard=?,profit_margin=? WHERE id=?').run(payload.name.trim(),payload.motto.trim(),Number(payload.securityGuard),payload.profitMargin,shop.id);
+    db.prepare('UPDATE businesses SET store_name=?,store_motto=?,security_guard=?,profit_margin=?,store_color=?,store_banner_url=?,store_icon_url=? WHERE id=?').run(payload.name.trim(),payload.motto.trim(),Number(payload.securityGuard),payload.profitMargin,branding.color,branding.bannerUrl,branding.iconUrl,shop.id);
     return {id,amount:0};
   }),now);
 }

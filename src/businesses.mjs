@@ -1,3 +1,4 @@
+import { storeBranding } from './store-branding.mjs';
 import { syncUserStatistics } from './user-statistics.mjs';
 import { ensureBusinessAbandonmentSchema, businessAbandonment, recordBusinessRestock } from './business-abandonment.mjs';
 import { checkDueStoreEvent } from './store-events.mjs';
@@ -124,7 +125,7 @@ export function ensureBusinessSchema(db, { now = Date.now() } = {}) {
   if (guardColumns.some(column => column.name === 'goose_guard') && !guardColumns.some(column => column.name === 'security_guard')) {
     db.exec('ALTER TABLE businesses RENAME COLUMN goose_guard TO security_guard');
   }
-  for (const [name, definition] of [['upgrade_size','TEXT'], ['upgrade_started_at','INTEGER'], ['upgrade_ends_at','INTEGER'], ['upgrade_cost','INTEGER'], ['opening_cost', 'INTEGER'], ['retired', 'INTEGER NOT NULL DEFAULT 0'], ['popularity_factors', 'TEXT'], ['store_name', "TEXT NOT NULL DEFAULT ''"], ['store_motto', "TEXT NOT NULL DEFAULT ''"], ['security_guard', 'INTEGER NOT NULL DEFAULT 0'], ['security_guard_profit', 'INTEGER NOT NULL DEFAULT 0'], ['security_guard_fees', 'INTEGER NOT NULL DEFAULT 0 CHECK(security_guard_fees>=0)'], ['mischief_enabled','INTEGER NOT NULL DEFAULT 0 CHECK(mischief_enabled IN (0,1))']]) {
+  for (const [name, definition] of [['store_color', "TEXT NOT NULL DEFAULT ''"], ['store_banner_url', "TEXT NOT NULL DEFAULT ''"], ['store_icon_url', "TEXT NOT NULL DEFAULT ''"], ['upgrade_size','TEXT'], ['upgrade_started_at','INTEGER'], ['upgrade_ends_at','INTEGER'], ['upgrade_cost','INTEGER'], ['opening_cost', 'INTEGER'], ['retired', 'INTEGER NOT NULL DEFAULT 0'], ['popularity_factors', 'TEXT'], ['store_name', "TEXT NOT NULL DEFAULT ''"], ['store_motto', "TEXT NOT NULL DEFAULT ''"], ['security_guard', 'INTEGER NOT NULL DEFAULT 0'], ['security_guard_profit', 'INTEGER NOT NULL DEFAULT 0'], ['security_guard_fees', 'INTEGER NOT NULL DEFAULT 0 CHECK(security_guard_fees>=0)'], ['mischief_enabled','INTEGER NOT NULL DEFAULT 0 CHECK(mischief_enabled IN (0,1))']]) {
     if (!db.prepare('PRAGMA table_info(businesses)').all().some(column => column.name === name)) db.exec(`ALTER TABLE businesses ADD COLUMN ${name} ${definition}`);
   }
   // Keep sale history independently of physical shelf rows: a player purchase
@@ -404,7 +405,7 @@ function publicShop(db, row, now = Date.now()) {
     upgrade:businessUpgrade(row),nextUpgrade:upgradeOffer(db,row),
     npcTheftChancePercent: npcStoreTheftChance(row.security_guard, plotLocation(db,row.plot_id)?.theftMultiplier ?? 1),
     ...businessAbandonment(row,now), takeoverPrice: Math.round(shopSize(row.size).cost * shopType(row.type).costFactor * (plotLocation(db,row.plot_id)?.priceMultiplier ?? 1)),
-    location: plotLocation(db, row.plot_id), name: row.store_name, motto: row.store_motto, securityGuard: Boolean(row.security_guard), securityGuardProfitPercent: ECONOMY_BALANCE.securityGuardProfitPercent, securityGuardFees: row.security_guard_fees, mischiefEnabled: Boolean(row.mischief_enabled),
+    ...storeBranding(row), location: plotLocation(db, row.plot_id), name: row.store_name, motto: row.store_motto, securityGuard: Boolean(row.security_guard), securityGuardProfitPercent: ECONOMY_BALANCE.securityGuardProfitPercent, securityGuardFees: row.security_guard_fees, mischiefEnabled: Boolean(row.mischief_enabled),
     ...tradingTotals(db,row.user_id,row.id),
     visitors: row.visitors, sales: row.sales, salesToday: today.sales,
     revenue: row.revenue, revenueToday: today.revenue, cashReady: row.cash_balance, profitMargin: row.profit_margin,

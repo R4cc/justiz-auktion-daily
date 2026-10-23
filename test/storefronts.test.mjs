@@ -1,3 +1,4 @@
+import { imgurImage } from '../src/store-branding.mjs';
 import { playerHeat, heatScaledFine, HEAT_DECAY_INTERVAL } from '../src/theft-heat.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -9,7 +10,7 @@ import { closeDataStore } from '../src/database.mjs';
 import { buyBusiness, businessDashboard, stockBusiness, unstockBusiness } from '../src/businesses.mjs';
 import { setMarketIndex } from '../src/market.mjs';
 import { ensureStoreSchema, listStores, visitStore, recordStoreVisit, buyStoreItem, reviewStore, reactToStore, tipStore, customizeStore,
-  spinStoreHeist, POLICE_WHEEL_DURATION, playerCriminalRecord, theftQuote, startStoreHeist, finishStoreHeist, actStoreHeist, tickStoreJustice, HEIST_DURATION, HEIST_COOLDOWN, STORE_HEIST_COOLDOWN } from '../src/storefronts.mjs';
+  saveStoreSettings, spinStoreHeist, POLICE_WHEEL_DURATION, playerCriminalRecord, theftQuote, startStoreHeist, finishStoreHeist, actStoreHeist, tickStoreJustice, HEIST_DURATION, HEIST_COOLDOWN, STORE_HEIST_COOLDOWN } from '../src/storefronts.mjs';
 
 const now = Date.parse('2026-10-08T12:30:00Z');
 async function fixture(t) {
@@ -658,4 +659,60 @@ test('legacy active hands keep their single-win contract even for a valuable ite
   });
   setHand(f,id);assert.equal(stageMove(f,id,'stand').outcome,'stolen');
   assert.equal(f.itemOwner('wine-0'),f.buyer.id);
+});
+
+
+test('store branding accepts only single HTTPS Imgur images and persists across every store surface', async t => {
+  const f = await fixture(t), shop = businessDashboard(f.dir,f.owner,{now}).shops[0];
+  assert.equal(shop.color,'berry'); assert.equal(shop.bannerUrl,''); assert.equal(shop.iconUrl,'');
+  for (const url of ['http://i.imgur.com/abc1234.jpg','https://evil.imgur.com/abc1234.jpg','https://i.imgur.com.evil.test/abc1234.png','https://imgur.com/a/abc1234','https://imgur.com/gallery/abc1234','https://i.imgur.com/abc1234.svg','https://user@i.imgur.com/abc1234.jpg','https://i.imgur.com:444/abc1234.jpg','https://i.imgur.com/abc1234.jpg?redirect=1','javascript:alert(1)','https://example.com/image.png']) {
+    assert.throws(()=>imgurImage(url),/invalid_store_image/);
+  }
+  assert.equal(imgurImage(' https://imgur.com/abc1234 '),'https://i.imgur.com/abc1234.png');
+  assert.equal(imgurImage('https://i.imgur.com/abc1234.webp'),'https://i.imgur.com/abc1234.webp');
+  const expected={name:shop.name,motto:shop.motto,securityGuard:shop.securityGuard,profitMargin:shop.profitMargin,color:shop.color,bannerUrl:shop.bannerUrl,iconUrl:shop.iconUrl};
+  const payload={...expected,expected,shopId:shop.id,name:'Branded cellar',color:'ocean',bannerUrl:'https://imgur.com/abc1234',iconUrl:'https://i.imgur.com/def5678.png',requestId:'brand-settings-request-001'};
+  const first=saveStoreSettings(f.dir,f.owner,payload,{now});
+  assert.deepEqual(saveStoreSettings(f.dir,f.owner,payload,{now}),first);
+  closeDataStore(f.dir);
+  const views=[businessDashboard(f.dir,f.owner,{now}).shops[0],f.view(null),listStores(f.dir,null,{now}).stores[0]];
+  for(const view of views){assert.equal(view.color,'ocean');assert.equal(view.bannerUrl,'https://i.imgur.com/abc1234.png');assert.equal(view.iconUrl,'https://i.imgur.com/def5678.png');assert.equal(view.name,'Branded cellar');}
+  assert.equal(f.view().stock.length,8);assert.equal(f.view().location.plotId,shop.location.plotId);
+  assert.throws(()=>saveStoreSettings(f.dir,f.owner,{...payload,name:'Stale',requestId:'brand-settings-request-002'},{now}),/store_settings_changed/);
+  assert.throws(()=>saveStoreSettings(f.dir,f.buyer,{...payload,requestId:'brand-settings-request-003'},{now}),/business_not_found/);
+  for(const [key,value,error] of [['color','red; background:url(evil)','invalid_store_color'],['bannerUrl','https://evil.test/x.png','invalid_store_image'],['iconUrl',{},'invalid_store_image']]){
+    assert.throws(()=>saveStoreSettings(f.dir,f.owner,{...payload,expected:undefined,[key]:value,requestId:'brand-settings-invalid-001'},{now}),new RegExp(error));
+    assert.equal(f.view().name,'Branded cellar');
+  }
+  // Legacy profile clients preserve branding; explicit blanks remove custom media.
+  customizeStore(f.dir,f.owner,{shopId:shop.id,name:'Legacy edit',motto:'',securityGuard:false,requestId:'brand-profile-request-001'},{now});
+  assert.equal(f.view().bannerUrl,'https://i.imgur.com/abc1234.png');
+  saveStoreSettings(f.dir,f.owner,{...payload,expected:undefined,bannerUrl:'',iconUrl:'',requestId:'brand-settings-request-004'},{now});
+  assert.equal(f.view().bannerUrl,'');assert.equal(f.view().iconUrl,'');
+});
+
+test('marketplace filters and sorts the complete shared catalogue before pagination; purchases update stock and existing reviews', async t => {
+  const f=await fixture(t),rival=buyBusiness(f.dir,f.rival,'electronics','popup',{now}).shop;
+  customizeStore(f.dir,f.owner,{shopId:f.shop.id,name:'Zebra cellar',motto:'',securityGuard:false,requestId:'market-profile-request-001'},{now});
+  customizeStore(f.dir,f.rival,{shopId:rival.id,name:'Alpha tech',motto:'',securityGuard:false,requestId:'market-profile-request-002'},{now});
+  let directory=listStores(f.dir,f.buyer,{now,inStock:true,limit:1});
+  assert.equal(directory.total,1);assert.equal(directory.stores[0].id,f.shop.id);
+  assert.deepEqual(directory.summary,{stores:2,stocked:1,items:8});
+  assert.equal(directory.categories.find(type=>type.id==='wine').count,1);
+  assert.equal(listStores(f.dir,null,{now,sort:'name',limit:1}).stores[0].id,rival.id);
+  assert.equal(listStores(f.dir,null,{now,sort:'name',limit:1,offset:1}).stores[0].id,f.shop.id);
+  assert.equal(listStores(f.dir,null,{now,sort:'stock',limit:1}).stores[0].id,f.shop.id);
+  assert.equal(listStores(f.dir,null,{now,sort:'__proto__'}).total,2);
+  assert.equal(listStores(f.dir,null,{now,district:f.shop.location.districtId,type:'wine'}).total,1);
+  assert.equal(listStores(f.dir,null,{now,district:'nonexistent'}).total,0);
+  assert.equal(listStores(f.dir,null,{now,query:f.shop.location.streetName}).stores.some(shop=>shop.id===f.shop.id),true);
+  assert.equal(listStores(f.dir,null,{now,minRating:4}).total,0);
+  buyStoreItem(f.dir,f.buyer,f.payload(),{now});
+  reviewStore(f.dir,f.buyer,{shopId:f.shop.id,stars:5,comment:'Great finds'},{now});
+  directory=listStores(f.dir,f.buyer,{now,minRating:4,sort:'rating'});
+  assert.equal(directory.total,1);assert.equal(directory.stores[0].reviewCount,1);assert.equal(directory.stores[0].stockCount,7);
+  assert.equal(businessDashboard(f.dir,f.owner,{now}).shops[0].stock.length,7);
+  assert.equal(f.view().reviews.length,1);assert.equal(directory.summary.items,7);
+  assert.equal(listStores(f.dir,null,{now,query:'ownerName'}).total,0);
+  assert.equal(listStores(f.dir,f.buyer,{now,query:'ownerName'}).total,1);
 });

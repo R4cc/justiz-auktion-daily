@@ -385,7 +385,7 @@ async function sendFile(
           'camera=(), microphone=(), geolocation=(), payment=()',
 
         'content-security-policy':
-          "default-src 'self'; img-src 'self' data: https://www.justiz-auktion.de; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; script-src 'self'; connect-src 'self'; base-uri 'self'; frame-ancestors 'none'"
+          "default-src 'self'; img-src 'self' data: https://www.justiz-auktion.de https://i.imgur.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; script-src 'self'; connect-src 'self'; base-uri 'self'; frame-ancestors 'none'"
       }
     );
 

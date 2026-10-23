@@ -92,11 +92,13 @@ function accountError(code) {
     heist_not_ready: t('This paid attempt is not ready yet. Resume it in a moment.', 'Dieser bezahlte Versuch ist noch nicht bereit. Setze ihn gleich fort.'),
     police_spin_not_ready: t('The police wheel is available after a blackjack loss.', 'Das Polizeirad ist nach einer Blackjack-Niederlage verfügbar.'),
     heist_not_found: t('This attempt is no longer available.', 'Dieser Versuch ist nicht mehr verfügbar.'),
-    invalid_plot: t('Choose a valid plot on the town map.', 'Wähle ein gültiges Grundstück auf dem Stadtplan.'),
+    invalid_store_image: t('Use a single HTTPS Imgur image URL (no albums or galleries).', 'Nutze eine einzelne HTTPS-Imgur-Bild-URL (keine Alben oder Galerien).'),
+    invalid_store_color: t('Choose a store color.', 'Wähle eine Ladenfarbe.'),
+    invalid_plot: t('Choose a valid store location.', 'Wähle einen gültigen Ladenstandort.'),
     plot_not_found: t('This plot does not exist.', 'Dieses Grundstück gibt es nicht.'),
     plot_occupied: t('Someone just took this plot. Choose another location.', 'Jemand hat dieses Grundstück gerade gekauft. Wähle einen anderen Standort.'),
     plot_size_mismatch: t('Store size is fixed by the plot.', 'Die Ladengröße wird vom Grundstück festgelegt.'),
-    no_available_plot: t('No free plot of this size remains. Check the town map.', 'Kein freies Grundstück dieser Größe mehr verfügbar. Sieh auf dem Stadtplan nach.'),
+    no_available_plot: t('No free plot of this size remains. Check the store locations.', 'Kein freies Grundstück dieser Größe mehr verfügbar. Sieh bei den Ladenstandorten nach.'),
     town_migration_capacity: t('There are more existing stores than town plots. An administrator needs to resolve the map capacity.', 'Es gibt mehr bestehende Läden als Grundstücke. Ein Administrator muss die Stadtkapazität klären.'),
     store_limit_reached: t('You can own at most 3 stores.', 'Du kannst höchstens 3 Läden besitzen.'),
     invalid_store_events: t('Could not dismiss store events. Try again.', 'Ladenereignisse konnten nicht geschlossen werden. Versuche es erneut.'),
@@ -233,7 +235,7 @@ function renderPersistentWallet(user) {
 function updateNavigation() {
   renderPersistentProgression(account);
   renderPersistentWallet(account);
-  const labels = { '/loans': t('Loans','Kredite'), '/': 'Daily', '/shop': t('Case Store', 'Kisten-Shop'), '/palettes': t('Mystery palettes', 'Mystery-Paletten'), '/skills': t('Skill tree', 'Skillbaum'), '/auctions': t('Palette Auctions', 'Paletten-Auktionen'), '/auction-house': t('Auction House', 'Auktionshaus'), '/marketplace': t('Auction House', 'Auktionshaus'), '/market': t('Stock Market', 'Aktienmarkt'), '/businesses': t('Your stores', 'Deine Läden'), '/stores': t('Visit stores', 'Läden besuchen'), '/town': t('Town map', 'Stadtplan'), '/inventory': t('Inventory', 'Inventar'), '/leaderboard': t('Leaderboard', 'Rangliste'), '/profile': t('Profile', 'Profil'), '/admin': 'Admin', '/changelog': 'Changelog' };
+  const labels = { '/loans': t('Loans','Kredite'), '/': 'Daily', '/shop': t('Case Store', 'Kisten-Shop'), '/palettes': t('Mystery palettes', 'Mystery-Paletten'), '/skills': t('Skill tree', 'Skillbaum'), '/auctions': t('Palette Auctions', 'Paletten-Auktionen'), '/auction-house': t('Auction House', 'Auktionshaus'), '/marketplace': t('Auction House', 'Auktionshaus'), '/market': t('Stock Market', 'Aktienmarkt'), '/businesses': t('Your stores', 'Deine Läden'), '/stores': t('Stores', 'Läden'), '/town': t('Store locations', 'Ladenstandorte'), '/inventory': t('Inventory', 'Inventar'), '/leaderboard': t('Leaderboard', 'Rangliste'), '/profile': t('Profile', 'Profil'), '/admin': 'Admin', '/changelog': 'Changelog' };
   for (const link of document.querySelectorAll('.site-nav a')) {
     if (link.id !== 'header-auth') {
       link.innerHTML = sidebarLinkMarkup(link.getAttribute('href'), labels[link.getAttribute('href')] || link.textContent);
@@ -258,7 +260,7 @@ function updateNavigation() {
   if (auth.pathname === location.pathname) auth.setAttribute('aria-current', 'page'); else auth.removeAttribute('aria-current');
   document.querySelector('[data-nav-label="play"]').textContent = t('Play', 'Spielen');
   document.querySelector('[data-nav-label="trading"]').textContent = t('Trading', 'Handel');
-  document.querySelector('[data-nav-label="town"]').textContent = t('Town & stores', 'Stadt & Läden');
+  document.querySelector('[data-nav-label="town"]').textContent = t('Stores', 'Läden');
   document.querySelector('[data-nav-label="account"]').textContent = t('Account', 'Konto');
   for (const group of document.querySelectorAll('.nav-group')) group.hidden = ![...group.querySelectorAll('a')].some(link => !link.hidden);
   document.querySelector('.site-nav').setAttribute('aria-label', t('Main navigation', 'Hauptnavigation'));
@@ -408,6 +410,7 @@ async function navigateAccountPage(path, push = true) {
   window.storeReputationUi?.stop();
   const destination = new URL(path, location.origin);
   if(!push&&!path.includes('?')&&destination.pathname===location.pathname)destination.search=location.search;
+  if(destination.pathname==='/town'&&!destination.searchParams.has('plot')&&!destination.searchParams.has('view')&&!destination.searchParams.has('district')){destination.pathname='/stores';if(!push)history.replaceState({},'',destination.pathname+destination.search);}
   if(destination.pathname==='/palettes'){
     if(destination.searchParams.has('open'))destination.searchParams.set('open-palette',destination.searchParams.get('open'));
     if(destination.searchParams.has('auction'))destination.searchParams.set('reveal',destination.searchParams.get('auction'));
