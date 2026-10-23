@@ -74,6 +74,44 @@ try {
   assert.equal(accounts.db(db=>db.prepare('SELECT banned FROM users WHERE id=?').get(player.id).banned),1);
   await page.locator(`[data-account="ban-toggle"][data-id="${player.id}"]`).click();await page.waitForFunction(()=>!accountBusy);
   assert.equal(accounts.db(db=>db.prepare('SELECT banned FROM users WHERE id=?').get(player.id).banned),0);
+  // Player reset confirms the target and survives a committed response loss.
+  const resetButton=()=>page.locator(`[data-account="reset-player"][data-id="${player.id}"]`);
+  for(const width of [1440,768,390,320])for(const language of ['en','de']){
+    await page.setViewportSize({width,height:width<=390?740:1000});
+    await page.locator('#language-select').evaluate((select,value)=>{select.value=value;select.dispatchEvent(new Event('change',{bubbles:true}));},language);
+    await tab('players');await resetButton().click();await page.waitForSelector('.admin-player-reset-dialog[open]');
+    assert.equal(await page.locator('.admin-player-reset-dialog input').evaluate(el=>el===document.activeElement),true);
+    assert.ok(await page.locator('.admin-player-reset-dialog').evaluate(el=>{const r=el.getBoundingClientRect();return r.x>=0&&r.right<=innerWidth&&r.y>=0&&r.bottom<=innerHeight&&el.scrollWidth<=el.clientWidth+1;}));
+    await page.screenshot({path:path.join(os.tmpdir(),`jg-player-reset-${width}-${language}.png`)});
+    await page.keyboard.press('Escape');assert.ok(await resetButton().evaluate(el=>el===document.activeElement));
+  }
+  await page.setViewportSize({width:1440,height:1000});
+  await page.locator('#language-select').evaluate(select=>{select.value='en';select.dispatchEvent(new Event('change',{bubbles:true}));});
+  const resetRequests=[];let loseReset=true;
+  await page.route('**/api/account/admin/reset-player',async route=>{
+    resetRequests.push(route.request().postDataJSON().requestId);
+    if(loseReset){loseReset=false;await route.fetch();return route.abort('failed');}await route.continue();
+  });
+  await resetButton().click();await page.locator('.admin-player-reset-dialog input').fill('wrong');
+  await page.locator('.admin-player-reset-dialog [type="submit"]').click();
+  assert.ok((await page.locator('.admin-player-reset-dialog .account-error').innerText()).length);assert.equal(resetRequests.length,0);
+  accounts.db(db=>db.prepare('UPDATE users SET tokens=5000,xp=10000 WHERE id=?').run(player.id));
+  await page.locator('.admin-player-reset-dialog input').fill('SmokePlayer');
+  await page.locator('.admin-player-reset-dialog [type="submit"]').click();
+  await page.waitForFunction(()=>Boolean(document.querySelector('.admin-player-reset-dialog .account-error')?.textContent)&&!document.querySelector('.admin-player-reset-dialog [type=submit]').disabled);
+  assert.equal(accounts.profile({id:player.id}).tokens,1000);assert.equal(accounts.profile({id:player.id}).progression.xp,0);
+  accounts.db(db=>db.prepare('UPDATE users SET tokens=1777 WHERE id=?').run(player.id));
+  await page.reload();await page.waitForSelector('[data-account="reset-player"]');await resetButton().click();
+  await page.locator('.admin-player-reset-dialog input').fill('SmokePlayer');
+  await page.locator('.admin-player-reset-dialog form').evaluate(form=>{form.requestSubmit();form.requestSubmit();});
+  await page.waitForFunction(()=>!document.querySelector('.admin-player-reset-dialog').open);
+  await page.waitForFunction(()=>!accountBusy&&document.activeElement?.dataset.account==='reset-player');
+  assert.equal(resetRequests.length,2);assert.equal(resetRequests[0],resetRequests[1]);
+  assert.equal(accounts.profile({id:player.id}).tokens,1777,'receipt replay cannot erase new progress');
+  await page.unroute('**/api/account/admin/reset-player');
+  await signOut();await signIn('SmokePlayer',env.ADMIN_PASSWORD);await page.waitForSelector('.profile-hub');
+  assert.equal(await page.evaluate(()=>account.tokens),1777,'same username and password still work');
+  await signOut();await signIn('admin',env.ADMIN_PASSWORD);await nav('/admin');await page.waitForSelector('.admin-dashboard');
   await tab('auctions');
   const newest=await page.evaluate(async ids=>{
     const api=accountApi;let release;
@@ -102,5 +140,5 @@ try {
   await page.locator('[name="currentPassword"]').fill(temporary);await page.locator('[name="newPassword"]').fill('smoke-updated-password');await submit('#password-change-form');await page.waitForSelector('.profile-hub');
   await signOut();await signIn('SmokePlayer','smoke-updated-password');await page.waitForSelector('.profile-hub');
   assert.deepEqual(errors,[]);await context.close();
-  console.log('Account/admin passed: invitation validation and registration, failed/successful login, logout privacy, role protection, keyboard tabs and EN/DE at 1440/390/320px, search/detail and stale reply handling, grants, bans, invite creation/revocation, temporary-password reset and forced password change.');
+  console.log('Account/admin passed: registration/login/logout, roles, keyboard tabs, EN/DE 1440–320px; grants/bans, player reset confirmation/cancel/reload-safe retry/unchanged credentials; archive search, invites, password reset and forced change.');
 }finally{await browser.close();await new Promise(resolve=>server.close(resolve));closeDataStore(dir);await rm(dir,{recursive:true,force:true});}

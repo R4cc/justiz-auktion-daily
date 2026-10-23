@@ -215,6 +215,7 @@ export async function createAccountApi({ dataDir, dailyPayload, json, env = proc
       else if (route === 'admin/grant-tokens') result = { grant: accounts.grantTokens(user, payload.amount, payload.requestId), user: accounts.profile(user) };
       else if (route === 'admin/grant-user-tokens') result = { grant: accounts.grantUserTokens(user, payload.userId, payload.amount, payload.requestId), user: accounts.profile(user) };
       else if (route === 'admin/password-reset') result = { reset: await accounts.resetPassword(user, payload.userId), user: accounts.profile(user) };
+      else if (route === 'admin/reset-player') result = { reset: accounts.resetPlayer(user, payload), user: accounts.profile(user) };
       else if (route === 'admin/ban') result = { ban: accounts.banUser(user, payload.userId, payload.banned) };
       else if (route === 'admin/reset-economy') result = { reset: accounts.resetEconomy(user, payload.confirmation), user: accounts.profile(user) };
       else if (route === 'admin/news' && flags.news) {

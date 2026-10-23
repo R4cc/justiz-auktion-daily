@@ -137,6 +137,7 @@ function accountError(code) {
     invalid_grant_user: t('Choose a user to receive the J€.', 'Wähle einen Benutzer aus, der die J€ erhalten soll.'),
     request_conflict: t('This request was already used with different values.', 'Diese Anfrage wurde bereits mit anderen Werten verwendet.'),
     invalid_reset_confirmation: t('Type RESET ECONOMY exactly to confirm.', 'Gib zur Bestätigung exakt RESET ECONOMY ein.'),
+    invalid_player_reset_confirmation: t('Type the player’s username exactly to confirm.', 'Gib zur Bestätigung exakt den Benutzernamen des Spielers ein.'),
     password_change_required: t('Set a new password to continue.', 'Setze ein neues Passwort, um fortzufahren.'),
     temporary_password_used: t('The temporary password was already used for its one login. Ask an admin to reset your password again.', 'Das temporäre Passwort wurde bereits für seine eine Anmeldung verwendet. Lass dein Passwort vom Admin erneut zurücksetzen.'),
     no_password_change_pending: t('There is no password change pending.', 'Es steht keine Passwortänderung aus.'),
@@ -748,7 +749,7 @@ function adminUserListMarkup() {
   const rows = filtered.slice(0, 100).map(user => `<div class="user-row${user.banned ? ' is-banned' : ''}">
     <span class="admin-avatar" aria-hidden="true">${accountEscape(user.username.slice(0, 2).toUpperCase())}</span>
     <div class="user-row-main"><strong>${accountEscape(user.username)}</strong><span>${justizEuro(user.tokens)} <span class="admin-status${user.banned ? ' is-banned' : user.admin ? ' is-admin' : ''}">${user.banned ? t('Banned', 'Gesperrt') : user.admin ? 'Admin' : t('Player', 'Spieler')}</span></span></div>
-    <div class="user-row-actions">${user.admin ? '' : `<button data-account="ban-toggle" data-id="${accountEscape(user.id)}" data-banned="${user.banned ? 'true' : 'false'}">${user.banned ? t('Unban', 'Entsperren') : t('Ban', 'Sperren')}</button><button data-account="password-reset" data-id="${accountEscape(user.id)}">${t('Reset password', 'Passwort zurücksetzen')}</button>`}<button class="admin-grant-button" data-account="grant-user" data-id="${accountEscape(user.id)}">${t('Give J€', 'J€ geben')}</button></div>
+    <div class="user-row-actions">${user.admin ? '' : `<button data-account="ban-toggle" data-id="${accountEscape(user.id)}" data-banned="${user.banned ? 'true' : 'false'}">${user.banned ? t('Unban', 'Entsperren') : t('Ban', 'Sperren')}</button><button data-account="password-reset" data-id="${accountEscape(user.id)}">${t('Reset password', 'Passwort zurücksetzen')}</button><button class="admin-reset-player" data-account="reset-player" data-id="${accountEscape(user.id)}">${t('Reset Player', 'Spieler zurücksetzen')}</button>`}<button class="admin-grant-button" data-account="grant-user" data-id="${accountEscape(user.id)}">${t('Give J€', 'J€ geben')}</button></div>
   </div>`).join('');
   const note = filtered.length > 100 ? t(`Showing 100 of ${filtered.length} players. Refine your search.`, `Zeige 100 von ${filtered.length} Spielern. Grenze die Suche weiter ein.`) :
     filtered.length ? t(`${filtered.length} players`, `${filtered.length} Spieler`) : t('No players match this search.', 'Keine Spieler gefunden.');
@@ -1253,6 +1254,7 @@ document.addEventListener('click', async event => {
       const result = await accountApi('admin/ban', { userId: button.dataset.id, banned });
       if (visit === accountVisit) { await navigateAccountPage('/admin', false); showToast(banned ? t(`${result.ban.username} has been banned.`, `${result.ban.username} wurde gesperrt.`) : t(`${result.ban.username} can log in again.`, `${result.ban.username} kann sich wieder anmelden.`)); }
     }
+    if (action === 'reset-player') window.adminPlayerResetUi.open(button.dataset.id);
     if (action === 'password-reset') {
       // Replaces the account password with a one-time temporary one and signs
       // the player out everywhere; the plaintext is shown once, like codes.

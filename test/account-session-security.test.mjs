@@ -63,12 +63,13 @@ async function fixture(t, dailyPayload = async () => ({ auctions: [] })) {
 }
 
 test('mutations recheck session revocation and restrictions after a delayed body', async t => {
-  for (const kind of ['logout', 'ban', 'password-reset', 'expired', 'forced-change', 'jailed']) await t.test(kind, async t => {
+  for (const kind of ['logout', 'ban', 'password-reset', 'player-reset', 'expired', 'forced-change', 'jailed']) await t.test(kind, async t => {
     const f = await fixture(t);
     const pending = await f.delayedMutation('friends/request', { username: 'admin' });
     if (kind === 'logout') f.accounts.logout(f.token);
     else if (kind === 'ban') f.accounts.banUser({ id: 'admin', admin: true }, 'player', true);
     else if (kind === 'password-reset') await f.accounts.resetPassword({ id: 'admin', admin: true }, 'player');
+    else if (kind === 'player-reset') f.accounts.resetPlayer({ id: 'admin' }, { userId: 'player', confirmation: 'player', requestId: 'security-player-reset-0001' });
     else if (kind === 'expired') f.accounts.db(db => db.prepare('UPDATE account_sessions SET expires=0').run());
     else if (kind === 'forced-change') f.accounts.db(db => db.prepare('UPDATE users SET must_change_password=2 WHERE id=?').run('player'));
     else f.accounts.db(db => db.prepare('INSERT INTO player_justice(user_id,jailed_until,offences) VALUES (?,?,1)').run('player', Date.now() + 60000));
@@ -76,7 +77,7 @@ test('mutations recheck session revocation and restrictions after a delayed body
     const response = await pending.result;
     assert.equal(response.status, kind === 'jailed' ? 423 : kind === 'forced-change' ? 403 : 401);
     assert.equal(f.accounts.db(db => db.prepare('SELECT COUNT(*) n FROM friendships').get().n), 0);
-    assert.equal(f.accounts.db(db => db.prepare('SELECT tokens FROM users WHERE id=?').get('player').tokens), 100000);
+    assert.equal(f.accounts.db(db => db.prepare('SELECT tokens FROM users WHERE id=?').get('player').tokens), kind === 'player-reset' ? 1000 : 100000);
   });
 });
 

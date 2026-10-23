@@ -1,4 +1,5 @@
 import { improveUnopenedCase, caseOutcomeDistribution, drawCaseOutcome } from './case-outcomes.mjs';
+import { ensurePlayerResetSchema, resetPlayer } from './player-reset.mjs';
 import { activeCaseRebates } from './case-rebates.mjs';
 import { playerHeat } from './theft-heat.mjs';
 import { collectOverdueLoan, loanDebt } from './loan-ledger.mjs';
@@ -188,6 +189,7 @@ export class Accounts {
       ensureBusinessSchema(db, { now: this.now() });
       ensureJusticeSchema(db);
       ensureNotificationSchema(db);
+      ensurePlayerResetSchema(db);
     });
   }
   db(work) { return withDatabase(this.dataDir, work); }
@@ -353,6 +355,9 @@ export class Accounts {
         FROM economy_resets ORDER BY id DESC LIMIT 1`).get() || null
     }));
   }
+  resetPlayer(user, payload) {
+    return this.atomic(db => resetPlayer(db, user, payload, this.now()));
+  }
   resetEconomy(user, confirmation) {
     if (!user.admin) fail('forbidden', 403);
     if (confirmation !== 'RESET ECONOMY') fail('invalid_reset_confirmation');
@@ -380,6 +385,7 @@ export class Accounts {
       // NPCs are runtime-owned and are recreated with their full configured
       // balance. Human ids and every login/session credential stay stable.
       db.prepare('DELETE FROM users WHERE npc = 1').run();
+      if (hasTable('player_resets')) db.prepare('UPDATE player_resets SET global_grant_rowid=0').run();
       db.prepare('UPDATE users SET tokens = ?, xp = 0, grants_seen_at = ? WHERE npc = 0')
         .run(STARTING_TOKENS, result.createdAt);
       db.prepare(`INSERT INTO economy_resets

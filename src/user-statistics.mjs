@@ -113,7 +113,8 @@ export function syncUserStatistics(db,userId,now=Date.now()) {
  }
  const user=db.prepare('SELECT created_at FROM users WHERE id=?').get(userId);
  for(const row of rows(db,'user_token_grants','SELECT * FROM user_token_grants WHERE user_id=?',userId))add(`gift-personal:${row.admin_id}:${row.request_id}`,'in:gift',{amount:row.amount,at:row.created_at});
- for(const row of rows(db,'token_grants','SELECT * FROM token_grants WHERE created_at>=?',user.created_at))add(`gift-global:${row.admin_id}:${row.request_id}`,'in:gift',{amount:row.amount,at:row.created_at});
+ const resetGrant=rows(db,'player_resets','SELECT MAX(global_grant_rowid) AS id FROM player_resets WHERE user_id=?',userId)[0]?.id??0;
+ for(const row of rows(db,'token_grants','SELECT * FROM token_grants WHERE created_at>=? AND rowid>?',user.created_at,resetGrant))add(`gift-global:${row.admin_id}:${row.request_id}`,'in:gift',{amount:row.amount,at:row.created_at});
  for(const row of rows(db,'resale_auctions','SELECT * FROM resale_auctions WHERE seller_id=?',userId))add(`listed:${row.id}`,'auction_list',{quantity:1,at:row.started_at});
  for(const [table,prefix] of [['resale_bids','resale'],['primary_palette_bids','palette']])for(const row of rows(db,table,`SELECT * FROM ${table} WHERE bidder_id=?`,userId))add(`bid:${prefix}:${row.id}`,'auction_bid',{quantity:1,at:row.created_at});
  for(const row of rows(db,'xp_events','SELECT * FROM xp_events WHERE user_id=?',userId))add(`xp:${row.source_type}:${row.source_id}`,'xp_earned',{amount:row.amount,at:row.created_at});

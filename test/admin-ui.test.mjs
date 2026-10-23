@@ -56,6 +56,15 @@ test('market overview remains searchable and read-only while the admin is busy',
   assert.match(markup, /Current index/);
 });
 
+test('player reset is available for human players and never offered for admins', () => {
+  const f = fixture();
+  const markup = f.render();
+  assert.match(markup, /data-account="reset-player" data-id="player"/);
+  assert.doesNotMatch(markup, /data-account="reset-player" data-id="admin"/);
+  f.context.t = (en, de) => de;
+  assert.match(f.render(), /Spieler zurücksetzen/);
+});
+
 test('archive export is available in both languages and disabled while busy', () => {
   for (const german of [false, true]) {
     const f = fixture({ adminActiveTab: 'auctions', t: (en, de) => german ? de : en });
