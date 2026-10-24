@@ -2,6 +2,20 @@ window.changelogUi = (() => {
   // Curated manually. Only update for a feature when the user explicitly asks.
   const entries = [
     {
+      "date": "2026-10-24",
+      "title": "Store Demand Balance",
+      "changes": [
+        {
+          "en": "Lower-value store items now sell more often, while higher-value stock needs more visitors. Buying chances scale with each item's live market value across all store categories.",
+          "de": "Günstigere Ladenartikel werden jetzt häufiger gekauft; wertvollere Waren benötigen mehr Besucher. Die Kaufchance richtet sich in allen Ladenkategorien nach dem aktuellen Marktwert des einzelnen Artikels."
+        },
+        {
+          "en": "At 20% markup, a J€35 wine item has about a 47% buying chance per visitor, versus about 20% for a J€120 electronics item. High markups still reduce demand; buying chances are capped at 85%.",
+          "de": "Bei 20% Aufschlag hat ein Weinartikel mit J€35 Marktwert etwa 47% Kaufchance je Besucher, ein Elektronikartikel mit J€120 etwa 20%. Hohe Aufschläge senken weiterhin die Nachfrage; die Kaufchance ist auf 85% begrenzt."
+        }
+      ]
+    },
+    {
       "date": "2026-10-23",
       "title": "Navigation Performance",
       "changes": [

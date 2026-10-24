@@ -39,6 +39,10 @@ export const ECONOMY_BALANCE = Object.freeze({
   businessVisitorMultiplier: 1.25,
   npcResaleActivityMultiplier: 1.2,
   businessMarginElasticity: 3,
+  // One demand budget across categories: inexpensive stock trades in volume.
+  businessDemandReferenceValue: 100,
+  businessDemandPriceExponent: .5,
+  businessMaximumBuyChance: .85,
   npcResaleMinimum: .60,
   npcResaleMaximum: .96,
   npcCollectorMaximum: 1.05,

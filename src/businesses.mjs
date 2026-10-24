@@ -179,12 +179,15 @@ const stockType = businessTypeForItem;
 export function businessSaleChance(baseConversion, profitMargin) {
   // Discounting improves turnover; the default margin is 20%, while
   // very high margins still sell occasionally. Visitors are calculated apart.
-  return Math.max(0, Math.min(.85, baseConversion * Math.exp(-ECONOMY_BALANCE.businessMarginElasticity * (profitMargin - DEFAULT_PROFIT_MARGIN) / 100)));
+  return Math.max(0, Math.min(ECONOMY_BALANCE.businessMaximumBuyChance, baseConversion * Math.exp(-ECONOMY_BALANCE.businessMarginElasticity * (profitMargin - DEFAULT_PROFIT_MARGIN) / 100)));
 }
 
 export function businessItemSaleChance(type, profitMargin, referenceValue) {
-  const affordability = Math.min(1, Math.sqrt(type.typicalValue / Math.max(1, referenceValue)));
-  return businessSaleChance(type.conversion, profitMargin) * affordability;
+  // A shared value anchor rewards volume stock in every category instead of
+  // treating each category's typical price as equally affordable. Markup and
+  // the final cap still constrain cheap goods; valuable stock remains slower.
+  const affordability = (ECONOMY_BALANCE.businessDemandReferenceValue / Math.max(1, referenceValue)) ** ECONOMY_BALANCE.businessDemandPriceExponent;
+  return Math.min(ECONOMY_BALANCE.businessMaximumBuyChance, businessSaleChance(type.conversion, profitMargin) * affordability);
 }
 
 function referencePrice(db, item, type, at) {
@@ -416,7 +419,7 @@ function publicShop(db, row, now = Date.now()) {
     revenue: row.revenue, revenueToday: today.revenue, cashReady: row.cash_balance, profitMargin: row.profit_margin,
     buyChancePercent: Math.round((stock.length ? stock.reduce((sum, entry) => sum
       + businessItemSaleChance(shopType(row.type), row.profit_margin, entry.referencePrice), 0) / stock.length
-      : businessSaleChance(shopType(row.type).conversion, row.profit_margin)) * 1000) / 10,
+      : businessItemSaleChance(shopType(row.type), row.profit_margin, shopType(row.type).typicalValue)) * 1000) / 10,
     ...metrics, ...storeReputation(db, row, now),
     popularityBreakdown:storePopularityBreakdown(db,row,plotLocation(db,row.plot_id),now),
     stock: stock.map(entry=>({...entry,acquisitionCost:acquisitions.get(entry.id)?.cost??null,acquisitionSource:acquisitions.get(entry.id)?.source??'unknown'})) };

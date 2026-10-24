@@ -97,6 +97,8 @@ Starting cash is J€1000. Daily grants one bounded physical case plus cash once
 
 These are willingness-to-pay ceilings for one electronics example, not settlement prices. The configured preferred-collector cap is 105%; individual buyer ceilings can be lower. NPCs have finite wallets, category preferences, stable audiences and shared six-hour demand depth. Bulk quantity discounts bottom out at 75%; exhausted demand bottoms out at 35%. Escrow returns unused bids. Ordinary player trades move existing items and currency, with the important Prestige subsidy exceptions documented separately. Current production retires legacy wholesale supply instead of continually generating eight wholesale lots. Mystery palettes, individual NPC lots and player auctions supply stores.
 
+> **Historical comparison:** These store tables describe the 23 October demand formula. The [24 October store demand report](store-demand-balance.md) supersedes their buying rates and turnover estimates.
+
 ## Store markup sensitivity
 
 | Markup | Purchase chance / typical wine visitor | Profit per reference unit at hypothetical 85% cost | Expected profit / visitor |
